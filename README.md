@@ -1,5 +1,7 @@
 # OpenAI 兼容图片生成 Skill
 
+[English](README.en.md)
+
 这个仓库提供一个 Codex skill，用本地脚本调用 OpenAI 兼容图片 API，支持文生图、参考图编辑、批量生成和透明底素材意图。
 
 ## 安装
