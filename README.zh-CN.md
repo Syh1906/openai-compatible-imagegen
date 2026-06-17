@@ -1,72 +1,72 @@
 <div align="center">
 
-# OpenAI-Compatible Image Generation Skill
+# OpenAI 兼容图片生成 Skill
 
-**Generate, edit, and batch-create images from agent clients through an OpenAI-compatible image API.**
+**让 Codex、Claude Code、OpenCode 等 agent 客户端通过 OpenAI 兼容图片 API 生成、编辑和批量创建图片。**
 
 [![Release](https://img.shields.io/github/v/release/Syh1906/openai-compatible-imagegen?style=flat-square)](https://github.com/Syh1906/openai-compatible-imagegen/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
 [![CI](https://img.shields.io/github/actions/workflow/status/Syh1906/openai-compatible-imagegen/ci.yml?branch=main&style=flat-square)](https://github.com/Syh1906/openai-compatible-imagegen/actions)
 [![Skill](https://img.shields.io/badge/skill-SKILL.md-lightgrey?style=flat-square)](SKILL.md)
 
-English | [简体中文](README.zh-CN.md)
+[English](README.md) | 简体中文
 
 </div>
 
 ---
 
-## Why Use It
+## 为什么需要它
 
-This repository is a portable agent skill. It gives Codex, Claude Code, OpenCode, and other Agent Skills-compatible clients the same local workflow for image generation.
+这个仓库是一个可移植的 agent skill。它让 Codex、Claude Code、OpenCode 和其他兼容 Agent Skills 标准的客户端使用同一套本地图片生成流程。
 
-| Need | What this skill provides |
+| 需求 | 这个 skill 提供什么 |
 | --- | --- |
-| Generate images from prompts | `generate` command for text-to-image requests |
-| Edit or transform reference images | `edit` command with one or more input images |
-| Produce many assets at once | `batch` command with JSONL input and limited concurrency |
-| Create icons, sprites, and transparent assets | `--asset` and `--transparent` intent switches |
-| Keep credentials local | ignored `auth.json`, direct `api_key`, or `api_key_env` support |
+| 根据提示词生成图片 | `generate` 文生图命令 |
+| 根据参考图编辑或转换图片 | 支持一个或多个输入图的 `edit` 命令 |
+| 批量生成资产 | 基于 JSONL 和限流并发的 `batch` 命令 |
+| 创建图标、sprite、透明底素材 | `--asset` 与 `--transparent` 意图开关 |
+| 保持密钥本地私有 | 忽略 `auth.json`，支持直写 `api_key` 或 `api_key_env` |
 
 ---
 
-## Installation
+## 安装
 
-### From Release Package
+### 从发布包安装
 
-Download `openai-compatible-imagegen-v0.1.0.zip` from [Releases](https://github.com/Syh1906/openai-compatible-imagegen/releases), then extract it into a skills directory supported by your agent client.
+从 [Releases](https://github.com/Syh1906/openai-compatible-imagegen/releases) 下载 `openai-compatible-imagegen-v0.1.0.zip`，然后解压到你的 agent 客户端支持的 skills 目录。
 
-### From Git
+### 从 Git 安装
 
-Clone this repository directly into the target skills directory when you want to update with `git pull`.
+如果你希望后续用 `git pull` 更新，可以直接 clone 到目标 skills 目录。
 
-| Client | User-level install path | Command |
+| 客户端 | 用户级安装路径 | 命令 |
 | --- | --- | --- |
 | Codex | `~/.agents/skills/openai-compatible-imagegen` | `git clone https://github.com/Syh1906/openai-compatible-imagegen.git ~/.agents/skills/openai-compatible-imagegen` |
 | Claude Code | `~/.claude/skills/openai-compatible-imagegen` | `git clone https://github.com/Syh1906/openai-compatible-imagegen.git ~/.claude/skills/openai-compatible-imagegen` |
 | OpenCode | `~/.config/opencode/skills/openai-compatible-imagegen` | `git clone https://github.com/Syh1906/openai-compatible-imagegen.git ~/.config/opencode/skills/openai-compatible-imagegen` |
 
-Project-local installs are also useful when only one repository should use the skill:
+只希望某个项目使用这个 skill 时，可以放到项目内目录：
 
-| Client | Project-local path |
+| 客户端 | 项目内路径 |
 | --- | --- |
-| Codex / shared Agent Skills layout | `.agents/skills/openai-compatible-imagegen` |
+| Codex / 通用 Agent Skills 布局 | `.agents/skills/openai-compatible-imagegen` |
 | Claude Code | `.claude/skills/openai-compatible-imagegen` |
 | OpenCode | `.opencode/skills/openai-compatible-imagegen` |
 
-The skill directory must contain `SKILL.md` at its root.
+skill 目录根部必须包含 `SKILL.md`。
 
 ---
 
-## Initialize Auth
+## 初始化认证
 
-Create the local private config before first use:
+首次使用前创建本地私有配置：
 
 ```powershell
 $SkillDir = "$env:USERPROFILE/.agents/skills/openai-compatible-imagegen"
 python "$SkillDir/scripts/imagegen.py" init
 ```
 
-You can initialize non-secret fields:
+也可以在初始化时写入非敏感字段：
 
 ```powershell
 $SkillDir = "$env:USERPROFILE/.agents/skills/openai-compatible-imagegen"
@@ -76,26 +76,26 @@ python "$SkillDir/scripts/imagegen.py" init `
   --api-key-env "OPENAI_API_KEY"
 ```
 
-`auth.json` is local and ignored by git. You can provide the API key in either way:
+`auth.json` 是本地私有文件，已被 git 忽略。密钥支持两种写法：
 
-- Write it directly to `auth.json` as `api_key`.
-- Set `api_key_env` in `auth.json`, then put the key in that environment variable.
+- 直接写入 `auth.json` 的 `api_key` 字段。
+- 在 `auth.json` 写 `api_key_env`，再把 key 放入对应环境变量。
 
-When both are present, the script prefers `api_key`. If `api_key` is still the template placeholder, the script reads `api_key_env`.
+如果两者同时存在，脚本优先使用 `api_key`。如果 `api_key` 仍是模板占位值，脚本才读取 `api_key_env`。
 
-Check the config summary:
+检查配置摘要：
 
 ```powershell
 python "$SkillDir/scripts/imagegen.py" info
 ```
 
-`info` redacts the API key and only shows its source.
+`info` 会打码密钥，只显示来源。
 
 ---
 
-## Usage
+## 使用
 
-Generate an image:
+文生图：
 
 ```powershell
 python "$SkillDir/scripts/imagegen.py" generate `
@@ -105,7 +105,7 @@ python "$SkillDir/scripts/imagegen.py" generate `
   --quality high
 ```
 
-Edit with a reference image:
+参考图编辑：
 
 ```powershell
 python "$SkillDir/scripts/imagegen.py" edit `
@@ -114,7 +114,7 @@ python "$SkillDir/scripts/imagegen.py" edit `
   -f "outputs/dark-ui.png"
 ```
 
-Run a batch:
+批量生成：
 
 ```powershell
 python "$SkillDir/scripts/imagegen.py" batch `
@@ -123,7 +123,7 @@ python "$SkillDir/scripts/imagegen.py" batch `
   --concurrency 3
 ```
 
-Generate a transparent-background asset intent:
+透明底素材意图：
 
 ```powershell
 python "$SkillDir/scripts/imagegen.py" generate `
@@ -135,35 +135,35 @@ python "$SkillDir/scripts/imagegen.py" generate `
 
 ---
 
-## Configuration
+## 配置字段
 
-`examples/auth.example.json` is the template:
+`examples/auth.example.json` 是模板：
 
-- `base_url`: OpenAI-compatible API base URL, usually ending in `/v1`.
-- `api_key`: API key stored directly in the local config.
-- `api_key_env`: Optional environment variable name for the API key.
-- `model`: Default image model.
-- `capabilities.transparent_background`: Whether the API supports `background=transparent`.
-- `defaults`: Default size, quality, format, timeout, and batch concurrency.
+- `base_url`：OpenAI 兼容 API 基础地址，通常以 `/v1` 结尾。
+- `api_key`：可直接写入本地配置的 API key。
+- `api_key_env`：可选环境变量名。
+- `model`：默认图片模型。
+- `capabilities.transparent_background`：接口是否支持 `background=transparent`。
+- `defaults`：默认尺寸、质量、格式、超时和批量并发。
 
 ---
 
-## Quality
+## 质量检查
 
-Run local checks:
+运行本地检查：
 
 ```powershell
 python -m unittest discover -s tests
 python -m py_compile scripts/imagegen.py
 ```
 
-Tests do not call the image API.
+测试不会调用图片 API。
 
 ---
 
-## Release Package
+## 发布包
 
-The release zip contains one top-level folder:
+发布 zip 包包含一个顶层目录：
 
 ```text
 openai-compatible-imagegen/
@@ -174,10 +174,10 @@ openai-compatible-imagegen/
 └── examples/
 ```
 
-Local `auth.json` is not included.
+本地 `auth.json` 不会包含在发布包里。
 
 ---
 
-## License
+## 许可证
 
 [MIT License](LICENSE)

@@ -1,139 +1,152 @@
 ---
 name: openai-compatible-imagegen
-description: Generate, edit, and batch-generate images through a local OpenAI-compatible image API script. Use when Codex needs to create images, icons, transparent-background assets, sprites, UI mockups, posters, covers, reference-image edits, inpainting, multi-reference image composition, concurrent batch image generation, or initialize a local auth.json for an OpenAI-compatible image API.
+description: Generate, edit, and batch-generate images through a local OpenAI-compatible image API script. Use when an agent needs to create images, icons, transparent-background assets, sprites, UI mockups, posters, covers, reference-image edits, inpainting, multi-reference image composition, concurrent batch image generation, or initialize a local auth.json for an OpenAI-compatible image API.
 ---
 
-# OpenAI 兼容图片生成
+# OpenAI-Compatible Image Generation
 
-使用本 skill 调用本地脚本生成图片。不要临时重写 API 调用逻辑。
+Use this skill to call the bundled image generation script. Do not rewrite the API client inline.
 
-## 工作流
+## Workflow
 
-1. 先运行 `info` 检查配置；如果提示缺少 `auth.json`，先运行 `init` 创建本地配置。
-2. 判断模式：`generate` 文生图、`edit` 图生图/局部编辑、`batch` 批量、`info` 查看配置摘要。
-3. 根据用户意图决定参数：用户明确指定优先；其次使用批量文件参数；再由 LLM 根据 prompt 决定；最后才使用 `auth.json` 的 `defaults`。
-   - 质量不要机械使用默认值。草稿/探索可用 `low` 或 `medium`；正式素材、UI、文字密集图、海报、封面和用户要求“高质量/精细/成品”时显式传 `--quality high`。
-   - `auth.json` 默认质量建议用 `auto`，作为无法判断时的后端兜底。
-4. 执行前确认输出路径、张数、尺寸、质量、是否透明底、是否参考图。
-5. 调用 `scripts/imagegen.py`，不要读取或展示 `auth.json` 的密钥值。
-6. 汇报生成文件路径、成功数量、失败数量和 manifest 路径。
+1. Run `info` first to inspect the local configuration. If `auth.json` is missing, run `init`.
+2. Choose the mode:
+   - `generate`: text-to-image
+   - `edit`: image editing, inpainting, or reference-image generation
+   - `batch`: JSONL batch generation with limited concurrency
+   - `info`: configuration summary
+3. Resolve parameters in this order:
+   - explicit user request
+   - per-row batch parameters
+   - agent judgment from the prompt
+   - `auth.json` defaults
+4. Choose quality deliberately:
+   - use `low` or `medium` for drafts and broad exploration
+   - use `high` for final assets, UI, posters, covers, dense text, or user requests for finished detail
+   - use `auto` only when leaving the decision to the backend is acceptable
+5. Before execution, decide output path, image count, size, quality, transparency intent, and reference images.
+6. Call `scripts/imagegen.py`.
+7. Report output image paths, manifest path, success count, failure count, and short failure summaries.
 
-## 配置
+Never read, print, quote, or summarize the secret value in `auth.json`.
 
-配置文件固定为 skill 根目录的 `auth.json`。它是本地私有文件，不提交到仓库。
+## Local Auth
 
-首次使用时运行：
+The private config file is always `auth.json` in this skill directory. It is local-only and must not be committed.
+
+Initialize it:
 
 ```powershell
-$SkillDir = "$env:USERPROFILE/.codex/skills/openai-compatible-imagegen"
+$SkillDir = "$env:USERPROFILE/.agents/skills/openai-compatible-imagegen"
 python "$SkillDir/scripts/imagegen.py" init
 ```
 
-可在初始化时写入非敏感字段：
+Initialize non-secret fields:
 
 ```powershell
-$SkillDir = "$env:USERPROFILE/.codex/skills/openai-compatible-imagegen"
+$SkillDir = "$env:USERPROFILE/.agents/skills/openai-compatible-imagegen"
 python "$SkillDir/scripts/imagegen.py" init `
   --base-url "https://example.com/v1" `
   --model "gpt-image-2" `
   --api-key-env "OPENAI_API_KEY"
 ```
 
-密钥支持两种方式：
+API key options:
 
-- 直接写入 `auth.json` 的 `api_key` 字段，适合偏好配置文件的人。
-- 在 `auth.json` 写 `api_key_env`，再把 key 放到对应环境变量，适合不想把 key 落盘的人。
+- Put the key directly in `auth.json` as `api_key`.
+- Put an environment variable name in `api_key_env`, then set that environment variable.
 
-如果 `api_key` 和 `api_key_env` 同时存在，脚本优先使用 `api_key`。`api_key` 仍是模板占位值时，脚本才读取 `api_key_env`。
+If both are present, the script uses `api_key`. If `api_key` is still the template placeholder, the script reads `api_key_env`.
 
-示例见 `examples/auth.example.json`。真实配置字段：
+Config fields:
 
-- `base_url`：OpenAI 兼容 API 基础地址，通常以 `/v1` 结尾。
-- `api_key`：API key，可直接写入本地 `auth.json`。
-- `api_key_env`：可选环境变量名，用于从环境变量读取 API key。
-- `model`：默认图片模型，例如 `gpt-image-2`。
-- `capabilities.transparent_background`：接口是否原生支持 `background=transparent`。这只控制是否发送 API 参数，不控制 prompt 层的透明底意图。
-- `defaults`：弱默认值，只在调用参数缺失时使用。
+- `base_url`: OpenAI-compatible API base URL, usually ending in `/v1`.
+- `api_key`: API key stored directly in local `auth.json`.
+- `api_key_env`: optional environment variable name for the API key.
+- `model`: default image model, for example `gpt-image-2`.
+- `capabilities.transparent_background`: whether the backend supports `background=transparent`.
+- `defaults`: weak defaults used only when parameters are missing.
 
-禁止把 `api_key` 打印到对话、日志、文档、提交信息或错误说明中。
+## Commands
 
-## 命令
+All commands can be run from any working directory.
 
-所有命令都从任意工作目录调用：
+Configuration summary:
 
 ```powershell
-$SkillDir = "$env:USERPROFILE/.codex/skills/openai-compatible-imagegen"
+$SkillDir = "$env:USERPROFILE/.agents/skills/openai-compatible-imagegen"
 python "$SkillDir/scripts/imagegen.py" info
 ```
 
-文生图：
+Text-to-image:
 
 ```powershell
-$SkillDir = "$env:USERPROFILE/.codex/skills/openai-compatible-imagegen"
+$SkillDir = "$env:USERPROFILE/.agents/skills/openai-compatible-imagegen"
 python "$SkillDir/scripts/imagegen.py" generate `
-  -p "Warcraft 3 风格技能图标，冰霜符文，无文字" `
-  -f "E:/Code/project/assets/frost-rune.png" `
-  --size 2048x2048 `
+  -p "Warcraft 3 style frost skill icon, single rune, centered, no text" `
+  -f "outputs/frost-rune.png" `
+  --size 1024x1024 `
   --quality high
 ```
 
-编辑/参考图：
+Reference-image edit:
 
 ```powershell
-$SkillDir = "$env:USERPROFILE/.codex/skills/openai-compatible-imagegen"
+$SkillDir = "$env:USERPROFILE/.agents/skills/openai-compatible-imagegen"
 python "$SkillDir/scripts/imagegen.py" edit `
-  -p "改成暗色魔法 UI 风格" `
+  -p "Convert this to a dark magic UI style" `
   -i "input.png" `
-  -f "output.png"
+  -f "outputs/dark-ui.png"
 ```
 
-批量限流并发：
+Batch generation:
 
 ```powershell
-$SkillDir = "$env:USERPROFILE/.codex/skills/openai-compatible-imagegen"
+$SkillDir = "$env:USERPROFILE/.agents/skills/openai-compatible-imagegen"
 python "$SkillDir/scripts/imagegen.py" batch `
   --input "prompts.jsonl" `
   --out "outputs/imagegen" `
   --concurrency 3
 ```
 
-透明底素材快捷方式：
+Transparent-background asset intent:
 
 ```powershell
-$SkillDir = "$env:USERPROFILE/.codex/skills/openai-compatible-imagegen"
+$SkillDir = "$env:USERPROFILE/.agents/skills/openai-compatible-imagegen"
 python "$SkillDir/scripts/imagegen.py" generate `
-  -p "居中的火焰宝珠游戏道具素材，无文字" `
-  -f "assets/generated/fire-orb.png" `
+  -p "Centered fire orb game item asset, no text" `
+  -f "outputs/fire-orb.png" `
   --asset `
   --transparent
 ```
 
-## 参数规则
+## Parameters
 
-核心参数：
+Core parameters:
 
-- `-p, --prompt`：提示词，`generate` 和 `edit` 必填。
-- `-f, --file`：输出文件；省略时自动写入当前目录。
-- `-i, --image`：参考图，可重复；出现时走编辑接口。
-- `-m, --mask`：遮罩图；仅编辑模式使用。
-- `--size`：例如 `1024x1024`、`1536x1024`、`1024x1536`、`2048x2048`、`3840x2160`。
-- `--quality`：`low`、`medium`、`high`、`auto`。
-- `--n`：单条请求返回张数。
-- `--format`：`png`、`jpeg`、`webp`。
-- `--background`：`auto`、`opaque`、`transparent`。只有接口声明支持时才会发送 `transparent` 参数。
-- `--transparent`：透明底素材意图快捷方式；脚本会强制 PNG，并向 prompt 注入透明底/孤立主体约束。若接口支持，额外发送 `background=transparent`。
-- `--asset`：素材快捷模式，默认 PNG；适合图标、道具、贴图、sprite。
-- `--concurrency`：批量限流并发数。
+- `-p, --prompt`: required for `generate` and `edit`.
+- `-f, --file`: output file. If omitted, the script writes to the current directory.
+- `-i, --image`: reference image. Repeat for multiple images. Uses the edit endpoint.
+- `-m, --mask`: mask image for edit mode.
+- `--size`: examples include `1024x1024`, `1536x1024`, `1024x1536`, `2048x2048`, `3840x2160`.
+- `--quality`: `low`, `medium`, `high`, or `auto`.
+- `--n`: number of images returned by one request.
+- `--format`: `png`, `jpeg`, or `webp`.
+- `--background`: `auto`, `opaque`, or `transparent`. The script sends `transparent` only when the config declares backend support.
+- `--transparent`: transparent-background asset intent shortcut. Forces PNG and injects transparent-background constraints into the prompt. If supported, also sends `background=transparent`.
+- `--asset`: asset shortcut. Prefers PNG and is suitable for icons, game items, textures, and sprites.
+- `--concurrency`: limited batch concurrency.
 
-详细行为见 `references/parameters.md`。
+Read `references/parameters.md` for detailed behavior.
 
-## 批量格式
+## Batch Format
 
-`batch` 输入为 JSONL，每行一个任务。示例见 `examples/batch.example.jsonl`。
+`batch` input is JSONL, one task per line. See `examples/batch.example.jsonl`.
 
-常用字段：
+Common fields:
 
 - `id`
+- `mode`
 - `prompt`
 - `file`
 - `size`
@@ -145,30 +158,37 @@ python "$SkillDir/scripts/imagegen.py" generate `
 - `asset`
 - `images`
 - `mask`
+- `model`
+- `timeout`
 
-批量默认是限流并发，不是无限并发。并发数优先级：
+Batch mode uses limited concurrency. Concurrency priority:
 
 ```text
-命令行 --concurrency > auth.json defaults.concurrency > 3
+command --concurrency > auth.json defaults.concurrency > 3
 ```
 
-不要默认加入失败后换模型、换接口、额外后处理或其他 fallback。需要这类策略时先问用户。
+Do not add model switching, endpoint switching, background removal, retries with altered parameters, or any other fallback strategy unless the user explicitly asks for it.
 
-## 透明底素材
+## Transparent Assets
 
-用户说“素材、图标、物品、贴图、sprite、透明底、PNG 透明背景”时，优先加 `--asset`；用户明确要求透明底时加 `--transparent`。
+When the user asks for assets, icons, items, textures, sprites, transparent background, or transparent PNG, prefer `--asset`. Add `--transparent` when the user explicitly wants a transparent background.
 
-透明底首先是 prompt 层意图，由 LLM 写进提示词；脚本的 `--transparent` 会补充透明底/孤立主体约束。`auth.json` 中 `capabilities.transparent_background=true` 只表示后端原生支持 `background=transparent`，此时脚本会额外发送该 API 参数。
+Transparency has two layers:
 
-如果接口不支持原生透明底，仍可使用 `--transparent` 让模型按透明底素材方向生成；不要承诺一定得到真实 alpha 通道。不要擅自接入去背景后处理；用户明确要求本地去背景时再另行实现。
+- prompt layer: always available; asks the model for an isolated subject and alpha-friendly edges
+- API parameter layer: only sent when `capabilities.transparent_background=true`
 
-## 输出
+Do not promise a real alpha channel unless the backend actually returns one. Do not add local background-removal post-processing unless the user explicitly asks for that implementation.
 
-脚本会保存图片，并写入 `manifest.json`。汇报时只说：
+## Output
 
-- 输出图片路径
-- manifest 路径
-- 成功和失败数量
-- 失败摘要
+The script saves images and writes `manifest.json` in batch mode.
 
-不要展示密钥、完整请求头或包含密钥的配置内容。
+Report only:
+
+- output image paths
+- manifest path
+- success and failure counts
+- short failure summaries
+
+Do not show API keys, full request headers, or config content that contains secrets.

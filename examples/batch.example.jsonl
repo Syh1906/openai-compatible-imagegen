@@ -1,3 +1,3 @@
-{"id":"war3_icon_frost","prompt":"Warcraft 3 风格冰霜技能图标，单个符文，居中，无文字","size":"1024x1024","quality":"medium","asset":true,"transparent":true}
-{"id":"war3_icon_fire_orb","prompt":"Warcraft 3 风格火焰宝珠道具素材，居中，无文字","size":"1024x1024","quality":"medium","asset":true,"transparent":true}
-{"id":"config_panel_banner","prompt":"暗色魔法风格云配置编辑器横幅，包含地图轮廓和配置面板，适合桌面应用启动图","size":"1536x1024","quality":"high","format":"png"}
+{"id":"war3_icon_frost","prompt":"Warcraft 3 style frost skill icon, single rune, centered, no text","size":"1024x1024","quality":"medium","asset":true,"transparent":true}
+{"id":"war3_icon_fire_orb","prompt":"Warcraft 3 style fire orb game item asset, centered, no text","size":"1024x1024","quality":"medium","asset":true,"transparent":true}
+{"id":"config_panel_banner","prompt":"Dark magic themed cloud configuration editor banner with map outline and configuration panels, suitable for a desktop app splash image","size":"1536x1024","quality":"high","format":"png"}
