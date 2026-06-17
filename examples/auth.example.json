@@ -1,0 +1,16 @@
+{
+  "base_url": "https://example.com/v1",
+  "api_key": "replace-with-temporary-local-key",
+  "api_key_env": "OPENAI_API_KEY",
+  "model": "gpt-image-2",
+  "capabilities": {
+    "transparent_background": true
+  },
+  "defaults": {
+    "size": "2048x2048",
+    "quality": "auto",
+    "output_format": "png",
+    "timeout_seconds": 600,
+    "concurrency": 3
+  }
+}

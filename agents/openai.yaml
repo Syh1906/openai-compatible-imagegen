@@ -1,0 +1,4 @@
+interface:
+  display_name: "OpenAI 兼容图片生成"
+  short_description: "调用 OpenAI 兼容图片 API 生成、编辑和批量生成图片。"
+  default_prompt: "使用 openai-compatible-imagegen skill 生成图片。"
