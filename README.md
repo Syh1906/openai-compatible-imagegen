@@ -29,6 +29,38 @@ This repository is a portable agent skill. It gives Codex, Claude Code, OpenCode
 
 ---
 
+## Compatibility
+
+This skill targets OpenAI-compatible image APIs that expose the following endpoints under `base_url`:
+
+| Mode | Endpoint | Request type |
+| --- | --- | --- |
+| `generate` | `POST /v1/images/generations` | JSON |
+| `edit` | `POST /v1/images/edits` | `multipart/form-data` |
+
+`base_url` should usually end with `/v1`, for example:
+
+```json
+{
+  "base_url": "https://example.com/v1",
+  "model": "gpt-image-2"
+}
+```
+
+The default model in `examples/auth.example.json` is only a template value. Set `model` to any image model supported by your backend, such as an OpenAI-compatible image generation model exposed by your gateway or provider.
+
+Supported script-level options include:
+
+- output sizes such as `1024x1024`, `1536x1024`, `1024x1536`, `2048x2048`, and 4K-style sizes when the backend supports them
+- quality values `low`, `medium`, `high`, and `auto`
+- output formats `png`, `jpeg`, and `webp`
+- `background=transparent` only when `capabilities.transparent_background=true`
+- optional moderation and compression parameters when the backend accepts them
+
+Backends differ. If your provider does not support a parameter, remove that parameter from the command or adjust `auth.json` defaults. The skill does not switch models, endpoints, or post-process images unless you explicitly add that behavior.
+
+---
+
 ## Installation
 
 ### From Release Package

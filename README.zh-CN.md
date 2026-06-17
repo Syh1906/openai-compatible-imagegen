@@ -29,6 +29,38 @@
 
 ---
 
+## 兼容范围
+
+这个 skill 面向在 `base_url` 下提供以下接口的 OpenAI 兼容图片 API：
+
+| 模式 | 接口 | 请求类型 |
+| --- | --- | --- |
+| `generate` | `POST /v1/images/generations` | JSON |
+| `edit` | `POST /v1/images/edits` | `multipart/form-data` |
+
+`base_url` 通常以 `/v1` 结尾，例如：
+
+```json
+{
+  "base_url": "https://example.com/v1",
+  "model": "gpt-image-2"
+}
+```
+
+`examples/auth.example.json` 里的默认模型只是模板值。你可以把 `model` 改成后端支持的任意图片模型，例如你的网关或供应商暴露的 OpenAI 兼容图片生成模型。
+
+脚本层支持的参数包括：
+
+- `1024x1024`、`1536x1024`、`1024x1536`、`2048x2048` 等尺寸；后端支持时也可使用 4K 类尺寸
+- `low`、`medium`、`high`、`auto` 质量参数
+- `png`、`jpeg`、`webp` 输出格式
+- 仅当 `capabilities.transparent_background=true` 时发送 `background=transparent`
+- 后端支持时可使用 moderation 和 compression 参数
+
+不同后端的参数支持不完全一样。如果供应商不支持某个参数，请从命令里移除该参数，或调整 `auth.json` defaults。这个 skill 不会自动切模型、切接口或做图片后处理，除非你明确加入这类行为。
+
+---
+
 ## 安装
 
 ### 从发布包安装
