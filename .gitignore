@@ -15,6 +15,7 @@ coverage/
 outputs/
 generated/
 manifest.json
+dist/
 
 .DS_Store
 Thumbs.db
