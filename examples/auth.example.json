@@ -12,5 +12,8 @@
     "output_format": "png",
     "timeout_seconds": 600,
     "concurrency": 3
+  },
+  "postprocess": {
+    "enabled": false
   }
 }

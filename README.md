@@ -25,6 +25,7 @@ This repository is a portable agent skill. It gives Codex, Claude Code, OpenCode
 | Edit or transform reference images | `edit` command with one or more input images |
 | Produce many assets at once | `batch` command with JSONL input and limited concurrency |
 | Create icons, sprites, and transparent assets | `--asset` and `--transparent` intent switches |
+| Optional post-processing | Explicit `inspect-image`, `normalize`, and `split-grid` commands |
 | Keep credentials local | ignored `auth.json`, direct `api_key`, or `api_key_env` support |
 
 ---
@@ -165,6 +166,24 @@ python "$SkillDir/scripts/imagegen.py" generate `
   --transparent
 ```
 
+Optional post-processing:
+
+```powershell
+python "$SkillDir/scripts/imagegen.py" inspect-image "input.png"
+
+python "$SkillDir/scripts/imagegen.py" normalize "input.png" `
+  --delivery-size 128x128 `
+  --out "output.png"
+
+python "$SkillDir/scripts/imagegen.py" split-grid "grid.png" `
+  --grid 3x3 `
+  --delivery-size 128x128 `
+  --out-dir "candidates"
+```
+
+Post-processing is disabled by default and does not change legacy `generate`, `edit`, or `batch` behavior.
+For one run, pass `--delivery-size`, `--grid`, and `--postprocess-out-dir` explicitly to `generate`, `edit`, or `batch`.
+
 ---
 
 ## Configuration
@@ -177,6 +196,7 @@ python "$SkillDir/scripts/imagegen.py" generate `
 - `model`: Default image model.
 - `capabilities.transparent_background`: Whether the API supports `background=transparent`.
 - `defaults`: Default size, quality, format, timeout, and batch concurrency.
+- `postprocess.enabled`: Optional post-processing opt-in; missing or `false` preserves legacy behavior.
 
 ---
 
@@ -203,6 +223,7 @@ openai-compatible-imagegen/
 ├── agents/openai.yaml
 ├── scripts/imagegen.py
 ├── references/parameters.md
+├── references/postprocess.md
 └── examples/
 ```
 

@@ -30,6 +30,8 @@ Use this skill to call the bundled image generation script. Do not rewrite the A
 
 Never read, print, quote, or summarize the secret value in `auth.json`.
 
+For explicit post-processing, delivery-size normalization, image inspection, or grid splitting, read `references/postprocess.md` first. Do not load it for ordinary image generation.
+
 ## Local Auth
 
 The private config file is always `auth.json` in this skill directory. It is local-only and must not be committed.
@@ -66,6 +68,7 @@ Config fields:
 - `model`: default image model, for example `gpt-image-2`.
 - `capabilities.transparent_background`: whether the backend supports `background=transparent`.
 - `defaults`: weak defaults used only when parameters are missing.
+- `postprocess.enabled`: optional post-processing opt-in. Missing means `false` and preserves legacy behavior.
 
 ## Commands
 
@@ -168,6 +171,8 @@ command --concurrency > auth.json defaults.concurrency > 3
 ```
 
 Do not add model switching, endpoint switching, background removal, retries with altered parameters, or any other fallback strategy unless the user explicitly asks for it.
+
+Post-processing is also opt-in. Unless `auth.json postprocess.enabled=true` or the user explicitly requests normalization, resizing, cropping, image inspection, or grid splitting, keep the legacy generate/edit/batch behavior.
 
 ## Transparent Assets
 

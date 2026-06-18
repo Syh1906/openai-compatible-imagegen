@@ -25,6 +25,7 @@
 | 根据参考图编辑或转换图片 | 支持一个或多个输入图的 `edit` 命令 |
 | 批量生成资产 | 基于 JSONL 和限流并发的 `batch` 命令 |
 | 创建图标、sprite、透明底素材 | `--asset` 与 `--transparent` 意图开关 |
+| 可选后处理 | 显式 `inspect-image`、`normalize`、`split-grid` 命令 |
 | 保持密钥本地私有 | 忽略 `auth.json`，支持直写 `api_key` 或 `api_key_env` |
 
 ---
@@ -165,6 +166,24 @@ python "$SkillDir/scripts/imagegen.py" generate `
   --transparent
 ```
 
+可选后处理：
+
+```powershell
+python "$SkillDir/scripts/imagegen.py" inspect-image "input.png"
+
+python "$SkillDir/scripts/imagegen.py" normalize "input.png" `
+  --delivery-size 128x128 `
+  --out "output.png"
+
+python "$SkillDir/scripts/imagegen.py" split-grid "grid.png" `
+  --grid 3x3 `
+  --delivery-size 128x128 `
+  --out-dir "candidates"
+```
+
+后处理默认关闭，不会改变旧版 `generate` / `edit` / `batch` 行为。
+需要单次生成后归一化时，也可以在 `generate`、`edit` 或 `batch` 后显式加 `--delivery-size`、`--grid` 和 `--postprocess-out-dir`。
+
 ---
 
 ## 配置字段
@@ -177,6 +196,7 @@ python "$SkillDir/scripts/imagegen.py" generate `
 - `model`：默认图片模型。
 - `capabilities.transparent_background`：接口是否支持 `background=transparent`。
 - `defaults`：默认尺寸、质量、格式、超时和批量并发。
+- `postprocess.enabled`：可选后处理总开关；缺失或 `false` 时保持旧行为。
 
 ---
 
@@ -203,6 +223,7 @@ openai-compatible-imagegen/
 ├── agents/openai.yaml
 ├── scripts/imagegen.py
 ├── references/parameters.md
+├── references/postprocess.md
 └── examples/
 ```
 
