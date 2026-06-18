@@ -850,7 +850,7 @@ def apply_postprocess(record: dict[str, Any], args: argparse.Namespace, cfg: Con
     if not explicit and not cfg.postprocess.get("enabled"):
         return record
 
-    delivery_value = getattr(args, "delivery_size", None) or cfg.postprocess.get("delivery_size")
+    delivery_value = getattr(args, "delivery_size", None)
     if not delivery_value:
         return record
     delivery_size = parse_size(str(delivery_value))
@@ -987,6 +987,7 @@ def info(cfg: Config) -> int:
         "base_url": cfg.base_url,
         "capabilities": cfg.capabilities,
         "defaults": cfg.defaults,
+        "postprocess": cfg.postprocess,
         "auth_json": display_path(AUTH_PATH),
         "api_key_source": cfg.api_key_source,
         "api_key": "***REDACTED***",

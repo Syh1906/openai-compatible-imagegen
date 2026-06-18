@@ -58,7 +58,7 @@
 - 仅当 `capabilities.transparent_background=true` 时发送 `background=transparent`
 - 后端支持时可使用 moderation 和 compression 参数
 
-不同后端的参数支持不完全一样。如果供应商不支持某个参数，请从命令里移除该参数，或调整 `auth.json` defaults。这个 skill 不会自动切模型、切接口或做图片后处理，除非你明确加入这类行为。
+不同后端的参数支持不完全一样。命令参数和 `auth.json` defaults 需要与你使用的供应商保持一致。
 
 ---
 
@@ -181,22 +181,27 @@ python "$SkillDir/scripts/imagegen.py" split-grid "grid.png" `
   --out-dir "candidates"
 ```
 
-后处理默认关闭，不会改变旧版 `generate` / `edit` / `batch` 行为。
-需要单次生成后归一化时，也可以在 `generate`、`edit` 或 `batch` 后显式加 `--delivery-size`、`--grid` 和 `--postprocess-out-dir`。
+后处理可以通过 `normalize` 和 `split-grid` 等命令单独执行。`generate`、`edit` 和 `batch` 也可以在传入 `--delivery-size`、`--grid` 或 `--postprocess-out-dir` 时写出后处理结果。
 
 ---
 
 ## 配置字段
 
-`examples/auth.example.json` 是模板：
+`examples/auth.example.json` 是本地配置模板。
+
+关键字段：
 
 - `base_url`：OpenAI 兼容 API 基础地址，通常以 `/v1` 结尾。
-- `api_key`：可直接写入本地配置的 API key。
-- `api_key_env`：可选环境变量名。
-- `model`：默认图片模型。
-- `capabilities.transparent_background`：接口是否支持 `background=transparent`。
-- `defaults`：默认尺寸、质量、格式、超时和批量并发。
-- `postprocess.enabled`：可选后处理总开关；缺失或 `false` 时保持旧行为。
+- `api_key`：直接写在本地配置里的 API key。不要提交真实值。
+- `api_key_env`：当 `api_key` 为空或仍是占位值时读取的环境变量名。
+- `model`：`generate`、`edit`、`batch` 默认使用的图片模型。
+- `capabilities.transparent_background`：只有接口接受 `background=transparent` 时才设为 `true`。
+- `defaults.size`：未传 `--size` 时使用的 API 请求尺寸。
+- `defaults.quality`：未传 `--quality` 时使用的质量参数。
+- `defaults.output_format`：未传 `--format` 时使用的输出格式。
+- `defaults.timeout_seconds`：单次请求超时时间，单位秒。
+- `defaults.concurrency`：未传 `--concurrency` 时使用的批量并发数。
+- `postprocess.enabled`：启用生成结果后处理。最终输出尺寸不写入 `auth.json`；需要缩放或拆网格的命令使用 `--delivery-size`。
 
 ---
 

@@ -58,7 +58,7 @@ Supported script-level options include:
 - `background=transparent` only when `capabilities.transparent_background=true`
 - optional moderation and compression parameters when the backend accepts them
 
-Backends differ. If your provider does not support a parameter, remove that parameter from the command or adjust `auth.json` defaults. The skill does not switch models, endpoints, or post-process images unless you explicitly add that behavior.
+Backend parameter support varies. Keep command flags and `auth.json` defaults aligned with the provider you use.
 
 ---
 
@@ -181,22 +181,27 @@ python "$SkillDir/scripts/imagegen.py" split-grid "grid.png" `
   --out-dir "candidates"
 ```
 
-Post-processing is disabled by default and does not change legacy `generate`, `edit`, or `batch` behavior.
-For one run, pass `--delivery-size`, `--grid`, and `--postprocess-out-dir` explicitly to `generate`, `edit`, or `batch`.
+Post-processing runs through explicit commands such as `normalize` and `split-grid`. `generate`, `edit`, and `batch` can also write post-processed outputs when you pass `--delivery-size`, `--grid`, or `--postprocess-out-dir`.
 
 ---
 
 ## Configuration
 
-`examples/auth.example.json` is the template:
+`examples/auth.example.json` is the local config template.
+
+Important fields:
 
 - `base_url`: OpenAI-compatible API base URL, usually ending in `/v1`.
-- `api_key`: API key stored directly in the local config.
-- `api_key_env`: Optional environment variable name for the API key.
-- `model`: Default image model.
-- `capabilities.transparent_background`: Whether the API supports `background=transparent`.
-- `defaults`: Default size, quality, format, timeout, and batch concurrency.
-- `postprocess.enabled`: Optional post-processing opt-in; missing or `false` preserves legacy behavior.
+- `api_key`: API key stored directly in the local config. Do not commit real values.
+- `api_key_env`: Environment variable name used when `api_key` is empty or still a placeholder.
+- `model`: Default image model for `generate`, `edit`, and `batch`.
+- `capabilities.transparent_background`: Set `true` only when the API accepts `background=transparent`.
+- `defaults.size`: API request size used when `--size` is omitted.
+- `defaults.quality`: Quality used when `--quality` is omitted.
+- `defaults.output_format`: Output format used when `--format` is omitted.
+- `defaults.timeout_seconds`: Per-request timeout in seconds.
+- `defaults.concurrency`: Batch concurrency used when `--concurrency` is omitted.
+- `postprocess.enabled`: Enables generated-output post-processing. The final output size is not stored in `auth.json`; use `--delivery-size` on commands that resize or split images.
 
 ---
 

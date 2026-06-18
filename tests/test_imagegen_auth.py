@@ -291,6 +291,31 @@ class PostprocessImageTests(unittest.TestCase):
 
         self.assertEqual(result, record)
 
+    def test_apply_postprocess_ignores_config_delivery_size(self) -> None:
+        source = self.temp_dir / "source.png"
+        make_rgba_png(source, 4, 4, [(255, 0, 0, 255)] * 16)
+        cfg = self.imagegen.Config(
+            base_url="https://example.test/v1",
+            api_key="secret",
+            api_key_source="test",
+            model="gpt-image-2",
+            defaults={},
+            capabilities={},
+            postprocess={"enabled": True, "delivery_size": "2x2"},
+        )
+        args = SimpleNamespace(
+            postprocess=False,
+            delivery_size=None,
+            grid=None,
+            expected_count=None,
+            postprocess_out_dir=None,
+        )
+        record = {"ok": True, "files": [str(source)]}
+
+        result = self.imagegen.apply_postprocess(record, args, cfg)
+
+        self.assertEqual(result, record)
+
     def test_apply_postprocess_normalizes_when_delivery_size_is_explicit(self) -> None:
         source = self.temp_dir / "source.png"
         out_dir = self.temp_dir / "post"

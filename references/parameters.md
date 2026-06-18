@@ -3,10 +3,10 @@
 ## Parameter Priority
 
 ```text
-explicit user request > per-row batch parameters > agent judgment from prompt > auth.json defaults
+command flags > per-row batch fields > auth.json defaults > built-in defaults
 ```
 
-The script does not make aesthetic decisions. The agent should choose size, quality, format, transparency intent, and concurrency before calling the script.
+Command flags override config defaults. Batch rows can override shared batch settings for each item.
 
 ## Modes
 
@@ -30,7 +30,7 @@ The script does not make aesthetic decisions. The agent should choose size, qual
 | 4K landscape final assets | `3840x2160` |
 | 4K portrait final assets | `2160x3840` |
 
-If the user does not specify a size, choose from the prompt instead of using defaults mechanically.
+If `--size` is omitted, the script uses `defaults.size` from `auth.json`, then the built-in default.
 
 ## Quality Guidance
 
@@ -41,7 +41,7 @@ If the user does not specify a size, choose from the prompt instead of using def
 | `high` | Final assets, text-heavy images, UI, posters, diagrams, detail-sensitive outputs |
 | `auto` | Backend decision; useful as an `auth.json` default |
 
-Prefer explicit quality selection when the prompt gives enough context.
+If `--quality` is omitted, the script uses `defaults.quality` from `auth.json`, then the built-in default.
 
 ## Transparent Assets
 
@@ -66,7 +66,7 @@ prompt layer: always available; requests an isolated subject and alpha-friendly 
 API parameter layer: sent only when the backend supports background=transparent
 ```
 
-Do not promise real alpha pixels unless the backend returns them.
+Real alpha pixels depend on the backend response. Use `inspect-image` to verify transparency.
 
 ## Batch Concurrency
 
@@ -76,7 +76,7 @@ Batch mode uses limited concurrency:
 command --concurrency > auth.json defaults.concurrency > 3
 ```
 
-Do not use unlimited concurrency. High concurrency can trigger rate limits, failures, or unexpected cost.
+High concurrency can trigger rate limits, failures, or unexpected cost.
 
 ## JSONL Fields
 

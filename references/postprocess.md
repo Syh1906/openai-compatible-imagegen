@@ -1,15 +1,12 @@
 # Post-Processing Reference
 
-Load this file only when the user explicitly asks for image inspection, delivery-size normalization, resizing, cropping, grid splitting, candidate extraction, or when `auth.json` has `postprocess.enabled=true`.
+Post-processing covers PNG inspection, resizing, and grid splitting. It can run as a standalone command or after `generate`, `edit`, and `batch` when post-processing flags are present.
 
-## Compatibility Contract
+## Config
 
-Post-processing is opt-in and must not change legacy behavior.
+`postprocess.enabled` enables generated-output post-processing in `auth.json`.
 
-- Missing `postprocess` in `auth.json` means disabled.
-- When disabled and no explicit post-processing command is used, `generate`, `edit`, and `batch` keep their existing behavior: call the API, save returned images, and print paths.
-- Do not auto-resize, crop, split grids, overwrite files, or switch models just because an output does not match an expected delivery size.
-- Read-only inspection is allowed only when the task asks for inspection or a post-processing command is being run.
+`auth.json` does not store a final output size. Use `--delivery-size` on commands that resize or split images.
 
 Example config:
 
@@ -47,7 +44,7 @@ python "$SkillDir/scripts/imagegen.py" split-grid "grid.png" `
   --expected-count 9
 ```
 
-Run post-processing directly after generation or edit only when explicitly requested:
+Run post-processing after generation:
 
 ```powershell
 python "$SkillDir/scripts/imagegen.py" generate `
@@ -68,15 +65,6 @@ python "$SkillDir/scripts/imagegen.py" generate `
   --expected-count 9 `
   --postprocess-out-dir "candidates"
 ```
-
-## Decision Rules
-
-- Treat a user-specified small icon size as the final delivery size, not proof that the backend will return that size.
-- If the API returns a different size and post-processing is disabled, report the mismatch and ask before normalizing.
-- Prefer batch generation for multiple independent candidates.
-- Use grid splitting only when the user requests a grid/candidate sheet or provides a grid image.
-- Do not let the LLM hand-write crop coordinates for a grid. Use `split-grid` with explicit or verified rows and columns.
-- If expected count and grid count differ, stop and ask whether to keep all candidates, discard extras, or regenerate.
 
 ## Current Limits
 
