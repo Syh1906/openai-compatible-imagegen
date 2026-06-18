@@ -4,6 +4,15 @@ Post-processing converts returned PNG files into delivery-ready files. It covers
 
 Use post-processing when the API request size differs from the file size you want to deliver. For example, generate a `1024x1024` source image, then write a `128x128` icon.
 
+## Asking Your Agent
+
+Describe the source image and the final delivery file in the same request:
+
+- "Generate a 1024x1024 source icon, then deliver a 128x128 PNG."
+- "Generate a 3x3 candidate sheet and split it into 9 normalized 128x128 PNG files."
+- "Inspect this PNG, report whether it has alpha, then resize it to 128x128."
+- "Resize `raw.png` to `128x128` and save it as `icon.png` without calling the image API."
+
 ## Config
 
 `postprocess.enabled` enables generated-output post-processing in `auth.json`.

@@ -128,6 +128,26 @@ python "$SkillDir/scripts/imagegen.py" info
 
 ## Usage
 
+### Ask Your Agent
+
+After installing the skill and configuring `auth.json`, ask your agent for the image result you want. Mention the final asset shape, transparency, count, and post-processing need in normal language.
+
+Examples:
+
+- "Use the OpenAI-compatible image generation skill to create a 1024x1024 Warcraft 3 style frost skill icon, no text. Save the final PNG under `outputs/`."
+- "Create a transparent-background item asset for a centered fire orb. I need a PNG with real alpha if the backend supports it."
+- "Generate a 3x3 sheet of game item candidates, then split it into 9 separate 128x128 PNG files."
+- "Use this reference image and convert it to a dark magic UI style. Keep the result as a PNG."
+- "Generate four independent icon concepts from these prompts and save a batch manifest."
+
+For post-processing requests, describe both the source generation size and the final delivery size:
+
+- "Generate a 1024x1024 source icon, then deliver a 128x128 PNG."
+- "Inspect this PNG, confirm whether it has alpha, then resize it to 128x128."
+- "Split this 3x3 candidate sheet into 9 normalized 128x128 files."
+
+### Manual Commands
+
 Generate an image:
 
 ```powershell
@@ -213,11 +233,11 @@ Important fields:
 - `defaults.concurrency`: Batch concurrency used when `--concurrency` is omitted.
 - `postprocess.enabled`: Enables generated-output post-processing. The final output size is not stored in `auth.json`; use `--delivery-size` on commands that resize or split images.
 
-Post-processing examples:
+Post-processing request examples:
 
-- Single icon: `generate --size 1024x1024 --delivery-size 128x128 --postprocess-out-dir outputs/final` writes a resized icon into `outputs/final`.
-- Candidate sheet: `generate --grid 3x3 --delivery-size 128x128 --expected-count 9 --postprocess-out-dir outputs/candidates` writes 9 normalized PNG files.
-- Existing file: `normalize raw.png --delivery-size 128x128 --out icon.png` resizes one existing PNG without calling the image API.
+- Single icon: "Generate a 1024x1024 source image, then deliver a 128x128 PNG in `outputs/final`."
+- Candidate sheet: "Generate a 3x3 candidate sheet and split it into 9 normalized 128x128 PNG files."
+- Existing file: "Resize `raw.png` to `128x128` and save it as `icon.png` without calling the image API."
 
 ---
 

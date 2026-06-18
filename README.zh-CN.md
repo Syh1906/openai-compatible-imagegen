@@ -128,6 +128,26 @@ python "$SkillDir/scripts/imagegen.py" info
 
 ## 使用
 
+### 向你的 agent 提需求
+
+安装 skill 并配置 `auth.json` 后，直接用自然语言告诉 agent 你要什么图片结果。说明最终素材形态、透明背景、数量和后处理需求。
+
+示例：
+
+- “使用 OpenAI 兼容图片生成 skill，生成一张 `1024x1024` 的 Warcraft 3 风格冰霜技能图标，不要文字，最终 PNG 存到 `outputs/`。”
+- “创建一个透明背景的物品素材，主体是居中的火焰宝珠。如果后端支持真实 alpha，就输出透明 PNG。”
+- “生成一张 `3x3` 的游戏物品候选图，然后拆成 9 张独立的 `128x128` PNG。”
+- “使用这张参考图，把它转换成暗黑魔法 UI 风格，结果保留为 PNG。”
+- “按这些提示词批量生成 4 个独立图标方案，并保存 batch manifest。”
+
+需要后处理时，同时说明源图生成尺寸和最终交付尺寸：
+
+- “生成 `1024x1024` 源图标，然后交付 `128x128` PNG。”
+- “检查这张 PNG 是否有 alpha，然后缩放到 `128x128`。”
+- “把这张 `3x3` 候选图拆成 9 张归一化的 `128x128` 文件。”
+
+### 手动命令
+
 文生图：
 
 ```powershell
@@ -213,11 +233,11 @@ API 请求尺寸和最终交付尺寸是两件事。例如后端可能返回 `10
 - `defaults.concurrency`：未传 `--concurrency` 时使用的批量并发数。
 - `postprocess.enabled`：启用生成结果后处理。最终输出尺寸不写入 `auth.json`；需要缩放或拆网格的命令使用 `--delivery-size`。
 
-后处理示例：
+后处理需求示例：
 
-- 单图图标：`generate --size 1024x1024 --delivery-size 128x128 --postprocess-out-dir outputs/final` 会在 `outputs/final` 写出缩放后的图标。
-- 候选图网格：`generate --grid 3x3 --delivery-size 128x128 --expected-count 9 --postprocess-out-dir outputs/candidates` 会写出 9 张归一化 PNG。
-- 已有文件：`normalize raw.png --delivery-size 128x128 --out icon.png` 会缩放一张已有 PNG，不调用图片 API。
+- 单图图标：“生成 `1024x1024` 源图，然后在 `outputs/final` 交付 `128x128` PNG。”
+- 候选图网格：“生成一张 `3x3` 候选图，并拆成 9 张归一化的 `128x128` PNG。”
+- 已有文件：“把 `raw.png` 缩放到 `128x128`，保存为 `icon.png`，不要调用图片 API。”
 
 ---
 
