@@ -39,14 +39,14 @@ The private config file is always `auth.json` in this skill directory. It is loc
 Initialize it:
 
 ```powershell
-$SkillDir = "$env:USERPROFILE/.agents/skills/openai-compatible-imagegen"
+$SkillDir = "$env:USERPROFILE/.codex/skills/openai-compatible-imagegen"
 python "$SkillDir/scripts/imagegen.py" init
 ```
 
 Initialize non-secret fields:
 
 ```powershell
-$SkillDir = "$env:USERPROFILE/.agents/skills/openai-compatible-imagegen"
+$SkillDir = "$env:USERPROFILE/.codex/skills/openai-compatible-imagegen"
 python "$SkillDir/scripts/imagegen.py" init `
   --base-url "https://example.com/v1" `
   --model "gpt-image-2" `
@@ -77,14 +77,14 @@ All commands can be run from any working directory.
 Configuration summary:
 
 ```powershell
-$SkillDir = "$env:USERPROFILE/.agents/skills/openai-compatible-imagegen"
+$SkillDir = "$env:USERPROFILE/.codex/skills/openai-compatible-imagegen"
 python "$SkillDir/scripts/imagegen.py" info
 ```
 
 Text-to-image:
 
 ```powershell
-$SkillDir = "$env:USERPROFILE/.agents/skills/openai-compatible-imagegen"
+$SkillDir = "$env:USERPROFILE/.codex/skills/openai-compatible-imagegen"
 python "$SkillDir/scripts/imagegen.py" generate `
   -p "Warcraft 3 style frost skill icon, single rune, centered, no text" `
   -f "outputs/frost-rune.png" `
@@ -95,7 +95,7 @@ python "$SkillDir/scripts/imagegen.py" generate `
 Reference-image edit:
 
 ```powershell
-$SkillDir = "$env:USERPROFILE/.agents/skills/openai-compatible-imagegen"
+$SkillDir = "$env:USERPROFILE/.codex/skills/openai-compatible-imagegen"
 python "$SkillDir/scripts/imagegen.py" edit `
   -p "Convert this to a dark magic UI style" `
   -i "input.png" `
@@ -105,7 +105,7 @@ python "$SkillDir/scripts/imagegen.py" edit `
 Batch generation:
 
 ```powershell
-$SkillDir = "$env:USERPROFILE/.agents/skills/openai-compatible-imagegen"
+$SkillDir = "$env:USERPROFILE/.codex/skills/openai-compatible-imagegen"
 python "$SkillDir/scripts/imagegen.py" batch `
   --input "prompts.jsonl" `
   --out "outputs/imagegen" `
@@ -115,7 +115,7 @@ python "$SkillDir/scripts/imagegen.py" batch `
 Transparent-background asset intent:
 
 ```powershell
-$SkillDir = "$env:USERPROFILE/.agents/skills/openai-compatible-imagegen"
+$SkillDir = "$env:USERPROFILE/.codex/skills/openai-compatible-imagegen"
 python "$SkillDir/scripts/imagegen.py" generate `
   -p "Centered fire orb game item asset, no text" `
   -f "outputs/fire-orb.png" `

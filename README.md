@@ -74,17 +74,17 @@ Clone this repository directly into the target skills directory when you want to
 
 | Client | User-level install path | Command |
 | --- | --- | --- |
-| Codex | `~/.agents/skills/openai-compatible-imagegen` | `git clone https://github.com/Syh1906/openai-compatible-imagegen.git ~/.agents/skills/openai-compatible-imagegen` |
+| Codex | `~/.codex/skills/openai-compatible-imagegen` | `git clone https://github.com/Syh1906/openai-compatible-imagegen.git ~/.codex/skills/openai-compatible-imagegen` |
 | Claude Code | `~/.claude/skills/openai-compatible-imagegen` | `git clone https://github.com/Syh1906/openai-compatible-imagegen.git ~/.claude/skills/openai-compatible-imagegen` |
-| OpenCode | `~/.config/opencode/skills/openai-compatible-imagegen` | `git clone https://github.com/Syh1906/openai-compatible-imagegen.git ~/.config/opencode/skills/openai-compatible-imagegen` |
+| OpenCode | `~/.config/opencode/skill/openai-compatible-imagegen` | `git clone https://github.com/Syh1906/openai-compatible-imagegen.git ~/.config/opencode/skill/openai-compatible-imagegen` |
 
 Project-local installs are also useful when only one repository should use the skill:
 
 | Client | Project-local path |
 | --- | --- |
-| Codex / shared Agent Skills layout | `.agents/skills/openai-compatible-imagegen` |
+| Codex | `.codex/skills/openai-compatible-imagegen` |
 | Claude Code | `.claude/skills/openai-compatible-imagegen` |
-| OpenCode | `.opencode/skills/openai-compatible-imagegen` |
+| OpenCode | `.opencode/skill/openai-compatible-imagegen` |
 
 The skill directory must contain `SKILL.md` at its root.
 
@@ -95,14 +95,14 @@ The skill directory must contain `SKILL.md` at its root.
 Create the local private config before first use:
 
 ```powershell
-$SkillDir = "$env:USERPROFILE/.agents/skills/openai-compatible-imagegen"
+$SkillDir = "$env:USERPROFILE/.codex/skills/openai-compatible-imagegen"
 python "$SkillDir/scripts/imagegen.py" init
 ```
 
 You can initialize non-secret fields:
 
 ```powershell
-$SkillDir = "$env:USERPROFILE/.agents/skills/openai-compatible-imagegen"
+$SkillDir = "$env:USERPROFILE/.codex/skills/openai-compatible-imagegen"
 python "$SkillDir/scripts/imagegen.py" init `
   --base-url "https://example.com/v1" `
   --model "gpt-image-2" `

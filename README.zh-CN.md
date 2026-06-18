@@ -74,17 +74,17 @@
 
 | 客户端 | 用户级安装路径 | 命令 |
 | --- | --- | --- |
-| Codex | `~/.agents/skills/openai-compatible-imagegen` | `git clone https://github.com/Syh1906/openai-compatible-imagegen.git ~/.agents/skills/openai-compatible-imagegen` |
+| Codex | `~/.codex/skills/openai-compatible-imagegen` | `git clone https://github.com/Syh1906/openai-compatible-imagegen.git ~/.codex/skills/openai-compatible-imagegen` |
 | Claude Code | `~/.claude/skills/openai-compatible-imagegen` | `git clone https://github.com/Syh1906/openai-compatible-imagegen.git ~/.claude/skills/openai-compatible-imagegen` |
-| OpenCode | `~/.config/opencode/skills/openai-compatible-imagegen` | `git clone https://github.com/Syh1906/openai-compatible-imagegen.git ~/.config/opencode/skills/openai-compatible-imagegen` |
+| OpenCode | `~/.config/opencode/skill/openai-compatible-imagegen` | `git clone https://github.com/Syh1906/openai-compatible-imagegen.git ~/.config/opencode/skill/openai-compatible-imagegen` |
 
 只希望某个项目使用这个 skill 时，可以放到项目内目录：
 
 | 客户端 | 项目内路径 |
 | --- | --- |
-| Codex / 通用 Agent Skills 布局 | `.agents/skills/openai-compatible-imagegen` |
+| Codex | `.codex/skills/openai-compatible-imagegen` |
 | Claude Code | `.claude/skills/openai-compatible-imagegen` |
-| OpenCode | `.opencode/skills/openai-compatible-imagegen` |
+| OpenCode | `.opencode/skill/openai-compatible-imagegen` |
 
 skill 目录根部必须包含 `SKILL.md`。
 
@@ -95,14 +95,14 @@ skill 目录根部必须包含 `SKILL.md`。
 首次使用前创建本地私有配置：
 
 ```powershell
-$SkillDir = "$env:USERPROFILE/.agents/skills/openai-compatible-imagegen"
+$SkillDir = "$env:USERPROFILE/.codex/skills/openai-compatible-imagegen"
 python "$SkillDir/scripts/imagegen.py" init
 ```
 
 也可以在初始化时写入非敏感字段：
 
 ```powershell
-$SkillDir = "$env:USERPROFILE/.agents/skills/openai-compatible-imagegen"
+$SkillDir = "$env:USERPROFILE/.codex/skills/openai-compatible-imagegen"
 python "$SkillDir/scripts/imagegen.py" init `
   --base-url "https://example.com/v1" `
   --model "gpt-image-2" `
