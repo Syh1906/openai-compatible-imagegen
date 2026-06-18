@@ -66,7 +66,7 @@
 
 ### 从发布包安装
 
-从 [Releases](https://github.com/Syh1906/openai-compatible-imagegen/releases) 下载 `openai-compatible-imagegen-v0.1.0.zip`，然后解压到你的 agent 客户端支持的 skills 目录。
+从 [Releases](https://github.com/Syh1906/openai-compatible-imagegen/releases) 下载 `openai-compatible-imagegen-v0.1.1.zip`，然后解压到你的 agent 客户端支持的 skills 目录。
 
 ### 从 Git 安装
 
@@ -181,7 +181,17 @@ python "$SkillDir/scripts/imagegen.py" split-grid "grid.png" `
   --out-dir "candidates"
 ```
 
-后处理可以通过 `normalize` 和 `split-grid` 等命令单独执行。`generate`、`edit` 和 `batch` 也可以在传入 `--delivery-size`、`--grid` 或 `--postprocess-out-dir` 时写出后处理结果。
+后处理用于把 API 返回的 PNG 转成可交付文件。它覆盖三类常见任务：
+
+| 任务 | 命令 | 结果 |
+| --- | --- | --- |
+| 检查 PNG | `inspect-image` | 输出宽高、是否有 alpha 通道、alpha 有效边界。 |
+| 缩放单图 | `normalize` | 按 `--delivery-size` 写出一张 PNG。 |
+| 拆候选图 | `split-grid` | 按网格单元写出多张归一化 PNG。 |
+
+API 请求尺寸和最终交付尺寸是两件事。例如后端可能返回 `1024x1024` PNG，但你需要 `128x128` 图标。此时用 `--delivery-size 128x128` 写出最终图标文件。
+
+`generate`、`edit` 和 `batch` 也可以在传入 `--delivery-size`、`--grid` 或 `--postprocess-out-dir` 时写出后处理结果。这个模式下，命令会把 API 原图路径放在 `original_files`，把后处理文件路径放在 `files`。
 
 ---
 
@@ -203,6 +213,12 @@ python "$SkillDir/scripts/imagegen.py" split-grid "grid.png" `
 - `defaults.concurrency`：未传 `--concurrency` 时使用的批量并发数。
 - `postprocess.enabled`：启用生成结果后处理。最终输出尺寸不写入 `auth.json`；需要缩放或拆网格的命令使用 `--delivery-size`。
 
+后处理示例：
+
+- 单图图标：`generate --size 1024x1024 --delivery-size 128x128 --postprocess-out-dir outputs/final` 会在 `outputs/final` 写出缩放后的图标。
+- 候选图网格：`generate --grid 3x3 --delivery-size 128x128 --expected-count 9 --postprocess-out-dir outputs/candidates` 会写出 9 张归一化 PNG。
+- 已有文件：`normalize raw.png --delivery-size 128x128 --out icon.png` 会缩放一张已有 PNG，不调用图片 API。
+
 ---
 
 ## 质量检查
@@ -220,7 +236,7 @@ python -m py_compile scripts/imagegen.py
 
 ## 发布包
 
-发布 zip 包包含一个顶层目录：
+发布 zip 包包含一个顶层目录和当前后处理文档：
 
 ```text
 openai-compatible-imagegen/

@@ -66,7 +66,7 @@ Backend parameter support varies. Keep command flags and `auth.json` defaults al
 
 ### From Release Package
 
-Download `openai-compatible-imagegen-v0.1.0.zip` from [Releases](https://github.com/Syh1906/openai-compatible-imagegen/releases), then extract it into a skills directory supported by your agent client.
+Download `openai-compatible-imagegen-v0.1.1.zip` from [Releases](https://github.com/Syh1906/openai-compatible-imagegen/releases), then extract it into a skills directory supported by your agent client.
 
 ### From Git
 
@@ -181,7 +181,17 @@ python "$SkillDir/scripts/imagegen.py" split-grid "grid.png" `
   --out-dir "candidates"
 ```
 
-Post-processing runs through explicit commands such as `normalize` and `split-grid`. `generate`, `edit`, and `batch` can also write post-processed outputs when you pass `--delivery-size`, `--grid`, or `--postprocess-out-dir`.
+Post-processing turns returned PNG files into delivery-ready files. It covers three common tasks:
+
+| Task | Command | Result |
+| --- | --- | --- |
+| Inspect a PNG | `inspect-image` | Prints width, height, alpha-channel status, and alpha bounds. |
+| Resize one PNG | `normalize` | Writes one PNG at the requested `--delivery-size`. |
+| Split a candidate sheet | `split-grid` | Writes one normalized PNG per grid cell. |
+
+The image API request size and the final delivery size are separate. For example, a backend may return a `1024x1024` PNG while you need a `128x128` icon. Use `--delivery-size 128x128` to write the final icon file.
+
+`generate`, `edit`, and `batch` can also write post-processed outputs when you pass `--delivery-size`, `--grid`, or `--postprocess-out-dir`. In that mode, the command keeps the original returned file path under `original_files` and returns the processed files in `files`.
 
 ---
 
@@ -203,6 +213,12 @@ Important fields:
 - `defaults.concurrency`: Batch concurrency used when `--concurrency` is omitted.
 - `postprocess.enabled`: Enables generated-output post-processing. The final output size is not stored in `auth.json`; use `--delivery-size` on commands that resize or split images.
 
+Post-processing examples:
+
+- Single icon: `generate --size 1024x1024 --delivery-size 128x128 --postprocess-out-dir outputs/final` writes a resized icon into `outputs/final`.
+- Candidate sheet: `generate --grid 3x3 --delivery-size 128x128 --expected-count 9 --postprocess-out-dir outputs/candidates` writes 9 normalized PNG files.
+- Existing file: `normalize raw.png --delivery-size 128x128 --out icon.png` resizes one existing PNG without calling the image API.
+
 ---
 
 ## Quality
@@ -220,7 +236,7 @@ Tests do not call the image API.
 
 ## Release Package
 
-The release zip contains one top-level folder:
+The release zip contains one top-level folder and the current post-processing documentation:
 
 ```text
 openai-compatible-imagegen/
