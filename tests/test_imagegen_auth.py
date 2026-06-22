@@ -186,6 +186,82 @@ class AuthConfigTests(unittest.TestCase):
         self.assertFalse(cfg.postprocess["enabled"])
 
 
+class ParameterResolutionTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.imagegen = load_imagegen()
+        self.cfg = self.imagegen.Config(
+            base_url="https://example.test/v1",
+            api_key="secret",
+            api_key_source="test",
+            model="gpt-image-2",
+            defaults={},
+            capabilities={"transparent_background": True},
+            postprocess={"enabled": False},
+        )
+
+    def make_args(self, **overrides: object) -> SimpleNamespace:
+        values = {
+            "asset": False,
+            "transparent": False,
+            "format": None,
+            "background": None,
+            "size": None,
+            "aspect": None,
+            "resolution": None,
+            "quality": None,
+            "model": None,
+            "timeout": None,
+            "n": None,
+            "compression": None,
+            "moderation": None,
+        }
+        values.update(overrides)
+        return SimpleNamespace(**values)
+
+    def test_resolve_common_params_maps_aspect_and_resolution_to_size(self) -> None:
+        cases = [
+            ("1:1", "1K", "1024x1024"),
+            ("16:9", "1K", "1536x864"),
+            ("9:16", "1K", "864x1536"),
+            ("16:9", "2K", "2048x1152"),
+            ("9:16", "4K", "2160x3840"),
+        ]
+        for aspect, resolution, expected_size in cases:
+            with self.subTest(aspect=aspect, resolution=resolution):
+                args = self.make_args(aspect=aspect, resolution=resolution)
+
+                result = self.imagegen.resolve_common_params(args, self.cfg)
+
+                self.assertEqual(result["size"], expected_size)
+                self.assertEqual(result["aspect"], aspect)
+                self.assertEqual(result["resolution"], resolution)
+
+    def test_resolve_common_params_allows_explicit_size_to_override_aspect_resolution(self) -> None:
+        args = self.make_args(size="1536x1024", aspect="16:9", resolution="2K")
+
+        result = self.imagegen.resolve_common_params(args, self.cfg)
+
+        self.assertEqual(result["size"], "1536x1024")
+
+    def test_resolve_common_params_rejects_transparent_2k_on_gpt_image_2_before_request(self) -> None:
+        args = self.make_args(background="transparent", aspect="1:1", resolution="2K")
+
+        with self.assertRaisesRegex(
+            self.imagegen.ImagegenError,
+            "transparent background with gpt-image-2 at 2K is not supported",
+        ):
+            self.imagegen.resolve_common_params(args, self.cfg)
+
+    def test_resolve_common_params_rejects_transparent_explicit_2k_size_on_gpt_image_2(self) -> None:
+        args = self.make_args(background="transparent", size="2048x2048")
+
+        with self.assertRaisesRegex(
+            self.imagegen.ImagegenError,
+            "transparent background with gpt-image-2 at 2K is not supported",
+        ):
+            self.imagegen.resolve_common_params(args, self.cfg)
+
+
 class PostprocessImageTests(unittest.TestCase):
     def setUp(self) -> None:
         self.imagegen = load_imagegen()

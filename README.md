@@ -52,7 +52,8 @@ The default model in `examples/auth.example.json` is only a template value. Set 
 
 Supported script-level options include:
 
-- output sizes such as `1024x1024`, `1536x1024`, `1024x1536`, `2048x2048`, and 4K-style sizes when the backend supports them
+- exact output sizes such as `1024x1024`, `1536x1024`, `1024x1536`, `2048x2048`, and 4K-style sizes when the backend supports them
+- semantic size selection with `--aspect` (`1:1`, `16:9`, `4:3`, `3:4`, `9:16`) and `--resolution` (`1K`, `2K`, `4K`)
 - quality values `low`, `medium`, `high`, and `auto`
 - output formats `png`, `jpeg`, and `webp`
 - `background=transparent` only when `capabilities.transparent_background=true`
@@ -135,6 +136,8 @@ After installing the skill and configuring `auth.json`, ask your agent for the i
 Examples:
 
 - "Use the OpenAI-compatible image generation skill to create a 1024x1024 Warcraft 3 style frost skill icon, no text. Save the final PNG under `outputs/`."
+- "Create a 16:9 2K livestream banner in a product showcase style. Save it as WebP."
+- "Create a 9:16 4K phone wallpaper with a cyberpunk market stall scene."
 - "Create a transparent-background item asset for a centered fire orb. I need a PNG with real alpha if the backend supports it."
 - "Generate a 3x3 sheet of game item candidates, then split it into 9 separate 128x128 PNG files."
 - "Use this reference image and convert it to a dark magic UI style. Keep the result as a PNG."
@@ -154,8 +157,21 @@ Generate an image:
 python "$SkillDir/scripts/imagegen.py" generate `
   -p "Warcraft 3 style frost skill icon, single rune, centered, no text" `
   -f "outputs/frost-rune.png" `
-  --size 1024x1024 `
+  --aspect 1:1 `
+  --resolution 1K `
   --quality high
+```
+
+Choose a size from shape and clarity:
+
+```powershell
+python "$SkillDir/scripts/imagegen.py" generate `
+  -p "Livestream shopping banner for discounted transit-station tokens, bold product showcase style" `
+  -f "outputs/token-banner.webp" `
+  --aspect 16:9 `
+  --resolution 2K `
+  --format webp `
+  --quality medium
 ```
 
 Edit with a reference image:
@@ -185,6 +201,8 @@ python "$SkillDir/scripts/imagegen.py" generate `
   --asset `
   --transparent
 ```
+
+If the selected model and resolution cannot use transparent background, the script stops before sending the request. Choose one path: switch to a transparent-capable model and keep transparency, or keep the current model and use `background=auto`.
 
 Optional post-processing:
 
@@ -227,6 +245,8 @@ Important fields:
 - `model`: Default image model for `generate`, `edit`, and `batch`.
 - `capabilities.transparent_background`: Set `true` only when the API accepts `background=transparent`.
 - `defaults.size`: API request size used when `--size` is omitted.
+- `defaults.aspect`: Optional default aspect used with `defaults.resolution` when `--size` is omitted.
+- `defaults.resolution`: Optional default `1K`, `2K`, or `4K` resolution used with `defaults.aspect`.
 - `defaults.quality`: Quality used when `--quality` is omitted.
 - `defaults.output_format`: Output format used when `--format` is omitted.
 - `defaults.timeout_seconds`: Per-request timeout in seconds.

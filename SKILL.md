@@ -24,7 +24,7 @@ Use this skill to call the bundled image generation script. Do not rewrite the A
    - use `low` or `medium` for drafts and broad exploration
    - use `high` for final assets, UI, posters, covers, dense text, or user requests for finished detail
    - use `auto` only when leaving the decision to the backend is acceptable
-5. Before execution, decide output path, image count, size, quality, transparency intent, and reference images.
+5. Before execution, decide output path, image count, aspect/size, resolution, quality, transparency intent, and reference images.
 6. Call `scripts/imagegen.py`.
 7. Report output image paths, manifest path, success count, failure count, and short failure summaries.
 
@@ -88,7 +88,8 @@ $SkillDir = "$env:USERPROFILE/.codex/skills/openai-compatible-imagegen"
 python "$SkillDir/scripts/imagegen.py" generate `
   -p "Warcraft 3 style frost skill icon, single rune, centered, no text" `
   -f "outputs/frost-rune.png" `
-  --size 1024x1024 `
+  --aspect 1:1 `
+  --resolution 1K `
   --quality high
 ```
 
@@ -132,6 +133,8 @@ Core parameters:
 - `-i, --image`: reference image. Repeat for multiple images. Uses the edit endpoint.
 - `-m, --mask`: mask image for edit mode.
 - `--size`: examples include `1024x1024`, `1536x1024`, `1024x1536`, `2048x2048`, `3840x2160`.
+- `--aspect`: `1:1`, `16:9`, `4:3`, `3:4`, or `9:16`. Use this when the user describes shape but not exact pixels.
+- `--resolution`: `1K`, `2K`, or `4K`. Used with `--aspect` to choose a concrete supported size.
 - `--quality`: `low`, `medium`, `high`, or `auto`.
 - `--n`: number of images returned by one request.
 - `--format`: `png`, `jpeg`, or `webp`.
@@ -153,6 +156,8 @@ Common fields:
 - `prompt`
 - `file`
 - `size`
+- `aspect`
+- `resolution`
 - `quality`
 - `n`
 - `format`
@@ -182,6 +187,8 @@ Transparency has two layers:
 
 - prompt layer: always available; asks the model for an isolated subject and alpha-friendly edges
 - API parameter layer: only sent when `capabilities.transparent_background=true`
+
+When `background=transparent` or `--transparent` conflicts with the selected model and resolution, the script stops before sending the request. Ask the user to choose whether to switch to a transparent-capable model or keep the current model with `background=auto`.
 
 Do not promise a real alpha channel unless the backend actually returns one. Do not add local background-removal post-processing unless the user explicitly asks for that implementation.
 

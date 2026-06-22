@@ -19,18 +19,29 @@ Command flags override config defaults. Batch rows can override shared batch set
 
 ## Size Guidance
 
-| Use case | Suggested size |
-| --- | --- |
-| Icons, avatars, game items, square assets | `1024x1024` |
-| Landscape UI images, game concepts, cover drafts | `1536x1024` |
-| Portrait posters, phone wallpapers, character art | `1024x1536` |
-| High-detail square final assets | `2048x2048` |
-| 2K landscape final assets | `2048x1152` |
-| 2K portrait final assets | `1152x2048` |
-| 4K landscape final assets | `3840x2160` |
-| 4K portrait final assets | `2160x3840` |
+Use `--size` for an exact pixel request. Use `--aspect` plus `--resolution` when the user describes the image shape or clarity but not exact pixels.
 
-If `--size` is omitted, the script uses `defaults.size` from `auth.json`, then the built-in default.
+Shape choices:
+
+| User intent | Aspect |
+| --- | --- |
+| Icons, avatars, centered assets, square product images | `1:1` |
+| Wide banners, stream backdrops, covers, desktop scenes | `16:9` |
+| Landscape illustrations, UI panels, card art | `4:3` |
+| Portrait posters, character cards, vertical art | `3:4` |
+| Phone wallpapers, short-video covers, tall posters | `9:16` |
+
+Concrete mapping:
+
+| Aspect | `1K` | `2K` | `4K` |
+| --- | --- | --- | --- |
+| `1:1` | `1024x1024` | `2048x2048` | `4096x4096` |
+| `16:9` | `1536x864` | `2048x1152` | `3840x2160` |
+| `4:3` | `1536x1152` | `2048x1536` | `4096x3072` |
+| `3:4` | `1152x1536` | `1536x2048` | `3072x4096` |
+| `9:16` | `864x1536` | `1152x2048` | `2160x3840` |
+
+If `--size` is present, it wins over `--aspect` and `--resolution`. If `--size` and `--aspect` are both omitted, the script uses `defaults.size` from `auth.json`, then the built-in default.
 
 ## Quality Guidance
 
@@ -68,6 +79,23 @@ API parameter layer: sent only when the backend supports background=transparent
 
 Real alpha pixels depend on the backend response. Use `inspect-image` to verify transparency.
 
+## Transparent Background Conflicts
+
+Some backends reject transparent background for selected model and resolution combinations. The script stops before request submission for the known conflicting case:
+
+```text
+model=gpt-image-2 + background=transparent + resolution=2K or 4K
+```
+
+For explicit `--size`, the script infers this check from the longest side: values at or above 2000 pixels are treated as `2K`, and values at or above 3800 pixels are treated as `4K`.
+
+When this happens, ask the user to choose one path:
+
+1. Switch to `gpt-image-1.5` and keep transparent background.
+2. Keep `gpt-image-2` and use `background=auto`.
+
+Do not switch model, drop transparency, retry with altered parameters, or remove the background locally unless the user explicitly chooses that path.
+
 ## Batch Concurrency
 
 Batch mode uses limited concurrency:
@@ -87,6 +115,8 @@ High concurrency can trigger rate limits, failures, or unexpected cost.
 | `prompt` | Prompt text |
 | `file` | Output file path |
 | `size` | Image size |
+| `aspect` | `1:1`, `16:9`, `4:3`, `3:4`, or `9:16` |
+| `resolution` | `1K`, `2K`, or `4K` |
 | `quality` | `low`, `medium`, `high`, or `auto` |
 | `n` | Number of images returned by one request |
 | `format` | `png`, `jpeg`, or `webp` |

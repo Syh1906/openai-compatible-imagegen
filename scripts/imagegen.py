@@ -30,6 +30,26 @@ DEFAULT_MODEL = "gpt-image-2"
 DEFAULT_SIZE = "1024x1024"
 DEFAULT_QUALITY = "medium"
 DEFAULT_FORMAT = "png"
+DEFAULT_RESOLUTION = "1K"
+SUPPORTED_ASPECTS = {"1:1", "16:9", "4:3", "3:4", "9:16"}
+SUPPORTED_RESOLUTIONS = {"1K", "2K", "4K"}
+SIZE_PRESETS = {
+    ("1:1", "1K"): "1024x1024",
+    ("16:9", "1K"): "1536x864",
+    ("4:3", "1K"): "1536x1152",
+    ("3:4", "1K"): "1152x1536",
+    ("9:16", "1K"): "864x1536",
+    ("1:1", "2K"): "2048x2048",
+    ("16:9", "2K"): "2048x1152",
+    ("4:3", "2K"): "2048x1536",
+    ("3:4", "2K"): "1536x2048",
+    ("9:16", "2K"): "1152x2048",
+    ("1:1", "4K"): "4096x4096",
+    ("16:9", "4K"): "3840x2160",
+    ("4:3", "4K"): "4096x3072",
+    ("3:4", "4K"): "3072x4096",
+    ("9:16", "4K"): "2160x3840",
+}
 DEFAULT_POSTPROCESS = {
     "enabled": False,
 }
@@ -199,6 +219,65 @@ def normalize_format(value: str | None, cfg: Config) -> str:
     return "jpeg" if selected == "jpg" else selected
 
 
+def normalize_aspect(value: Any) -> str | None:
+    if value in (None, ""):
+        return None
+    selected = str(value).strip().replace(" ", "")
+    if selected not in SUPPORTED_ASPECTS:
+        raise ImagegenError(f"unsupported aspect: {selected}")
+    return selected
+
+
+def normalize_resolution(value: Any) -> str | None:
+    if value in (None, ""):
+        return None
+    selected = str(value).strip().upper()
+    if selected not in SUPPORTED_RESOLUTIONS:
+        raise ImagegenError(f"unsupported resolution: {selected}")
+    return selected
+
+
+def resolve_size(args: argparse.Namespace, cfg: Config, task: dict[str, Any]) -> tuple[str, str | None, str | None]:
+    explicit_size = get_value("size", args, task, None)
+    if explicit_size:
+        size = str(explicit_size)
+        return size, None, infer_resolution_from_size(size)
+
+    aspect = normalize_aspect(get_value("aspect", args, task, None) or cfg.defaults.get("aspect"))
+    resolution = normalize_resolution(
+        get_value("resolution", args, task, None) or cfg.defaults.get("resolution") or DEFAULT_RESOLUTION
+    )
+    if aspect:
+        assert resolution is not None
+        return SIZE_PRESETS[(aspect, resolution)], aspect, resolution
+
+    return str(cfg.defaults.get("size") or DEFAULT_SIZE), None, resolution
+
+
+def infer_resolution_from_size(size: str) -> str | None:
+    try:
+        width, height = parse_size(size)
+    except ImagegenError:
+        return None
+    longest = max(width, height)
+    if longest >= 3800:
+        return "4K"
+    if longest >= 2000:
+        return "2K"
+    return "1K"
+
+
+def validate_transparent_background_request(model: str, background: str | None, resolution: str | None) -> None:
+    if background != "transparent":
+        return
+    if model == "gpt-image-2" and resolution in {"2K", "4K"}:
+        raise ImagegenError(
+            f"transparent background with gpt-image-2 at {resolution} is not supported. "
+            "Ask the user to choose: switch to gpt-image-1.5 and keep transparent background, "
+            "or keep gpt-image-2 and use background=auto."
+        )
+
+
 def resolve_common_params(args: argparse.Namespace, cfg: Config, task: dict[str, Any] | None = None) -> dict[str, Any]:
     task = task or {}
     asset = bool(get_value("asset", args, task, False))
@@ -215,9 +294,10 @@ def resolve_common_params(args: argparse.Namespace, cfg: Config, task: dict[str,
     elif background == "transparent" and not cfg.capabilities.get("transparent_background"):
         background = None
 
-    size = get_value("size", args, task, None) or cfg.defaults.get("size") or DEFAULT_SIZE
     quality = get_value("quality", args, task, None) or cfg.defaults.get("quality") or DEFAULT_QUALITY
     model = get_value("model", args, task, None) or cfg.model
+    size, aspect, resolution = resolve_size(args, cfg, task)
+    validate_transparent_background_request(str(model), background, resolution)
     timeout = get_value("timeout", args, task, None) or cfg.defaults.get("timeout_seconds") or DEFAULT_TIMEOUT_SECONDS
     n = get_value("n", args, task, None) or 1
 
@@ -244,6 +324,8 @@ def resolve_common_params(args: argparse.Namespace, cfg: Config, task: dict[str,
     return {
         "model": str(model),
         "size": str(size),
+        "aspect": aspect,
+        "resolution": resolution,
         "quality": str(quality),
         "n": n,
         "output_format": fmt,
@@ -1087,6 +1169,8 @@ def add_generate_args(parser: argparse.ArgumentParser, edit: bool = False) -> No
 def add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--model", default=None)
     parser.add_argument("--size", default=None)
+    parser.add_argument("--aspect", default=None, choices=sorted(SUPPORTED_ASPECTS))
+    parser.add_argument("--resolution", default=None, choices=sorted(SUPPORTED_RESOLUTIONS))
     parser.add_argument("--quality", default=None, choices=["auto", "low", "medium", "high"])
     parser.add_argument("--n", type=int, default=None)
     parser.add_argument("--format", default=None, choices=["png", "jpeg", "jpg", "webp"])

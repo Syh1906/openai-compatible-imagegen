@@ -52,7 +52,8 @@
 
 脚本层支持的参数包括：
 
-- `1024x1024`、`1536x1024`、`1024x1536`、`2048x2048` 等尺寸；后端支持时也可使用 4K 类尺寸
+- `1024x1024`、`1536x1024`、`1024x1536`、`2048x2048` 等精确尺寸；后端支持时也可使用 4K 类尺寸
+- 通过 `--aspect`（`1:1`、`16:9`、`4:3`、`3:4`、`9:16`）和 `--resolution`（`1K`、`2K`、`4K`）按形状和清晰度选择尺寸
 - `low`、`medium`、`high`、`auto` 质量参数
 - `png`、`jpeg`、`webp` 输出格式
 - 仅当 `capabilities.transparent_background=true` 时发送 `background=transparent`
@@ -135,6 +136,8 @@ python "$SkillDir/scripts/imagegen.py" info
 示例：
 
 - “使用 OpenAI 兼容图片生成 skill，生成一张 `1024x1024` 的 Warcraft 3 风格冰霜技能图标，不要文字，最终 PNG 存到 `outputs/`。”
+- “生成一张 `16:9`、`2K` 的直播卖货横幅，风格是商品展示海报，保存为 WebP。”
+- “生成一张 `9:16`、`4K` 的手机壁纸，主题是赛博朋克集市。”
 - “创建一个透明背景的物品素材，主体是居中的火焰宝珠。如果后端支持真实 alpha，就输出透明 PNG。”
 - “生成一张 `3x3` 的游戏物品候选图，然后拆成 9 张独立的 `128x128` PNG。”
 - “使用这张参考图，把它转换成暗黑魔法 UI 风格，结果保留为 PNG。”
@@ -154,8 +157,21 @@ python "$SkillDir/scripts/imagegen.py" info
 python "$SkillDir/scripts/imagegen.py" generate `
   -p "Warcraft 3 style frost skill icon, single rune, centered, no text" `
   -f "outputs/frost-rune.png" `
-  --size 1024x1024 `
+  --aspect 1:1 `
+  --resolution 1K `
   --quality high
+```
+
+按形状和清晰度选择尺寸：
+
+```powershell
+python "$SkillDir/scripts/imagegen.py" generate `
+  -p "Livestream shopping banner for discounted transit-station tokens, bold product showcase style" `
+  -f "outputs/token-banner.webp" `
+  --aspect 16:9 `
+  --resolution 2K `
+  --format webp `
+  --quality medium
 ```
 
 参考图编辑：
@@ -185,6 +201,8 @@ python "$SkillDir/scripts/imagegen.py" generate `
   --asset `
   --transparent
 ```
+
+如果所选模型和分辨率不支持透明背景，脚本会在发送请求前停止。此时选择一种路径：切换到支持透明背景的模型并保留透明，或保留当前模型并改用 `background=auto`。
 
 可选后处理：
 
@@ -227,6 +245,8 @@ API 请求尺寸和最终交付尺寸是两件事。例如后端可能返回 `10
 - `model`：`generate`、`edit`、`batch` 默认使用的图片模型。
 - `capabilities.transparent_background`：只有接口接受 `background=transparent` 时才设为 `true`。
 - `defaults.size`：未传 `--size` 时使用的 API 请求尺寸。
+- `defaults.aspect`：未传 `--size` 时，可与 `defaults.resolution` 搭配使用的默认比例。
+- `defaults.resolution`：未传 `--size` 时，可与 `defaults.aspect` 搭配使用的默认 `1K`、`2K` 或 `4K` 清晰度。
 - `defaults.quality`：未传 `--quality` 时使用的质量参数。
 - `defaults.output_format`：未传 `--format` 时使用的输出格式。
 - `defaults.timeout_seconds`：单次请求超时时间，单位秒。
