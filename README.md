@@ -67,7 +67,7 @@ Backend parameter support varies. Keep command flags and `auth.json` defaults al
 
 ### From Release Package
 
-Download `openai-compatible-imagegen-v0.1.1.zip` from [Releases](https://github.com/Syh1906/openai-compatible-imagegen/releases), then extract it into a skills directory supported by your agent client.
+Download the latest `openai-compatible-imagegen-<latest>.zip` from [Releases](https://github.com/Syh1906/openai-compatible-imagegen/releases), then extract it into a skills directory supported by your agent client.
 
 ### From Git
 

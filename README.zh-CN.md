@@ -67,7 +67,7 @@
 
 ### 从发布包安装
 
-从 [Releases](https://github.com/Syh1906/openai-compatible-imagegen/releases) 下载 `openai-compatible-imagegen-v0.1.1.zip`，然后解压到你的 agent 客户端支持的 skills 目录。
+从 [Releases](https://github.com/Syh1906/openai-compatible-imagegen/releases) 下载最新的 `openai-compatible-imagegen-<latest>.zip`，然后解压到你的 agent 客户端支持的 skills 目录。
 
 ### 从 Git 安装
 
