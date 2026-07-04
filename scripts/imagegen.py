@@ -82,8 +82,8 @@ def load_config(require_api_key: bool = True) -> Config:
     if not AUTH_PATH.is_file():
         raise ImagegenError(
             f"missing auth.json: {display_path(AUTH_PATH)}\n"
-            f"Run: python {display_path(Path(__file__).resolve())} init\n"
-            "Then edit auth.json or set the configured api_key_env environment variable."
+            f"Run: python {display_path(Path(__file__).resolve().with_name('quick-init.py'))}\n"
+            "Then run info to confirm the redacted configuration summary."
         )
     try:
         raw = json.loads(AUTH_PATH.read_text(encoding="utf-8-sig"))
@@ -251,7 +251,8 @@ def resolve_size(args: argparse.Namespace, cfg: Config, task: dict[str, Any]) ->
         assert resolution is not None
         return SIZE_PRESETS[(aspect, resolution)], aspect, resolution
 
-    return str(cfg.defaults.get("size") or DEFAULT_SIZE), None, resolution
+    size = str(cfg.defaults.get("size") or DEFAULT_SIZE)
+    return size, None, infer_resolution_from_size(size)
 
 
 def infer_resolution_from_size(size: str) -> str | None:

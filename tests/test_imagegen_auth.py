@@ -169,6 +169,12 @@ class AuthConfigTests(unittest.TestCase):
         self.assertEqual(cfg.api_key, "")
         self.assertEqual(cfg.api_key_source, "missing")
 
+    def test_missing_auth_message_points_to_quick_init(self) -> None:
+        with self.assertRaises(self.imagegen.ImagegenError) as ctx:
+            self.imagegen.load_config(require_api_key=False)
+
+        self.assertIn("quick-init.py", str(ctx.exception))
+
     def test_postprocess_config_defaults_to_disabled_when_missing(self) -> None:
         self.auth_path.write_text(
             json.dumps(
@@ -260,6 +266,24 @@ class ParameterResolutionTests(unittest.TestCase):
             "transparent background with gpt-image-2 at 2K is not supported",
         ):
             self.imagegen.resolve_common_params(args, self.cfg)
+
+    def test_resolve_common_params_rejects_transparent_default_2k_size_on_gpt_image_2(self) -> None:
+        args = self.make_args(background="transparent")
+        cfg = self.imagegen.Config(
+            base_url="https://example.test/v1",
+            api_key="secret",
+            api_key_source="test",
+            model="gpt-image-2",
+            defaults={"size": "2048x2048"},
+            capabilities={"transparent_background": True},
+            postprocess={"enabled": False},
+        )
+
+        with self.assertRaisesRegex(
+            self.imagegen.ImagegenError,
+            "transparent background with gpt-image-2 at 2K is not supported",
+        ):
+            self.imagegen.resolve_common_params(args, cfg)
 
 
 class PostprocessImageTests(unittest.TestCase):

@@ -9,7 +9,7 @@ Use this skill to call the bundled image generation script. Do not rewrite the A
 
 ## Workflow
 
-1. Run `info` first to inspect the local configuration. If `auth.json` is missing, run `init`.
+1. Run `info` first to inspect the local configuration. If `auth.json` is missing, run `scripts/quick-init.py`.
 2. Choose the mode:
    - `generate`: text-to-image
    - `edit`: image editing, inpainting, or reference-image generation
@@ -36,22 +36,29 @@ For explicit post-processing, delivery-size normalization, image inspection, or 
 
 The private config file is always `auth.json` in this skill directory. It is local-only and must not be committed.
 
-Initialize it:
+Initialize it after installation:
 
 ```powershell
 $SkillDir = "$env:USERPROFILE/.codex/skills/openai-compatible-imagegen"
-python "$SkillDir/scripts/imagegen.py" init
+python "$SkillDir/scripts/quick-init.py"
 ```
 
-Initialize non-secret fields:
+The wizard asks for the API base URL, image model, auth method, and whether the backend supports transparent backgrounds. Prefer `api_key_env` so the secret stays in an environment variable.
+
+For scripted setup with environment-variable auth:
 
 ```powershell
 $SkillDir = "$env:USERPROFILE/.codex/skills/openai-compatible-imagegen"
-python "$SkillDir/scripts/imagegen.py" init `
+python "$SkillDir/scripts/quick-init.py" `
+  --non-interactive `
   --base-url "https://example.com/v1" `
   --model "gpt-image-2" `
-  --api-key-env "OPENAI_API_KEY"
+  --auth-method env `
+  --api-key-env "OPENAI_API_KEY" `
+  --transparent-background
 ```
+
+The lower-level `imagegen.py init` command is still available when you only need to copy the template or reproduce older setup steps.
 
 API key options:
 

@@ -97,17 +97,27 @@ skill 目录根部必须包含 `SKILL.md`。
 
 ```powershell
 $SkillDir = "$env:USERPROFILE/.codex/skills/openai-compatible-imagegen"
-python "$SkillDir/scripts/imagegen.py" init
+python "$SkillDir/scripts/quick-init.py"
 ```
 
-也可以在初始化时写入非敏感字段：
+向导会询问：
+
+- API 基础地址，通常以 `/v1` 结尾
+- 图片模型
+- 认证方式，推荐使用环境变量
+- 后端是否支持透明背景
+
+如果要用非交互方式配置环境变量认证：
 
 ```powershell
 $SkillDir = "$env:USERPROFILE/.codex/skills/openai-compatible-imagegen"
-python "$SkillDir/scripts/imagegen.py" init `
+python "$SkillDir/scripts/quick-init.py" `
+  --non-interactive `
   --base-url "https://example.com/v1" `
   --model "gpt-image-2" `
-  --api-key-env "OPENAI_API_KEY"
+  --auth-method env `
+  --api-key-env "OPENAI_API_KEY" `
+  --transparent-background
 ```
 
 `auth.json` 是本地私有文件，已被 git 忽略。密钥支持两种写法：
@@ -116,6 +126,8 @@ python "$SkillDir/scripts/imagegen.py" init `
 - 在 `auth.json` 写 `api_key_env`，再把 key 放入对应环境变量。
 
 如果两者同时存在，脚本优先使用 `api_key`。如果 `api_key` 仍是模板占位值，脚本才读取 `api_key_env`。
+
+底层的 `imagegen.py init` 命令仍然保留，适合只需要复制模板或复现旧初始化步骤时使用。
 
 检查配置摘要：
 

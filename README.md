@@ -97,17 +97,27 @@ Create the local private config before first use:
 
 ```powershell
 $SkillDir = "$env:USERPROFILE/.codex/skills/openai-compatible-imagegen"
-python "$SkillDir/scripts/imagegen.py" init
+python "$SkillDir/scripts/quick-init.py"
 ```
 
-You can initialize non-secret fields:
+The wizard asks for:
+
+- API base URL, usually ending in `/v1`
+- image model
+- auth method, with environment variable auth recommended
+- whether the backend supports transparent backgrounds
+
+For scripted setup with environment-variable auth:
 
 ```powershell
 $SkillDir = "$env:USERPROFILE/.codex/skills/openai-compatible-imagegen"
-python "$SkillDir/scripts/imagegen.py" init `
+python "$SkillDir/scripts/quick-init.py" `
+  --non-interactive `
   --base-url "https://example.com/v1" `
   --model "gpt-image-2" `
-  --api-key-env "OPENAI_API_KEY"
+  --auth-method env `
+  --api-key-env "OPENAI_API_KEY" `
+  --transparent-background
 ```
 
 `auth.json` is local and ignored by git. You can provide the API key in either way:
@@ -116,6 +126,8 @@ python "$SkillDir/scripts/imagegen.py" init `
 - Set `api_key_env` in `auth.json`, then put the key in that environment variable.
 
 When both are present, the script prefers `api_key`. If `api_key` is still the template placeholder, the script reads `api_key_env`.
+
+The lower-level `imagegen.py init` command remains available when you only need to copy the template or reproduce older setup steps.
 
 Check the config summary:
 
