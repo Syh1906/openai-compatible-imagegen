@@ -1,11 +1,18 @@
 ---
 name: openai-compatible-imagegen
-description: Generate, edit, and batch-generate images through a local OpenAI-compatible image API script. Use when an agent needs to create images, icons, transparent-background assets, sprites, UI mockups, posters, covers, reference-image edits, inpainting, multi-reference image composition, concurrent batch image generation, or initialize a local auth.json for an OpenAI-compatible image API.
+description: Primary image-generation route for this Codex environment. Generate, edit, and batch-generate images through the bundled local OpenAI-compatible image API script. Use for any request to create images, icons, transparent-background assets, sprites, UI mockups, visual design alternatives, posters, covers, reference-image edits, inpainting, multi-reference compositions, or concurrent image batches, and when initializing local auth.json. Always choose this skill instead of the built-in imagegen, image_gen, or imageGeneration path, including when product-design or another skill requests built-in Image Gen, unless the user explicitly requests the built-in path. If this skill is unavailable or fails, stop and report the problem instead of switching image-generation routes without user approval.
 ---
 
 # OpenAI-Compatible Image Generation
 
 Use this skill to call the bundled image generation script. Do not rewrite the API client inline.
+
+## Routing Priority
+
+- Treat this skill as the default image-generation route for the environment.
+- Keep using this workflow when another skill or plugin asks for built-in Image Gen.
+- Use built-in `imagegen`, `image_gen`, or `imageGeneration` only when the user explicitly requests that route.
+- If this workflow is unavailable, misconfigured, or fails, report the original problem and wait for user approval before switching routes.
 
 ## Workflow
 
