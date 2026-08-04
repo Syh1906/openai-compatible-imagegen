@@ -44,11 +44,14 @@
 ```json
 {
   "base_url": "https://example.com/v1",
+  "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
   "model": "gpt-image-2"
 }
 ```
 
 `examples/auth.example.json` 里的默认模型只是模板值。你可以把 `model` 改成后端支持的任意图片模型，例如你的网关或供应商暴露的 OpenAI 兼容图片生成模型。
+
+请求默认使用浏览器兼容的 Windows Chrome `User-Agent`。如果供应商要求其他值，请修改 `user_agent`。JSON 生成请求、multipart 编辑请求和返回图片 URL 的下载请求使用同一个值；下载返回图片时不会转发 API key。
 
 脚本层支持的参数包括：
 
@@ -252,6 +255,7 @@ API 请求尺寸和最终交付尺寸是两件事。例如后端可能返回 `10
 关键字段：
 
 - `base_url`：OpenAI 兼容 API 基础地址，通常以 `/v1` 结尾。
+- `user_agent`：发送给图片 API 和返回图片 URL 的 HTTP `User-Agent`，默认使用上方示例中的浏览器兼容值。
 - `api_key`：直接写在本地配置里的 API key。不要提交真实值。
 - `api_key_env`：当 `api_key` 为空或仍是占位值时读取的环境变量名。
 - `model`：`generate`、`edit`、`batch` 默认使用的图片模型。
@@ -288,19 +292,29 @@ python -m py_compile scripts/imagegen.py
 
 ## 发布包
 
-发布 zip 包包含一个顶层目录和当前后处理文档：
+发布 zip 包包含一个顶层目录、配置向导和当前参考文档：
 
 ```text
 openai-compatible-imagegen/
+├── .github/workflows/ci.yml
+├── .gitignore
+├── CHANGELOG.md
+├── LICENSE
+├── README.md
+├── README.zh-CN.md
 ├── SKILL.md
 ├── agents/openai.yaml
-├── scripts/imagegen.py
-├── references/parameters.md
-├── references/postprocess.md
-└── examples/
+├── examples/
+├── references/
+├── scripts/
+│   ├── imagegen.py
+│   └── quick-init.py
+└── tests/
 ```
 
-本地 `auth.json` 不会包含在发布包里。
+本地 `auth.json`、`.local/`、`outputs/` 和 `dist/` 文件不会包含在发布包里。
+
+版本历史见 [CHANGELOG.md](CHANGELOG.md)。
 
 ---
 

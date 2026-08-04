@@ -44,11 +44,14 @@ This skill targets OpenAI-compatible image APIs that expose the following endpoi
 ```json
 {
   "base_url": "https://example.com/v1",
+  "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
   "model": "gpt-image-2"
 }
 ```
 
 The default model in `examples/auth.example.json` is only a template value. Set `model` to any image model supported by your backend, such as an OpenAI-compatible image generation model exposed by your gateway or provider.
+
+Requests use a browser-compatible Windows Chrome `User-Agent` by default. Set `user_agent` to a different value when your provider requires one. The same value is used for JSON generation requests, multipart edit requests, and returned image URL downloads. Credentials are not forwarded to returned image URLs.
 
 Supported script-level options include:
 
@@ -252,6 +255,7 @@ The image API request size and the final delivery size are separate. For example
 Important fields:
 
 - `base_url`: OpenAI-compatible API base URL, usually ending in `/v1`.
+- `user_agent`: HTTP `User-Agent` sent to the image API and returned image URLs. Defaults to the browser-compatible value shown above.
 - `api_key`: API key stored directly in the local config. Do not commit real values.
 - `api_key_env`: Environment variable name used when `api_key` is empty or still a placeholder.
 - `model`: Default image model for `generate`, `edit`, and `batch`.
@@ -288,19 +292,29 @@ Tests do not call the image API.
 
 ## Release Package
 
-The release zip contains one top-level folder and the current post-processing documentation:
+The release zip contains one top-level folder, the setup wizard, and the current reference documentation:
 
 ```text
 openai-compatible-imagegen/
+├── .github/workflows/ci.yml
+├── .gitignore
+├── CHANGELOG.md
+├── LICENSE
+├── README.md
+├── README.zh-CN.md
 ├── SKILL.md
 ├── agents/openai.yaml
-├── scripts/imagegen.py
-├── references/parameters.md
-├── references/postprocess.md
-└── examples/
+├── examples/
+├── references/
+├── scripts/
+│   ├── imagegen.py
+│   └── quick-init.py
+└── tests/
 ```
 
-Local `auth.json` is not included.
+Local `auth.json`, `.local/`, `outputs/`, and `dist/` files are not included.
+
+See [CHANGELOG.md](CHANGELOG.md) for version history.
 
 ---
 

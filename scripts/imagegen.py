@@ -31,6 +31,11 @@ DEFAULT_SIZE = "1024x1024"
 DEFAULT_QUALITY = "medium"
 DEFAULT_FORMAT = "png"
 DEFAULT_RESOLUTION = "1K"
+DEFAULT_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/131.0.0.0 Safari/537.36"
+)
 SUPPORTED_ASPECTS = {"1:1", "16:9", "4:3", "3:4", "9:16"}
 SUPPORTED_RESOLUTIONS = {"1K", "2K", "4K"}
 SIZE_PRESETS = {
@@ -76,6 +81,7 @@ class Config:
     defaults: dict[str, Any]
     capabilities: dict[str, Any]
     postprocess: dict[str, Any]
+    user_agent: str = DEFAULT_USER_AGENT
 
 
 def load_config(require_api_key: bool = True) -> Config:
@@ -95,6 +101,7 @@ def load_config(require_api_key: bool = True) -> Config:
     api_key_env = str(raw.get("api_key_env") or "").strip()
     api_key, api_key_source = resolve_api_key(file_api_key, api_key_env)
     model = str(raw.get("model") or DEFAULT_MODEL).strip()
+    user_agent = resolve_user_agent(raw.get("user_agent"))
     defaults = raw.get("defaults") if isinstance(raw.get("defaults"), dict) else {}
     capabilities = raw.get("capabilities") if isinstance(raw.get("capabilities"), dict) else {}
     postprocess = resolve_postprocess_config(raw.get("postprocess"))
@@ -113,6 +120,7 @@ def load_config(require_api_key: bool = True) -> Config:
         defaults=defaults,
         capabilities=capabilities,
         postprocess=postprocess,
+        user_agent=user_agent,
     )
 
 
@@ -123,6 +131,13 @@ def resolve_postprocess_config(value: Any) -> dict[str, Any]:
             if key in value:
                 cfg[key] = bool(value[key])
     return cfg
+
+
+def resolve_user_agent(value: Any) -> str:
+    user_agent = str(value or DEFAULT_USER_AGENT).strip()
+    if any(ord(char) < 32 or ord(char) == 127 for char in user_agent):
+        raise ImagegenError("auth.json user_agent must not contain control characters")
+    return user_agent
 
 
 def resolve_api_key(file_api_key: str, api_key_env: str) -> tuple[str, str]:
@@ -375,11 +390,7 @@ def request_json(cfg: Config, path: str, payload: dict[str, Any], timeout: int) 
         api_url(cfg, path),
         data=body,
         method="POST",
-        headers={
-            "Authorization": f"Bearer {cfg.api_key}",
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        },
+        headers=request_headers(cfg, "application/json"),
     )
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -404,11 +415,7 @@ def request_multipart(
         api_url(cfg, path),
         data=body,
         method="POST",
-        headers={
-            "Authorization": f"Bearer {cfg.api_key}",
-            "Content-Type": f"multipart/form-data; boundary={boundary}",
-            "Accept": "application/json",
-        },
+        headers=request_headers(cfg, f"multipart/form-data; boundary={boundary}"),
     )
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -418,6 +425,15 @@ def request_multipart(
         raise ImagegenError(f"API HTTP {exc.code}: {detail}") from exc
     except urllib.error.URLError as exc:
         raise ImagegenError(f"API request failed: {exc.reason}") from exc
+
+
+def request_headers(cfg: Config, content_type: str) -> dict[str, str]:
+    return {
+        "Authorization": f"Bearer {cfg.api_key}",
+        "Content-Type": content_type,
+        "Accept": "application/json",
+        "User-Agent": cfg.user_agent,
+    }
 
 
 def build_multipart_body(boundary: str, fields: dict[str, Any], files: list[tuple[str, Path]]) -> bytes:
@@ -483,7 +499,7 @@ def generate(cfg: Config, args: argparse.Namespace, task: dict[str, Any] | None 
         "output_compression": params["output_compression"],
     }
     response = request_json(cfg, "images/generations", payload, params["timeout"])
-    written = write_response_images(response, out_file, params["output_format"])
+    written = write_response_images(response, out_file, params["output_format"], cfg.user_agent)
     return success_record(task, prompt, "generate", written, params)
 
 
@@ -517,7 +533,7 @@ def edit(cfg: Config, args: argparse.Namespace, task: dict[str, Any] | None = No
     if mask_path:
         files.append(("mask", mask_path))
     response = request_multipart(cfg, "images/edits", fields, files, params["timeout"])
-    written = write_response_images(response, out_file, params["output_format"])
+    written = write_response_images(response, out_file, params["output_format"], cfg.user_agent)
     return success_record(task, prompt, "edit", written, params)
 
 
@@ -539,7 +555,12 @@ def resolve_output_file(args: argparse.Namespace, task: dict[str, Any], fmt: str
     return out_dir / f"{name}.{fmt}"
 
 
-def write_response_images(response: dict[str, Any], out_file: Path, fmt: str) -> list[str]:
+def write_response_images(
+    response: dict[str, Any],
+    out_file: Path,
+    fmt: str,
+    user_agent: str = DEFAULT_USER_AGENT,
+) -> list[str]:
     data = response.get("data")
     if not isinstance(data, list) or not data:
         raise ImagegenError("API response did not include data images")
@@ -548,7 +569,7 @@ def write_response_images(response: dict[str, Any], out_file: Path, fmt: str) ->
     for index, item in enumerate(data):
         if not isinstance(item, dict):
             continue
-        raw = decode_image_item(item)
+        raw = decode_image_item(item, user_agent)
         target = numbered_path(out_file, index, len(data), fmt)
         target.write_bytes(raw)
         written.append(str(target))
@@ -557,13 +578,17 @@ def write_response_images(response: dict[str, Any], out_file: Path, fmt: str) ->
     return written
 
 
-def decode_image_item(item: dict[str, Any]) -> bytes:
+def decode_image_item(item: dict[str, Any], user_agent: str = DEFAULT_USER_AGENT) -> bytes:
     b64_value = item.get("b64_json")
     if isinstance(b64_value, str) and b64_value.strip():
         return base64.b64decode(strip_data_url_prefix(b64_value))
     url = item.get("url")
     if isinstance(url, str) and url.strip():
-        with urllib.request.urlopen(url, timeout=DEFAULT_TIMEOUT_SECONDS) as resp:
+        request = urllib.request.Request(
+            url,
+            headers={"Accept": "image/*", "User-Agent": user_agent},
+        )
+        with urllib.request.urlopen(request, timeout=DEFAULT_TIMEOUT_SECONDS) as resp:
             return resp.read()
     raise ImagegenError("image item has neither b64_json nor url")
 
@@ -1068,6 +1093,7 @@ def info(cfg: Config) -> int:
     defaults = {
         "model": cfg.model,
         "base_url": cfg.base_url,
+        "user_agent": cfg.user_agent,
         "capabilities": cfg.capabilities,
         "defaults": cfg.defaults,
         "postprocess": cfg.postprocess,

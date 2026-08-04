@@ -7,6 +7,7 @@ from pathlib import Path
 import sys
 from types import SimpleNamespace
 import unittest
+from unittest import mock
 import zlib
 
 
@@ -190,6 +191,128 @@ class AuthConfigTests(unittest.TestCase):
         cfg = self.imagegen.load_config()
 
         self.assertFalse(cfg.postprocess["enabled"])
+
+    def test_load_config_uses_default_user_agent_when_missing(self) -> None:
+        self.auth_path.write_text(
+            json.dumps(
+                {
+                    "base_url": "https://images.example.test/v1",
+                    "api_key": "file-secret",
+                    "model": "gpt-image-2",
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        cfg = self.imagegen.load_config()
+
+        self.assertEqual(cfg.user_agent, self.imagegen.DEFAULT_USER_AGENT)
+        self.assertTrue(cfg.user_agent.startswith("Mozilla/5.0"))
+
+    def test_load_config_uses_custom_user_agent(self) -> None:
+        self.auth_path.write_text(
+            json.dumps(
+                {
+                    "base_url": "https://images.example.test/v1",
+                    "api_key": "file-secret",
+                    "model": "gpt-image-2",
+                    "user_agent": "Micu-Compatible-Client/1.0",
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        cfg = self.imagegen.load_config()
+
+        self.assertEqual(cfg.user_agent, "Micu-Compatible-Client/1.0")
+
+    def test_load_config_rejects_user_agent_with_control_characters(self) -> None:
+        self.auth_path.write_text(
+            json.dumps(
+                {
+                    "base_url": "https://images.example.test/v1",
+                    "api_key": "file-secret",
+                    "model": "gpt-image-2",
+                    "user_agent": "allowed\r\nX-Injected: true",
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        with self.assertRaisesRegex(self.imagegen.ImagegenError, "user_agent"):
+            self.imagegen.load_config()
+
+
+class RequestHeaderTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.imagegen = load_imagegen()
+        self.cfg = self.imagegen.Config(
+            base_url="https://example.test/v1",
+            api_key="secret",
+            api_key_source="test",
+            model="gpt-image-2",
+            defaults={},
+            capabilities={},
+            postprocess={"enabled": False},
+            user_agent="Micu-Compatible-Client/1.0",
+        )
+
+    def mock_json_response(self):
+        response = mock.MagicMock()
+        response.__enter__.return_value = response
+        response.read.return_value = b'{"data": []}'
+        return response
+
+    def test_request_json_sends_configured_user_agent(self) -> None:
+        with mock.patch.object(
+            self.imagegen.urllib.request,
+            "urlopen",
+            return_value=self.mock_json_response(),
+        ) as urlopen:
+            self.imagegen.request_json(self.cfg, "images/generations", {"prompt": "test"}, 10)
+
+        request = urlopen.call_args.args[0]
+        self.assertEqual(request.get_header("User-agent"), "Micu-Compatible-Client/1.0")
+        self.assertEqual(request.get_header("Authorization"), "Bearer secret")
+
+    def test_request_multipart_sends_configured_user_agent(self) -> None:
+        with mock.patch.object(
+            self.imagegen.urllib.request,
+            "urlopen",
+            return_value=self.mock_json_response(),
+        ) as urlopen:
+            self.imagegen.request_multipart(self.cfg, "images/edits", {"prompt": "test"}, [], 10)
+
+        request = urlopen.call_args.args[0]
+        self.assertEqual(request.get_header("User-agent"), "Micu-Compatible-Client/1.0")
+        self.assertEqual(request.get_header("Authorization"), "Bearer secret")
+
+    def test_url_image_download_sends_user_agent_without_authorization(self) -> None:
+        response = mock.MagicMock()
+        response.__enter__.return_value = response
+        response.read.return_value = b"image-bytes"
+        with mock.patch.object(
+            self.imagegen.urllib.request,
+            "urlopen",
+            return_value=response,
+        ) as urlopen:
+            result = self.imagegen.decode_image_item(
+                {"url": "https://cdn.example.test/image.png"},
+                self.cfg.user_agent,
+            )
+
+        request = urlopen.call_args.args[0]
+        self.assertEqual(result, b"image-bytes")
+        self.assertEqual(request.get_header("User-agent"), "Micu-Compatible-Client/1.0")
+        self.assertIsNone(request.get_header("Authorization"))
+
+    def test_info_reports_effective_user_agent(self) -> None:
+        with mock.patch("builtins.print") as print_mock:
+            self.imagegen.info(self.cfg)
+
+        summary = json.loads(print_mock.call_args.args[0])
+        self.assertEqual(summary["user_agent"], "Micu-Compatible-Client/1.0")
+        self.assertEqual(summary["api_key"], "***REDACTED***")
 
 
 class ParameterResolutionTests(unittest.TestCase):
