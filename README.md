@@ -45,6 +45,7 @@ This skill targets OpenAI-compatible image APIs that expose the following endpoi
 {
   "base_url": "https://example.com/v1",
   "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+  "url_download": { "proxy_mode": "environment" },
   "model": "gpt-image-2"
 }
 ```
@@ -52,6 +53,10 @@ This skill targets OpenAI-compatible image APIs that expose the following endpoi
 The default model in `examples/auth.example.json` is only a template value. Set `model` to any image model supported by your backend, such as an OpenAI-compatible image generation model exposed by your gateway or provider.
 
 Requests use a browser-compatible Windows Chrome `User-Agent` by default. Set `user_agent` to a different value when your provider requires one. The same value is used for JSON generation requests, multipart edit requests, and returned image URL downloads. Credentials are not forwarded to returned image URLs.
+
+Image responses may contain either `data[].b64_json` or `data[].url`. The script detects the returned field instead of sending `response_format`, which is not supported by GPT Image models. Returned URLs must use HTTP(S), and downloaded PNG, JPEG, or WebP files are checked for completeness.
+
+If an image URL repeatedly ends with a TLS EOF through your proxy, the error offers two explicit direct-download choices. Use `--allow-direct-url-download` for the current command, or set `url_download.proxy_mode="direct"` for a known provider. Both choices route returned image URLs directly from the first download attempt and retry one direct TLS EOF once; image API requests still use the normal environment, and API credentials are never forwarded. Keep `proxy_mode="environment"` unless you accept that the image host will receive a direct connection from your machine.
 
 Supported script-level options include:
 
@@ -256,6 +261,7 @@ Important fields:
 
 - `base_url`: OpenAI-compatible API base URL, usually ending in `/v1`.
 - `user_agent`: HTTP `User-Agent` sent to the image API and returned image URLs. Defaults to the browser-compatible value shown above.
+- `url_download.proxy_mode`: `environment` uses the configured proxy environment; `direct` persistently downloads returned image URLs without it. Defaults to `environment`.
 - `api_key`: API key stored directly in the local config. Do not commit real values.
 - `api_key_env`: Environment variable name used when `api_key` is empty or still a placeholder.
 - `model`: Default image model for `generate`, `edit`, and `batch`.

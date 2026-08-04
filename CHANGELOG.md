@@ -2,6 +2,21 @@
 
 This file records user-visible changes for each release of `openai-compatible-imagegen`.
 
+## [0.1.4] - 2026-08-04
+
+### Added
+
+- Add one-shot `--allow-direct-url-download` and persistent `url_download.proxy_mode=direct` authorization for direct image URL downloads.
+
+### Changed
+
+- Start direct image URL downloads without first attempting the configured proxy, while keeping image API requests on the normal network path.
+
+### Fixed
+
+- Accept both Base64 and URL image responses without sending the DALL-E-only `response_format` parameter.
+- Validate downloaded PNG, JPEG, and WebP files and report incomplete URL responses without exposing signed query parameters.
+
 ## [0.1.3] - 2026-08-04
 
 ### Added
@@ -41,6 +56,7 @@ This file records user-visible changes for each release of `openai-compatible-im
 - Publish the initial Agent Skills-compatible image generation workflow.
 - Support OpenAI-compatible image generation, image editing, local authentication, transparent asset intent, and JSONL batches.
 
+[0.1.4]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/Syh1906/openai-compatible-imagegen/releases/tag/v0.1.2
 [0.1.1]: https://github.com/Syh1906/openai-compatible-imagegen/releases/tag/v0.1.1

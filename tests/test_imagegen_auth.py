@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import importlib.util
+import http.client
 import json
 import os
 from pathlib import Path
+import ssl
 import sys
 from types import SimpleNamespace
 import unittest
@@ -192,6 +194,58 @@ class AuthConfigTests(unittest.TestCase):
 
         self.assertFalse(cfg.postprocess["enabled"])
 
+    def test_url_download_proxy_mode_defaults_to_environment(self) -> None:
+        self.auth_path.write_text(
+            json.dumps(
+                {
+                    "base_url": "https://images.example.test/v1",
+                    "api_key": "file-secret",
+                    "model": "gpt-image-2",
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        cfg = self.imagegen.load_config()
+
+        self.assertEqual(cfg.url_download["proxy_mode"], "environment")
+
+    def test_load_config_enables_direct_url_download_mode(self) -> None:
+        self.auth_path.write_text(
+            json.dumps(
+                {
+                    "base_url": "https://images.example.test/v1",
+                    "api_key": "file-secret",
+                    "model": "gpt-image-2",
+                    "url_download": {"proxy_mode": "direct"},
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        cfg = self.imagegen.load_config()
+
+        self.assertEqual(cfg.url_download["proxy_mode"], "direct")
+
+    def test_load_config_rejects_invalid_url_download_proxy_mode(self) -> None:
+        self.auth_path.write_text(
+            json.dumps(
+                {
+                    "base_url": "https://images.example.test/v1",
+                    "api_key": "file-secret",
+                    "model": "gpt-image-2",
+                    "url_download": {"proxy_mode": "automatic"},
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        with self.assertRaisesRegex(
+            self.imagegen.ImagegenError,
+            "url_download.proxy_mode must be environment or direct",
+        ):
+            self.imagegen.load_config()
+
     def test_load_config_uses_default_user_agent_when_missing(self) -> None:
         self.auth_path.write_text(
             json.dumps(
@@ -288,9 +342,10 @@ class RequestHeaderTests(unittest.TestCase):
         self.assertEqual(request.get_header("Authorization"), "Bearer secret")
 
     def test_url_image_download_sends_user_agent_without_authorization(self) -> None:
+        image_bytes = PNG_SIGNATURE + b"\x00\x00\x00\x00IEND\xaeB`\x82"
         response = mock.MagicMock()
         response.__enter__.return_value = response
-        response.read.return_value = b"image-bytes"
+        response.read.return_value = image_bytes
         with mock.patch.object(
             self.imagegen.urllib.request,
             "urlopen",
@@ -302,9 +357,183 @@ class RequestHeaderTests(unittest.TestCase):
             )
 
         request = urlopen.call_args.args[0]
-        self.assertEqual(result, b"image-bytes")
+        self.assertEqual(result, image_bytes)
         self.assertEqual(request.get_header("User-agent"), "Micu-Compatible-Client/1.0")
         self.assertIsNone(request.get_header("Authorization"))
+
+    def test_url_image_download_retries_tls_eof_once(self) -> None:
+        tls_eof = self.imagegen.urllib.error.URLError(
+            ssl.SSLEOFError(8, "UNEXPECTED_EOF_WHILE_READING")
+        )
+        image_bytes = PNG_SIGNATURE + b"\x00\x00\x00\x00IEND\xaeB`\x82"
+        response = mock.MagicMock()
+        response.__enter__.return_value = response
+        response.read.return_value = image_bytes
+
+        with mock.patch.object(
+            self.imagegen.urllib.request,
+            "urlopen",
+            side_effect=[tls_eof, response],
+        ) as urlopen:
+            result = self.imagegen.decode_image_item(
+                {"url": "https://cdn.example.test/signed-image.png?secret=value"},
+                self.cfg.user_agent,
+            )
+
+        self.assertEqual(result, image_bytes)
+        self.assertEqual(urlopen.call_count, 2)
+
+    def test_url_image_download_uses_direct_connection_immediately_when_enabled(self) -> None:
+        image_bytes = PNG_SIGNATURE + b"\x00\x00\x00\x00IEND\xaeB`\x82"
+        response = mock.MagicMock()
+        response.__enter__.return_value = response
+        response.read.return_value = image_bytes
+        opener = mock.MagicMock()
+        opener.open.return_value = response
+
+        with (
+            mock.patch.object(self.imagegen.urllib.request, "urlopen") as urlopen,
+            mock.patch.object(
+                self.imagegen.urllib.request,
+                "build_opener",
+                return_value=opener,
+            ) as build_opener,
+        ):
+            result = self.imagegen.decode_image_item(
+                {"url": "https://cdn.example.test/image.png"},
+                self.cfg.user_agent,
+                direct_url_download=True,
+            )
+
+        self.assertEqual(result, image_bytes)
+        urlopen.assert_not_called()
+        build_opener.assert_called_once()
+        self.assertEqual(build_opener.call_args.args[0].proxies, {})
+        opener.open.assert_called_once()
+
+    def test_url_image_download_retries_direct_connection_after_tls_eof(self) -> None:
+        tls_eof = self.imagegen.urllib.error.URLError(
+            ssl.SSLEOFError(8, "UNEXPECTED_EOF_WHILE_READING")
+        )
+        image_bytes = PNG_SIGNATURE + b"\x00\x00\x00\x00IEND\xaeB`\x82"
+        response = mock.MagicMock()
+        response.__enter__.return_value = response
+        response.read.return_value = image_bytes
+        opener = mock.MagicMock()
+        opener.open.side_effect = [tls_eof, response]
+
+        with (
+            mock.patch.object(self.imagegen.urllib.request, "urlopen") as urlopen,
+            mock.patch.object(
+                self.imagegen.urllib.request,
+                "build_opener",
+                return_value=opener,
+            ) as build_opener,
+        ):
+            result = self.imagegen.decode_image_item(
+                {"url": "https://cdn.example.test/image.png"},
+                self.cfg.user_agent,
+                direct_url_download=True,
+            )
+
+        self.assertEqual(result, image_bytes)
+        urlopen.assert_not_called()
+        build_opener.assert_called_once()
+        self.assertEqual(build_opener.call_args.args[0].proxies, {})
+        self.assertEqual(opener.open.call_count, 2)
+
+    def test_url_image_download_rejects_incomplete_content_length(self) -> None:
+        response = mock.MagicMock()
+        response.__enter__.return_value = response
+        response.headers.get.return_value = "100"
+        response.read.return_value = PNG_SIGNATURE
+
+        with mock.patch.object(
+            self.imagegen.urllib.request,
+            "urlopen",
+            return_value=response,
+        ):
+            with self.assertRaisesRegex(
+                self.imagegen.ImagegenError,
+                "image URL download was incomplete",
+            ):
+                self.imagegen.decode_image_item(
+                    {"url": "https://cdn.example.test/image.png"},
+                    self.cfg.user_agent,
+                )
+
+    def test_url_image_download_wraps_incomplete_read(self) -> None:
+        response = mock.MagicMock()
+        response.__enter__.return_value = response
+        response.read.side_effect = http.client.IncompleteRead(b"partial", 100)
+
+        with mock.patch.object(
+            self.imagegen.urllib.request,
+            "urlopen",
+            return_value=response,
+        ):
+            with self.assertRaisesRegex(
+                self.imagegen.ImagegenError,
+                "image URL download was incomplete",
+            ):
+                self.imagegen.decode_image_item(
+                    {"url": "https://cdn.example.test/image.png"},
+                    self.cfg.user_agent,
+                )
+
+    def test_url_image_download_wraps_repeated_tls_eof_without_url(self) -> None:
+        tls_eof = self.imagegen.urllib.error.URLError(
+            ssl.SSLEOFError(8, "UNEXPECTED_EOF_WHILE_READING")
+        )
+
+        with mock.patch.object(
+            self.imagegen.urllib.request,
+            "urlopen",
+            side_effect=tls_eof,
+        ) as urlopen:
+            with self.assertRaises(self.imagegen.ImagegenError) as raised:
+                self.imagegen.decode_image_item(
+                    {"url": "https://cdn.example.test/signed-image.png?secret=value"},
+                    self.cfg.user_agent,
+                )
+
+        self.assertEqual(urlopen.call_count, 2)
+        self.assertIn("image URL download failed", str(raised.exception))
+        self.assertIn("--allow-direct-url-download", str(raised.exception))
+        self.assertNotIn("signed-image", str(raised.exception))
+        self.assertNotIn("secret=value", str(raised.exception))
+
+    def test_url_image_download_does_not_retry_other_network_errors(self) -> None:
+        network_error = self.imagegen.urllib.error.URLError("connection refused")
+
+        with mock.patch.object(
+            self.imagegen.urllib.request,
+            "urlopen",
+            side_effect=network_error,
+        ) as urlopen:
+            with self.assertRaisesRegex(
+                self.imagegen.ImagegenError,
+                "image URL download failed: network error",
+            ):
+                self.imagegen.decode_image_item(
+                    {"url": "https://cdn.example.test/image.png"},
+                    self.cfg.user_agent,
+                )
+
+        urlopen.assert_called_once()
+
+    def test_url_image_download_rejects_non_http_scheme(self) -> None:
+        with mock.patch.object(self.imagegen.urllib.request, "urlopen") as urlopen:
+            with self.assertRaisesRegex(
+                self.imagegen.ImagegenError,
+                "image URL must use http or https",
+            ):
+                self.imagegen.decode_image_item(
+                    {"url": "file:///private/image.png"},
+                    self.cfg.user_agent,
+                )
+
+        urlopen.assert_not_called()
 
     def test_info_reports_effective_user_agent(self) -> None:
         with mock.patch("builtins.print") as print_mock:
@@ -343,6 +572,7 @@ class ParameterResolutionTests(unittest.TestCase):
             "n": None,
             "compression": None,
             "moderation": None,
+            "allow_direct_url_download": False,
         }
         values.update(overrides)
         return SimpleNamespace(**values)
@@ -371,6 +601,50 @@ class ParameterResolutionTests(unittest.TestCase):
         result = self.imagegen.resolve_common_params(args, self.cfg)
 
         self.assertEqual(result["size"], "1536x1024")
+
+    def test_resolve_common_params_allows_one_shot_direct_url_download(self) -> None:
+        args = self.make_args(allow_direct_url_download=True)
+
+        result = self.imagegen.resolve_common_params(args, self.cfg)
+
+        self.assertTrue(result["direct_url_download"])
+
+    def test_resolve_common_params_uses_persistent_direct_url_download_config(self) -> None:
+        cfg = self.imagegen.Config(
+            base_url="https://example.test/v1",
+            api_key="secret",
+            api_key_source="test",
+            model="gpt-image-2",
+            defaults={},
+            capabilities={},
+            postprocess={"enabled": False},
+            url_download={"proxy_mode": "direct"},
+        )
+
+        result = self.imagegen.resolve_common_params(self.make_args(), cfg)
+
+        self.assertTrue(result["direct_url_download"])
+
+    def test_batch_row_cannot_enable_direct_url_download(self) -> None:
+        result = self.imagegen.resolve_common_params(
+            self.make_args(),
+            self.cfg,
+            {"allow_direct_url_download": True},
+        )
+
+        self.assertFalse(result["direct_url_download"])
+
+    def test_build_parser_accepts_one_shot_direct_url_download(self) -> None:
+        args = self.imagegen.build_parser().parse_args(
+            [
+                "generate",
+                "--prompt",
+                "test",
+                "--allow-direct-url-download",
+            ]
+        )
+
+        self.assertTrue(args.allow_direct_url_download)
 
     def test_resolve_common_params_rejects_transparent_2k_on_gpt_image_2_before_request(self) -> None:
         args = self.make_args(background="transparent", aspect="1:1", resolution="2K")

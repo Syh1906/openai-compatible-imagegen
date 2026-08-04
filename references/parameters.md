@@ -131,3 +131,12 @@ High concurrency can trigger rate limits, failures, or unexpected cost.
 ## Output
 
 The script prints output image paths. In batch mode, it also writes `manifest.json`.
+
+Image API responses may provide image bytes as `data[].b64_json` or an HTTP(S) download in `data[].url`. The script detects either field and does not send `response_format`, because GPT Image models do not support that DALL-E-only parameter. URL downloads reuse the configured `user_agent`, never forward the API key, and validate PNG, JPEG, or WebP completeness.
+
+Direct image URL download is disabled by default. After repeated proxy TLS EOF errors, obtain user approval before choosing one authorization:
+
+- Pass `--allow-direct-url-download` to authorize one command.
+- Set `auth.json url_download.proxy_mode="direct"` for a known provider that needs persistent authorization.
+
+Direct mode bypasses the configured proxy only for returned image URLs, starting with the first download attempt. A direct TLS EOF is retried once. Batch JSONL rows cannot enable it.

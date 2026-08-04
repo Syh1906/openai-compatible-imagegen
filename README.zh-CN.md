@@ -45,6 +45,7 @@
 {
   "base_url": "https://example.com/v1",
   "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+  "url_download": { "proxy_mode": "environment" },
   "model": "gpt-image-2"
 }
 ```
@@ -52,6 +53,10 @@
 `examples/auth.example.json` 里的默认模型只是模板值。你可以把 `model` 改成后端支持的任意图片模型，例如你的网关或供应商暴露的 OpenAI 兼容图片生成模型。
 
 请求默认使用浏览器兼容的 Windows Chrome `User-Agent`。如果供应商要求其他值，请修改 `user_agent`。JSON 生成请求、multipart 编辑请求和返回图片 URL 的下载请求使用同一个值；下载返回图片时不会转发 API key。
+
+图片响应可以包含 `data[].b64_json` 或 `data[].url`。脚本根据实际返回字段处理图片，不发送 GPT Image 模型不支持的 `response_format`。返回 URL 必须使用 HTTP(S)，下载得到的 PNG、JPEG 或 WebP 还会检查文件完整性。
+
+如果图片 URL 通过代理连续发生 TLS EOF，错误会给出两种需要明确授权的直连方式：当前命令使用 `--allow-direct-url-download`，或为已确认的固定渠道设置 `url_download.proxy_mode="direct"`。两种方式都会让返回图片 URL 从第一次下载开始直连，并在直连 TLS EOF 时重试一次；图片 API 请求仍使用正常网络环境，也不会把 API 凭据转发给图片地址。除非你接受图片主机直接看到本机连接，否则保持 `proxy_mode="environment"`。
 
 脚本层支持的参数包括：
 
@@ -256,6 +261,7 @@ API 请求尺寸和最终交付尺寸是两件事。例如后端可能返回 `10
 
 - `base_url`：OpenAI 兼容 API 基础地址，通常以 `/v1` 结尾。
 - `user_agent`：发送给图片 API 和返回图片 URL 的 HTTP `User-Agent`，默认使用上方示例中的浏览器兼容值。
+- `url_download.proxy_mode`：`environment` 使用当前代理环境；`direct` 持久直连下载返回图片 URL。默认值为 `environment`。
 - `api_key`：直接写在本地配置里的 API key。不要提交真实值。
 - `api_key_env`：当 `api_key` 为空或仍是占位值时读取的环境变量名。
 - `model`：`generate`、`edit`、`batch` 默认使用的图片模型。

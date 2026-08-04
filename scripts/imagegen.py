@@ -6,16 +6,18 @@ from __future__ import annotations
 import argparse
 import base64
 import concurrent.futures
+import http.client
 import json
 import mimetypes
 import os
+import ssl
 import sys
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 import zlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -58,6 +60,7 @@ SIZE_PRESETS = {
 DEFAULT_POSTPROCESS = {
     "enabled": False,
 }
+DEFAULT_URL_DOWNLOAD = {"proxy_mode": "environment"}
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 PLACEHOLDER_API_KEYS = {
     "",
@@ -82,6 +85,7 @@ class Config:
     capabilities: dict[str, Any]
     postprocess: dict[str, Any]
     user_agent: str = DEFAULT_USER_AGENT
+    url_download: dict[str, Any] = field(default_factory=lambda: dict(DEFAULT_URL_DOWNLOAD))
 
 
 def load_config(require_api_key: bool = True) -> Config:
@@ -105,6 +109,7 @@ def load_config(require_api_key: bool = True) -> Config:
     defaults = raw.get("defaults") if isinstance(raw.get("defaults"), dict) else {}
     capabilities = raw.get("capabilities") if isinstance(raw.get("capabilities"), dict) else {}
     postprocess = resolve_postprocess_config(raw.get("postprocess"))
+    url_download = resolve_url_download_config(raw.get("url_download"))
 
     if not base_url:
         raise ImagegenError("auth.json missing base_url")
@@ -121,6 +126,7 @@ def load_config(require_api_key: bool = True) -> Config:
         capabilities=capabilities,
         postprocess=postprocess,
         user_agent=user_agent,
+        url_download=url_download,
     )
 
 
@@ -130,6 +136,19 @@ def resolve_postprocess_config(value: Any) -> dict[str, Any]:
         for key in DEFAULT_POSTPROCESS:
             if key in value:
                 cfg[key] = bool(value[key])
+    return cfg
+
+
+def resolve_url_download_config(value: Any) -> dict[str, Any]:
+    cfg = dict(DEFAULT_URL_DOWNLOAD)
+    if value is None:
+        return cfg
+    if not isinstance(value, dict):
+        raise ImagegenError("auth.json url_download must be an object")
+    proxy_mode = value.get("proxy_mode", "environment")
+    if proxy_mode not in {"environment", "direct"}:
+        raise ImagegenError("auth.json url_download.proxy_mode must be environment or direct")
+    cfg["proxy_mode"] = proxy_mode
     return cfg
 
 
@@ -349,6 +368,10 @@ def resolve_common_params(args: argparse.Namespace, cfg: Config, task: dict[str,
         "moderation": get_value("moderation", args, task, None),
         "output_compression": output_compression,
         "timeout": timeout,
+        "direct_url_download": bool(
+            cfg.url_download.get("proxy_mode") == "direct"
+            or getattr(args, "allow_direct_url_download", False)
+        ),
     }
 
 
@@ -499,7 +522,13 @@ def generate(cfg: Config, args: argparse.Namespace, task: dict[str, Any] | None 
         "output_compression": params["output_compression"],
     }
     response = request_json(cfg, "images/generations", payload, params["timeout"])
-    written = write_response_images(response, out_file, params["output_format"], cfg.user_agent)
+    written = write_response_images(
+        response,
+        out_file,
+        params["output_format"],
+        cfg.user_agent,
+        params["direct_url_download"],
+    )
     return success_record(task, prompt, "generate", written, params)
 
 
@@ -533,7 +562,13 @@ def edit(cfg: Config, args: argparse.Namespace, task: dict[str, Any] | None = No
     if mask_path:
         files.append(("mask", mask_path))
     response = request_multipart(cfg, "images/edits", fields, files, params["timeout"])
-    written = write_response_images(response, out_file, params["output_format"], cfg.user_agent)
+    written = write_response_images(
+        response,
+        out_file,
+        params["output_format"],
+        cfg.user_agent,
+        params["direct_url_download"],
+    )
     return success_record(task, prompt, "edit", written, params)
 
 
@@ -560,6 +595,7 @@ def write_response_images(
     out_file: Path,
     fmt: str,
     user_agent: str = DEFAULT_USER_AGENT,
+    direct_url_download: bool = False,
 ) -> list[str]:
     data = response.get("data")
     if not isinstance(data, list) or not data:
@@ -569,7 +605,7 @@ def write_response_images(
     for index, item in enumerate(data):
         if not isinstance(item, dict):
             continue
-        raw = decode_image_item(item, user_agent)
+        raw = decode_image_item(item, user_agent, direct_url_download)
         target = numbered_path(out_file, index, len(data), fmt)
         target.write_bytes(raw)
         written.append(str(target))
@@ -578,19 +614,100 @@ def write_response_images(
     return written
 
 
-def decode_image_item(item: dict[str, Any], user_agent: str = DEFAULT_USER_AGENT) -> bytes:
+def decode_image_item(
+    item: dict[str, Any],
+    user_agent: str = DEFAULT_USER_AGENT,
+    direct_url_download: bool = False,
+) -> bytes:
     b64_value = item.get("b64_json")
     if isinstance(b64_value, str) and b64_value.strip():
         return base64.b64decode(strip_data_url_prefix(b64_value))
     url = item.get("url")
     if isinstance(url, str) and url.strip():
-        request = urllib.request.Request(
-            url,
-            headers={"Accept": "image/*", "User-Agent": user_agent},
-        )
-        with urllib.request.urlopen(request, timeout=DEFAULT_TIMEOUT_SECONDS) as resp:
-            return resp.read()
+        return download_image_url(url, user_agent, direct_url_download)
     raise ImagegenError("image item has neither b64_json nor url")
+
+
+def download_image_url(
+    url: str,
+    user_agent: str = DEFAULT_USER_AGENT,
+    direct_url_download: bool = False,
+) -> bytes:
+    parsed = urllib.parse.urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ImagegenError("image URL must use http or https")
+
+    request = urllib.request.Request(
+        url,
+        headers={"Accept": "image/*", "User-Agent": user_agent},
+    )
+    direct_opener = None
+    if direct_url_download:
+        direct_opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    for attempt in range(2):
+        try:
+            if direct_opener is not None:
+                response = direct_opener.open(request, timeout=DEFAULT_TIMEOUT_SECONDS)
+            else:
+                response = urllib.request.urlopen(request, timeout=DEFAULT_TIMEOUT_SECONDS)
+            with response:
+                return read_downloaded_image(response)
+        except urllib.error.HTTPError as exc:
+            raise ImagegenError(f"image URL download failed: HTTP {exc.code}") from exc
+        except urllib.error.URLError as exc:
+            if attempt == 0 and is_tls_eof_error(exc.reason):
+                continue
+            reason = url_download_error_reason(exc.reason, direct_url_download)
+            raise ImagegenError(f"image URL download failed: {reason}") from exc
+        except ssl.SSLError as exc:
+            if attempt == 0 and is_tls_eof_error(exc):
+                continue
+            reason = url_download_error_reason(exc, direct_url_download)
+            raise ImagegenError(f"image URL download failed: {reason}") from exc
+
+    raise ImagegenError("image URL download failed")
+
+
+def is_tls_eof_error(error: Any) -> bool:
+    return isinstance(error, ssl.SSLEOFError) or (
+        isinstance(error, ssl.SSLError) and "UNEXPECTED_EOF_WHILE_READING" in str(error)
+    )
+
+
+def url_download_error_reason(error: Any, direct_url_download: bool) -> str:
+    if not is_tls_eof_error(error):
+        return "TLS error" if isinstance(error, ssl.SSLError) else "network error"
+    if direct_url_download:
+        return "TLS connection closed unexpectedly"
+    return (
+        "TLS connection closed unexpectedly; direct fallback is disabled. "
+        "Ask the user before retrying with --allow-direct-url-download or enabling "
+        "auth.json url_download.proxy_mode=direct"
+    )
+
+
+def read_downloaded_image(response: Any) -> bytes:
+    try:
+        data = response.read()
+    except http.client.IncompleteRead as exc:
+        raise ImagegenError("image URL download was incomplete") from exc
+    headers = getattr(response, "headers", None)
+    content_length = headers.get("Content-Length") if headers is not None else None
+    if isinstance(content_length, str) and content_length.isdigit() and len(data) != int(content_length):
+        raise ImagegenError("image URL download was incomplete")
+    if not is_complete_image_data(data):
+        raise ImagegenError("image URL download did not contain a complete PNG, JPEG, or WebP image")
+    return data
+
+
+def is_complete_image_data(data: bytes) -> bool:
+    if data.startswith(PNG_SIGNATURE):
+        return data.endswith(b"IEND\xaeB`\x82")
+    if data.startswith(b"\xff\xd8"):
+        return data.endswith(b"\xff\xd9")
+    if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return int.from_bytes(data[4:8], "little") + 8 == len(data)
+    return False
 
 
 def inspect_image_file(path: Path) -> dict[str, Any]:
@@ -1097,6 +1214,7 @@ def info(cfg: Config) -> int:
         "capabilities": cfg.capabilities,
         "defaults": cfg.defaults,
         "postprocess": cfg.postprocess,
+        "url_download": cfg.url_download,
         "auth_json": display_path(AUTH_PATH),
         "api_key_source": cfg.api_key_source,
         "api_key": "***REDACTED***",
@@ -1207,6 +1325,11 @@ def add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--moderation", default=None, choices=["auto", "low"])
     parser.add_argument("--compression", type=int, default=None)
     parser.add_argument("--timeout", type=int, default=None)
+    parser.add_argument(
+        "--allow-direct-url-download",
+        action="store_true",
+        help="Allow this run to download returned image URLs directly without the configured proxy",
+    )
 
 
 def add_postprocess_args(parser: argparse.ArgumentParser) -> None:

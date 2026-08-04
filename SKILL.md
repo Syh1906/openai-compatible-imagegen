@@ -37,6 +37,10 @@ Use this skill to call the bundled image generation script. Do not rewrite the A
 
 Never read, print, quote, or summarize the secret value in `auth.json`.
 
+The script accepts `data[].b64_json` and `data[].url` responses. Do not add `response_format` for GPT Image models. URL responses use the configured `user_agent` without API credentials and validate downloaded PNG, JPEG, or WebP files.
+
+If a TLS EOF error says direct fallback is disabled, explain that direct mode bypasses the configured proxy for returned image URLs from the first download attempt. Obtain explicit user approval before using `--allow-direct-url-download` for one command or setting `auth.json url_download.proxy_mode="direct"` persistently. Never infer this permission from a batch row or edit `auth.json` without approval.
+
 For explicit post-processing, delivery-size normalization, image inspection, or grid splitting, read `references/postprocess.md` first. Do not load it for ordinary image generation.
 
 ## Local Auth
@@ -80,6 +84,7 @@ Config fields:
 - `api_key`: API key stored directly in local `auth.json`.
 - `api_key_env`: optional environment variable name for the API key.
 - `model`: default image model, for example `gpt-image-2`.
+- `url_download.proxy_mode`: `environment` uses the configured proxy environment; `direct` persistently downloads returned image URLs without it. Defaults to `environment`.
 - `capabilities.transparent_background`: whether the backend supports `background=transparent`.
 - `defaults`: weak defaults used only when parameters are missing.
 - `postprocess.enabled`: optional post-processing opt-in. Missing means `false` and preserves legacy behavior.
@@ -156,6 +161,7 @@ Core parameters:
 - `--transparent`: transparent-background asset intent shortcut. Forces PNG and injects transparent-background constraints into the prompt. If supported, also sends `background=transparent`.
 - `--asset`: asset shortcut. Prefers PNG and is suitable for icons, game items, textures, and sprites.
 - `--concurrency`: limited batch concurrency.
+- `--allow-direct-url-download`: one-command permission to download returned image URLs directly from the first attempt.
 
 Read `references/parameters.md` for detailed behavior.
 
