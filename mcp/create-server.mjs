@@ -2,10 +2,6 @@ import { RESOURCE_MIME_TYPE, registerAppResource } from "@modelcontextprotocol/e
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-
-
-export const RESULT_WIDGET_URI = "ui://openai-compatible-imagegen-v2/result.html";
-export const EDITOR_WIDGET_URI = "ui://openai-compatible-imagegen-v2/editor.html";
 const imageIdSchema = z.string().regex(/^img_[0-9A-HJKMNP-TV-Z]{26}$/).describe("项目产物仓库中的稳定图片 ID");
 const editorSessionIdSchema = z.string().regex(/^eds_[0-9a-f]{32}$/).describe("已打开画布的会话 ID");
 const normalizedCoordinate = z.number().min(0).max(1);
@@ -29,23 +25,30 @@ const outputSchema = {
   background: z.enum(["auto", "opaque", "transparent"]).optional(),
 };
 
-export function createImagegenServer({ readWidgetHtml, runTask, readArtifact, readAnnotation, saveAnnotations, version = "0.1.0" }) {
-  const server = new McpServer({ name: "openai-compatible-imagegen-v2", version });
+export function createImagegenServer({ releaseIdentity, readWidgetHtml, runTask, readArtifact, readAnnotation, saveAnnotations }) {
+  requireReleaseIdentity(releaseIdentity);
+  const { result: resultWidgetUri, editor: editorWidgetUri } = releaseIdentity.resourceUris;
+  const server = new McpServer({
+    name: releaseIdentity.pluginId,
+    version: releaseIdentity.pluginVersion,
+  });
   const editorSessions = new Map();
   const destroyedCanvasImageIds = new Set();
 
   registerWidgetResource(server, {
     name: "image-result",
-    uri: RESULT_WIDGET_URI,
+    uri: resultWidgetUri,
     title: "图片结果",
     description: "在会话结果中持续显示图片，并提供在同一宿主实例展开聚焦画布的入口。",
+    releaseIdentity,
     readWidgetHtml,
   });
   registerWidgetResource(server, {
     name: "image-editor",
-    uri: EDITOR_WIDGET_URI,
+    uri: editorWidgetUri,
     title: "图片编辑画布",
     description: "为会话图片结果展开与稳定图片 ID 绑定的聚焦画布。",
+    releaseIdentity,
     readWidgetHtml,
   });
 
@@ -205,7 +208,10 @@ export function createImagegenServer({ readWidgetHtml, runTask, readArtifact, re
       description: "在一个会话结果容器中按顺序显示一张或多张已创建图片，并为每张图片提供独立画布入口。生成或编辑成功后只调用一次。",
       inputSchema: { imageIds: z.array(imageIdSchema).min(1).max(10) },
       annotations: readAnnotations(),
-      _meta: { ui: { resourceUri: RESULT_WIDGET_URI } },
+      _meta: {
+        ui: { resourceUri: resultWidgetUri },
+        releaseIdentity,
+      },
     },
     async ({ imageIds }) => {
       try {
@@ -221,7 +227,8 @@ export function createImagegenServer({ readWidgetHtml, runTask, readArtifact, re
           ],
           structuredContent: { imageIds, artifacts },
           _meta: {
-            ui: { resourceUri: RESULT_WIDGET_URI },
+            ui: { resourceUri: resultWidgetUri },
+            releaseIdentity,
             imageIds,
           },
         };
@@ -243,7 +250,10 @@ export function createImagegenServer({ readWidgetHtml, runTask, readArtifact, re
         idempotentHint: false,
         openWorldHint: false,
       },
-      _meta: { ui: { resourceUri: EDITOR_WIDGET_URI, visibility: ["app"] } },
+      _meta: {
+        ui: { resourceUri: editorWidgetUri, visibility: ["app"] },
+        releaseIdentity,
+      },
     },
     async ({ imageId }) => {
       try {
@@ -260,7 +270,12 @@ export function createImagegenServer({ readWidgetHtml, runTask, readArtifact, re
         return {
           content: [{ type: "text", text: `已打开图片 ${imageId} 的聚焦画布，画布会话 ID 为 ${editorSession.id}。` }],
           structuredContent: { editorSession, artifact: imageArtifactMetadata(artifact.metadata) },
-          _meta: { ui: { resourceUri: EDITOR_WIDGET_URI }, imageId, editorSessionId: editorSession.id },
+          _meta: {
+            ui: { resourceUri: editorWidgetUri },
+            releaseIdentity,
+            imageId,
+            editorSessionId: editorSession.id,
+          },
         };
       } catch (error) {
         return toolError(error, "artifact_not_found");
@@ -391,7 +406,7 @@ async function executeImageTask(task, runTask, readArtifact) {
   }
 }
 
-function registerWidgetResource(server, { name, uri, title, description, readWidgetHtml }) {
+function registerWidgetResource(server, { name, uri, title, description, releaseIdentity, readWidgetHtml }) {
   const resourceDomains = ["data:", "blob:"];
   const metadata = {
     ui: {
@@ -405,6 +420,7 @@ function registerWidgetResource(server, { name, uri, title, description, readWid
       connect_domains: [],
       resource_domains: resourceDomains,
     },
+    releaseIdentity,
   };
   registerAppResource(
     server,
@@ -420,6 +436,20 @@ function registerWidgetResource(server, { name, uri, title, description, readWid
       }],
     }),
   );
+}
+
+
+function requireReleaseIdentity(releaseIdentity) {
+  if (
+    !releaseIdentity
+    || typeof releaseIdentity.pluginId !== "string"
+    || typeof releaseIdentity.pluginVersion !== "string"
+    || typeof releaseIdentity.fingerprint !== "string"
+    || typeof releaseIdentity.resourceUris?.result !== "string"
+    || typeof releaseIdentity.resourceUris?.editor !== "string"
+  ) {
+    throw new Error("releaseIdentity is required to create the MCP server");
+  }
 }
 
 function imageContent(artifact) {

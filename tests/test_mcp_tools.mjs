@@ -8,16 +8,21 @@ import test from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 
-import {
-  createImagegenServer,
-  EDITOR_WIDGET_URI,
-  RESULT_WIDGET_URI,
-} from "../mcp/create-server.mjs";
+import { createImagegenServer } from "../mcp/create-server.mjs";
 import { readImageArtifact } from "../mcp/artifact-repository.mjs";
 import { runImageTask } from "../mcp/image-runtime.mjs";
+import { createReleaseBundle, RELEASE_IDENTITY_PLACEHOLDER } from "../mcp/release-identity.mjs";
 
 
 const PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFgAI/ScL1WQAAAABJRU5ErkJggg==";
+const TEST_RELEASE_IDENTITY = createReleaseBundle({
+  pluginId: "openai-compatible-imagegen-v2",
+  pluginVersion: "0.1.0-test",
+  serverBuildInputs: [{ path: "test-server.mjs", content: "test server" }],
+  widgetHtml: `<html><head>${RELEASE_IDENTITY_PLACEHOLDER}</head></html>`,
+}).releaseIdentity;
+const RESULT_WIDGET_URI = TEST_RELEASE_IDENTITY.resourceUris.result;
+const EDITOR_WIDGET_URI = TEST_RELEASE_IDENTITY.resourceUris.editor;
 
 function artifact(id, parentIds = []) {
   return {
@@ -33,7 +38,11 @@ function artifact(id, parentIds = []) {
 }
 
 async function withClient(dependencies, callback) {
-  const server = createImagegenServer({ readWidgetHtml: async () => "<html>editor</html>", ...dependencies });
+  const server = createImagegenServer({
+    releaseIdentity: TEST_RELEASE_IDENTITY,
+    readWidgetHtml: async () => "<html>editor</html>",
+    ...dependencies,
+  });
   const client = new Client({ name: "mcp-contract-test", version: "0.1.0" });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);

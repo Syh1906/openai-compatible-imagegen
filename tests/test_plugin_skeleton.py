@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 import shutil
@@ -163,11 +164,9 @@ class PluginSkeletonTests(unittest.TestCase):
         )
         self.assertEqual(
             payload["resources"],
-            [
-                "ui://openai-compatible-imagegen-v2/editor.html",
-                "ui://openai-compatible-imagegen-v2/result.html",
-            ],
+            sorted(payload["releaseIdentity"]["resourceUris"].values()),
         )
+        self.assertRegex(payload["releaseIdentity"]["fingerprint"], r"^[a-f0-9]{20}$")
         self.assertEqual(
             payload["appOnlyTools"],
             [
@@ -249,8 +248,10 @@ class PluginSkeletonTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
         payload = json.loads(result.stdout)
-        self.assertEqual(Path(payload["pluginRoot"]), ROOT)
-        self.assertEqual(Path(payload["projectRoot"]), ROOT)
+        self.assertEqual(payload["pluginRootFingerprint"], path_fingerprint(ROOT))
+        self.assertEqual(payload["projectRootFingerprint"], path_fingerprint(ROOT))
+        self.assertEqual(payload["sourceRootFingerprint"], path_fingerprint(ROOT))
+        self.assertEqual(payload["projectRootRelationToPlugin"], "same")
         self.assertTrue(payload["sourceConsistent"])
 
     def test_plugin_probe_resolves_marketplace_source_from_catalog_root(self) -> None:
@@ -304,8 +305,19 @@ class PluginSkeletonTests(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
         payload = json.loads(result.stdout)
-        self.assertEqual(Path(payload["marketplaceRoot"]), catalog_root)
-        self.assertEqual(Path(payload["marketplacePluginRoot"]), plugin_root)
+        self.assertEqual(
+            payload["marketplace"]["marketplaceRootFingerprint"],
+            path_fingerprint(catalog_root),
+        )
+        self.assertEqual(
+            payload["marketplace"]["marketplacePluginRootFingerprint"],
+            path_fingerprint(plugin_root),
+        )
+
+
+def path_fingerprint(value: Path) -> str:
+    normalized = str(value.resolve()).replace("\\", "/").lower()
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:20]
 
 
 if __name__ == "__main__":

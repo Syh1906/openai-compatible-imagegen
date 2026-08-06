@@ -13,7 +13,7 @@ import { runImageTask } from "./image-runtime.mjs";
 const widgetPath = fileURLToPath(new URL("../dist/widget/index.html", import.meta.url));
 const projectRoot = process.cwd();
 const server = createImagegenServer({
-  version: __PLUGIN_VERSION__,
+  releaseIdentity: __RELEASE_IDENTITY__,
   readWidgetHtml: async () => await readFile(widgetPath, "utf8"),
   runTask: async (task) => {
     const configPath = await resolveV2ConfigPath({ projectRoot });

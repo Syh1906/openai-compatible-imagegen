@@ -215,9 +215,7 @@ async function main() {
 
   const mcp = await readJson(".mcp.json");
   const server = mcp.mcpServers?.[manifest.name];
-  const serverText = await readFile(resolvePath("dist/server.mjs"), "utf8");
 
-  requireValue(serverText.includes(`version: \"${manifest.version}\"`), "prebuilt server version differs");
   requireValue(manifest.skills === "./skills/", "manifest skills path is invalid");
   requireValue(manifest.mcpServers === "./.mcp.json", "manifest MCP path is invalid");
   requireValue(server?.command === "node", "MCP server command must be node");
@@ -243,6 +241,9 @@ async function main() {
 
   try {
     await client.connect(transport);
+    const serverVersion = client.getServerVersion();
+    requireValue(serverVersion?.name === manifest.name, "running server name differs from plugin name");
+    requireValue(serverVersion?.version === manifest.version, "running server version differs from plugin version");
     const [toolResult, resourceResult, resourceTemplateResult, invalidCall] = await Promise.all([
       client.listTools(),
       client.listResources(),
@@ -256,6 +257,9 @@ async function main() {
       .sort();
     const resources = resourceResult.resources.map((resource) => resource.uri).sort();
     const resourceTemplates = resourceTemplateResult.resourceTemplates.map((resource) => resource.uriTemplate).sort();
+    const resultTool = toolResult.tools.find((tool) => tool.name === "render_image_results");
+    const editorTool = toolResult.tools.find((tool) => tool.name === "open_image_editor");
+    const releaseIdentity = resultTool?._meta?.releaseIdentity;
 
     requireValue(tools.includes("open_image_editor"), "MCP server does not expose open_image_editor");
     requireValue(tools.includes("generate_image"), "MCP server does not expose generate_image");
@@ -271,7 +275,35 @@ async function main() {
       JSON.stringify(appOnlyTools) === JSON.stringify(APP_ONLY_TOOLS),
       `unexpected app-only tool visibility: ${appOnlyTools.join(", ")}`,
     );
-    requireValue(resources.includes(`ui://${PLUGIN_ID}/editor.html`), "MCP server does not expose the image editor resource");
+    requireValue(releaseIdentity?.pluginId === manifest.name, "release identity plugin differs from manifest");
+    requireValue(releaseIdentity?.pluginVersion === manifest.version, "release identity version differs from manifest");
+    requireValue(/^[a-f0-9]{20}$/.test(releaseIdentity?.fingerprint ?? ""), "release identity fingerprint is invalid");
+    requireValue(/^[a-f0-9]{64}$/.test(releaseIdentity?.serverBuildDigest ?? ""), "server build digest is invalid");
+    requireValue(/^[a-f0-9]{64}$/.test(releaseIdentity?.widgetAssetDigest ?? ""), "widget asset digest is invalid");
+    requireValue(
+      JSON.stringify(editorTool?._meta?.releaseIdentity) === JSON.stringify(releaseIdentity),
+      "result and editor tools expose different release identities",
+    );
+    requireValue(
+      resultTool?._meta?.ui?.resourceUri === releaseIdentity.resourceUris.result
+        && editorTool?._meta?.ui?.resourceUri === releaseIdentity.resourceUris.editor,
+      "tool resource URIs differ from release identity",
+    );
+    requireValue(
+      JSON.stringify(resources) === JSON.stringify(Object.values(releaseIdentity.resourceUris).sort()),
+      "MCP resources differ from release identity",
+    );
+    requireValue(
+      widget.includes(`<meta name="openai-compatible-imagegen-release" content="${releaseIdentity.fingerprint}">`),
+      "widget release marker differs from running server",
+    );
+    const resourceReads = await Promise.all(resources.map((uri) => client.readResource({ uri })));
+    requireValue(
+      resourceReads.every((result) => (
+        JSON.stringify(result.contents?.[0]?._meta?.releaseIdentity) === JSON.stringify(releaseIdentity)
+      )),
+      "widget resources expose a different release identity",
+    );
     requireValue(
       !resourceTemplates.includes("imagegen://artifact/{imageId}"),
       "MCP server still exposes the unsupported widget image resource template",
@@ -471,11 +503,18 @@ async function main() {
       ok: true,
       plugin: manifest.name,
       version: manifest.version,
+      releaseIdentity,
       packageIdentityChecked: Boolean(packageManifest || packageLock),
-      pluginRoot,
-      projectRoot,
-      sourceRoot,
-      ...marketplace,
+      pluginRootFingerprint: fingerprintPath(pluginRoot),
+      projectRootFingerprint: fingerprintPath(projectRoot),
+      sourceRootFingerprint: sourceRoot ? fingerprintPath(sourceRoot) : null,
+      projectRootRelationToPlugin: pathRelation(projectRoot, pluginRoot),
+      marketplace: marketplace
+        ? {
+          marketplaceRootFingerprint: fingerprintPath(marketplace.marketplaceRoot),
+          marketplacePluginRootFingerprint: fingerprintPath(marketplace.marketplacePluginRoot),
+        }
+        : null,
       ...sourceComparison,
       tools,
       appOnlyTools,
@@ -493,6 +532,20 @@ async function main() {
   } finally {
     await client.close();
   }
+}
+
+function fingerprintPath(value) {
+  return createHash("sha256")
+    .update(path.resolve(value).replaceAll("\\", "/").toLowerCase(), "utf8")
+    .digest("hex")
+    .slice(0, 20);
+}
+
+function pathRelation(child, parent) {
+  const relative = path.relative(path.resolve(parent), path.resolve(child));
+  if (!relative) return "same";
+  if (!relative.startsWith("..") && !path.isAbsolute(relative)) return "descendant";
+  return "outside";
 }
 
 async function readArtifactData(client, artifacts, imageContents) {

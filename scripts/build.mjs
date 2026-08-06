@@ -1,9 +1,10 @@
-import { copyFile, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
 import { build } from "esbuild";
 
-const root = fileURLToPath(new URL("..", import.meta.url));
+import { createReleaseBundle } from "../mcp/release-identity.mjs";
+
 const pluginManifest = JSON.parse(await readFile(fileURLToPath(new URL("../.codex-plugin/plugin.json", import.meta.url)), "utf8"));
 const packageManifest = JSON.parse(await readFile(fileURLToPath(new URL("../package.json", import.meta.url)), "utf8"));
 const packageLock = JSON.parse(await readFile(fileURLToPath(new URL("../package-lock.json", import.meta.url)), "utf8"));
@@ -18,27 +19,18 @@ if (
   throw new Error("plugin manifest, package.json, and package-lock.json identity must match");
 }
 const paths = {
+  mcpSourceDirectory: fileURLToPath(new URL("../mcp", import.meta.url)),
   serverSource: fileURLToPath(new URL("../mcp/server.mjs", import.meta.url)),
   serverOutput: fileURLToPath(new URL("../dist/server.mjs", import.meta.url)),
   widgetSource: fileURLToPath(new URL("../web/index.html", import.meta.url)),
   widgetOutput: fileURLToPath(new URL("../dist/widget/index.html", import.meta.url)),
   runtimeOutput: fileURLToPath(new URL("../dist/scripts", import.meta.url)),
 };
+const runtimeFiles = ["imagegen.py", "artifact_repository.py", "image_download.py", "provider_config.py"];
 
 await rm(fileURLToPath(new URL("../dist/scripts/__pycache__", import.meta.url)), { recursive: true, force: true });
 await mkdir(fileURLToPath(new URL("../dist/widget", import.meta.url)), { recursive: true });
 await mkdir(paths.runtimeOutput, { recursive: true });
-await build({
-  entryPoints: [paths.serverSource],
-  outfile: paths.serverOutput,
-  bundle: true,
-  platform: "node",
-  format: "esm",
-  target: "node20",
-  legalComments: "none",
-  sourcemap: false,
-  define: { __PLUGIN_VERSION__: JSON.stringify(pluginManifest.version) },
-});
 const widgetHtml = await readFile(paths.widgetSource, "utf8");
 const widgetBundle = await build({
   entryPoints: [fileURLToPath(new URL("../web/editor-runtime.mjs", import.meta.url))],
@@ -50,12 +42,43 @@ const widgetBundle = await build({
   minify: true,
 });
 const widgetScript = new TextDecoder().decode(widgetBundle.outputFiles[0].contents);
-await writeFile(
-  paths.widgetOutput,
-  widgetHtml.replace("    <!-- WIDGET_SCRIPT -->", () => `    <script>${widgetScript}</script>`),
+const assembledWidgetHtml = widgetHtml.replace(
+  "    <!-- WIDGET_SCRIPT -->",
+  () => `    <script>${widgetScript}</script>`,
 );
+const mcpFiles = (await readdir(paths.mcpSourceDirectory, { withFileTypes: true }))
+  .filter((entry) => entry.isFile() && entry.name.endsWith(".mjs"))
+  .map((entry) => entry.name)
+  .sort();
+const serverBuildPaths = [
+  ...mcpFiles.map((name) => ({ path: `mcp/${name}`, url: new URL(`../mcp/${name}`, import.meta.url) })),
+  ...runtimeFiles.map((name) => ({ path: `scripts/${name}`, url: new URL(`./${name}`, import.meta.url) })),
+  { path: "scripts/build.mjs", url: new URL("./build.mjs", import.meta.url) },
+  { path: ".mcp.json", url: new URL("../.mcp.json", import.meta.url) },
+  { path: "package-lock.json", url: new URL("../package-lock.json", import.meta.url) },
+];
+const { releaseIdentity, widgetHtml: releaseWidgetHtml } = createReleaseBundle({
+  pluginId: pluginManifest.name,
+  pluginVersion: pluginManifest.version,
+  serverBuildInputs: await Promise.all(serverBuildPaths.map(async ({ path, url }) => ({
+    path,
+    content: await readFile(fileURLToPath(url)),
+  }))),
+  widgetHtml: assembledWidgetHtml,
+});
+await build({
+  entryPoints: [paths.serverSource],
+  outfile: paths.serverOutput,
+  bundle: true,
+  platform: "node",
+  format: "esm",
+  target: "node20",
+  legalComments: "none",
+  sourcemap: false,
+  define: { __RELEASE_IDENTITY__: JSON.stringify(releaseIdentity) },
+});
+await writeFile(paths.widgetOutput, releaseWidgetHtml);
 
-const runtimeFiles = ["imagegen.py", "artifact_repository.py", "image_download.py", "provider_config.py"];
 await Promise.all(runtimeFiles.map((name) => copyFile(
   fileURLToPath(new URL(`./${name}`, import.meta.url)),
   fileURLToPath(new URL(`../dist/scripts/${name}`, import.meta.url)),
@@ -63,6 +86,10 @@ await Promise.all(runtimeFiles.map((name) => copyFile(
 
 process.stdout.write(`${JSON.stringify({
   ok: true,
-  root,
-  outputs: [paths.serverOutput, paths.widgetOutput, ...runtimeFiles.map((name) => fileURLToPath(new URL(`../dist/scripts/${name}`, import.meta.url)))],
+  releaseIdentity,
+  outputs: [
+    "dist/server.mjs",
+    "dist/widget/index.html",
+    ...runtimeFiles.map((name) => `dist/scripts/${name}`),
+  ],
 })}\n`);
