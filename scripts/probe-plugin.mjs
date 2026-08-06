@@ -16,6 +16,7 @@ const APP_ONLY_TOOLS = [
   "get_image_editor_session",
   "open_image_editor",
   "read_image_artifact_data",
+  "report_imagegen_host_observation",
   "save_image_annotations",
 ];
 const REMOTE_SMOKE_GENERATE_PROMPT = "A single solid red circle centered on a plain white background, no text.";

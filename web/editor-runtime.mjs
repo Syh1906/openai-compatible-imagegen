@@ -10,6 +10,7 @@ import { hitTestAnnotation } from "./editor-annotation-view.mjs";
 import { createSubmissionCoordinator } from "./editor-submission.mjs";
 import { createEditorSessionController } from "./editor-session-controller.mjs";
 import { createEditorRenderer } from "./editor-renderer.mjs";
+import { createHostObservationReporter } from "./host-observation.mjs";
 import { artifactLineage, extractResultArtifacts, hydrateResultArtifacts } from "./result-state.mjs";
 import { App, PostMessageTransport } from "@modelcontextprotocol/ext-apps";
 
@@ -51,6 +52,10 @@ let artifactLoadInFlight = false;
 let modelCapabilities = null;
 const destroyedCanvasImageIds = new Set();
 const app = new App({ name: "openai-compatible-imagegen-v2-editor", version: "0.1.0" }, {});
+const hostObservationReporter = createHostObservationReporter({
+  app,
+  releaseFingerprint: document.querySelector('meta[name="openai-compatible-imagegen-release"]')?.content || "",
+});
 const submissionCoordinator = createSubmissionCoordinator({ app });
 const sessionController = createEditorSessionController({
   app,
@@ -174,7 +179,10 @@ function bindUi() {
 
 async function connectHost() {
   app.ontoolinput = (params) => ingestToolInput(params);
-  app.ontoolresult = (params) => ingestToolResult(params);
+  app.ontoolresult = (params) => {
+    hostObservationReporter.observeNotification(params);
+    ingestToolResult(params);
+  };
   app.onhostcontextchanged = (params) => {
     if (applyHostContext(params)) render();
   };
@@ -203,6 +211,7 @@ async function connectHost() {
 async function loadModelCapabilities() {
   try {
     const result = await app.callServerTool({ name: "list_image_models", arguments: {} });
+    hostObservationReporter.observeToolCall(result);
     const model = result?.structuredContent?.models?.find((item) => item.id === "primary/gpt-image-2");
     if (result.isError || !model?.capabilities) throw new Error("model capabilities unavailable");
     modelCapabilities = model.capabilities;

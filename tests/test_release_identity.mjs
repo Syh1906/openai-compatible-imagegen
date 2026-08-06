@@ -196,6 +196,10 @@ async function writeArtifactFixture(root) {
     provider: "primary",
     model: "gpt-image-2",
     operation: "generate",
+    prompt: "fixture image",
+    parameters: {},
+    annotationId: null,
+    createdAt: "2026-08-06T00:00:00.000Z",
     imageFile: "image.png",
   };
   await writeFile(

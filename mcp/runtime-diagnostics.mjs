@@ -3,6 +3,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 
+export const MAX_RUNTIME_ROOT_ENTRIES = 32;
+export const MAX_RUNTIME_ROOT_SCHEME_LENGTH = 32;
+
+
 export function createRuntimeObservation({
   cwd,
   pluginRoot,
@@ -19,6 +23,9 @@ export function createRuntimeObservation({
     : rootsErrorCode
       ? "error"
       : "available";
+  const retainedRoots = rootStatus === "available"
+    ? roots.slice(0, MAX_RUNTIME_ROOT_ENTRIES)
+    : [];
   return {
     cwdFingerprint: fingerprintPath(cwd),
     pluginRootFingerprint: fingerprintPath(pluginRoot),
@@ -29,11 +36,10 @@ export function createRuntimeObservation({
     client: summarizeClient(clientVersion, clientCapabilities, rootsSupported),
     roots: {
       status: rootStatus,
-      count: rootStatus === "available" ? roots.length : 0,
-      entries: rootStatus === "available"
-        ? roots.map((root) => summarizeRoot(root, { cwd, pluginRoot, projectRoot }))
-        : [],
+      count: retainedRoots.length,
+      entries: retainedRoots.map((root) => summarizeRoot(root, { cwd, pluginRoot, projectRoot })),
       errorCode: rootsErrorCode,
+      truncated: rootStatus === "available" && roots.length > retainedRoots.length,
     },
   };
 }
@@ -50,7 +56,8 @@ export function fingerprintPath(value) {
 export function pathRelation(child, parent) {
   const relative = path.relative(path.resolve(parent), path.resolve(child));
   if (!relative) return "same";
-  if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) return "outside";
+  const firstSegment = relative.split(path.sep, 1)[0];
+  if (firstSegment === ".." || path.isAbsolute(relative)) return "outside";
   return "descendant";
 }
 
@@ -66,7 +73,7 @@ export function containsAbsolutePath(value) {
 
 function summarizeRoot(root, paths) {
   const uri = typeof root?.uri === "string" ? root.uri : "";
-  const scheme = uriScheme(uri);
+  const scheme = uriScheme(uri).slice(0, MAX_RUNTIME_ROOT_SCHEME_LENGTH);
   const summary = {
     scheme,
     fingerprint: fingerprintValue(uri),
@@ -121,7 +128,15 @@ function fingerprintValue(value) {
 
 function opaqueStringSummary(value) {
   if (typeof value !== "string") return { fingerprint: null, length: 0 };
+  if (containsSensitiveClientInfo(value)) return { fingerprint: null, length: value.length };
   return { fingerprint: fingerprintValue(value), length: value.length };
+}
+
+
+function containsSensitiveClientInfo(value) {
+  return containsAbsolutePath(value)
+    || /\b(?:secret|token|bearer|api[_-]?key)\b/i.test(value)
+    || /\b(?:sk|ghp|xox[baprs])[-_][A-Za-z0-9_-]+/i.test(value);
 }
 
 

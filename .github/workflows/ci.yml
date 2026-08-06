@@ -18,6 +18,8 @@ jobs:
           cache: npm
       - name: Install Node dependencies
         run: npm ci
+      - name: Build plugin package
+        run: npm run build
       - name: Run tests
         run: npm test
       - name: Check plugin package

@@ -3,7 +3,11 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
-import { createRuntimeObservation } from "./runtime-diagnostics.mjs";
+import {
+  createRuntimeObservation,
+  MAX_RUNTIME_ROOT_ENTRIES,
+  MAX_RUNTIME_ROOT_SCHEME_LENGTH,
+} from "./runtime-diagnostics.mjs";
 const imageIdSchema = z.string().regex(/^img_[0-9A-HJKMNP-TV-Z]{26}$/).describe("项目产物仓库中的稳定图片 ID");
 const editorSessionIdSchema = z.string().regex(/^eds_[0-9a-f]{32}$/).describe("已打开画布的会话 ID");
 const normalizedCoordinate = z.number().min(0).max(1);
@@ -19,6 +23,7 @@ const annotationItemSchema = z.discriminatedUnion("type", [
   z.object({ id: z.string().min(1), type: z.literal("text"), x: normalizedCoordinate, y: normalizedCoordinate, text: z.string().min(1).max(600), ...annotationStyleSchema }),
   z.object({ id: z.string().min(1), type: z.literal("mask"), points: z.array(normalizedPoint).min(2), text: z.string().max(600).optional(), ...annotationStyleSchema }),
 ]);
+const annotationIdSchema = z.string().regex(/^ann_[0-9A-HJKMNP-TV-Z]{26}$/);
 const outputSchema = {
   size: z.string().optional(),
   quality: z.enum(["auto", "low", "medium", "high"]).optional(),
@@ -26,6 +31,49 @@ const outputSchema = {
   count: z.number().int().min(1).max(10).optional(),
   background: z.enum(["auto", "opaque", "transparent"]).optional(),
 };
+const imageArtifactOutputSchema = z.object({
+  id: imageIdSchema,
+  parentIds: z.array(imageIdSchema),
+  childIds: z.array(imageIdSchema),
+  mimeType: z.enum(["image/png", "image/jpeg", "image/webp"]),
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
+  provider: z.string().min(1),
+  model: z.string().min(1),
+  operation: z.enum(["generate", "edit"]),
+  prompt: z.string(),
+  parameters: z.record(z.unknown()),
+  annotationId: annotationIdSchema.nullable(),
+  createdAt: z.string().datetime(),
+}).strict();
+const imageArtifactsOutputSchema = z.object({
+  artifacts: z.array(imageArtifactOutputSchema).min(1).max(10),
+  artifact: imageArtifactOutputSchema.optional(),
+}).strict();
+const imageModelOutputSchema = z.object({
+  id: z.string().min(1),
+  provider: z.string().min(1),
+  model: z.string().min(1),
+  capabilities: z.record(z.unknown()),
+}).strict();
+const editorSessionOutputSchema = z.object({
+  id: editorSessionIdSchema,
+  imageId: imageIdSchema.optional(),
+  status: z.enum(["active", "destroyed", "released"]),
+}).strict();
+const openEditorSessionOutputSchema = z.object({
+  id: editorSessionIdSchema,
+  imageId: imageIdSchema,
+  status: z.literal("active"),
+}).strict();
+const annotationOutputSchema = z.object({
+  id: annotationIdSchema,
+  imageId: imageIdSchema,
+  itemCount: z.number().int().min(1).max(100),
+  previewMimeType: z.literal("image/svg+xml"),
+  hasMask: z.boolean(),
+  maskMimeType: z.literal("image/png").nullable(),
+}).strict();
 const fingerprintSchema = z.string().regex(/^[a-f0-9]{20}$/);
 const digestSchema = z.string().regex(/^[a-f0-9]{64}$/);
 const releaseIdentityOutputSchema = z.object({
@@ -54,19 +102,90 @@ const runtimeObservationOutputSchema = z.object({
   }),
   roots: z.object({
     status: z.enum(["unsupported", "available", "error"]),
-    count: z.number().int().min(0),
+    count: z.number().int().min(0).max(MAX_RUNTIME_ROOT_ENTRIES),
     entries: z.array(z.object({
-      scheme: z.string().min(1),
+      scheme: z.string().min(1).max(MAX_RUNTIME_ROOT_SCHEME_LENGTH),
       fingerprint: fingerprintSchema,
       hasName: z.boolean(),
       comparable: z.boolean(),
       relationToCwd: z.enum(["same", "descendant", "outside"]).nullable(),
       relationToPlugin: z.enum(["same", "descendant", "outside"]).nullable(),
       relationToProject: z.enum(["same", "descendant", "outside"]).nullable(),
-    })),
+    })).max(MAX_RUNTIME_ROOT_ENTRIES),
     errorCode: z.string().nullable(),
+    truncated: z.boolean(),
   }),
 });
+const hostFieldPathSchema = z.string().max(512).regex(/^\$(?:(?:\.[A-Za-z_][A-Za-z0-9_-]{0,63})|(?:\[(?:[0-9]|[12][0-9]|3[01])\])){0,8}$/);
+const stableErrorCodeSchema = z.string().regex(/^[a-z][a-z0-9_]{0,63}$/);
+const hostReportedLengthSchema = z.number().int().min(0).max(64 * 1024 * 1024);
+const hostFieldSchema = z.union([
+  z.object({
+    path: hostFieldPathSchema,
+    type: z.enum(["string", "array"]),
+    length: hostReportedLengthSchema,
+  }).strict(),
+  z.object({
+    path: hostFieldPathSchema,
+    type: z.enum(["null", "boolean", "number", "object", "unknown"]),
+    length: z.null(),
+  }).strict(),
+]);
+const stableToolErrorMessages = new Map([
+  ["annotation_image_mismatch", "标注与父图片不匹配。"],
+  ["annotation_not_found", "未找到指定标注。"],
+  ["annotation_save_failed", "保存图片标注失败。"],
+  ["artifact_not_found", "未找到指定图片产物。"],
+  ["artifact_read_failed", "读取图片产物失败。"],
+  ["editor_session_not_found", "画布会话不存在或已经释放。"],
+  ["image_canvas_destroyed", "当前图片的画布已经销毁。"],
+  ["image_task_failed", "图片任务执行失败。"],
+  ["invalid_json", "图片运行时输入不是有效 JSON。"],
+  ["invalid_task", "图片任务参数无效。"],
+  ["unsupported_capability", "当前图片模型不支持请求的能力。"],
+  ["unsupported_model_profile", "当前图片模型配置不受支持。"],
+  ["v2_config_missing", "V2 配置缺失。请创建用户配置或项目配置。"],
+]);
+const retainedHostFieldKeys = new Set([
+  "_meta", "accepted", "artifact", "artifacts", "blob", "canvasStatus", "capabilities",
+  "childIds", "code", "content", "data", "dataBase64", "editorSession", "error", "errorCode",
+  "field", "height", "id", "imageId", "imageIds", "isError", "mask", "message", "mimeType",
+  "model", "models", "operation", "parentIds", "provider", "redacted", "resource", "status",
+  "structuredContent", "text", "type", "uri", "widgetData", "width",
+]);
+const retainedHostErrorCodes = new Set([
+  ...stableToolErrorMessages.keys(),
+  "artifact_bridge_unavailable",
+  "artifact_payload_invalid",
+  "artifact_result_invalid",
+  "artifact_server_error",
+  "artifact_tool_call_failed",
+  "release_identity_mismatch",
+  "roots_list_failed",
+  "tools_call_rejected",
+]);
+const sensitiveHostFieldKeyPattern = /(api[_-]?key|authorization|credential|password|secret|token|cookie)/i;
+const hostObservationShape = {
+  fields: z.array(hostFieldSchema).max(256),
+  errorCodes: z.array(stableErrorCodeSchema).max(32),
+  truncated: z.boolean(),
+};
+const hostObservationOutputSchema = z.object({
+  source: z.enum(["ui/notifications/tool-result", "tools/call"]),
+  ...hostObservationShape,
+}).strict();
+const hostObservationProvenance = "unverified_widget_report";
+const maxHostObservationReportSlots = 8;
+const hostObservationScopeSchema = z.enum(["mcp_session_latest", "server_process_latest"]);
+const hostObservationReportOutputSchema = z.object({
+  provenance: z.literal(hostObservationProvenance),
+  scope: hostObservationScopeSchema,
+  observations: z.array(hostObservationOutputSchema).max(2),
+}).strict().nullable();
+const hostObservationInputSchema = z.tuple([
+  z.object({ source: z.literal("ui/notifications/tool-result"), ...hostObservationShape }).strict(),
+  z.object({ source: z.literal("tools/call"), ...hostObservationShape }).strict(),
+]);
 
 export function createImagegenServer({ releaseIdentity, launchContext, readWidgetHtml, runTask, readArtifact, readAnnotation, saveAnnotations }) {
   requireReleaseIdentity(releaseIdentity);
@@ -78,6 +197,7 @@ export function createImagegenServer({ releaseIdentity, launchContext, readWidge
   });
   const editorSessions = new Map();
   const destroyedCanvasImageIds = new Set();
+  const hostObservationReports = new Map();
 
   registerWidgetResource(server, {
     name: "image-result",
@@ -103,12 +223,13 @@ export function createImagegenServer({ releaseIdentity, launchContext, readWidge
       description: "返回当前 MCP server、启动根关系和客户端 roots 能力的脱敏诊断信息，不返回本机路径或 root URI。",
       inputSchema: {},
       outputSchema: {
+        hostObservationReport: hostObservationReportOutputSchema,
         releaseIdentity: releaseIdentityOutputSchema,
         runtime: runtimeObservationOutputSchema,
       },
       annotations: readAnnotations(),
     },
-    async () => {
+    async (_arguments, extra) => {
       const clientCapabilities = server.server.getClientCapabilities() ?? {};
       const rootsSupported = Boolean(clientCapabilities.roots);
       let roots = [];
@@ -128,10 +249,59 @@ export function createImagegenServer({ releaseIdentity, launchContext, readWidge
         roots,
         rootsErrorCode,
       });
+      const hostObservationReport = hostObservationReports.get(getHostObservationScope(extra).key) ?? null;
       return {
         content: [{ type: "text", text: "已读取图片 MCP 的脱敏运行环境。" }],
-        structuredContent: { releaseIdentity, runtime },
+        structuredContent: { hostObservationReport, releaseIdentity, runtime },
         _meta: { releaseIdentity },
+      };
+    },
+  );
+
+  server.registerTool(
+    "report_imagegen_host_observation",
+    {
+      title: "记录图片工作台宿主形状",
+      description: "记录当前发布版本下两类标准宿主结果的脱敏结构。该报告只能标记为未验证的 widget 上报，不是宿主来源证明；不记录图片、文本值、本机路径或客户端身份。",
+      inputSchema: {
+        releaseFingerprint: fingerprintSchema,
+        observations: hostObservationInputSchema,
+      },
+      outputSchema: {
+        accepted: z.number().int().min(0).max(2),
+        provenance: z.literal(hostObservationProvenance),
+        scope: hostObservationScopeSchema,
+        error: z.object({ code: stableErrorCodeSchema }).strict().optional(),
+      },
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+      _meta: { ui: { visibility: ["app"] } },
+    },
+    async ({ releaseFingerprint, observations }, extra) => {
+      if (releaseFingerprint !== releaseIdentity.fingerprint) {
+        return stableToolError("release_identity_mismatch", {
+          provenance: hostObservationProvenance,
+          scope: getHostObservationScope(extra).label,
+        });
+      }
+      const scope = getHostObservationScope(extra);
+      const copiedObservations = observations.map(copyHostObservation);
+      retainLatestHostObservationReport(hostObservationReports, scope.key, {
+        provenance: hostObservationProvenance,
+        scope: scope.label,
+        observations: copiedObservations,
+      });
+      return {
+        content: [{ type: "text", text: "已记录当前发布版本的未验证 widget 结果结构。" }],
+        structuredContent: {
+          accepted: copiedObservations.length,
+          provenance: hostObservationProvenance,
+          scope: scope.label,
+        },
       };
     },
   );
@@ -142,6 +312,7 @@ export function createImagegenServer({ releaseIdentity, launchContext, readWidge
       title: "读取图片模型",
       description: "返回当前 V2 配置中可用的图片模型及安全能力声明。",
       inputSchema: {},
+      outputSchema: z.object({ models: z.array(imageModelOutputSchema) }).strict(),
       annotations: readAnnotations(),
     },
     async () => {
@@ -168,6 +339,7 @@ export function createImagegenServer({ releaseIdentity, launchContext, readWidge
         modelProfileId: z.literal("primary/gpt-image-2").optional(),
         ...outputSchema,
       },
+      outputSchema: imageArtifactsOutputSchema,
       annotations: writeAnnotations(),
     },
     async ({ prompt, modelProfileId = "primary/gpt-image-2", ...output }) =>
@@ -191,6 +363,7 @@ export function createImagegenServer({ releaseIdentity, launchContext, readWidge
         modelProfileId: z.literal("primary/gpt-image-2").optional(),
         ...outputSchema,
       },
+      outputSchema: imageArtifactsOutputSchema,
       annotations: writeAnnotations(),
     },
     async ({ parentImageId, referenceImageIds = [], annotationId = null, prompt, modelProfileId = "primary/gpt-image-2", ...output }) => {
@@ -227,6 +400,10 @@ export function createImagegenServer({ releaseIdentity, launchContext, readWidge
       title: "读取图片产物",
       description: "按稳定图片 ID 读取图片内容、安全元数据和当前画布可用状态。",
       inputSchema: { imageId: imageIdSchema },
+      outputSchema: z.object({
+        artifact: imageArtifactOutputSchema,
+        canvasStatus: z.enum(["available", "destroyed"]),
+      }).strict(),
       annotations: readAnnotations(),
     },
     async ({ imageId }) => {
@@ -252,10 +429,10 @@ export function createImagegenServer({ releaseIdentity, launchContext, readWidge
       title: "读取工作台图片数据",
       description: "供图片工作台按稳定图片 ID 读取图片像素数据。该工具只对 app/widget 可见。",
       inputSchema: { imageId: imageIdSchema },
-      outputSchema: {
+      outputSchema: z.object({
         id: imageIdSchema,
         mimeType: z.string().regex(/^image\/(png|jpeg|webp)$/),
-      },
+      }).strict(),
       annotations: readAnnotations(),
       _meta: {
         ui: { visibility: ["app"] },
@@ -291,6 +468,12 @@ export function createImagegenServer({ releaseIdentity, launchContext, readWidge
       title: "显示图片结果",
       description: "在一个会话结果容器中按顺序显示一张或多张已创建图片，并为每张图片提供独立画布入口。生成或编辑成功后只调用一次。",
       inputSchema: { imageIds: z.array(imageIdSchema).min(1).max(10) },
+      outputSchema: z.object({
+        imageIds: z.array(imageIdSchema).min(1).max(10),
+        artifacts: z.array(imageArtifactOutputSchema.extend({
+          canvasStatus: z.enum(["available", "destroyed"]),
+        })).min(1).max(10),
+      }).strict(),
       annotations: readAnnotations(),
       _meta: {
         ui: { resourceUri: resultWidgetUri },
@@ -328,6 +511,10 @@ export function createImagegenServer({ releaseIdentity, launchContext, readWidge
       title: "打开图片画布",
       description: "按稳定图片 ID 打开对应的聚焦图片画布；已显式销毁的图片画布在当前 MCP server 生命周期内不能再次打开。",
       inputSchema: { imageId: imageIdSchema },
+      outputSchema: z.object({
+        editorSession: openEditorSessionOutputSchema,
+        artifact: imageArtifactOutputSchema,
+      }).strict(),
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
@@ -376,6 +563,7 @@ export function createImagegenServer({ releaseIdentity, launchContext, readWidge
         imageId: imageIdSchema,
         items: z.array(annotationItemSchema).min(1).max(100),
       },
+      outputSchema: z.object({ annotation: annotationOutputSchema }).strict(),
       annotations: writeAnnotations(),
       _meta: { ui: { visibility: ["app"] } },
     },
@@ -399,6 +587,7 @@ export function createImagegenServer({ releaseIdentity, launchContext, readWidge
       title: "读取画布会话状态",
       description: "供图片画布检查自身是否仍处于活动状态。",
       inputSchema: { editorSessionId: editorSessionIdSchema },
+      outputSchema: z.object({ editorSession: editorSessionOutputSchema }).strict(),
       annotations: readAnnotations(),
       _meta: { ui: { visibility: ["app"] } },
     },
@@ -411,6 +600,7 @@ export function createImagegenServer({ releaseIdentity, launchContext, readWidge
       title: "销毁图片画布",
       description: "结束并释放指定图片的全部活动画布会话，并终止当前 MCP server 生命周期内的重新打开入口。仅在用户明确要求销毁，或任务已明确转移且当前图片不再需要继续查看、标注或修改时调用；普通隐藏、关闭右栏或暂时讨论其他内容时不要调用。",
       inputSchema: { editorSessionId: editorSessionIdSchema },
+      outputSchema: z.object({ editorSession: editorSessionOutputSchema }).strict(),
       annotations: {
         readOnlyHint: false,
         destructiveHint: true,
@@ -435,6 +625,7 @@ export function createImagegenServer({ releaseIdentity, launchContext, readWidge
       title: "释放画布会话状态",
       description: "供图片画布在宿主卸载前释放自身的临时会话状态。",
       inputSchema: { editorSessionId: editorSessionIdSchema },
+      outputSchema: z.object({ editorSession: editorSessionOutputSchema }).strict(),
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
@@ -557,12 +748,56 @@ function imageArtifactMetadata(metadata) {
   return { ...metadata };
 }
 
-function toolError(error, code = "image_task_failed") {
-  const message = error instanceof Error ? error.message : String(error);
+function getHostObservationScope(extra) {
+  const sessionId = extra?.sessionId;
+  if (typeof sessionId === "string" && sessionId.length > 0) {
+    return { key: `session:${sessionId}`, label: "mcp_session_latest" };
+  }
+  return { key: "server-process", label: "server_process_latest" };
+}
+
+function retainLatestHostObservationReport(reports, key, report) {
+  reports.delete(key);
+  reports.set(key, report);
+  while (reports.size > maxHostObservationReportSlots) {
+    reports.delete(reports.keys().next().value);
+  }
+}
+
+function copyHostObservation(observation) {
+  return {
+    source: observation.source,
+    fields: observation.fields.map((field) => ({
+      ...field,
+      path: sanitizeHostFieldPath(field.path),
+    })),
+    errorCodes: [...new Set(observation.errorCodes.filter((code) => retainedHostErrorCodes.has(code)))],
+    truncated: observation.truncated,
+  };
+}
+
+function sanitizeHostFieldPath(path) {
+  return path.replace(/\.([A-Za-z_][A-Za-z0-9_-]{0,63})/g, (_match, key) => {
+    if (sensitiveHostFieldKeyPattern.test(key)) return ".redacted";
+    return retainedHostFieldKeys.has(key) ? `.${key}` : ".field";
+  });
+}
+
+function stableToolError(code, extraStructuredContent = {}) {
   return {
     isError: true,
-    content: [{ type: "text", text: `${code}: ${message}` }],
-    structuredContent: { error: { code, message } },
+    content: [{ type: "text", text: code }],
+    structuredContent: { accepted: 0, ...extraStructuredContent, error: { code } },
+  };
+}
+
+function toolError(error, code = error?.code) {
+  const stableCode = stableToolErrorMessages.has(code) ? code : "image_task_failed";
+  const message = stableToolErrorMessages.get(stableCode);
+  return {
+    isError: true,
+    content: [{ type: "text", text: `${stableCode}: ${message}` }],
+    structuredContent: { error: { code: stableCode, message } },
   };
 }
 

@@ -28,12 +28,17 @@ function artifact(id, parentIds = []) {
   return {
     id,
     parentIds,
+    childIds: [],
     mimeType: "image/png",
     width: 1,
     height: 1,
     provider: "primary",
     model: "gpt-image-2",
     operation: parentIds.length ? "edit" : "generate",
+    prompt: "test prompt",
+    parameters: {},
+    annotationId: null,
+    createdAt: "2026-08-06T00:00:00.000Z",
   };
 }
 
@@ -158,6 +163,107 @@ test("only the result renderer and focused editor bind app resources", async () 
         resources.map((resource) => resource.uri).sort(),
         [resultUri, editorUri].sort(),
       );
+    },
+  );
+});
+
+test("all product tools declare precise structured output schemas", async () => {
+  await withClient(
+    {
+      runTask: async () => ({ ok: true, models: [] }),
+      readArtifact: async (id) => ({ metadata: artifact(id), data: PNG_BASE64 }),
+      saveAnnotations: async () => ({
+        id: "ann_01J00000000000000000000000",
+        imageId: "img_01J00000000000000000000000",
+        itemCount: 1,
+        previewMimeType: "image/svg+xml",
+        hasMask: false,
+        maskMimeType: null,
+      }),
+    },
+    async (client) => {
+      const { tools } = await client.listTools();
+      const schemas = new Map(tools.map((tool) => [tool.name, tool.outputSchema]));
+      const productTools = [
+        "list_image_models",
+        "generate_image",
+        "edit_image",
+        "get_image_artifact",
+        "read_image_artifact_data",
+        "render_image_results",
+        "open_image_editor",
+        "save_image_annotations",
+        "get_image_editor_session",
+        "destroy_image_editor",
+        "finalize_image_editor_session",
+      ];
+
+      for (const name of productTools) {
+        assert.notEqual(schemas.get(name), undefined, `${name} outputSchema missing`);
+        assert.equal(schemas.get(name).additionalProperties, false, `${name} outputSchema must be strict`);
+      }
+
+      assert.deepEqual(schemas.get("list_image_models").required, ["models"]);
+      assert.deepEqual(schemas.get("list_image_models").properties.models.items.required.sort(), ["capabilities", "id", "model", "provider"]);
+      assert.equal(schemas.get("list_image_models").properties.models.items.additionalProperties, false);
+
+      for (const name of ["generate_image", "edit_image"]) {
+        assert.deepEqual(schemas.get(name).required, ["artifacts"]);
+        assert.equal(schemas.get(name).properties.artifacts.items.additionalProperties, false);
+        assert.deepEqual(schemas.get(name).properties.artifacts.items.required.sort(), [
+          "annotationId",
+          "childIds",
+          "createdAt",
+          "height",
+          "id",
+          "mimeType",
+          "model",
+          "operation",
+          "parameters",
+          "parentIds",
+          "prompt",
+          "provider",
+          "width",
+        ]);
+      }
+
+      assert.deepEqual(schemas.get("get_image_artifact").required.sort(), ["artifact", "canvasStatus"]);
+      assert.deepEqual(schemas.get("render_image_results").required.sort(), ["artifacts", "imageIds"]);
+      assert.deepEqual(schemas.get("render_image_results").properties.artifacts.items.required.sort(), [
+        "annotationId",
+        "canvasStatus",
+        "childIds",
+        "createdAt",
+        "height",
+        "id",
+        "mimeType",
+        "model",
+        "operation",
+        "parameters",
+        "parentIds",
+        "prompt",
+        "provider",
+        "width",
+      ]);
+
+      assert.deepEqual(schemas.get("open_image_editor").required.sort(), ["artifact", "editorSession"]);
+      assert.deepEqual(schemas.get("open_image_editor").properties.editorSession.required.sort(), ["id", "imageId", "status"]);
+      assert.equal(schemas.get("open_image_editor").properties.editorSession.additionalProperties, false);
+      assert.deepEqual(schemas.get("save_image_annotations").required, ["annotation"]);
+      assert.equal(schemas.get("save_image_annotations").properties.annotation.additionalProperties, false);
+      assert.deepEqual(schemas.get("save_image_annotations").properties.annotation.required.sort(), [
+        "hasMask",
+        "id",
+        "imageId",
+        "itemCount",
+        "maskMimeType",
+        "previewMimeType",
+      ]);
+
+      for (const name of ["get_image_editor_session", "destroy_image_editor", "finalize_image_editor_session"]) {
+        assert.deepEqual(schemas.get(name).required, ["editorSession"]);
+        assert.deepEqual(schemas.get(name).properties.editorSession.required, ["id", "status"]);
+      }
     },
   );
 });
@@ -482,7 +588,153 @@ test("open_image_editor rejects an artifact that does not exist", async () => {
         arguments: { imageId: "img_01J00000000000000000000000" },
       });
       assert.equal(result.isError, true);
-      assert.match(result.content[0].text, /artifact not found/);
+      assert.equal(result.structuredContent.error.code, "artifact_not_found");
+      assert.match(result.content[0].text, /未找到指定图片产物/);
+    },
+  );
+});
+
+test("filesystem errors return a safe summary without absolute paths", async () => {
+  const leakedPath = "F:/private/imagegen/output/image.png";
+  await withClient(
+    {
+      runTask: async () => {
+        throw new Error("not used");
+      },
+      readArtifact: async () => {
+        throw new Error(`EACCES: ${leakedPath}`);
+      },
+    },
+    async (client) => {
+      const result = await client.callTool({
+        name: "open_image_editor",
+        arguments: { imageId: "img_01J00000000000000000000000" },
+      });
+      assert.equal(result.isError, true);
+      assert.equal(result.structuredContent.error.code, "artifact_not_found");
+      assert.equal(result.structuredContent.error.message.includes(leakedPath), false);
+      assert.equal(result.content[0].text.includes(leakedPath), false);
+    },
+  );
+});
+
+test("product tool errors never expose provider text or local paths", async () => {
+  const imageId = "img_01J00000000000000000000000";
+  const annotationId = "ann_01J00000000000000000000000";
+  const secret = "provider-secret-token";
+  const windowsPath = "F:/private/imagegen/output/image.png";
+  const posixPath = "/home/alice/private/image.png";
+  const unsafeError = () => new Error(`EPERM: ${windowsPath}; ${posixPath}; ${secret}`);
+  const cases = [
+    {
+      name: "list_image_models",
+      arguments: {},
+      expectedCode: "image_task_failed",
+      dependencies: { runTask: async () => { throw unsafeError(); } },
+    },
+    {
+      name: "generate_image",
+      arguments: { prompt: "test" },
+      expectedCode: "image_task_failed",
+      dependencies: { runTask: async () => { throw unsafeError(); } },
+    },
+    {
+      name: "edit_image",
+      arguments: { parentImageId: imageId, annotationId, prompt: "test" },
+      expectedCode: "annotation_not_found",
+      dependencies: {
+        runTask: async () => { throw new Error("not used"); },
+        readAnnotation: async () => { throw unsafeError(); },
+      },
+    },
+    {
+      name: "get_image_artifact",
+      arguments: { imageId },
+      expectedCode: "image_task_failed",
+      dependencies: {},
+    },
+    {
+      name: "read_image_artifact_data",
+      arguments: { imageId },
+      expectedCode: "artifact_read_failed",
+      dependencies: {},
+    },
+    {
+      name: "render_image_results",
+      arguments: { imageIds: [imageId] },
+      expectedCode: "artifact_read_failed",
+      dependencies: {},
+    },
+    {
+      name: "open_image_editor",
+      arguments: { imageId },
+      expectedCode: "artifact_not_found",
+      dependencies: {},
+    },
+    {
+      name: "save_image_annotations",
+      arguments: {
+        imageId,
+        items: [{ id: "note-1", type: "text", x: 0.5, y: 0.5, text: "test" }],
+      },
+      expectedCode: "annotation_save_failed",
+      dependencies: {
+        readArtifact: async () => ({ metadata: artifact(imageId), data: PNG_BASE64 }),
+        saveAnnotations: async () => { throw unsafeError(); },
+      },
+    },
+  ];
+
+  for (const testCase of cases) {
+    await withClient(
+      {
+        runTask: async () => { throw new Error("not used"); },
+        readArtifact: async () => { throw unsafeError(); },
+        ...testCase.dependencies,
+      },
+      async (client) => {
+        const result = await client.callTool({ name: testCase.name, arguments: testCase.arguments });
+        assert.equal(result.isError, true, testCase.name);
+        assert.equal(result.structuredContent.error.code, testCase.expectedCode, testCase.name);
+        const serialized = JSON.stringify(result);
+        for (const privateValue of [secret, windowsPath, posixPath]) {
+          assert.equal(serialized.includes(privateValue), false, `${testCase.name} exposed ${privateValue}`);
+        }
+      },
+    );
+  }
+});
+
+test("tool errors preserve supported runtime codes with fixed safe summaries", async () => {
+  const privateMessage = "provider rejected sk-private at F:/private/config.json";
+  await withClient(
+    {
+      runTask: async () => ({
+        ok: false,
+        error: { code: "unsupported_capability", message: privateMessage },
+      }),
+      readArtifact: async () => { throw new Error("not used"); },
+    },
+    async (client) => {
+      const result = await client.callTool({ name: "generate_image", arguments: { prompt: "test" } });
+      assert.equal(result.isError, true);
+      assert.equal(result.structuredContent.error.code, "unsupported_capability");
+      assert.equal(JSON.stringify(result).includes(privateMessage), false);
+      assert.equal(JSON.stringify(result).includes("sk-private"), false);
+    },
+  );
+
+  const configError = new Error("unsafe local configuration detail");
+  configError.code = "v2_config_missing";
+  await withClient(
+    {
+      runTask: async () => { throw configError; },
+      readArtifact: async () => { throw new Error("not used"); },
+    },
+    async (client) => {
+      const result = await client.callTool({ name: "list_image_models", arguments: {} });
+      assert.equal(result.structuredContent.error.code, "v2_config_missing");
+      assert.equal(JSON.stringify(result).includes(configError.message), false);
     },
   );
 });
@@ -549,7 +801,14 @@ test("save_image_annotations stores multiple independent annotations together", 
       readArtifact: async (id) => ({ metadata: artifact(id), data: PNG_BASE64 }),
       saveAnnotations: async (request) => {
         captured = request;
-        return { id: "ann_01J00000000000000000000000", imageId, itemCount: items.length, previewMimeType: "image/svg+xml", hasMask: false };
+        return {
+          id: "ann_01J00000000000000000000000",
+          imageId,
+          itemCount: items.length,
+          previewMimeType: "image/svg+xml",
+          hasMask: false,
+          maskMimeType: null,
+        };
       },
     },
     async (client) => {
@@ -582,7 +841,9 @@ test("runtime failure is returned as an MCP error without switching route", asyn
         arguments: { prompt: "one attempt" },
       });
       assert.equal(result.isError, true);
-      assert.match(result.content[0].text, /provider rejected request/);
+      assert.equal(result.structuredContent.error.code, "image_task_failed");
+      assert.match(result.content[0].text, /图片任务执行失败/);
+      assert.equal(result.content[0].text.includes("provider rejected request"), false);
     },
   );
   assert.equal(calls, 1);

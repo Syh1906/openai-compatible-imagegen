@@ -7,6 +7,67 @@ const IMAGE_ID = "img_01J00000000000000000000000";
 const EDITOR_SESSION_ID = "eds_01J00000000000000000000000";
 const PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFgAI/ScL1WQAAAABJRU5ErkJggg==";
 
+test("widget reports the initial notification and tools call response as safe shapes", async () => {
+  const releaseFingerprint = "0123456789abcdefabcd";
+  const dom = new JSDOM(
+    `<!doctype html><html><head><meta name="openai-compatible-imagegen-release" content="${releaseFingerprint}"></head><body><main><p>正在加载图片...</p></main></body></html>`,
+    { pretendToBeVisual: true, url: "https://widget.local/" },
+  );
+  const previous = installDomGlobals(dom.window);
+  const host = installHost(dom.window, {
+    toolName: "render_image_results",
+    initialArtifacts: [
+      { id: IMAGE_ID, mimeType: "image/png", width: 1, height: 1, operation: "generate", parentIds: [], childIds: [] },
+    ],
+    initialResultIncludesImages: true,
+  });
+
+  try {
+    await import(`../web/editor-runtime.mjs?host-observation=${Date.now()}`);
+    await waitFor(() => host.toolCalls.some(({ name }) => name === "report_imagegen_host_observation"));
+    const report = host.toolCalls.find(({ name }) => name === "report_imagegen_host_observation");
+    assert.equal(report.arguments.releaseFingerprint, releaseFingerprint);
+    assert.deepEqual(
+      report.arguments.observations.map((observation) => observation.source),
+      ["ui/notifications/tool-result", "tools/call"],
+    );
+    const serialized = JSON.stringify(report.arguments.observations);
+    assert.equal(serialized.includes(IMAGE_ID), false);
+    assert.equal(serialized.includes(PNG_BASE64), false);
+  } finally {
+    host.dispose();
+    restoreDomGlobals(previous);
+    dom.window.close();
+  }
+});
+
+test("widget does not synthesize a tools call envelope when the host rejects it", async () => {
+  const releaseFingerprint = "0123456789abcdefabcd";
+  const dom = new JSDOM(
+    `<!doctype html><html><head><meta name="openai-compatible-imagegen-release" content="${releaseFingerprint}"></head><body><main><p>正在加载图片...</p></main></body></html>`,
+    { pretendToBeVisual: true, url: "https://widget.local/" },
+  );
+  const previous = installDomGlobals(dom.window);
+  const host = installHost(dom.window, {
+    toolName: "render_image_results",
+    initialArtifacts: [
+      { id: IMAGE_ID, mimeType: "image/png", width: 1, height: 1, operation: "generate", parentIds: [], childIds: [] },
+    ],
+    rejectModelCatalog: true,
+  });
+
+  try {
+    await import(`../web/editor-runtime.mjs?host-observation-rejected=${Date.now()}`);
+    await waitFor(() => host.toolCalls.some(({ name }) => name === "list_image_models"));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.equal(host.toolCalls.some(({ name }) => name === "report_imagegen_host_observation"), false);
+  } finally {
+    host.dispose();
+    restoreDomGlobals(previous);
+    dom.window.close();
+  }
+});
+
 test("the render result opens the selected candidate after app-only artifact reads", async () => {
   const secondId = "img_01J00000000000000000000001";
   const dom = new JSDOM(
@@ -992,7 +1053,7 @@ test("editor widget returns to the conversation when the LLM destroys its sessio
   }
 });
 
-function installHost(window, { toolName, editorSessionStatus = "active", canvasStatus = "available", deferModelContext = false, children = [], maskCapability = true, failMessageOnce = false, failOpenImageId = null, artifactOverride = null, initialArtifacts = null, initialResultIncludesImages = true, initialResultIncludesWidgetImages = false }) {
+function installHost(window, { toolName, editorSessionStatus = "active", canvasStatus = "available", deferModelContext = false, children = [], maskCapability = true, failMessageOnce = false, failOpenImageId = null, artifactOverride = null, initialArtifacts = null, initialResultIncludesImages = true, initialResultIncludesWidgetImages = false, rejectModelCatalog = false }) {
   const toolCalls = [];
   const resourceReads = [];
   const displayModeRequests = [];
@@ -1082,6 +1143,14 @@ function installHost(window, { toolName, editorSessionStatus = "active", canvasS
     } else if (message?.method === "tools/call") {
       toolCalls.push(message.params);
       const toolName = message.params.name;
+      if (toolName === "list_image_models" && rejectModelCatalog) {
+        sendToApp(window, {
+          jsonrpc: "2.0",
+          id: message.id,
+          error: { code: -32603, message: "model catalog unavailable" },
+        });
+        return;
+      }
       if (toolName === "open_image_editor") editorSessionImageId = message.params.arguments.imageId;
       const result = toolName === "read_image_artifact_data"
         ? {
@@ -1105,6 +1174,11 @@ function installHost(window, { toolName, editorSessionStatus = "active", canvasS
               models: [{ id: "primary/gpt-image-2", provider: "primary", model: "gpt-image-2", capabilities: { mask: maskCapability } }],
             },
           }
+        : toolName === "report_imagegen_host_observation"
+          ? {
+              content: [],
+              structuredContent: { accepted: message.params.arguments.observations.length },
+            }
         : toolName === "get_image_editor_session"
         ? {
             content: [],

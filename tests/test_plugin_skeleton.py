@@ -160,6 +160,7 @@ class PluginSkeletonTests(unittest.TestCase):
                 "open_image_editor",
                 "read_image_artifact_data",
                 "render_image_results",
+                "report_imagegen_host_observation",
                 "save_image_annotations",
             ],
         )
@@ -185,6 +186,7 @@ class PluginSkeletonTests(unittest.TestCase):
                 "get_image_editor_session",
                 "open_image_editor",
                 "read_image_artifact_data",
+                "report_imagegen_host_observation",
                 "save_image_annotations",
             ],
         )
