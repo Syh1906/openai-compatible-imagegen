@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
 import { JSDOM } from "jsdom";
 
 import { createImagegenServer } from "../mcp/create-server.mjs";
@@ -61,12 +62,17 @@ test("widget consumes real MCP declarations and tool results through one integra
   let dom = null;
   let previousGlobals = null;
   let host = null;
+  let testFailure = null;
 
   try {
-    await Promise.all([
-      server.connect(serverTransport).then(() => { serverConnected = true; }),
-      client.connect(clientTransport).then(() => { clientConnected = true; }),
+    const connectionResults = await Promise.allSettled([
+      server.connect(serverTransport),
+      client.connect(clientTransport),
     ]);
+    serverConnected = connectionResults[0].status === "fulfilled";
+    clientConnected = connectionResults[1].status === "fulfilled";
+    const connectionFailure = connectionResults.find(({ status }) => status === "rejected");
+    if (connectionFailure) throw connectionFailure.reason;
     const toolCatalog = await client.listTools();
     const resultTool = toolCatalog.tools.find(({ name }) => name === "render_image_results");
     assert.ok(resultTool);
@@ -88,6 +94,7 @@ test("widget consumes real MCP declarations and tool results through one integra
     const widgetResource = await client.readResource({ uri: resourceUri });
     const widgetResourceContent = widgetResource.contents.find((content) => content.uri === resourceUri);
     assert.equal(widgetResourceContent?._meta?.releaseIdentity?.resourceUris?.result, resourceUri);
+    assert.equal(widgetResourceContent?.mimeType, RESOURCE_MIME_TYPE);
     assert.equal(typeof widgetResourceContent?.text, "string");
 
     dom = new JSDOM(
@@ -142,13 +149,32 @@ test("widget consumes real MCP declarations and tool results through one integra
       diagnostic.structuredContent.hostObservationReport.observations.map(({ source }) => source),
       ["ui/notifications/tool-result", "tools/call"],
     );
-  } finally {
-    await host?.settle();
-    host?.dispose();
-    if (clientConnected) await client.close();
-    if (serverConnected) await server.close();
-    if (previousGlobals) restoreDomGlobals(previousGlobals);
-    dom?.window.close();
+  } catch (error) {
+    testFailure = error;
+  }
+
+  const cleanupErrors = await collectCleanupErrors([
+    async () => {
+      if (host) await withTimeout(host.settle(), 1000, "widget tool cleanup timed out");
+    },
+    () => host?.dispose(),
+    async () => {
+      if (clientConnected) await withTimeout(client.close(), 1000, "MCP client cleanup timed out");
+    },
+    async () => {
+      if (serverConnected) await withTimeout(server.close(), 1000, "MCP server cleanup timed out");
+    },
+    () => {
+      if (previousGlobals) restoreDomGlobals(previousGlobals);
+    },
+    () => dom?.window.close(),
+  ]);
+  if (testFailure && cleanupErrors.length === 0) throw testFailure;
+  if (testFailure || cleanupErrors.length > 0) {
+    throw new AggregateError(
+      [...(testFailure ? [testFailure] : []), ...cleanupErrors],
+      "widget integration test or cleanup failed",
+    );
   }
 });
 
@@ -241,7 +267,11 @@ function installHost(hostWindow, widgetWindow, { tool, initialToolArguments, ini
     settle: async () => {
       let previousAttemptCount = -1;
       for (let turn = 0; turn < 20; turn += 1) {
-        await Promise.allSettled([...pendingToolCalls]);
+        await withTimeout(
+          Promise.allSettled([...pendingToolCalls]),
+          1000,
+          "widget tool call did not finish",
+        );
         await new Promise((resolve) => setImmediate(resolve));
         if (pendingToolCalls.size === 0 && attemptedToolCalls.length === previousAttemptCount) return;
         previousAttemptCount = attemptedToolCalls.length;
@@ -249,6 +279,34 @@ function installHost(hostWindow, widgetWindow, { tool, initialToolArguments, ini
       throw new Error("widget tool calls did not settle");
     },
   };
+}
+
+
+async function collectCleanupErrors(actions) {
+  const errors = [];
+  for (const action of actions) {
+    try {
+      await action();
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  return errors;
+}
+
+
+async function withTimeout(promise, timeoutMs, message) {
+  let timeoutId;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error(message)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 
