@@ -8,6 +8,7 @@ import {
   MAX_RUNTIME_ROOT_ENTRIES,
   MAX_RUNTIME_ROOT_SCHEME_LENGTH,
 } from "./runtime-diagnostics.mjs";
+import { createProjectContext } from "./project-context.mjs";
 const imageIdSchema = z.string().regex(/^img_[0-9A-HJKMNP-TV-Z]{26}$/).describe("项目产物仓库中的稳定图片 ID");
 const editorSessionIdSchema = z.string().regex(/^eds_[0-9a-f]{32}$/).describe("已打开画布的会话 ID");
 const normalizedCoordinate = z.number().min(0).max(1);
@@ -87,10 +88,10 @@ const releaseIdentityOutputSchema = z.object({
 const runtimeObservationOutputSchema = z.object({
   cwdFingerprint: fingerprintSchema,
   pluginRootFingerprint: fingerprintSchema,
-  projectRootFingerprint: fingerprintSchema,
+  projectRootFingerprint: fingerprintSchema.nullable(),
   cwdRelationToPlugin: z.enum(["same", "descendant", "outside"]),
-  projectRootRelationToPlugin: z.enum(["same", "descendant", "outside"]),
-  projectRootSource: z.string().min(1),
+  projectRootRelationToPlugin: z.enum(["same", "descendant", "outside"]).nullable(),
+  projectRootSource: z.enum(["unbound", "explicit_tool"]),
   client: z.object({
     reported: z.boolean(),
     nameFingerprint: fingerprintSchema.nullable(),
@@ -142,6 +143,11 @@ const stableToolErrorMessages = new Map([
   ["image_task_failed", "图片任务执行失败。"],
   ["invalid_json", "图片运行时输入不是有效 JSON。"],
   ["invalid_task", "图片任务参数无效。"],
+  ["project_binding_conflict", "当前会话已经绑定到另一个图片项目。"],
+  ["project_binding_required", "当前会话尚未绑定图片项目。"],
+  ["project_root_invalid", "图片项目根目录无效。"],
+  ["project_root_is_plugin_root", "插件安装目录不能作为图片项目根目录。"],
+  ["session_identity_unavailable", "当前宿主调用没有提供可用的会话身份。"],
   ["unsupported_capability", "当前图片模型不支持请求的能力。"],
   ["unsupported_model_profile", "当前图片模型配置不受支持。"],
   ["v2_config_missing", "V2 配置缺失。请创建用户配置或项目配置。"],
@@ -176,7 +182,7 @@ const hostObservationOutputSchema = z.object({
 }).strict();
 const hostObservationProvenance = "unverified_widget_report";
 const maxHostObservationReportSlots = 8;
-const hostObservationScopeSchema = z.enum(["mcp_session_latest", "server_process_latest"]);
+const hostObservationScopeSchema = z.literal("openai_session_latest");
 const hostObservationReportOutputSchema = z.object({
   provenance: z.literal(hostObservationProvenance),
   scope: hostObservationScopeSchema,
@@ -187,16 +193,27 @@ const hostObservationInputSchema = z.tuple([
   z.object({ source: z.literal("tools/call"), ...hostObservationShape }).strict(),
 ]);
 
-export function createImagegenServer({ releaseIdentity, launchContext, readWidgetHtml, runTask, readArtifact, readAnnotation, saveAnnotations }) {
+export function createImagegenServer({
+  releaseIdentity,
+  launchContext,
+  projectContext: providedProjectContext,
+  readWidgetHtml,
+  runTask,
+  readArtifact,
+  readAnnotation,
+  saveAnnotations,
+}) {
   requireReleaseIdentity(releaseIdentity);
   requireLaunchContext(launchContext);
+  const projectContext = providedProjectContext ?? createProjectContext({ pluginRoot: launchContext.pluginRoot });
+  requireProjectContext(projectContext);
   const { result: resultWidgetUri, editor: editorWidgetUri } = releaseIdentity.resourceUris;
   const server = new McpServer({
     name: releaseIdentity.pluginId,
     version: releaseIdentity.pluginVersion,
   });
   const editorSessions = new Map();
-  const destroyedCanvasImageIds = new Set();
+  const destroyedCanvasImageIdsByBinding = new Map();
   const hostObservationReports = new Map();
 
   registerWidgetResource(server, {
@@ -217,6 +234,31 @@ export function createImagegenServer({ releaseIdentity, launchContext, readWidge
   });
 
   server.registerTool(
+    "bind_imagegen_project",
+    {
+      title: "绑定图片项目",
+      description: "把当前 OpenAI 会话绑定到一个已存在的绝对项目根目录。首次使用图片工具前调用；同一会话只能绑定一个项目，绑定不会持久化，server 重启后需要重新调用。",
+      inputSchema: { projectRoot: z.string().min(1) },
+      outputSchema: z.object({ status: z.enum(["bound", "already_bound"]) }).strict(),
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    async ({ projectRoot }, extra) => {
+      try {
+        const receipt = await projectContext.bind(extra, { projectRoot });
+        const text = receipt.status === "bound" ? "已绑定当前图片项目。" : "当前图片项目已经绑定。";
+        return { content: [{ type: "text", text }], structuredContent: receipt };
+      } catch (error) {
+        return toolError(error);
+      }
+    },
+  );
+
+  server.registerTool(
     "inspect_imagegen_runtime",
     {
       title: "检查图片运行环境",
@@ -230,31 +272,40 @@ export function createImagegenServer({ releaseIdentity, launchContext, readWidge
       annotations: readAnnotations(),
     },
     async (_arguments, extra) => {
-      const clientCapabilities = server.server.getClientCapabilities() ?? {};
-      const rootsSupported = Boolean(clientCapabilities.roots);
-      let roots = [];
-      let rootsErrorCode = null;
-      if (rootsSupported) {
-        try {
-          roots = (await server.server.listRoots()).roots ?? [];
-        } catch {
-          rootsErrorCode = "roots_list_failed";
+      try {
+        const clientCapabilities = server.server.getClientCapabilities() ?? {};
+        const rootsSupported = Boolean(clientCapabilities.roots);
+        let roots = [];
+        let rootsErrorCode = null;
+        if (rootsSupported) {
+          try {
+            roots = (await server.server.listRoots()).roots ?? [];
+          } catch {
+            rootsErrorCode = "roots_list_failed";
+          }
         }
+        const boundProject = await optionalProjectContext(projectContext, extra);
+        const runtime = createRuntimeObservation({
+          ...launchContext,
+          projectRoot: boundProject?.projectRoot ?? null,
+          projectRootSource: boundProject ? "explicit_tool" : "unbound",
+          clientVersion: server.server.getClientVersion(),
+          clientCapabilities,
+          rootsSupported,
+          roots,
+          rootsErrorCode,
+        });
+        const hostObservationReport = boundProject
+          ? hostObservationReports.get(getHostObservationScope(boundProject).key) ?? null
+          : null;
+        return {
+          content: [{ type: "text", text: "已读取图片 MCP 的脱敏运行环境。" }],
+          structuredContent: { hostObservationReport, releaseIdentity, runtime },
+          _meta: { releaseIdentity },
+        };
+      } catch (error) {
+        return toolError(error);
       }
-      const runtime = createRuntimeObservation({
-        ...launchContext,
-        clientVersion: server.server.getClientVersion(),
-        clientCapabilities,
-        rootsSupported,
-        roots,
-        rootsErrorCode,
-      });
-      const hostObservationReport = hostObservationReports.get(getHostObservationScope(extra).key) ?? null;
-      return {
-        content: [{ type: "text", text: "已读取图片 MCP 的脱敏运行环境。" }],
-        structuredContent: { hostObservationReport, releaseIdentity, runtime },
-        _meta: { releaseIdentity },
-      };
     },
   );
 
@@ -281,14 +332,17 @@ export function createImagegenServer({ releaseIdentity, launchContext, readWidge
       },
       _meta: { ui: { visibility: ["app"] } },
     },
-    async ({ releaseFingerprint, observations }, extra) => {
+    async ({ releaseFingerprint, observations }, extra) => await withBoundProject(
+      projectContext,
+      extra,
+      async (context) => {
+        const scope = getHostObservationScope(context);
       if (releaseFingerprint !== releaseIdentity.fingerprint) {
         return stableToolError("release_identity_mismatch", {
           provenance: hostObservationProvenance,
-          scope: getHostObservationScope(extra).label,
+          scope: scope.label,
         });
       }
-      const scope = getHostObservationScope(extra);
       const copiedObservations = observations.map(copyHostObservation);
       retainLatestHostObservationReport(hostObservationReports, scope.key, {
         provenance: hostObservationProvenance,
@@ -303,7 +357,8 @@ export function createImagegenServer({ releaseIdentity, launchContext, readWidge
           scope: scope.label,
         },
       };
-    },
+      },
+    ),
   );
 
   server.registerTool(
@@ -315,9 +370,12 @@ export function createImagegenServer({ releaseIdentity, launchContext, readWidge
       outputSchema: z.object({ models: z.array(imageModelOutputSchema) }).strict(),
       annotations: readAnnotations(),
     },
-    async () => {
+    async (_arguments, extra) => await withBoundProject(projectContext, extra, async (context) => {
       try {
-        const result = await runTask({ operation: "list_models", modelProfileId: "primary/gpt-image-2" });
+        const result = await runTask(
+          { operation: "list_models", modelProfileId: "primary/gpt-image-2" },
+          context,
+        );
         if (!result?.ok) return toolError(new Error(result?.error?.message || "model catalog unavailable"), result?.error?.code);
         return {
           content: [{ type: "text", text: `已读取 ${result.models.length} 个图片模型。` }],
@@ -326,7 +384,7 @@ export function createImagegenServer({ releaseIdentity, launchContext, readWidge
       } catch (error) {
         return toolError(error);
       }
-    },
+    }),
   );
 
   server.registerTool(
@@ -342,12 +400,13 @@ export function createImagegenServer({ releaseIdentity, launchContext, readWidge
       outputSchema: imageArtifactsOutputSchema,
       annotations: writeAnnotations(),
     },
-    async ({ prompt, modelProfileId = "primary/gpt-image-2", ...output }) =>
-      await executeImageTask(
+    async ({ prompt, modelProfileId = "primary/gpt-image-2", ...output }, extra) =>
+      await withBoundProject(projectContext, extra, async (context) => await executeImageTask(
         { operation: "generate", modelProfileId, prompt, inputArtifactIds: [], annotationId: null, output },
+        context,
         runTask,
         readArtifact,
-      ),
+      )),
   );
 
   server.registerTool(
@@ -366,11 +425,12 @@ export function createImagegenServer({ releaseIdentity, launchContext, readWidge
       outputSchema: imageArtifactsOutputSchema,
       annotations: writeAnnotations(),
     },
-    async ({ parentImageId, referenceImageIds = [], annotationId = null, prompt, modelProfileId = "primary/gpt-image-2", ...output }) => {
+    async ({ parentImageId, referenceImageIds = [], annotationId = null, prompt, modelProfileId = "primary/gpt-image-2", ...output }, extra) =>
+      await withBoundProject(projectContext, extra, async (context) => {
       let annotation = null;
       if (annotationId) {
         try {
-          annotation = await readAnnotation(annotationId);
+          annotation = await readAnnotation(annotationId, context);
         } catch (error) {
           return toolError(error, "annotation_not_found");
         }
@@ -388,10 +448,11 @@ export function createImagegenServer({ releaseIdentity, launchContext, readWidge
           ...(annotation?.maskPath ? { mask: annotation.maskPath } : {}),
           output,
         },
+        context,
         runTask,
         readArtifact,
       );
-    },
+    }),
   );
 
   server.registerTool(
@@ -406,21 +467,25 @@ export function createImagegenServer({ releaseIdentity, launchContext, readWidge
       }).strict(),
       annotations: readAnnotations(),
     },
-    async ({ imageId }) => {
+    async ({ imageId }, extra) => await withBoundProject(projectContext, extra, async (context) => {
       try {
-        const artifact = await readArtifact(imageId);
+        const artifact = await readArtifact(imageId, context);
         return {
           content: [imageContent(artifact), { type: "text", text: `已读取图片 ${imageId}。` }],
           structuredContent: {
             artifact: imageArtifactMetadata(artifact.metadata),
-            canvasStatus: destroyedCanvasImageIds.has(imageId) ? "destroyed" : "available",
+            canvasStatus: isCanvasDestroyed(
+              destroyedCanvasImageIdsByBinding,
+              context.bindingKey,
+              imageId,
+            ) ? "destroyed" : "available",
           },
           _meta: { imageId },
         };
       } catch (error) {
         return toolError(error);
       }
-    },
+    }),
   );
 
   server.registerTool(
@@ -439,9 +504,9 @@ export function createImagegenServer({ releaseIdentity, launchContext, readWidge
         "openai/widgetAccessible": true,
       },
     },
-    async ({ imageId }) => {
+    async ({ imageId }, extra) => await withBoundProject(projectContext, extra, async (context) => {
       try {
-        const artifact = await readArtifact(imageId);
+        const artifact = await readArtifact(imageId, context);
         return {
           content: [{ type: "text", text: `已为图片工作台读取图片 ${imageId}。` }],
           structuredContent: {
@@ -459,7 +524,7 @@ export function createImagegenServer({ releaseIdentity, launchContext, readWidge
       } catch (error) {
         return toolError(error, "artifact_read_failed");
       }
-    },
+    }),
   );
 
   server.registerTool(
@@ -480,12 +545,16 @@ export function createImagegenServer({ releaseIdentity, launchContext, readWidge
         releaseIdentity,
       },
     },
-    async ({ imageIds }) => {
+    async ({ imageIds }, extra) => await withBoundProject(projectContext, extra, async (context) => {
       try {
-        const records = await Promise.all(imageIds.map((imageId) => readArtifact(imageId)));
+        const records = await Promise.all(imageIds.map((imageId) => readArtifact(imageId, context)));
         const artifacts = records.map(({ metadata }) => ({
           ...imageArtifactMetadata(metadata),
-          canvasStatus: destroyedCanvasImageIds.has(metadata.id) ? "destroyed" : "available",
+          canvasStatus: isCanvasDestroyed(
+            destroyedCanvasImageIdsByBinding,
+            context.bindingKey,
+            metadata.id,
+          ) ? "destroyed" : "available",
         }));
         return {
           content: [
@@ -502,7 +571,7 @@ export function createImagegenServer({ releaseIdentity, launchContext, readWidge
       } catch (error) {
         return toolError(error, "artifact_read_failed");
       }
-    },
+    }),
   );
 
   server.registerTool(
@@ -526,21 +595,25 @@ export function createImagegenServer({ releaseIdentity, launchContext, readWidge
         releaseIdentity,
       },
     },
-    async ({ imageId }) => {
+    async ({ imageId }, extra) => await withBoundProject(projectContext, extra, async (context) => {
       try {
-        const artifact = await readArtifact(imageId);
-        if (destroyedCanvasImageIds.has(imageId)) {
+        const artifact = await readArtifact(imageId, context);
+        if (isCanvasDestroyed(destroyedCanvasImageIdsByBinding, context.bindingKey, imageId)) {
           return toolError(new Error("当前图片的画布已经销毁"), "image_canvas_destroyed");
         }
         const editorSession = {
           id: `eds_${randomUUID().replaceAll("-", "")}`,
           imageId,
           status: "active",
+          bindingKey: context.bindingKey,
         };
         editorSessions.set(editorSession.id, editorSession);
         return {
           content: [{ type: "text", text: `已打开图片 ${imageId} 的聚焦画布，画布会话 ID 为 ${editorSession.id}。` }],
-          structuredContent: { editorSession, artifact: imageArtifactMetadata(artifact.metadata) },
+          structuredContent: {
+            editorSession: editorSessionOutput(editorSession),
+            artifact: imageArtifactMetadata(artifact.metadata),
+          },
           _meta: {
             ui: { resourceUri: editorWidgetUri },
             releaseIdentity,
@@ -551,7 +624,7 @@ export function createImagegenServer({ releaseIdentity, launchContext, readWidge
       } catch (error) {
         return toolError(error, "artifact_not_found");
       }
-    },
+    }),
   );
 
   server.registerTool(
@@ -567,10 +640,10 @@ export function createImagegenServer({ releaseIdentity, launchContext, readWidge
       annotations: writeAnnotations(),
       _meta: { ui: { visibility: ["app"] } },
     },
-    async ({ imageId, items }) => {
+    async ({ imageId, items }, extra) => await withBoundProject(projectContext, extra, async (context) => {
       try {
-        await readArtifact(imageId);
-        const annotation = await saveAnnotations({ imageId, items });
+        await readArtifact(imageId, context);
+        const annotation = await saveAnnotations({ imageId, items }, context);
         return {
           content: [{ type: "text", text: `已保存图片 ${imageId} 的 ${annotation.itemCount} 条标注。` }],
           structuredContent: { annotation },
@@ -578,7 +651,7 @@ export function createImagegenServer({ releaseIdentity, launchContext, readWidge
       } catch (error) {
         return toolError(error, "annotation_save_failed");
       }
-    },
+    }),
   );
 
   server.registerTool(
@@ -591,7 +664,13 @@ export function createImagegenServer({ releaseIdentity, launchContext, readWidge
       annotations: readAnnotations(),
       _meta: { ui: { visibility: ["app"] } },
     },
-    async ({ editorSessionId }) => editorSessionResult(editorSessions.get(editorSessionId)),
+    async ({ editorSessionId }, extra) => await withBoundProject(
+      projectContext,
+      extra,
+      async (context) => editorSessionResult(
+        getOwnedEditorSession(editorSessions, editorSessionId, context.bindingKey),
+      ),
+    ),
   );
 
   server.registerTool(
@@ -608,15 +687,28 @@ export function createImagegenServer({ releaseIdentity, launchContext, readWidge
         openWorldHint: false,
       },
     },
-    async ({ editorSessionId }) => {
-      const editorSession = editorSessions.get(editorSessionId);
+    async ({ editorSessionId }, extra) => await withBoundProject(projectContext, extra, async (context) => {
+      const editorSession = getOwnedEditorSession(
+        editorSessions,
+        editorSessionId,
+        context.bindingKey,
+      );
       if (!editorSession) return editorSessionResult({ id: editorSessionId }, "released");
-      destroyedCanvasImageIds.add(editorSession.imageId);
+      markCanvasDestroyed(
+        destroyedCanvasImageIdsByBinding,
+        context.bindingKey,
+        editorSession.imageId,
+      );
       for (const session of editorSessions.values()) {
-        if (session.imageId === editorSession.imageId) session.status = "destroyed";
+        if (
+          session.bindingKey === context.bindingKey
+          && session.imageId === editorSession.imageId
+        ) {
+          session.status = "destroyed";
+        }
       }
       return editorSessionResult(editorSession);
-    },
+    }),
   );
 
   server.registerTool(
@@ -634,11 +726,15 @@ export function createImagegenServer({ releaseIdentity, launchContext, readWidge
       },
       _meta: { ui: { visibility: ["app"] } },
     },
-    async ({ editorSessionId }) => {
-      const editorSession = editorSessions.get(editorSessionId);
-      editorSessions.delete(editorSessionId);
+    async ({ editorSessionId }, extra) => await withBoundProject(projectContext, extra, async (context) => {
+      const editorSession = getOwnedEditorSession(
+        editorSessions,
+        editorSessionId,
+        context.bindingKey,
+      );
+      if (editorSession) editorSessions.delete(editorSessionId);
       return editorSessionResult(editorSession || { id: editorSessionId }, "released");
-    },
+    }),
   );
 
   return server;
@@ -646,20 +742,46 @@ export function createImagegenServer({ releaseIdentity, launchContext, readWidge
 
 function editorSessionResult(editorSession, status = editorSession?.status) {
   if (!editorSession) return toolError(new Error("画布会话不存在或已经释放"), "editor_session_not_found");
-  const result = { ...editorSession, status };
+  const result = editorSessionOutput(editorSession, status);
   return {
     content: [{ type: "text", text: `画布会话 ${result.id} 当前状态为 ${result.status}。` }],
     structuredContent: { editorSession: result },
   };
 }
 
-async function executeImageTask(task, runTask, readArtifact) {
+function editorSessionOutput(editorSession, status = editorSession.status) {
+  return {
+    id: editorSession.id,
+    ...(editorSession.imageId ? { imageId: editorSession.imageId } : {}),
+    status,
+  };
+}
+
+function getOwnedEditorSession(editorSessions, editorSessionId, bindingKey) {
+  const editorSession = editorSessions.get(editorSessionId);
+  return editorSession?.bindingKey === bindingKey ? editorSession : null;
+}
+
+function isCanvasDestroyed(destroyedCanvasImageIdsByBinding, bindingKey, imageId) {
+  return destroyedCanvasImageIdsByBinding.get(bindingKey)?.has(imageId) ?? false;
+}
+
+function markCanvasDestroyed(destroyedCanvasImageIdsByBinding, bindingKey, imageId) {
+  let imageIds = destroyedCanvasImageIdsByBinding.get(bindingKey);
+  if (!imageIds) {
+    imageIds = new Set();
+    destroyedCanvasImageIdsByBinding.set(bindingKey, imageIds);
+  }
+  imageIds.add(imageId);
+}
+
+async function executeImageTask(task, context, runTask, readArtifact) {
   try {
-    const result = await runTask(task);
+    const result = await runTask(task, context);
     if (!result?.ok) {
       return toolError(new Error(result?.error?.message || "image task failed"), result?.error?.code);
     }
-    const artifacts = await Promise.all(result.artifacts.map((item) => readArtifact(item.id)));
+    const artifacts = await Promise.all(result.artifacts.map((item) => readArtifact(item.id, context)));
     const artifactMetadata = artifacts.map(({ metadata: item }) => imageArtifactMetadata(item));
     const structuredContent = { artifacts: artifactMetadata };
     const metadata = artifactMetadata.length === 1 ? artifactMetadata[0] : null;
@@ -676,6 +798,15 @@ async function executeImageTask(task, runTask, readArtifact) {
         ...(metadata ? { imageId: metadata.id } : {}),
       },
     };
+  } catch (error) {
+    return toolError(error);
+  }
+}
+
+
+async function withBoundProject(projectContext, extra, callback) {
+  try {
+    return await callback(await projectContext.require(extra));
   } catch (error) {
     return toolError(error);
   }
@@ -733,10 +864,31 @@ function requireLaunchContext(launchContext) {
     !launchContext
     || typeof launchContext.cwd !== "string"
     || typeof launchContext.pluginRoot !== "string"
-    || typeof launchContext.projectRoot !== "string"
-    || typeof launchContext.projectRootSource !== "string"
   ) {
     throw new Error("launchContext is required to create the MCP server");
+  }
+}
+
+
+function requireProjectContext(projectContext) {
+  if (
+    !projectContext
+    || typeof projectContext.bind !== "function"
+    || typeof projectContext.require !== "function"
+  ) {
+    throw new Error("projectContext must provide bind and require");
+  }
+}
+
+
+async function optionalProjectContext(projectContext, extra) {
+  try {
+    return await projectContext.require(extra);
+  } catch (error) {
+    if (error?.code === "session_identity_unavailable" || error?.code === "project_binding_required") {
+      return null;
+    }
+    throw error;
   }
 }
 
@@ -748,12 +900,11 @@ function imageArtifactMetadata(metadata) {
   return { ...metadata };
 }
 
-function getHostObservationScope(extra) {
-  const sessionId = extra?.sessionId;
-  if (typeof sessionId === "string" && sessionId.length > 0) {
-    return { key: `session:${sessionId}`, label: "mcp_session_latest" };
-  }
-  return { key: "server-process", label: "server_process_latest" };
+function getHostObservationScope(context) {
+  return {
+    key: `openai-session:${context.bindingKey}`,
+    label: "openai_session_latest",
+  };
 }
 
 function retainLatestHostObservationReport(reports, key, report) {
@@ -797,7 +948,6 @@ function toolError(error, code = error?.code) {
   return {
     isError: true,
     content: [{ type: "text", text: `${stableCode}: ${message}` }],
-    structuredContent: { error: { code: stableCode, message } },
   };
 }
 

@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
@@ -42,14 +42,22 @@ function artifact(id, parentIds = []) {
   };
 }
 
+function assertToolErrorCode(result, code, message = "") {
+  assert.equal(result.isError, true, message);
+  assert.equal(result.structuredContent, undefined, message);
+  assert.match(result.content?.[0]?.text ?? "", new RegExp(`^${code}:`), message);
+}
+
 async function withClient(dependencies, callback) {
+  const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), "imagegen-mcp-context-"));
+  const pluginRoot = path.join(fixtureRoot, "plugin-cache");
+  const projectRoot = path.join(fixtureRoot, "workspace");
+  await Promise.all([mkdir(pluginRoot), mkdir(projectRoot)]);
   const server = createImagegenServer({
     releaseIdentity: TEST_RELEASE_IDENTITY,
     launchContext: {
-      cwd: "F:/test/current-project",
-      pluginRoot: "F:/test/plugin-root",
-      projectRoot: "F:/test/current-project",
-      projectRootSource: "test-fixture",
+      cwd: pluginRoot,
+      pluginRoot,
     },
     readWidgetHtml: async () => "<html>editor</html>",
     ...dependencies,
@@ -58,10 +66,24 @@ async function withClient(dependencies, callback) {
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
   try {
+    const requestMeta = { "openai/session": "mcp-contract-test-session" };
+    const originalCallTool = client.callTool.bind(client);
+    await client.listTools();
+    const binding = await originalCallTool({
+      name: "bind_imagegen_project",
+      arguments: { projectRoot },
+      _meta: requestMeta,
+    });
+    assert.deepEqual(binding.structuredContent, { status: "bound" });
+    client.callTool = async (request, ...rest) => await originalCallTool(
+      { ...request, _meta: request._meta ?? requestMeta },
+      ...rest,
+    );
     await callback(client);
   } finally {
     await client.close();
     await server.close();
+    await rm(fixtureRoot, { recursive: true });
   }
 }
 
@@ -185,6 +207,7 @@ test("all product tools declare precise structured output schemas", async () => 
       const { tools } = await client.listTools();
       const schemas = new Map(tools.map((tool) => [tool.name, tool.outputSchema]));
       const productTools = [
+        "bind_imagegen_project",
         "list_image_models",
         "generate_image",
         "edit_image",
@@ -202,6 +225,8 @@ test("all product tools declare precise structured output schemas", async () => 
         assert.notEqual(schemas.get(name), undefined, `${name} outputSchema missing`);
         assert.equal(schemas.get(name).additionalProperties, false, `${name} outputSchema must be strict`);
       }
+
+      assert.deepEqual(schemas.get("bind_imagegen_project").required, ["status"]);
 
       assert.deepEqual(schemas.get("list_image_models").required, ["models"]);
       assert.deepEqual(schemas.get("list_image_models").properties.models.items.required.sort(), ["capabilities", "id", "model", "provider"]);
@@ -511,7 +536,7 @@ test("editor sessions can be opened, inspected, and destroyed", async () => {
         arguments: { imageId: "img_01J00000000000000000000000" },
       });
       assert.equal(reopened.isError, true);
-      assert.equal(reopened.structuredContent.error.code, "image_canvas_destroyed");
+      assertToolErrorCode(reopened, "image_canvas_destroyed");
     },
   );
 });
@@ -551,7 +576,7 @@ test("destroy_image_editor remains idempotent after the session was released", a
   );
 });
 
-test("missing editor sessions return a structured error code", async () => {
+test("missing editor sessions return a stable error outside success structured content", async () => {
   await withClient(
     {
       runTask: async () => {
@@ -566,8 +591,8 @@ test("missing editor sessions return a structured error code", async () => {
       });
 
       assert.equal(result.isError, true);
-      assert.equal(result.structuredContent.error.code, "editor_session_not_found");
-      assert.match(result.structuredContent.error.message, /画布会话不存在/);
+      assertToolErrorCode(result, "editor_session_not_found");
+      assert.match(result.content[0].text, /画布会话不存在/);
     },
   );
 });
@@ -588,7 +613,7 @@ test("open_image_editor rejects an artifact that does not exist", async () => {
         arguments: { imageId: "img_01J00000000000000000000000" },
       });
       assert.equal(result.isError, true);
-      assert.equal(result.structuredContent.error.code, "artifact_not_found");
+      assertToolErrorCode(result, "artifact_not_found");
       assert.match(result.content[0].text, /未找到指定图片产物/);
     },
   );
@@ -611,8 +636,7 @@ test("filesystem errors return a safe summary without absolute paths", async () 
         arguments: { imageId: "img_01J00000000000000000000000" },
       });
       assert.equal(result.isError, true);
-      assert.equal(result.structuredContent.error.code, "artifact_not_found");
-      assert.equal(result.structuredContent.error.message.includes(leakedPath), false);
+      assertToolErrorCode(result, "artifact_not_found");
       assert.equal(result.content[0].text.includes(leakedPath), false);
     },
   );
@@ -695,7 +719,7 @@ test("product tool errors never expose provider text or local paths", async () =
       async (client) => {
         const result = await client.callTool({ name: testCase.name, arguments: testCase.arguments });
         assert.equal(result.isError, true, testCase.name);
-        assert.equal(result.structuredContent.error.code, testCase.expectedCode, testCase.name);
+        assertToolErrorCode(result, testCase.expectedCode, testCase.name);
         const serialized = JSON.stringify(result);
         for (const privateValue of [secret, windowsPath, posixPath]) {
           assert.equal(serialized.includes(privateValue), false, `${testCase.name} exposed ${privateValue}`);
@@ -718,7 +742,7 @@ test("tool errors preserve supported runtime codes with fixed safe summaries", a
     async (client) => {
       const result = await client.callTool({ name: "generate_image", arguments: { prompt: "test" } });
       assert.equal(result.isError, true);
-      assert.equal(result.structuredContent.error.code, "unsupported_capability");
+      assertToolErrorCode(result, "unsupported_capability");
       assert.equal(JSON.stringify(result).includes(privateMessage), false);
       assert.equal(JSON.stringify(result).includes("sk-private"), false);
     },
@@ -733,7 +757,7 @@ test("tool errors preserve supported runtime codes with fixed safe summaries", a
     },
     async (client) => {
       const result = await client.callTool({ name: "list_image_models", arguments: {} });
-      assert.equal(result.structuredContent.error.code, "v2_config_missing");
+      assertToolErrorCode(result, "v2_config_missing");
       assert.equal(JSON.stringify(result).includes(configError.message), false);
     },
   );
@@ -841,7 +865,7 @@ test("runtime failure is returned as an MCP error without switching route", asyn
         arguments: { prompt: "one attempt" },
       });
       assert.equal(result.isError, true);
-      assert.equal(result.structuredContent.error.code, "image_task_failed");
+      assertToolErrorCode(result, "image_task_failed");
       assert.match(result.content[0].text, /图片任务执行失败/);
       assert.equal(result.content[0].text.includes("provider rejected request"), false);
     },

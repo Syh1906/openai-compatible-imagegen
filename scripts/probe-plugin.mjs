@@ -36,7 +36,7 @@ const CONSISTENCY_PATHS = [
 function parseOptions(args) {
   const options = {
     pluginRoot: defaultRoot,
-    projectRoot: process.cwd(),
+    projectRoot: null,
     sourceRoot: null,
     marketplacePath: null,
     imageIds: [],
@@ -221,6 +221,7 @@ async function requireCleanDistribution() {
 }
 
 async function main() {
+  requireValue(projectRoot, "--project-root is required; the probe never infers a project root");
   if (remoteSmoke) requireRemoteSmokeRoot(projectRoot);
   if (annotationSmoke) {
     requireRemoteSmokeRoot(projectRoot);
@@ -267,7 +268,7 @@ async function main() {
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: [resolvePath(server.args[0])],
-    cwd: projectRoot,
+    cwd: pluginRoot,
     stderr: "pipe",
   });
 
@@ -276,11 +277,10 @@ async function main() {
     const serverVersion = client.getServerVersion();
     requireValue(serverVersion?.name === manifest.name, "running server name differs from plugin name");
     requireValue(serverVersion?.version === manifest.version, "running server version differs from plugin version");
-    const [toolResult, resourceResult, resourceTemplateResult, invalidCall] = await Promise.all([
+    const [toolResult, resourceResult, resourceTemplateResult] = await Promise.all([
       client.listTools(),
       client.listResources(),
       client.listResourceTemplates(),
-      client.callTool({ name: "open_image_editor", arguments: {} }),
     ]);
     const tools = toolResult.tools.map((tool) => tool.name).sort();
     const appOnlyTools = toolResult.tools
@@ -304,6 +304,7 @@ async function main() {
     requireValue(tools.includes("finalize_image_editor_session"), "MCP server does not expose finalize_image_editor_session");
     requireValue(tools.includes("save_image_annotations"), "MCP server does not expose save_image_annotations");
     requireValue(tools.includes("list_image_models"), "MCP server does not expose list_image_models");
+    requireValue(tools.includes("bind_imagegen_project"), "MCP server does not expose bind_imagegen_project");
     requireValue(
       JSON.stringify(appOnlyTools) === JSON.stringify(APP_ONLY_TOOLS),
       `unexpected app-only tool visibility: ${appOnlyTools.join(", ")}`,
@@ -337,6 +338,35 @@ async function main() {
       )),
       "widget resources expose a different release identity",
     );
+
+    const requestMeta = { "openai/session": "plugin-probe-session" };
+    const originalCallTool = client.callTool.bind(client);
+    const unboundResult = await originalCallTool({
+      name: "list_image_models",
+      arguments: {},
+      _meta: requestMeta,
+    });
+    requireValue(
+      unboundResult.isError === true
+        && !unboundResult.structuredContent
+        && unboundResult.content?.[0]?.text?.startsWith("project_binding_required:"),
+      "unbound project calls did not return a stable error",
+    );
+    const bindingResult = await originalCallTool({
+      name: "bind_imagegen_project",
+      arguments: { projectRoot },
+      _meta: requestMeta,
+    });
+    requireValue(
+      bindingResult.isError !== true
+        && ["bound", "already_bound"].includes(bindingResult.structuredContent?.status),
+      "explicit project binding failed",
+    );
+    client.callTool = async (request, ...rest) => await originalCallTool(
+      { ...request, _meta: request._meta ?? requestMeta },
+      ...rest,
+    );
+
     const runtimeDiagnosticResult = await client.callTool({
       name: "inspect_imagegen_runtime",
       arguments: {},
@@ -350,7 +380,8 @@ async function main() {
     requireValue(
       runtimeDiagnostic.pluginRootFingerprint === fingerprintPath(pluginRoot)
         && runtimeDiagnostic.projectRootFingerprint === fingerprintPath(projectRoot)
-        && runtimeDiagnostic.projectRootSource === "process.cwd",
+        && runtimeDiagnostic.cwdFingerprint === fingerprintPath(pluginRoot)
+        && runtimeDiagnostic.projectRootSource === "explicit_tool",
       "runtime diagnostic root identity differs",
     );
     requireSafeToolResults([runtimeDiagnosticResult], pluginRoot, projectRoot);
@@ -358,6 +389,7 @@ async function main() {
       !resourceTemplates.includes("imagegen://artifact/{imageId}"),
       "MCP server still exposes the unsupported widget image resource template",
     );
+    const invalidCall = await client.callTool({ name: "open_image_editor", arguments: {} });
     const missingImageIdRejected = invalidCall.isError === true;
     requireValue(missingImageIdRejected, "open_image_editor accepted a missing image ID");
     let artifactRead = null;

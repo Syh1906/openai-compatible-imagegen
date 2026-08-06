@@ -9,10 +9,11 @@ import { readImageArtifact } from "./artifact-repository.mjs";
 const CROCKFORD_BASE32 = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
 const ANNOTATION_ID_PATTERN = /^ann_[0-9A-HJKMNP-TV-Z]{26}$/;
 
-export async function saveImageAnnotations({ imageId, items }, { projectRoot = process.cwd() } = {}) {
+export async function saveImageAnnotations({ imageId, items }, { projectRoot } = {}) {
   if (!Array.isArray(items) || items.length === 0) throw new Error("at least one annotation is required");
-  const artifact = await readImageArtifact(imageId, { projectRoot });
-  const dataRoot = path.join(path.resolve(projectRoot), "output", "imagegen");
+  const resolvedProjectRoot = requireProjectRoot(projectRoot);
+  const artifact = await readImageArtifact(imageId, { projectRoot: resolvedProjectRoot });
+  const dataRoot = path.join(resolvedProjectRoot, "output", "imagegen");
   const annotationsRoot = path.join(dataRoot, "annotations");
   await mkdir(annotationsRoot, { recursive: true });
   await rejectLinksBetween(dataRoot, annotationsRoot);
@@ -58,10 +59,11 @@ export async function saveImageAnnotations({ imageId, items }, { projectRoot = p
   }
 }
 
-export async function readImageAnnotation(annotationId, { projectRoot = process.cwd() } = {}) {
+export async function readImageAnnotation(annotationId, { projectRoot } = {}) {
   if (!ANNOTATION_ID_PATTERN.test(annotationId)) throw new Error(`invalid annotation ID: ${annotationId}`);
+  const resolvedProjectRoot = requireProjectRoot(projectRoot);
   try {
-    const dataRoot = path.join(path.resolve(projectRoot), "output", "imagegen");
+    const dataRoot = path.join(resolvedProjectRoot, "output", "imagegen");
     const annotationRoot = path.join(dataRoot, "annotations", annotationId);
     const recordPath = path.join(annotationRoot, "annotation.json");
     await rejectLinksBetween(dataRoot, recordPath);
@@ -79,6 +81,14 @@ export async function readImageAnnotation(annotationId, { projectRoot = process.
     if (error instanceof SyntaxError) throw new Error(`annotation record is not valid JSON: ${annotationId}`);
     throw error;
   }
+}
+
+
+function requireProjectRoot(projectRoot) {
+  if (typeof projectRoot !== "string" || !path.isAbsolute(projectRoot)) {
+    throw new Error("project root is required");
+  }
+  return path.resolve(projectRoot);
 }
 
 async function resolveDerivativePath(dataRoot, annotationRoot, fileName, annotationId, label) {

@@ -4,14 +4,15 @@ import path from "node:path";
 
 const ARTIFACT_ID_PATTERN = /^img_[0-9A-HJKMNP-TV-Z]{26}$/;
 
-export async function readImageArtifact(imageId, { projectRoot = process.cwd() } = {}) {
+export async function readImageArtifact(imageId, { projectRoot } = {}) {
   if (!ARTIFACT_ID_PATTERN.test(imageId)) {
     throw new Error(`invalid artifact ID: ${imageId}`);
   }
+  const resolvedProjectRoot = requireProjectRoot(projectRoot);
   try {
-    const dataRoot = path.join(path.resolve(projectRoot), "output", "imagegen");
+    const dataRoot = path.join(resolvedProjectRoot, "output", "imagegen");
     const indexPath = path.join(dataRoot, "index.json");
-    await rejectLinksBetween(path.resolve(projectRoot), indexPath);
+    await rejectLinksBetween(resolvedProjectRoot, indexPath);
     const index = JSON.parse(await readFile(indexPath, "utf8"));
     const entry = index?.version === 1 ? index.artifacts?.[imageId] : undefined;
     if (!entry || typeof entry !== "object") {
@@ -39,6 +40,14 @@ export async function readImageArtifact(imageId, { projectRoot = process.cwd() }
     }
     throw error;
   }
+}
+
+
+function requireProjectRoot(projectRoot) {
+  if (typeof projectRoot !== "string" || !path.isAbsolute(projectRoot)) {
+    throw new Error("project root is required");
+  }
+  return path.resolve(projectRoot);
 }
 
 async function rejectLinksBetween(root, target) {

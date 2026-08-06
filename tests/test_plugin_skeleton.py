@@ -20,6 +20,7 @@ V1_SKILL_PATH = ROOT / "SKILL.md"
 SERVER_PATH = ROOT / "dist" / "server.mjs"
 WIDGET_PATH = ROOT / "dist" / "widget" / "index.html"
 PROBE_PATH = ROOT / "scripts" / "probe-plugin.mjs"
+CHECK_PATH = ROOT / "scripts" / "check-plugin.mjs"
 RUNTIME_BRIDGE_PATH = ROOT / "mcp" / "image-runtime.mjs"
 DIST_RUNTIME_PATHS = [
     ROOT / "dist" / "scripts" / "imagegen.py",
@@ -109,6 +110,15 @@ class PluginSkeletonTests(unittest.TestCase):
         self.assertTrue(text.startswith("---\n"))
         self.assertIn(f"name: {PLUGIN_ID}", text)
 
+    def test_skill_freezes_the_explicit_project_binding_flow(self) -> None:
+        text = SKILL_PATH.read_text(encoding="utf-8")
+
+        self.assertIn("首次调用任何项目相关工具前", text)
+        self.assertIn("bind_imagegen_project", text)
+        self.assertIn("同一会话重复绑定同一项目会幂等返回", text)
+        self.assertIn("MCP server 重启后绑定会消失", text)
+        self.assertIn("不得从插件安装目录、MCP `cwd`、roots、Git 搜索", text)
+
     def test_v1_and_v2_skill_names_remain_independent(self) -> None:
         v1_text = V1_SKILL_PATH.read_text(encoding="utf-8")
         v2_text = SKILL_PATH.read_text(encoding="utf-8")
@@ -133,13 +143,15 @@ class PluginSkeletonTests(unittest.TestCase):
         self.assertNotIn("open_image_workspace", html)
 
     def test_plugin_probe_reports_valid_skeleton(self) -> None:
-        result = subprocess.run(
-            ["node", str(PROBE_PATH)],
-            cwd=ROOT,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        with tempfile.TemporaryDirectory() as directory:
+            project_root = Path(directory)
+            result = subprocess.run(
+                ["node", str(PROBE_PATH), "--project-root", str(project_root)],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
 
         self.assertEqual(result.returncode, 0, result.stderr)
         payload = json.loads(result.stdout)
@@ -149,6 +161,7 @@ class PluginSkeletonTests(unittest.TestCase):
         self.assertEqual(
             payload["tools"],
             [
+                "bind_imagegen_project",
                 "destroy_image_editor",
                 "edit_image",
                 "finalize_image_editor_session",
@@ -170,7 +183,7 @@ class PluginSkeletonTests(unittest.TestCase):
         )
         self.assertRegex(payload["releaseIdentity"]["fingerprint"], r"^[a-f0-9]{20}$")
         runtime = payload["runtimeDiagnostic"]
-        self.assertEqual(runtime["projectRootSource"], "process.cwd")
+        self.assertEqual(runtime["projectRootSource"], "explicit_tool")
         self.assertRegex(runtime["cwdFingerprint"], r"^[a-f0-9]{20}$")
         self.assertRegex(runtime["pluginRootFingerprint"], r"^[a-f0-9]{20}$")
         self.assertRegex(runtime["projectRootFingerprint"], r"^[a-f0-9]{20}$")
@@ -202,6 +215,38 @@ class PluginSkeletonTests(unittest.TestCase):
         self.assertIn("resultRender", probe_text)
         self.assertNotIn("readArtifactResources", probe_text)
 
+    def test_plugin_probe_requires_an_explicit_project_root(self) -> None:
+        result = subprocess.run(
+            ["node", str(PROBE_PATH)],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(
+            "--project-root is required; the probe never infers a project root",
+            result.stderr,
+        )
+
+    def test_project_check_binds_the_explicit_project_root(self) -> None:
+        result = subprocess.run(
+            ["node", str(CHECK_PATH)],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        payload = json.loads(result.stdout)
+        self.assertTrue(payload["ok"])
+        self.assertEqual(
+            payload["runtimeDiagnostic"]["projectRootSource"],
+            "explicit_tool",
+        )
+
     def test_remote_smoke_requires_the_isolated_project_root(self) -> None:
         result = subprocess.run(
             [
@@ -231,7 +276,14 @@ class PluginSkeletonTests(unittest.TestCase):
             )
 
             result = subprocess.run(
-                ["node", str(PROBE_PATH), "--plugin-root", str(plugin_root)],
+                [
+                    "node",
+                    str(PROBE_PATH),
+                    "--plugin-root",
+                    str(plugin_root),
+                    "--project-root",
+                    str(ROOT.parent),
+                ],
                 cwd=ROOT,
                 capture_output=True,
                 text=True,
@@ -242,29 +294,31 @@ class PluginSkeletonTests(unittest.TestCase):
         self.assertIn("unexpected plugin name", result.stderr)
 
     def test_plugin_probe_separates_plugin_project_and_source_roots(self) -> None:
-        result = subprocess.run(
-            [
-                "node",
-                str(PROBE_PATH),
-                "--plugin-root",
-                str(ROOT),
-                "--project-root",
-                str(ROOT),
-                "--source-root",
-                str(ROOT),
-            ],
-            cwd=ROOT,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+        with tempfile.TemporaryDirectory() as directory:
+            project_root = Path(directory)
+            result = subprocess.run(
+                [
+                    "node",
+                    str(PROBE_PATH),
+                    "--plugin-root",
+                    str(ROOT),
+                    "--project-root",
+                    str(project_root),
+                    "--source-root",
+                    str(ROOT),
+                ],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
 
         self.assertEqual(result.returncode, 0, result.stderr)
         payload = json.loads(result.stdout)
         self.assertEqual(payload["pluginRootFingerprint"], path_fingerprint(ROOT))
-        self.assertEqual(payload["projectRootFingerprint"], path_fingerprint(ROOT))
+        self.assertEqual(payload["projectRootFingerprint"], path_fingerprint(project_root))
         self.assertEqual(payload["sourceRootFingerprint"], path_fingerprint(ROOT))
-        self.assertEqual(payload["projectRootRelationToPlugin"], "same")
+        self.assertEqual(payload["projectRootRelationToPlugin"], "outside")
         self.assertTrue(payload["sourceConsistent"])
 
     def test_plugin_probe_resolves_marketplace_source_from_catalog_root(self) -> None:

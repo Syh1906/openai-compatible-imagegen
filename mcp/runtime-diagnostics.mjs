@@ -18,6 +18,7 @@ export function createRuntimeObservation({
   roots = [],
   rootsErrorCode = null,
 }) {
+  const hasProjectRoot = typeof projectRoot === "string" && projectRoot.length > 0;
   const rootStatus = !rootsSupported
     ? "unsupported"
     : rootsErrorCode
@@ -29,15 +30,19 @@ export function createRuntimeObservation({
   return {
     cwdFingerprint: fingerprintPath(cwd),
     pluginRootFingerprint: fingerprintPath(pluginRoot),
-    projectRootFingerprint: fingerprintPath(projectRoot),
+    projectRootFingerprint: hasProjectRoot ? fingerprintPath(projectRoot) : null,
     cwdRelationToPlugin: pathRelation(cwd, pluginRoot),
-    projectRootRelationToPlugin: pathRelation(projectRoot, pluginRoot),
+    projectRootRelationToPlugin: hasProjectRoot ? pathRelation(projectRoot, pluginRoot) : null,
     projectRootSource,
     client: summarizeClient(clientVersion, clientCapabilities, rootsSupported),
     roots: {
       status: rootStatus,
       count: retainedRoots.length,
-      entries: retainedRoots.map((root) => summarizeRoot(root, { cwd, pluginRoot, projectRoot })),
+      entries: retainedRoots.map((root) => summarizeRoot(root, {
+        cwd,
+        pluginRoot,
+        projectRoot: hasProjectRoot ? projectRoot : null,
+      })),
       errorCode: rootsErrorCode,
       truncated: rootStatus === "available" && roots.length > retainedRoots.length,
     },
@@ -92,7 +97,7 @@ function summarizeRoot(root, paths) {
       comparable: true,
       relationToCwd: pathRelation(rootPath, paths.cwd),
       relationToPlugin: pathRelation(rootPath, paths.pluginRoot),
-      relationToProject: pathRelation(rootPath, paths.projectRoot),
+      relationToProject: paths.projectRoot ? pathRelation(rootPath, paths.projectRoot) : null,
     };
   } catch {
     return summary;

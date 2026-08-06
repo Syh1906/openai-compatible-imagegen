@@ -7,6 +7,12 @@ description: 在 Codex App 会话中生成、编辑和标注 OpenAI-compatible �
 
 会话是图片生成和连续修改的主入口。聚焦画布只从具体图片结果打开，用于查看图片和表达修改意图。不要在提示中暴露密钥、Authorization 请求头或本机绝对路径。
 
+## 项目绑定
+
+在首次调用任何项目相关工具前，先调用 `bind_imagegen_project`，把当前 Codex 任务的项目根作为 `projectRoot` 传入。项目根必须来自当前任务工作区，不得从插件安装目录、MCP `cwd`、roots、Git 搜索或其他本机状态推断。
+
+同一会话重复绑定同一项目会幂等返回；绑定到另一个项目、缺少 `_meta["openai/session"]` 或项目根校验失败时立即停止，不切换根目录。MCP server 重启后绑定会消失，收到 `project_binding_required` 时先用同一当前项目根重新绑定，再继续原操作；不要改走其他目录或传输路线。
+
 ## 路由
 
 1. 生成图片时调用 `generate_image`；成功后从返回的 `artifacts` 按原顺序取出图片 ID，只调用一次 `render_image_results` 在当前会话显示候选图。不要为了展示再次调用 `get_image_artifact`。

@@ -24,6 +24,7 @@ const PNG_BYTES = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFgAI/ScL1WQAAAABJRU5ErkJggg==",
   "base64",
 );
+const SESSION_META = { "openai/session": "release-identity-test-session" };
 
 
 test("the built plugin exposes one content-bound release identity", async () => {
@@ -122,9 +123,26 @@ test("the built plugin exposes one content-bound release identity", async () => 
     assert.deepEqual(resultTool._meta.releaseIdentity, releaseIdentity);
     assert.deepEqual(editorTool._meta.releaseIdentity, releaseIdentity);
 
+    const unbound = await client.callTool({
+      name: "render_image_results",
+      arguments: { imageIds: [IMAGE_ID] },
+      _meta: SESSION_META,
+    });
+    assert.equal(unbound.isError, true);
+    assert.equal(unbound.structuredContent, undefined);
+    assert.match(unbound.content?.[0]?.text ?? "", /^project_binding_required:/);
+
+    const binding = await client.callTool({
+      name: "bind_imagegen_project",
+      arguments: { projectRoot: fixtureRoot },
+      _meta: SESSION_META,
+    });
+    assert.deepEqual(binding.structuredContent, { status: "bound" });
+
     const rendered = await client.callTool({
       name: "render_image_results",
       arguments: { imageIds: [IMAGE_ID] },
+      _meta: SESSION_META,
     });
     assert.equal(rendered.isError, undefined);
     assert.equal(rendered._meta.ui.resourceUri, releaseIdentity.resourceUris.result);
@@ -133,6 +151,7 @@ test("the built plugin exposes one content-bound release identity", async () => 
     const opened = await client.callTool({
       name: "open_image_editor",
       arguments: { imageId: IMAGE_ID },
+      _meta: SESSION_META,
     });
     assert.equal(opened.isError, undefined);
     assert.equal(opened._meta.ui.resourceUri, releaseIdentity.resourceUris.editor);
@@ -153,7 +172,7 @@ test("the built plugin exposes one content-bound release identity", async () => 
     assert.match(probeResult.projectRootFingerprint, /^[a-f0-9]{20}$/);
     assert.equal(probeResult.sourceRootFingerprint, null);
     assert.equal(probeResult.projectRootRelationToPlugin, "outside");
-    assert.equal(probeResult.runtimeDiagnostic.projectRootSource, "process.cwd");
+    assert.equal(probeResult.runtimeDiagnostic.projectRootSource, "explicit_tool");
     assert.equal(
       probeResult.runtimeDiagnostic.pluginRootFingerprint,
       probeResult.pluginRootFingerprint,

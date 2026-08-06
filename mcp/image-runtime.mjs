@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 
@@ -7,7 +8,10 @@ const runtimeRelativePath = import.meta.url.replaceAll("\\", "/").includes("/dis
   : "../scripts/imagegen.py";
 const runtimePath = fileURLToPath(new URL(runtimeRelativePath, import.meta.url));
 
-export async function runImageTask(task, { projectRoot = process.cwd(), configPath } = {}) {
+export async function runImageTask(task, { projectRoot, configPath } = {}) {
+  if (typeof projectRoot !== "string" || !path.isAbsolute(projectRoot)) {
+    throw new Error("project root is required");
+  }
   return await new Promise((resolve, reject) => {
     const args = [runtimePath, "machine", "--project-root", projectRoot];
     if (configPath) {
