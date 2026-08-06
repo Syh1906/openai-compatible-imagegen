@@ -215,7 +215,7 @@ test("runtime diagnostics retain only release-bound host envelope shapes", async
     },
   ];
   await withDiagnosticClient({}, async (client) => {
-    const requestMeta = { "openai/session": "release-bound-observation" };
+    const requestMeta = {};
     const { tools } = await client.listTools();
     const reportTool = tools.find((tool) => tool.name === "report_imagegen_host_observation");
     assert.deepEqual(reportTool?._meta?.ui?.visibility, ["app"]);
@@ -231,7 +231,7 @@ test("runtime diagnostics retain only release-bound host envelope shapes", async
     assert.deepEqual(report.structuredContent, {
       accepted: 2,
       provenance: "unverified_widget_report",
-      scope: "openai_session_latest",
+      scope: "mcp_process_latest",
     });
 
     const diagnostic = await client.callTool({
@@ -241,7 +241,7 @@ test("runtime diagnostics retain only release-bound host envelope shapes", async
     });
     assert.deepEqual(diagnostic.structuredContent.hostObservationReport, {
       provenance: "unverified_widget_report",
-      scope: "openai_session_latest",
+      scope: "mcp_process_latest",
       observations,
     });
 
@@ -275,7 +275,7 @@ test("runtime diagnostics accept bounded widget-produced observations", async ()
   ];
 
   await withDiagnosticClient({}, async (client) => {
-    const requestMeta = { "openai/session": "bounded-widget-observation" };
+    const requestMeta = {};
     await bindDiagnosticProject(client, requestMeta);
     const report = await client.callTool({
       name: "report_imagegen_host_observation",
@@ -286,7 +286,7 @@ test("runtime diagnostics accept bounded widget-produced observations", async ()
     assert.deepEqual(report.structuredContent, {
       accepted: 2,
       provenance: "unverified_widget_report",
-      scope: "openai_session_latest",
+      scope: "mcp_process_latest",
     });
     const diagnostic = await client.callTool({
       name: "inspect_imagegen_runtime",
@@ -299,7 +299,7 @@ test("runtime diagnostics accept bounded widget-produced observations", async ()
 });
 
 
-test("runtime diagnostics reject transport-only host observation reports", async () => {
+test("runtime diagnostics reject unbound host observation reports", async () => {
   const observations = [
     summarizeHostEnvelope("ui/notifications/tool-result", { structuredContent: { artifacts: [] } }),
     summarizeHostEnvelope("tools/call", { structuredContent: { models: [] } }),
@@ -311,20 +311,20 @@ test("runtime diagnostics reject transport-only host observation reports", async
       arguments: { releaseFingerprint: RELEASE_IDENTITY.fingerprint, observations },
     });
     assert.equal(report.isError, true);
-    assert.match(report.content?.[0]?.text ?? "", /^session_identity_unavailable:/);
+    assert.match(report.content?.[0]?.text ?? "", /^project_binding_required:/);
     assert.equal(report.structuredContent, undefined);
     const diagnostic = await client.callTool({ name: "inspect_imagegen_runtime", arguments: {} });
     assert.equal(diagnostic.structuredContent.hostObservationReport, null);
-  }, [], { sessionId: "diagnostic-session-a" });
+  });
 });
 
 
-test("runtime diagnostics receive the OpenAI conversation session through MCP tool calls", async () => {
+test("runtime diagnostics receive the process binding through MCP tool calls", async () => {
   const observations = [
     summarizeHostEnvelope("ui/notifications/tool-result", { structuredContent: { artifacts: [] } }),
     summarizeHostEnvelope("tools/call", { structuredContent: { models: [] } }),
   ];
-  const requestMeta = { "openai/session": "conversation-session-through-mcp" };
+  const requestMeta = {};
 
   await withDiagnosticClient({}, async (client) => {
     await bindDiagnosticProject(client, requestMeta);
@@ -333,20 +333,20 @@ test("runtime diagnostics receive the OpenAI conversation session through MCP to
       arguments: { releaseFingerprint: RELEASE_IDENTITY.fingerprint, observations },
       _meta: requestMeta,
     });
-    assert.equal(report.structuredContent.scope, "openai_session_latest");
+    assert.equal(report.structuredContent.scope, "mcp_process_latest");
 
     const diagnostic = await client.callTool({
       name: "inspect_imagegen_runtime",
       arguments: {},
       _meta: requestMeta,
     });
-    assert.equal(diagnostic.structuredContent.hostObservationReport.scope, "openai_session_latest");
-    assert.equal(JSON.stringify(diagnostic).includes("conversation-session-through-mcp"), false);
+    assert.equal(diagnostic.structuredContent.hostObservationReport.scope, "mcp_process_latest");
+    assert.equal(JSON.stringify(diagnostic).includes("shared-transport-session"), false);
   }, [], { sessionId: "shared-transport-session" });
 });
 
 
-test("runtime diagnostics correlate widget and model calls by the OpenAI conversation session", async () => {
+test("runtime diagnostics correlate widget and model calls within one MCP process", async () => {
   const server = createImagegenServer({
     releaseIdentity: RELEASE_IDENTITY,
     launchContext: LAUNCH_CONTEXT,
@@ -365,41 +365,43 @@ test("runtime diagnostics correlate widget and model calls by the OpenAI convers
     summarizeHostEnvelope("ui/notifications/tool-result", { structuredContent: { artifacts: [] } }),
     summarizeHostEnvelope("tools/call", { structuredContent: { models: [] } }),
   ];
-  const conversationMeta = { "openai/session": "conversation-session-a" };
   try {
     await bindHandler(
       { projectRoot: DIAGNOSTIC_PROJECT_ROOT },
-      { _meta: conversationMeta },
+      { sessionId: "binding-transport", _meta: {} },
     );
     const report = await reportHandler({
       releaseFingerprint: RELEASE_IDENTITY.fingerprint,
       observations,
-    }, { sessionId: "widget-transport-session", _meta: conversationMeta });
-    assert.equal(report.structuredContent.scope, "openai_session_latest");
+    }, { sessionId: "widget-transport-session", _meta: {} });
+    assert.equal(report.structuredContent.scope, "mcp_process_latest");
 
     const diagnostic = await inspectHandler({}, {
       sessionId: "model-transport-session",
-      _meta: conversationMeta,
+      _meta: {},
     });
     assert.deepEqual(diagnostic.structuredContent.hostObservationReport, {
       provenance: "unverified_widget_report",
-      scope: "openai_session_latest",
+      scope: "mcp_process_latest",
       observations,
     });
 
-    const isolated = await inspectHandler({}, {
-      sessionId: "model-transport-session",
-      _meta: { "openai/session": "conversation-session-b" },
+    const anotherCaller = await inspectHandler({}, {
+      sessionId: "another-transport-session",
+      _meta: { "openai/session": "ignored-conversation-metadata" },
     });
-    assert.equal(isolated.structuredContent.hostObservationReport, null);
-    assert.equal(JSON.stringify(diagnostic).includes("conversation-session-a"), false);
+    assert.deepEqual(
+      anotherCaller.structuredContent.hostObservationReport,
+      diagnostic.structuredContent.hostObservationReport,
+    );
+    assert.equal(JSON.stringify(anotherCaller).includes("ignored-conversation-metadata"), false);
   } finally {
     await server.close();
   }
 });
 
 
-test("runtime diagnostics retain only a bounded set of recent session reports", async () => {
+test("runtime diagnostics retain only the latest process report", async () => {
   const server = createImagegenServer({
     releaseIdentity: RELEASE_IDENTITY,
     launchContext: LAUNCH_CONTEXT,
@@ -414,38 +416,22 @@ test("runtime diagnostics retain only a bounded set of recent session reports", 
   const reportHandler = server._registeredTools.report_imagegen_host_observation.handler;
   const bindHandler = server._registeredTools.bind_imagegen_project.handler;
   const inspectHandler = server._registeredTools.inspect_imagegen_runtime.handler;
-  const reportFor = async (sessionId, structuredContent) => {
-    const requestMeta = { "openai/session": sessionId };
-    await bindHandler(
-      { projectRoot: DIAGNOSTIC_PROJECT_ROOT },
-      { _meta: requestMeta },
-    );
+  const reportFor = async (structuredContent, sessionId) => {
     const report = await reportHandler({
       releaseFingerprint: RELEASE_IDENTITY.fingerprint,
       observations: [summarizeHostEnvelope("tools/call", { structuredContent })],
-    }, { sessionId: `transport-${sessionId}`, _meta: requestMeta });
+    }, { sessionId, _meta: {} });
     assert.equal(report.isError, undefined);
   };
   try {
-    for (let index = 0; index < 8; index += 1) {
-      await reportFor(`diagnostic-session-${index}`, { imageId: `img_01J0000000000000000000000${index}` });
-    }
-    await reportFor("diagnostic-session-0", { models: [] });
-    await reportFor("diagnostic-session-8", { imageId: "img_01J00000000000000000000008" });
+    await bindHandler(
+      { projectRoot: DIAGNOSTIC_PROJECT_ROOT },
+      { sessionId: "binding-transport", _meta: {} },
+    );
+    await reportFor({ imageId: "img_01J00000000000000000000000" }, "first-transport");
+    await reportFor({ models: [] }, "second-transport");
 
-    const evicted = await inspectHandler({}, {
-      _meta: { "openai/session": "diagnostic-session-1" },
-    });
-    assert.equal(evicted.structuredContent.hostObservationReport, null);
-
-    const latest = await inspectHandler({}, {
-      _meta: { "openai/session": "diagnostic-session-8" },
-    });
-    assert.equal(latest.structuredContent.hostObservationReport.observations[0].source, "tools/call");
-
-    const updated = await inspectHandler({}, {
-      _meta: { "openai/session": "diagnostic-session-0" },
-    });
+    const updated = await inspectHandler({}, { sessionId: "third-transport", _meta: {} });
     assert.equal(
       updated.structuredContent.hostObservationReport.observations[0].fields.some(({ path }) => path === "$.structuredContent.models"),
       true,
@@ -454,7 +440,7 @@ test("runtime diagnostics retain only a bounded set of recent session reports", 
       updated.structuredContent.hostObservationReport.observations[0].fields.some(({ path }) => path === "$.structuredContent.imageId"),
       false,
     );
-    assert.equal(JSON.stringify(updated).includes("diagnostic-session-0"), false);
+    assert.equal(JSON.stringify(updated).includes("second-transport"), false);
   } finally {
     await server.close();
   }
@@ -479,7 +465,7 @@ test("runtime diagnostics sanitize client-provided paths and error codes", async
   ];
 
   await withDiagnosticClient({}, async (client) => {
-    const requestMeta = { "openai/session": "sanitized-observation" };
+    const requestMeta = {};
     await bindDiagnosticProject(client, requestMeta);
     const report = await client.callTool({
       name: "report_imagegen_host_observation",
@@ -524,7 +510,7 @@ test("runtime diagnostics reject host shapes outside widget production limits", 
   ];
 
   await withDiagnosticClient({}, async (client) => {
-    const requestMeta = { "openai/session": "invalid-observation" };
+    const requestMeta = {};
     await bindDiagnosticProject(client, requestMeta);
     const report = await client.callTool({
       name: "report_imagegen_host_observation",

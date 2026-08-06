@@ -143,11 +143,10 @@ const stableToolErrorMessages = new Map([
   ["image_task_failed", "图片任务执行失败。"],
   ["invalid_json", "图片运行时输入不是有效 JSON。"],
   ["invalid_task", "图片任务参数无效。"],
-  ["project_binding_conflict", "当前会话已经绑定到另一个图片项目。"],
-  ["project_binding_required", "当前会话尚未绑定图片项目。"],
+  ["project_binding_conflict", "当前 MCP 进程已经绑定到另一个图片项目。"],
+  ["project_binding_required", "当前 MCP 进程尚未绑定图片项目。"],
   ["project_root_invalid", "图片项目根目录无效。"],
   ["project_root_is_plugin_root", "插件安装目录不能作为图片项目根目录。"],
-  ["session_identity_unavailable", "当前宿主调用没有提供可用的会话身份。"],
   ["unsupported_capability", "当前图片模型不支持请求的能力。"],
   ["unsupported_model_profile", "当前图片模型配置不受支持。"],
   ["v2_config_missing", "V2 配置缺失。请创建用户配置或项目配置。"],
@@ -182,7 +181,7 @@ const hostObservationOutputSchema = z.object({
 }).strict();
 const hostObservationProvenance = "unverified_widget_report";
 const maxHostObservationReportSlots = 8;
-const hostObservationScopeSchema = z.literal("openai_session_latest");
+const hostObservationScopeSchema = z.literal("mcp_process_latest");
 const hostObservationReportOutputSchema = z.object({
   provenance: z.literal(hostObservationProvenance),
   scope: hostObservationScopeSchema,
@@ -237,7 +236,7 @@ export function createImagegenServer({
     "bind_imagegen_project",
     {
       title: "绑定图片项目",
-      description: "把当前 OpenAI 会话绑定到一个已存在的绝对项目根目录。首次使用图片工具前调用；同一会话只能绑定一个项目，绑定不会持久化，server 重启后需要重新调用。",
+      description: "把当前 MCP 进程绑定到一个已存在的绝对项目根目录。首次使用图片工具前调用；同一进程只能绑定一个项目，绑定不会持久化，server 重启后需要重新调用。",
       inputSchema: { projectRoot: z.string().min(1) },
       outputSchema: z.object({ status: z.enum(["bound", "already_bound"]) }).strict(),
       annotations: {
@@ -885,7 +884,7 @@ async function optionalProjectContext(projectContext, extra) {
   try {
     return await projectContext.require(extra);
   } catch (error) {
-    if (error?.code === "session_identity_unavailable" || error?.code === "project_binding_required") {
+    if (error?.code === "project_binding_required") {
       return null;
     }
     throw error;
@@ -902,8 +901,8 @@ function imageArtifactMetadata(metadata) {
 
 function getHostObservationScope(context) {
   return {
-    key: `openai-session:${context.bindingKey}`,
-    label: "openai_session_latest",
+    key: `mcp-process:${context.bindingKey}`,
+    label: "mcp_process_latest",
   };
 }
 

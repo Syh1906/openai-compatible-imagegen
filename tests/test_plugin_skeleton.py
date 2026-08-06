@@ -115,7 +115,8 @@ class PluginSkeletonTests(unittest.TestCase):
 
         self.assertIn("首次调用任何项目相关工具前", text)
         self.assertIn("bind_imagegen_project", text)
-        self.assertIn("同一会话重复绑定同一项目会幂等返回", text)
+        self.assertIn("同一 MCP 进程重复绑定同一项目会幂等返回", text)
+        self.assertIn("绑定不依赖宿主会话字段", text)
         self.assertIn("MCP server 重启后绑定会消失", text)
         self.assertIn("不得从插件安装目录、MCP `cwd`、roots、Git 搜索", text)
 
@@ -229,6 +230,10 @@ class PluginSkeletonTests(unittest.TestCase):
             "--project-root is required; the probe never infers a project root",
             result.stderr,
         )
+
+    def test_plugin_probe_omits_host_conversation_metadata(self) -> None:
+        probe_text = PROBE_PATH.read_text(encoding="utf-8")
+        self.assertNotIn('"openai/session"', probe_text)
 
     def test_project_check_binds_the_explicit_project_root(self) -> None:
         result = subprocess.run(

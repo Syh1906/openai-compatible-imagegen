@@ -66,7 +66,7 @@ async function withClient(dependencies, callback) {
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
   try {
-    const requestMeta = { "openai/session": "mcp-contract-test-session" };
+    const requestMeta = {};
     const originalCallTool = client.callTool.bind(client);
     await client.listTools();
     const binding = await originalCallTool({

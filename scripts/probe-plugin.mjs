@@ -339,12 +339,9 @@ async function main() {
       "widget resources expose a different release identity",
     );
 
-    const requestMeta = { "openai/session": "plugin-probe-session" };
-    const originalCallTool = client.callTool.bind(client);
-    const unboundResult = await originalCallTool({
+    const unboundResult = await client.callTool({
       name: "list_image_models",
       arguments: {},
-      _meta: requestMeta,
     });
     requireValue(
       unboundResult.isError === true
@@ -352,21 +349,15 @@ async function main() {
         && unboundResult.content?.[0]?.text?.startsWith("project_binding_required:"),
       "unbound project calls did not return a stable error",
     );
-    const bindingResult = await originalCallTool({
+    const bindingResult = await client.callTool({
       name: "bind_imagegen_project",
       arguments: { projectRoot },
-      _meta: requestMeta,
     });
     requireValue(
       bindingResult.isError !== true
         && ["bound", "already_bound"].includes(bindingResult.structuredContent?.status),
       "explicit project binding failed",
     );
-    client.callTool = async (request, ...rest) => await originalCallTool(
-      { ...request, _meta: request._meta ?? requestMeta },
-      ...rest,
-    );
-
     const runtimeDiagnosticResult = await client.callTool({
       name: "inspect_imagegen_runtime",
       arguments: {},

@@ -24,7 +24,7 @@ const PNG_BYTES = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFgAI/ScL1WQAAAABJRU5ErkJggg==",
   "base64",
 );
-const SESSION_META = { "openai/session": "release-identity-test-session" };
+const CALL_META = {};
 
 
 test("the built plugin exposes one content-bound release identity", async () => {
@@ -126,7 +126,7 @@ test("the built plugin exposes one content-bound release identity", async () => 
     const unbound = await client.callTool({
       name: "render_image_results",
       arguments: { imageIds: [IMAGE_ID] },
-      _meta: SESSION_META,
+      _meta: CALL_META,
     });
     assert.equal(unbound.isError, true);
     assert.equal(unbound.structuredContent, undefined);
@@ -135,14 +135,14 @@ test("the built plugin exposes one content-bound release identity", async () => 
     const binding = await client.callTool({
       name: "bind_imagegen_project",
       arguments: { projectRoot: fixtureRoot },
-      _meta: SESSION_META,
+      _meta: CALL_META,
     });
     assert.deepEqual(binding.structuredContent, { status: "bound" });
 
     const rendered = await client.callTool({
       name: "render_image_results",
       arguments: { imageIds: [IMAGE_ID] },
-      _meta: SESSION_META,
+      _meta: CALL_META,
     });
     assert.equal(rendered.isError, undefined);
     assert.equal(rendered._meta.ui.resourceUri, releaseIdentity.resourceUris.result);
@@ -151,7 +151,7 @@ test("the built plugin exposes one content-bound release identity", async () => 
     const opened = await client.callTool({
       name: "open_image_editor",
       arguments: { imageId: IMAGE_ID },
-      _meta: SESSION_META,
+      _meta: CALL_META,
     });
     assert.equal(opened.isError, undefined);
     assert.equal(opened._meta.ui.resourceUri, releaseIdentity.resourceUris.editor);

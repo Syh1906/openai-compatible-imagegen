@@ -11,7 +11,7 @@ description: 在 Codex App 会话中生成、编辑和标注 OpenAI-compatible �
 
 在首次调用任何项目相关工具前，先调用 `bind_imagegen_project`，把当前 Codex 任务的项目根作为 `projectRoot` 传入。项目根必须来自当前任务工作区，不得从插件安装目录、MCP `cwd`、roots、Git 搜索或其他本机状态推断。
 
-同一会话重复绑定同一项目会幂等返回；绑定到另一个项目、缺少 `_meta["openai/session"]` 或项目根校验失败时立即停止，不切换根目录。MCP server 重启后绑定会消失，收到 `project_binding_required` 时先用同一当前项目根重新绑定，再继续原操作；不要改走其他目录或传输路线。
+同一 MCP 进程重复绑定同一项目会幂等返回；进程已经绑定到另一个项目或项目根校验失败时立即停止，不切换根目录。绑定不依赖宿主会话字段、transport session、roots 或 MCP `cwd`。MCP server 重启后绑定会消失，收到 `project_binding_required` 时先用同一当前项目根重新绑定，再继续原操作；不要改走其他目录或传输路线。
 
 ## 路由
 

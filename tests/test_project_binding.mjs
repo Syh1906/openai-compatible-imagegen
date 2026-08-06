@@ -33,7 +33,16 @@ const HOST_OBSERVATIONS = [
 ];
 
 
-test("project binding requires the OpenAI conversation identity", async () => {
+test("path leak assertions detect Windows paths after JSON escaping", () => {
+  const windowsRoot = "C:\\Users\\tester\\workspace";
+  assert.throws(
+    () => assertValuesHidden([{ content: [{ type: "text", text: `failed: ${windowsRoot}` }] }], [windowsRoot]),
+    /tool result exposed/,
+  );
+});
+
+
+test("project binding works without host conversation metadata", async () => {
   await withProjectRoots(async ({ pluginRoot, projectA }) => {
     const server = createTestServer({ pluginRoot });
     try {
@@ -45,7 +54,8 @@ test("project binding requires the OpenAI conversation identity", async () => {
         { sessionId: "transport-session", _meta: {} },
       );
 
-      assertStableError(result, "session_identity_unavailable", ["transport-session", projectA]);
+      assert.deepEqual(result.structuredContent, { status: "bound" });
+      assertValuesHidden([result], [projectA]);
     } finally {
       await server.close();
     }
@@ -53,7 +63,7 @@ test("project binding requires the OpenAI conversation identity", async () => {
 });
 
 
-test("project binding is idempotent across transports in one OpenAI conversation", async () => {
+test("project binding is idempotent across callers in one MCP process", async () => {
   await withProjectRoots(async ({ pluginRoot, projectA }) => {
     const taskCalls = [];
     const server = createTestServer({
@@ -65,19 +75,18 @@ test("project binding is idempotent across transports in one OpenAI conversation
     });
     const bind = server._registeredTools.bind_imagegen_project.handler;
     const listModels = server._registeredTools.list_image_models.handler;
-    const sessionMeta = { "openai/session": "conversation-a" };
     try {
       const first = await bind(
         { projectRoot: projectA },
-        { sessionId: "widget-transport", _meta: sessionMeta },
+        { sessionId: "widget-transport", _meta: {} },
       );
       const second = await bind(
         { projectRoot: path.join(projectA, ".") },
-        { sessionId: "model-transport", _meta: sessionMeta },
+        { sessionId: "model-transport", _meta: {} },
       );
       const catalog = await listModels({}, {
         sessionId: "another-transport",
-        _meta: sessionMeta,
+        _meta: {},
       });
 
       assert.deepEqual(first.structuredContent, { status: "bound" });
@@ -87,7 +96,7 @@ test("project binding is idempotent across transports in one OpenAI conversation
       assert.equal(taskCalls[0].context.projectRoot, path.resolve(projectA));
       assert.equal(taskCalls[0].context.artifactRoot, path.join(path.resolve(projectA), "output", "imagegen"));
       assert.match(taskCalls[0].context.bindingKey, /^[a-f0-9]{64}$/);
-      assertValuesHidden([first, second, catalog], [projectA, "conversation-a"]);
+      assertValuesHidden([first, second, catalog], [projectA]);
     } finally {
       await server.close();
     }
@@ -95,7 +104,7 @@ test("project binding is idempotent across transports in one OpenAI conversation
 });
 
 
-test("project bindings reject conflicts and isolate projects by OpenAI conversation", async () => {
+test("project binding rejects a second root and keeps the active root", async () => {
   await withProjectRoots(async ({ pluginRoot, projectA, projectB }) => {
     const reads = [];
     const server = createTestServer({
@@ -107,24 +116,23 @@ test("project bindings reject conflicts and isolate projects by OpenAI conversat
     });
     const bind = server._registeredTools.bind_imagegen_project.handler;
     const readArtifact = server._registeredTools.get_image_artifact.handler;
-    const sessionA = { "openai/session": "conversation-a" };
-    const sessionB = { "openai/session": "conversation-b" };
+    const callerA = { sessionId: "caller-a", _meta: {} };
+    const callerB = { sessionId: "caller-b", _meta: {} };
     try {
-      await bind({ projectRoot: projectA }, { _meta: sessionA });
-      await bind({ projectRoot: projectB }, { _meta: sessionB });
+      await bind({ projectRoot: projectA }, callerA);
 
-      const conflict = await bind({ projectRoot: projectB }, { _meta: sessionA });
-      assertStableError(conflict, "project_binding_conflict", [projectA, projectB, "conversation-a"]);
+      const conflict = await bind({ projectRoot: projectB }, callerB);
+      assertStableError(conflict, "project_binding_conflict", [projectA, projectB]);
 
-      const resultA = await readArtifact({ imageId: IMAGE_ID }, { _meta: sessionA });
-      const resultB = await readArtifact({ imageId: IMAGE_ID }, { _meta: sessionB });
+      const resultA = await readArtifact({ imageId: IMAGE_ID }, callerA);
+      const resultB = await readArtifact({ imageId: IMAGE_ID }, callerB);
       assert.equal(resultA.isError, undefined);
       assert.equal(resultB.isError, undefined);
       assert.deepEqual(reads, [
         { imageId: IMAGE_ID, projectRoot: path.resolve(projectA) },
-        { imageId: IMAGE_ID, projectRoot: path.resolve(projectB) },
+        { imageId: IMAGE_ID, projectRoot: path.resolve(projectA) },
       ]);
-      assertValuesHidden([resultA, resultB], [projectA, projectB, "conversation-a", "conversation-b"]);
+      assertValuesHidden([resultA, resultB], [projectA, projectB]);
     } finally {
       await server.close();
     }
@@ -146,7 +154,7 @@ test("bound projects fail closed when the root is replaced with a linked directo
     const getArtifact = server._registeredTools.get_image_artifact.handler;
     const renderResults = server._registeredTools.render_image_results.handler;
     const inspectRuntime = server._registeredTools.inspect_imagegen_runtime.handler;
-    const extra = { _meta: { "openai/session": "replaced-root-conversation" } };
+    const extra = { sessionId: "replaced-root-transport", _meta: {} };
     const movedProject = path.join(root, "workspace-a-original");
     try {
       await bind({ projectRoot: projectA }, extra);
@@ -178,12 +186,12 @@ test("project binding conflicts do not probe a second candidate root", async () 
 
     const server = createTestServer({ pluginRoot });
     const bind = server._registeredTools.bind_imagegen_project.handler;
-    const extra = { _meta: { "openai/session": "conflict-conversation" } };
+    const extra = { sessionId: "conflict-transport", _meta: {} };
     try {
       await bind({ projectRoot: projectA }, extra);
       for (const candidate of [missingRoot, fileRoot, linkedRoot, pluginRoot, "relative-project"] ) {
         const result = await bind({ projectRoot: candidate }, extra);
-        assertStableError(result, "project_binding_conflict", [candidate, "conflict-conversation"]);
+        assertStableError(result, "project_binding_conflict", [candidate]);
       }
     } finally {
       await server.close();
@@ -192,48 +200,56 @@ test("project binding conflicts do not probe a second candidate root", async () 
 });
 
 
-test("editor state is isolated by project binding", async () => {
+test("editor state is isolated between MCP processes", async () => {
   await withProjectRoots(async ({ pluginRoot, projectA, projectB }) => {
-    const server = createTestServer({ pluginRoot });
-    const bind = server._registeredTools.bind_imagegen_project.handler;
-    const openEditor = server._registeredTools.open_image_editor.handler;
-    const getEditor = server._registeredTools.get_image_editor_session.handler;
-    const destroyEditor = server._registeredTools.destroy_image_editor.handler;
-    const finalizeEditor = server._registeredTools.finalize_image_editor_session.handler;
-    const getArtifact = server._registeredTools.get_image_artifact.handler;
-    const extraA = { _meta: { "openai/session": "editor-conversation-a" } };
-    const extraB = { _meta: { "openai/session": "editor-conversation-b" } };
+    const serverA = createTestServer({ pluginRoot });
+    const serverB = createTestServer({ pluginRoot });
+    const bindA = serverA._registeredTools.bind_imagegen_project.handler;
+    const bindB = serverB._registeredTools.bind_imagegen_project.handler;
+    const openEditorA = serverA._registeredTools.open_image_editor.handler;
+    const openEditorB = serverB._registeredTools.open_image_editor.handler;
+    const getEditorA = serverA._registeredTools.get_image_editor_session.handler;
+    const getEditorB = serverB._registeredTools.get_image_editor_session.handler;
+    const destroyEditorA = serverA._registeredTools.destroy_image_editor.handler;
+    const finalizeEditorB = serverB._registeredTools.finalize_image_editor_session.handler;
+    const getArtifactA = serverA._registeredTools.get_image_artifact.handler;
+    const getArtifactB = serverB._registeredTools.get_image_artifact.handler;
+    const callerA = { sessionId: "editor-transport-a", _meta: {} };
+    const callerB = { sessionId: "editor-transport-b", _meta: {} };
     try {
-      await bind({ projectRoot: projectA }, extraA);
-      await bind({ projectRoot: projectB }, extraB);
-      const openedA = await openEditor({ imageId: IMAGE_ID }, extraA);
-      const openedB = await openEditor({ imageId: IMAGE_ID }, extraB);
+      await bindA({ projectRoot: projectA }, callerA);
+      await bindB({ projectRoot: projectB }, callerB);
+      const openedA = await openEditorA({ imageId: IMAGE_ID }, callerA);
+      const openedB = await openEditorB({ imageId: IMAGE_ID }, callerB);
       const sessionA = openedA.structuredContent.editorSession.id;
       const sessionB = openedB.structuredContent.editorSession.id;
 
-      const foreignRead = await getEditor({ editorSessionId: sessionA }, extraB);
-      assertStableError(foreignRead, "editor_session_not_found", ["editor-conversation-a"]);
-      const foreignDestroy = await destroyEditor({ editorSessionId: sessionA }, extraB);
+      const foreignRead = await getEditorB({ editorSessionId: sessionA }, callerB);
+      assertStableError(foreignRead, "editor_session_not_found");
+      const foreignDestroy = await serverB._registeredTools.destroy_image_editor.handler(
+        { editorSessionId: sessionA },
+        callerB,
+      );
       assert.equal(foreignDestroy.structuredContent.editorSession.status, "released");
-      const foreignFinalize = await finalizeEditor({ editorSessionId: sessionA }, extraB);
+      const foreignFinalize = await finalizeEditorB({ editorSessionId: sessionA }, callerB);
       assert.equal(foreignFinalize.structuredContent.editorSession.status, "released");
 
-      const stillActiveA = await getEditor({ editorSessionId: sessionA }, extraA);
+      const stillActiveA = await getEditorA({ editorSessionId: sessionA }, callerA);
       assert.equal(stillActiveA.structuredContent.editorSession.status, "active");
-      await destroyEditor({ editorSessionId: sessionA }, extraA);
+      await destroyEditorA({ editorSessionId: sessionA }, callerA);
 
-      const projectAArtifact = await getArtifact({ imageId: IMAGE_ID }, extraA);
-      const projectBArtifact = await getArtifact({ imageId: IMAGE_ID }, extraB);
-      const stillActiveB = await getEditor({ editorSessionId: sessionB }, extraB);
+      const projectAArtifact = await getArtifactA({ imageId: IMAGE_ID }, callerA);
+      const projectBArtifact = await getArtifactB({ imageId: IMAGE_ID }, callerB);
+      const stillActiveB = await getEditorB({ editorSessionId: sessionB }, callerB);
       assert.equal(projectAArtifact.structuredContent.canvasStatus, "destroyed");
       assert.equal(projectBArtifact.structuredContent.canvasStatus, "available");
       assert.equal(stillActiveB.structuredContent.editorSession.status, "active");
       assertValuesHidden(
         [foreignRead, foreignDestroy, foreignFinalize, projectAArtifact, projectBArtifact],
-        [projectA, projectB, "editor-conversation-a", "editor-conversation-b"],
+        [projectA, projectB],
       );
     } finally {
-      await server.close();
+      await Promise.all([serverA.close(), serverB.close()]);
     }
   });
 });
@@ -253,7 +269,7 @@ test("all business and app-only tools fail closed before project binding", async
       readAnnotation: unavailable,
       saveAnnotations: unavailable,
     });
-    const extra = { _meta: { "openai/session": "unbound-conversation" } };
+    const extra = { sessionId: "unbound-transport", _meta: {} };
     const calls = [
       ["list_image_models", {}],
       ["generate_image", { prompt: "test" }],
@@ -277,7 +293,7 @@ test("all business and app-only tools fail closed before project binding", async
     try {
       for (const [name, arguments_] of calls) {
         const result = await server._registeredTools[name].handler(arguments_, extra);
-        assertStableError(result, "project_binding_required", ["unbound-conversation"]);
+        assertStableError(result, "project_binding_required");
       }
       assert.equal(dependencyCalls, 0);
     } finally {
@@ -287,7 +303,7 @@ test("all business and app-only tools fail closed before project binding", async
 });
 
 
-test("transport session IDs never substitute for the OpenAI conversation identity", async () => {
+test("transport metadata never selects a project root", async () => {
   await withProjectRoots(async ({ pluginRoot }) => {
     const server = createTestServer({ pluginRoot });
     try {
@@ -295,7 +311,7 @@ test("transport session IDs never substitute for the OpenAI conversation identit
         {},
         { sessionId: "transport-only-session" },
       );
-      assertStableError(result, "session_identity_unavailable", ["transport-only-session"]);
+      assertStableError(result, "project_binding_required");
     } finally {
       await server.close();
     }
@@ -305,15 +321,15 @@ test("transport session IDs never substitute for the OpenAI conversation identit
 
 test("project bindings are process-local and disappear when the server restarts", async () => {
   await withProjectRoots(async ({ pluginRoot, projectA }) => {
-    const session = { _meta: { "openai/session": "restart-conversation" } };
+    const caller = { sessionId: "restart-transport", _meta: {} };
     const firstServer = createTestServer({ pluginRoot });
-    await firstServer._registeredTools.bind_imagegen_project.handler({ projectRoot: projectA }, session);
+    await firstServer._registeredTools.bind_imagegen_project.handler({ projectRoot: projectA }, caller);
     await firstServer.close();
 
     const restartedServer = createTestServer({ pluginRoot });
     try {
-      const result = await restartedServer._registeredTools.list_image_models.handler({}, session);
-      assertStableError(result, "project_binding_required", [projectA, "restart-conversation"]);
+      const result = await restartedServer._registeredTools.list_image_models.handler({}, caller);
+      assertStableError(result, "project_binding_required");
     } finally {
       await restartedServer.close();
     }
@@ -343,12 +359,12 @@ test("project binding rejects invalid, linked, and plugin-owned roots without di
     ];
     try {
       for (const [projectRoot, code] of cases) {
-        const sessionId = `invalid-${cases.indexOf(cases.find((item) => item[0] === projectRoot))}`;
+        const caller = { sessionId: `invalid-${cases.indexOf(cases.find((item) => item[0] === projectRoot))}`, _meta: {} };
         const result = await bind(
           { projectRoot },
-          { _meta: { "openai/session": sessionId } },
+          caller,
         );
-        assertStableError(result, code, [projectRoot, sessionId]);
+        assertStableError(result, code, [projectRoot]);
       }
     } finally {
       await server.close();
@@ -357,10 +373,10 @@ test("project binding rejects invalid, linked, and plugin-owned roots without di
 });
 
 
-test("runtime diagnostics report an unbound root and then the explicit session binding", async () => {
+test("runtime diagnostics report an unbound root and then the explicit process binding", async () => {
   await withProjectRoots(async ({ pluginRoot, projectA }) => {
     const server = createTestServer({ pluginRoot });
-    const extra = { _meta: { "openai/session": "diagnostic-conversation" } };
+    const extra = { sessionId: "diagnostic-transport", _meta: {} };
     try {
       const before = await server._registeredTools.inspect_imagegen_runtime.handler({}, extra);
       assert.equal(before.structuredContent.runtime.projectRootFingerprint, null);
@@ -372,7 +388,7 @@ test("runtime diagnostics report an unbound root and then the explicit session b
       assert.match(after.structuredContent.runtime.projectRootFingerprint, /^[a-f0-9]{20}$/);
       assert.equal(after.structuredContent.runtime.projectRootRelationToPlugin, "outside");
       assert.equal(after.structuredContent.runtime.projectRootSource, "explicit_tool");
-      assertValuesHidden([before, after], [projectA, "diagnostic-conversation"]);
+      assertValuesHidden([before, after], [projectA]);
     } finally {
       await server.close();
     }
@@ -455,8 +471,34 @@ function assertStableError(result, code, hiddenValues = []) {
 
 
 function assertValuesHidden(results, hiddenValues) {
-  const serialized = JSON.stringify(results);
+  const resultStrings = collectStringValues(results).map(normalizeStringForComparison);
   for (const value of hiddenValues) {
-    assert.equal(serialized.includes(value), false, `tool result exposed ${value}`);
+    const normalizedValue = normalizeStringForComparison(value);
+    assert.equal(
+      resultStrings.some((candidate) => candidate.includes(normalizedValue)),
+      false,
+      `tool result exposed ${value}`,
+    );
   }
+}
+
+
+function collectStringValues(value, result = []) {
+  if (typeof value === "string") {
+    result.push(value);
+  } else if (Array.isArray(value)) {
+    for (const item of value) collectStringValues(item, result);
+  } else if (value && typeof value === "object") {
+    for (const [key, item] of Object.entries(value)) {
+      result.push(key);
+      collectStringValues(item, result);
+    }
+  }
+  return result;
+}
+
+
+function normalizeStringForComparison(value) {
+  const normalized = String(value).replaceAll("\\", "/");
+  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
 }

@@ -4,7 +4,7 @@ import { access, lstat, realpath } from "node:fs/promises";
 import path from "node:path";
 
 
-const SESSION_META_KEY = "openai/session";
+const PROCESS_BINDING_KEY_SEED = "openai-compatible-imagegen-v2:process-binding";
 
 
 export class ProjectContextError extends Error {
@@ -21,51 +21,53 @@ export function createProjectContext({ pluginRoot }) {
     throw new Error("pluginRoot must be an absolute path");
   }
   const resolvedPluginRoot = path.resolve(pluginRoot);
-  const bindings = new Map();
-  const pendingOperations = new Map();
+  let binding = null;
+  let pendingBindingOperation = null;
+  // MCP tool calls do not include a documented conversation identity; bind once per server process.
+  const bindingKey = createHash("sha256")
+    .update(`${PROCESS_BINDING_KEY_SEED}:${resolvedPluginRoot}`, "utf8")
+    .digest("hex");
+
+  async function serializeBinding(operation) {
+    const previous = pendingBindingOperation ?? Promise.resolve();
+    const current = previous.catch(() => undefined).then(operation);
+    pendingBindingOperation = current;
+    try {
+      return await current;
+    } finally {
+      if (pendingBindingOperation === current) pendingBindingOperation = null;
+    }
+  }
 
   return Object.freeze({
-    async bind(extra, { projectRoot }) {
-      const bindingKey = requireBindingKey(extra);
-      return await serializeBinding(pendingOperations, bindingKey, async () => {
-        const existing = bindings.get(bindingKey);
-        if (existing) {
+    async bind(_extra, { projectRoot }) {
+      return await serializeBinding(async () => {
+        if (binding) {
           if (
             typeof projectRoot === "string"
             && path.isAbsolute(projectRoot)
-            && samePath(existing.projectRoot, projectRoot)
+            && samePath(binding.projectRoot, projectRoot)
           ) {
             return { status: "already_bound" };
           }
           throw new ProjectContextError("project_binding_conflict");
         }
         const resolvedProjectRoot = await validateProjectRoot(projectRoot, resolvedPluginRoot);
-        bindings.set(bindingKey, Object.freeze({
+        binding = Object.freeze({
           bindingKey,
           projectRoot: resolvedProjectRoot,
           artifactRoot: path.join(resolvedProjectRoot, "output", "imagegen"),
-        }));
+        });
         return { status: "bound" };
       });
     },
 
-    async require(extra) {
-      const bindingKey = requireBindingKey(extra);
-      const binding = bindings.get(bindingKey);
+    async require(_extra) {
       if (!binding) throw new ProjectContextError("project_binding_required");
       await validateProjectRoot(binding.projectRoot, resolvedPluginRoot);
       return binding;
     },
   });
-}
-
-
-function requireBindingKey(extra) {
-  const sessionId = extra?._meta?.[SESSION_META_KEY];
-  if (typeof sessionId !== "string" || sessionId.length === 0) {
-    throw new ProjectContextError("session_identity_unavailable");
-  }
-  return createHash("sha256").update(sessionId, "utf8").digest("hex");
 }
 
 
@@ -124,16 +126,4 @@ function samePath(left, right) {
 function normalizePath(value) {
   const normalized = path.resolve(value).replaceAll("\\", "/");
   return process.platform === "win32" ? normalized.toLowerCase() : normalized;
-}
-
-
-async function serializeBinding(pendingOperations, bindingKey, operation) {
-  const previous = pendingOperations.get(bindingKey) ?? Promise.resolve();
-  const current = previous.catch(() => undefined).then(operation);
-  pendingOperations.set(bindingKey, current);
-  try {
-    return await current;
-  } finally {
-    if (pendingOperations.get(bindingKey) === current) pendingOperations.delete(bindingKey);
-  }
 }
