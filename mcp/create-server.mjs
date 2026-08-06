@@ -786,10 +786,7 @@ async function executeImageTask(task, context, runTask, readArtifact) {
     const metadata = artifactMetadata.length === 1 ? artifactMetadata[0] : null;
     if (metadata) structuredContent.artifact = metadata;
     return {
-      content: [
-        ...artifacts.map(imageContent),
-        { type: "text", text: `已创建 ${artifacts.length} 张图片。` },
-      ],
+      content: [{ type: "text", text: `已创建 ${artifacts.length} 张图片。` }],
       structuredContent,
       _meta: {
         imageIds: result.artifacts.map((item) => item.id),

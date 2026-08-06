@@ -293,7 +293,7 @@ test("all product tools declare precise structured output schemas", async () => 
   );
 });
 
-test("generate_image returns each candidate as image content and safe metadata", async () => {
+test("generate_image leaves candidate presentation to render_image_results", async () => {
   const artifacts = [artifact("img_01J00000000000000000000000"), artifact("img_01J00000000000000000000001")];
   const calls = [];
   await withClient(
@@ -309,13 +309,23 @@ test("generate_image returns each candidate as image content and safe metadata",
         name: "generate_image",
         arguments: { prompt: "two candidates", count: 2 },
       });
+      const rendered = await client.callTool({
+        name: "render_image_results",
+        arguments: { imageIds: artifacts.map((item) => item.id) },
+      });
 
       assert.equal(result.isError, undefined);
-      assert.equal(result.content.filter((item) => item.type === "image").length, 2);
+      assert.equal(result.content.filter((item) => item.type === "image").length, 0);
       assert.deepEqual(result.structuredContent.artifacts, artifacts);
       assert.equal(result._meta?.ui?.resourceUri, undefined);
       assert.deepEqual(result._meta.imageIds, artifacts.map((item) => item.id));
       assert.equal(JSON.stringify(result).includes("runtime-secret"), false);
+      assert.equal(rendered.content.filter((item) => item.type === "image").length, 2);
+      assert.equal(rendered._meta.ui.resourceUri, RESULT_WIDGET_URI);
+      assert.equal(
+        [result, rendered].flatMap((item) => item.content).filter((item) => item.type === "image").length,
+        artifacts.length,
+      );
     },
   );
   assert.equal(calls[0].operation, "generate");
@@ -323,7 +333,7 @@ test("generate_image returns each candidate as image content and safe metadata",
   assert.equal(calls[0].output.count, 2);
 });
 
-test("edit_image binds the parent artifact and returns a child image", async () => {
+test("edit_image returns child metadata without duplicating result presentation", async () => {
   const parentId = "img_01J00000000000000000000000";
   const child = artifact("img_01J00000000000000000000001", [parentId]);
   let captured;
@@ -340,7 +350,7 @@ test("edit_image binds the parent artifact and returns a child image", async () 
         name: "edit_image",
         arguments: { parentImageId: parentId, prompt: "change the color" },
       });
-      assert.equal(result.content.filter((item) => item.type === "image").length, 1);
+      assert.equal(result.content.filter((item) => item.type === "image").length, 0);
       assert.deepEqual(result.structuredContent.artifact, child);
       assert.deepEqual(result.structuredContent.artifacts[0].parentIds, [parentId]);
       assert.equal(result._meta?.ui?.resourceUri, undefined);

@@ -15,9 +15,9 @@ description: 在 Codex App 会话中生成、编辑和标注 OpenAI-compatible �
 
 ## 路由
 
-1. 生成图片时调用 `generate_image`；成功后从返回的 `artifacts` 按原顺序取出图片 ID，只调用一次 `render_image_results` 在当前会话显示候选图。不要为了展示再次调用 `get_image_artifact`。
+1. 生成图片时调用 `generate_image`；成功后只从返回的 `artifacts` 读取稳定图片 ID 和元数据，再按原顺序只调用一次 `render_image_results` 在当前会话显示候选图。生成工具不承担图片字节呈现，不要为了展示再次调用 `get_image_artifact`。
 2. 用户要查看或标注某张图片时，直接使用图片结果卡上的“打开画布”入口；不要在已经展示具体图片结果后再次主动调用 `open_image_editor`。该工具仅供结果 widget 内部打开聚焦画布。
-3. 编辑已有图片时调用 `edit_image`，并保留父图片 ID；成功后只调用一次 `render_image_results` 展示新版本。不要为了展示再次调用 `get_image_artifact`。
+3. 编辑已有图片时调用 `edit_image`，并保留父图片 ID；成功后只从返回结果读取稳定 ID 和版本元数据，再只调用一次 `render_image_results` 展示新版本。不要为了展示再次调用 `get_image_artifact`。
 4. 读取产物时调用 `get_image_artifact`。该工具只返回数据，不创建结果卡；只有用户需要查看历史图片且没有现成结果入口时，才读取后调用一次 `render_image_results`。
 5. 需要查看模型能力时调用 `list_image_models`。
 6. 画布明确提交多条标注时，由 widget 一次调用 `save_image_annotations`；未提交标注不得调用该工具。

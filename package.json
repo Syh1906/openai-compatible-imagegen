@@ -1,6 +1,6 @@
 {
   "name": "openai-compatible-imagegen-v2",
-  "version": "0.1.0+codex.20260806131618",
+  "version": "0.1.0+codex.20260806140437",
   "private": true,
   "type": "module",
   "scripts": {
