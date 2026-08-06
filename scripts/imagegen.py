@@ -8,34 +8,48 @@ import base64
 import concurrent.futures
 import json
 import mimetypes
-import os
 import sys
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 import zlib
-from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 
 SKILL_DIR = Path(__file__).resolve().parents[1]
+if str(SKILL_DIR) not in sys.path:
+    sys.path.insert(0, str(SKILL_DIR))
+
+from scripts.artifact_repository import ArtifactRepository
+from scripts.image_download import ImageDownloadError, download_image_url
+from scripts.provider_config import (
+    Config,
+    DEFAULT_MODEL,
+    DEFAULT_POSTPROCESS,
+    DEFAULT_USER_AGENT,
+    PLACEHOLDER_API_KEYS,
+    ProviderConfigError,
+    auth_setup_message,
+    is_placeholder_api_key,
+    parse_config,
+    resolve_api_key,
+    resolve_postprocess_config,
+    resolve_url_download_config,
+    resolve_user_agent,
+)
+
+
 AUTH_PATH = SKILL_DIR / "auth.json"
 EXAMPLE_AUTH_PATH = SKILL_DIR / "examples" / "auth.example.json"
 DEFAULT_CONCURRENCY = 3
 DEFAULT_TIMEOUT_SECONDS = 600
-DEFAULT_MODEL = "gpt-image-2"
 DEFAULT_SIZE = "1024x1024"
 DEFAULT_QUALITY = "medium"
 DEFAULT_FORMAT = "png"
 DEFAULT_RESOLUTION = "1K"
-DEFAULT_USER_AGENT = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/131.0.0.0 Safari/537.36"
-)
 SUPPORTED_ASPECTS = {"1:1", "16:9", "4:3", "3:4", "9:16"}
 SUPPORTED_RESOLUTIONS = {"1K", "2K", "4K"}
 SIZE_PRESETS = {
@@ -55,116 +69,44 @@ SIZE_PRESETS = {
     ("3:4", "4K"): "3072x4096",
     ("9:16", "4K"): "2160x3840",
 }
-DEFAULT_POSTPROCESS = {
-    "enabled": False,
-}
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
-PLACEHOLDER_API_KEYS = {
-    "",
-    "replace-with-temporary-local-key",
-    "replace-with-your-api-key",
-    "your-api-key",
-    "changeme",
-}
 
 
 class ImagegenError(Exception):
     """User-facing script error."""
 
 
-@dataclass(frozen=True)
-class Config:
-    base_url: str
-    api_key: str
-    api_key_source: str
-    model: str
-    defaults: dict[str, Any]
-    capabilities: dict[str, Any]
-    postprocess: dict[str, Any]
-    user_agent: str = DEFAULT_USER_AGENT
+class MachineTaskError(ImagegenError):
+    def __init__(self, code: str, message: str) -> None:
+        super().__init__(message)
+        self.code = code
 
 
-def load_config(require_api_key: bool = True) -> Config:
-    if not AUTH_PATH.is_file():
+def load_config(
+    require_api_key: bool = True,
+    config_path: Path | None = None,
+    model_profile_id: str = "primary/gpt-image-2",
+) -> Config:
+    auth_path = Path(config_path) if config_path is not None else AUTH_PATH
+    if not auth_path.is_file():
         raise ImagegenError(
-            f"missing auth.json: {display_path(AUTH_PATH)}\n"
+            f"missing auth.json: {display_path(auth_path)}\n"
             f"Run: python {display_path(Path(__file__).resolve().with_name('quick-init.py'))}\n"
             "Then run info to confirm the redacted configuration summary."
         )
     try:
-        raw = json.loads(AUTH_PATH.read_text(encoding="utf-8-sig"))
+        raw = json.loads(auth_path.read_text(encoding="utf-8-sig"))
     except json.JSONDecodeError as exc:
         raise ImagegenError(f"auth.json is not valid JSON: {exc}") from exc
 
-    base_url = str(raw.get("base_url") or "").strip().rstrip("/")
-    file_api_key = str(raw.get("api_key") or "").strip()
-    api_key_env = str(raw.get("api_key_env") or "").strip()
-    api_key, api_key_source = resolve_api_key(file_api_key, api_key_env)
-    model = str(raw.get("model") or DEFAULT_MODEL).strip()
-    user_agent = resolve_user_agent(raw.get("user_agent"))
-    defaults = raw.get("defaults") if isinstance(raw.get("defaults"), dict) else {}
-    capabilities = raw.get("capabilities") if isinstance(raw.get("capabilities"), dict) else {}
-    postprocess = resolve_postprocess_config(raw.get("postprocess"))
-
-    if not base_url:
-        raise ImagegenError("auth.json missing base_url")
-    if require_api_key and not api_key:
-        raise ImagegenError(auth_setup_message(file_api_key, api_key_env))
-    if not model:
-        raise ImagegenError("auth.json missing model")
-    return Config(
-        base_url=base_url,
-        api_key=api_key,
-        api_key_source=api_key_source,
-        model=model,
-        defaults=defaults,
-        capabilities=capabilities,
-        postprocess=postprocess,
-        user_agent=user_agent,
-    )
-
-
-def resolve_postprocess_config(value: Any) -> dict[str, Any]:
-    cfg = dict(DEFAULT_POSTPROCESS)
-    if isinstance(value, dict):
-        for key in DEFAULT_POSTPROCESS:
-            if key in value:
-                cfg[key] = bool(value[key])
-    return cfg
-
-
-def resolve_user_agent(value: Any) -> str:
-    user_agent = str(value or DEFAULT_USER_AGENT).strip()
-    if any(ord(char) < 32 or ord(char) == 127 for char in user_agent):
-        raise ImagegenError("auth.json user_agent must not contain control characters")
-    return user_agent
-
-
-def resolve_api_key(file_api_key: str, api_key_env: str) -> tuple[str, str]:
-    if file_api_key and not is_placeholder_api_key(file_api_key):
-        return file_api_key, "auth.json api_key"
-    if api_key_env:
-        env_value = os.environ.get(api_key_env, "").strip()
-        if env_value:
-            return env_value, f"env:{api_key_env}"
-    return "", "missing"
-
-
-def is_placeholder_api_key(value: str) -> bool:
-    return value.strip().lower() in PLACEHOLDER_API_KEYS
-
-
-def auth_setup_message(file_api_key: str, api_key_env: str) -> str:
-    if file_api_key and is_placeholder_api_key(file_api_key):
-        if api_key_env:
-            return (
-                f"auth.json api_key is still a placeholder and {api_key_env} is not set.\n"
-                "Edit auth.json api_key directly, or set that environment variable."
-            )
-        return "auth.json api_key is still a placeholder. Edit auth.json api_key or add api_key_env."
-    if api_key_env:
-        return f"auth.json missing api_key and environment variable {api_key_env} is not set."
-    return "auth.json missing api_key. Edit auth.json api_key or add api_key_env."
+    try:
+        return parse_config(
+            raw,
+            require_api_key=require_api_key,
+            model_profile_id=model_profile_id,
+        )
+    except ProviderConfigError as exc:
+        raise ImagegenError(str(exc)) from exc
 
 
 def display_path(path: Path) -> str:
@@ -349,6 +291,10 @@ def resolve_common_params(args: argparse.Namespace, cfg: Config, task: dict[str,
         "moderation": get_value("moderation", args, task, None),
         "output_compression": output_compression,
         "timeout": timeout,
+        "direct_url_download": bool(
+            cfg.url_download.get("proxy_mode") == "direct"
+            or getattr(args, "allow_direct_url_download", False)
+        ),
     }
 
 
@@ -499,7 +445,13 @@ def generate(cfg: Config, args: argparse.Namespace, task: dict[str, Any] | None 
         "output_compression": params["output_compression"],
     }
     response = request_json(cfg, "images/generations", payload, params["timeout"])
-    written = write_response_images(response, out_file, params["output_format"], cfg.user_agent)
+    written = write_response_images(
+        response,
+        out_file,
+        params["output_format"],
+        cfg.user_agent,
+        params["direct_url_download"],
+    )
     return success_record(task, prompt, "generate", written, params)
 
 
@@ -533,7 +485,13 @@ def edit(cfg: Config, args: argparse.Namespace, task: dict[str, Any] | None = No
     if mask_path:
         files.append(("mask", mask_path))
     response = request_multipart(cfg, "images/edits", fields, files, params["timeout"])
-    written = write_response_images(response, out_file, params["output_format"], cfg.user_agent)
+    written = write_response_images(
+        response,
+        out_file,
+        params["output_format"],
+        cfg.user_agent,
+        params["direct_url_download"],
+    )
     return success_record(task, prompt, "edit", written, params)
 
 
@@ -560,36 +518,55 @@ def write_response_images(
     out_file: Path,
     fmt: str,
     user_agent: str = DEFAULT_USER_AGENT,
+    direct_url_download: bool = False,
 ) -> list[str]:
-    data = response.get("data")
-    if not isinstance(data, list) or not data:
-        raise ImagegenError("API response did not include data images")
     out_file.parent.mkdir(parents=True, exist_ok=True)
     written: list[str] = []
-    for index, item in enumerate(data):
-        if not isinstance(item, dict):
-            continue
-        raw = decode_image_item(item, user_agent)
-        target = numbered_path(out_file, index, len(data), fmt)
+    images = decode_response_images(response, user_agent, direct_url_download)
+    for index, raw in enumerate(images):
+        target = numbered_path(out_file, index, len(images), fmt)
         target.write_bytes(raw)
         written.append(str(target))
-    if not written:
-        raise ImagegenError("API response did not include b64_json or url images")
     return written
 
 
-def decode_image_item(item: dict[str, Any], user_agent: str = DEFAULT_USER_AGENT) -> bytes:
+def decode_response_images(
+    response: dict[str, Any],
+    user_agent: str,
+    direct_url_download: bool = False,
+) -> list[bytes]:
+    data = response.get("data")
+    if not isinstance(data, list) or not data:
+        raise ImagegenError("API response did not include data images")
+    images = [
+        decode_image_item(item, user_agent, direct_url_download)
+        for item in data
+        if isinstance(item, dict)
+    ]
+    if not images:
+        raise ImagegenError("API response did not include b64_json or url images")
+    return images
+
+
+def decode_image_item(
+    item: dict[str, Any],
+    user_agent: str = DEFAULT_USER_AGENT,
+    direct_url_download: bool = False,
+) -> bytes:
     b64_value = item.get("b64_json")
     if isinstance(b64_value, str) and b64_value.strip():
         return base64.b64decode(strip_data_url_prefix(b64_value))
     url = item.get("url")
     if isinstance(url, str) and url.strip():
-        request = urllib.request.Request(
-            url,
-            headers={"Accept": "image/*", "User-Agent": user_agent},
-        )
-        with urllib.request.urlopen(request, timeout=DEFAULT_TIMEOUT_SECONDS) as resp:
-            return resp.read()
+        try:
+            return download_image_url(
+                url,
+                user_agent,
+                DEFAULT_TIMEOUT_SECONDS,
+                direct_url_download,
+            )
+        except ImageDownloadError as exc:
+            raise ImagegenError(str(exc)) from exc
     raise ImagegenError("image item has neither b64_json nor url")
 
 
@@ -1097,6 +1074,7 @@ def info(cfg: Config) -> int:
         "capabilities": cfg.capabilities,
         "defaults": cfg.defaults,
         "postprocess": cfg.postprocess,
+        "url_download": cfg.url_download,
         "auth_json": display_path(AUTH_PATH),
         "api_key_source": cfg.api_key_source,
         "api_key": "***REDACTED***",
@@ -1134,6 +1112,224 @@ def split_grid_command(args: argparse.Namespace) -> int:
         expected_count=args.expected_count,
     )
     print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
+def run_machine_task(
+    task: dict[str, Any],
+    project_root: Path,
+    cfg: Config | None = None,
+    config_path: Path | None = None,
+) -> dict[str, Any]:
+    effective_cfg = cfg
+    try:
+        if not isinstance(task, dict):
+            raise MachineTaskError("invalid_task", "machine task must be a JSON object")
+        profile_id = str(task.get("modelProfileId") or "")
+        if profile_id != "primary/gpt-image-2":
+            raise MachineTaskError(
+                "unsupported_model_profile",
+                f"unsupported model profile: {profile_id or '(missing)'}",
+            )
+        operation = str(task.get("operation") or "").strip().lower()
+        if operation not in {"generate", "edit", "list_models"}:
+            raise MachineTaskError("invalid_task", f"unsupported operation: {operation or '(missing)'}")
+        effective_cfg = effective_cfg or load_config(
+            require_api_key=operation != "list_models",
+            config_path=config_path,
+            model_profile_id=profile_id,
+        )
+        if effective_cfg.model != "gpt-image-2":
+            raise MachineTaskError(
+                "unsupported_model_profile",
+                f"configured model does not match {profile_id}",
+            )
+        if operation == "list_models":
+            return {
+                "ok": True,
+                "models": [
+                    {
+                        "id": profile_id,
+                        "provider": profile_id.split("/", 1)[0],
+                        "model": effective_cfg.model,
+                        "capabilities": effective_cfg.capabilities,
+                    }
+                ],
+            }
+
+        prompt = str(task.get("prompt") or "").strip()
+        if not prompt:
+            raise MachineTaskError("invalid_task", "prompt is required")
+        input_ids = task.get("inputArtifactIds") or []
+        if not isinstance(input_ids, list) or any(not isinstance(item, str) for item in input_ids):
+            raise MachineTaskError("invalid_task", "inputArtifactIds must be an array of artifact IDs")
+        if operation == "edit" and not input_ids:
+            raise MachineTaskError("invalid_task", "edit requires a parent artifact ID")
+        mask_path: Path | None = None
+        mask_value = task.get("mask")
+        if mask_value:
+            if operation != "edit":
+                raise MachineTaskError("invalid_task", "mask is only valid for edit tasks")
+            if not effective_cfg.capabilities.get("mask"):
+                raise MachineTaskError(
+                    "unsupported_capability",
+                    "configured model profile does not support mask editing",
+                )
+            mask_path = Path(str(mask_value)).expanduser().resolve()
+            if mask_path.suffix.lower() != ".png" or not mask_path.is_file():
+                raise MachineTaskError("invalid_task", "mask must be an available PNG file")
+
+        output = task.get("output") or {}
+        if not isinstance(output, dict):
+            raise MachineTaskError("invalid_task", "output must be a JSON object")
+        params = resolve_machine_output(output, effective_cfg)
+        repository = ArtifactRepository(Path(project_root))
+        payload = {
+            "model": "gpt-image-2",
+            "prompt": prompt,
+            "size": params["size"],
+            "quality": params["quality"],
+            "n": params["count"],
+            "background": params["background"],
+            "output_format": params["format"],
+            "output_compression": params["compression"],
+        }
+        if operation == "generate":
+            response = request_json(effective_cfg, "images/generations", payload, params["timeout"])
+            parent_ids: list[str] = []
+        else:
+            files = [("image[]", repository.get_image_path(artifact_id)) for artifact_id in input_ids]
+            if mask_path is not None:
+                files.append(("mask", mask_path))
+            response = request_multipart(
+                effective_cfg,
+                "images/edits",
+                {key: value for key, value in payload.items() if key != "moderation"},
+                files,
+                params["timeout"],
+            )
+            parent_ids = [input_ids[0]]
+        images = decode_response_images(
+            response,
+            effective_cfg.user_agent,
+            effective_cfg.url_download.get("proxy_mode") == "direct",
+        )
+        mime_type = machine_mime_type(params["format"])
+        records = repository.store_images(
+            images=images,
+            mime_type=mime_type,
+            provider="primary",
+            model="gpt-image-2",
+            operation=operation,
+            prompt=prompt,
+            parameters={key: value for key, value in params.items() if key != "timeout"},
+            parent_ids=parent_ids,
+            annotation_id=task.get("annotationId"),
+        )
+        return {"ok": True, "artifacts": [record.metadata for record in records]}
+    except Exception as exc:
+        code = exc.code if isinstance(exc, MachineTaskError) else "image_task_failed"
+        return {
+            "ok": False,
+            "error": {
+                "code": code,
+                "message": redact_machine_error(
+                    str(exc),
+                    effective_cfg,
+                    Path(project_root),
+                    config_path=config_path,
+                ),
+            },
+        }
+
+
+def resolve_machine_output(output: dict[str, Any], cfg: Config) -> dict[str, Any]:
+    output_format = str(output.get("format") or cfg.defaults.get("output_format") or DEFAULT_FORMAT).lower()
+    if output_format == "jpg":
+        output_format = "jpeg"
+    if output_format not in {"png", "jpeg", "webp"}:
+        raise MachineTaskError("invalid_task", f"unsupported output format: {output_format}")
+    try:
+        count = int(output.get("count") or 1)
+        timeout = int(cfg.defaults.get("timeout_seconds") or DEFAULT_TIMEOUT_SECONDS)
+    except (TypeError, ValueError) as exc:
+        raise MachineTaskError("invalid_task", "count and timeout must be integers") from exc
+    if count < 1 or count > 10:
+        raise MachineTaskError("invalid_task", "count must be between 1 and 10")
+    size = str(output.get("size") or cfg.defaults.get("size") or DEFAULT_SIZE)
+    parse_size(size)
+    quality = str(output.get("quality") or cfg.defaults.get("quality") or DEFAULT_QUALITY)
+    if quality not in {"auto", "low", "medium", "high"}:
+        raise MachineTaskError("invalid_task", f"unsupported quality: {quality}")
+    background = str(output.get("background") or "opaque")
+    if background not in {"auto", "opaque", "transparent"}:
+        raise MachineTaskError("invalid_task", f"unsupported background: {background}")
+    if background == "transparent" and not cfg.capabilities.get("transparent_background"):
+        raise MachineTaskError(
+            "unsupported_capability",
+            "configured model profile does not support transparent background",
+        )
+    validate_transparent_background_request("gpt-image-2", background, infer_resolution_from_size(size))
+    compression = output.get("compression")
+    if compression is not None:
+        try:
+            compression = int(compression)
+        except (TypeError, ValueError) as exc:
+            raise MachineTaskError("invalid_task", "compression must be an integer") from exc
+        if compression < 0 or compression > 100:
+            raise MachineTaskError("invalid_task", "compression must be between 0 and 100")
+    if timeout < 1:
+        raise MachineTaskError("invalid_task", "timeout must be positive")
+    return {
+        "size": size,
+        "quality": quality,
+        "format": output_format,
+        "count": count,
+        "background": background,
+        "compression": compression,
+        "timeout": timeout,
+    }
+
+
+def machine_mime_type(output_format: str) -> str:
+    return "image/jpeg" if output_format == "jpeg" else f"image/{output_format}"
+
+
+def redact_machine_error(
+    message: str,
+    cfg: Config | None,
+    project_root: Path,
+    *,
+    config_path: Path | None = None,
+) -> str:
+    redacted = message
+    secrets_to_remove = [str(project_root.absolute()), str(SKILL_DIR)]
+    if config_path is not None:
+        secrets_to_remove.append(str(Path(config_path).absolute()))
+    if cfg is not None:
+        secrets_to_remove.extend([cfg.api_key, cfg.base_url])
+    for value in secrets_to_remove:
+        if value:
+            redacted = redacted.replace(value, "[REDACTED]")
+            redacted = redacted.replace(value.replace("\\", "/"), "[REDACTED]")
+    return redacted[:1000]
+
+
+def machine_command(args: argparse.Namespace) -> int:
+    try:
+        task = json.loads(sys.stdin.read())
+    except json.JSONDecodeError as exc:
+        result = {"ok": False, "error": {"code": "invalid_json", "message": f"invalid JSON: {exc.msg}"}}
+    else:
+        result = run_machine_task(
+            task,
+            Path(args.project_root),
+            config_path=Path(args.config) if args.config else None,
+        )
+    print(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
+    if not result.get("ok"):
+        print(f"image task failed: {result['error']['code']}", file=sys.stderr)
+        return 1
     return 0
 
 
@@ -1178,6 +1374,10 @@ def build_parser() -> argparse.ArgumentParser:
     grid_parser.add_argument("--out-dir", required=True)
     grid_parser.add_argument("--expected-count", type=int, default=None)
 
+    machine_parser = sub.add_parser("machine")
+    machine_parser.add_argument("--project-root", required=True)
+    machine_parser.add_argument("--config", default=None)
+
     sub.add_parser("info")
     return parser
 
@@ -1207,6 +1407,11 @@ def add_common_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--moderation", default=None, choices=["auto", "low"])
     parser.add_argument("--compression", type=int, default=None)
     parser.add_argument("--timeout", type=int, default=None)
+    parser.add_argument(
+        "--allow-direct-url-download",
+        action="store_true",
+        help="Download returned image URLs directly without the configured proxy for this run",
+    )
 
 
 def add_postprocess_args(parser: argparse.ArgumentParser) -> None:
@@ -1227,6 +1432,8 @@ def main() -> int:
             return normalize_command(args)
         if args.command == "split-grid":
             return split_grid_command(args)
+        if args.command == "machine":
+            return machine_command(args)
         if args.command == "init":
             return init_auth(args)
         cfg = load_config(require_api_key=args.command != "info")

@@ -288,9 +288,10 @@ class RequestHeaderTests(unittest.TestCase):
         self.assertEqual(request.get_header("Authorization"), "Bearer secret")
 
     def test_url_image_download_sends_user_agent_without_authorization(self) -> None:
+        image_bytes = self.imagegen.PNG_SIGNATURE + b"\x00\x00\x00\x00IEND\xaeB`\x82"
         response = mock.MagicMock()
         response.__enter__.return_value = response
-        response.read.return_value = b"image-bytes"
+        response.read.return_value = image_bytes
         with mock.patch.object(
             self.imagegen.urllib.request,
             "urlopen",
@@ -302,7 +303,7 @@ class RequestHeaderTests(unittest.TestCase):
             )
 
         request = urlopen.call_args.args[0]
-        self.assertEqual(result, b"image-bytes")
+        self.assertEqual(result, image_bytes)
         self.assertEqual(request.get_header("User-agent"), "Micu-Compatible-Client/1.0")
         self.assertIsNone(request.get_header("Authorization"))
 

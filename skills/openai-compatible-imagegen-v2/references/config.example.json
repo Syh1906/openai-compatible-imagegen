@@ -1,0 +1,31 @@
+{
+  "providers": {
+    "primary": {
+      "protocol": "openai-compatible",
+      "base_url": "https://example.com/v1",
+      "api_key_env": "IMAGE_API_KEY",
+      "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+      "url_download": {
+        "proxy_mode": "environment"
+      }
+    }
+  },
+  "models": {
+    "primary/gpt-image-2": {
+      "provider": "primary",
+      "model": "gpt-image-2",
+      "capabilities": {
+        "generate": true,
+        "edit": true,
+        "mask": true,
+        "multi_reference": true,
+        "transparent_background": false
+      }
+    }
+  },
+  "defaults": {
+    "size": "1536x1024",
+    "quality": "auto",
+    "output_format": "png"
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "openai-compatible-imagegen-v2": {
+      "command": "node",
+      "args": ["dist/server.mjs"]
+    }
+  }
+}
