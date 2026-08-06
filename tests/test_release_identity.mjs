@@ -153,6 +153,16 @@ test("the built plugin exposes one content-bound release identity", async () => 
     assert.match(probeResult.projectRootFingerprint, /^[a-f0-9]{20}$/);
     assert.equal(probeResult.sourceRootFingerprint, null);
     assert.equal(probeResult.projectRootRelationToPlugin, "outside");
+    assert.equal(probeResult.runtimeDiagnostic.projectRootSource, "process.cwd");
+    assert.equal(
+      probeResult.runtimeDiagnostic.pluginRootFingerprint,
+      probeResult.pluginRootFingerprint,
+    );
+    assert.equal(
+      probeResult.runtimeDiagnostic.projectRootFingerprint,
+      probeResult.projectRootFingerprint,
+    );
+    assert.equal(probeResult.runtimeDiagnostic.roots.status, "unsupported");
   } finally {
     await client.close();
     await rm(fixtureRoot, { recursive: true, force: true });

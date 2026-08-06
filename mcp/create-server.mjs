@@ -2,6 +2,8 @@ import { RESOURCE_MIME_TYPE, registerAppResource } from "@modelcontextprotocol/e
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+
+import { createRuntimeObservation } from "./runtime-diagnostics.mjs";
 const imageIdSchema = z.string().regex(/^img_[0-9A-HJKMNP-TV-Z]{26}$/).describe("项目产物仓库中的稳定图片 ID");
 const editorSessionIdSchema = z.string().regex(/^eds_[0-9a-f]{32}$/).describe("已打开画布的会话 ID");
 const normalizedCoordinate = z.number().min(0).max(1);
@@ -24,9 +26,51 @@ const outputSchema = {
   count: z.number().int().min(1).max(10).optional(),
   background: z.enum(["auto", "opaque", "transparent"]).optional(),
 };
+const fingerprintSchema = z.string().regex(/^[a-f0-9]{20}$/);
+const digestSchema = z.string().regex(/^[a-f0-9]{64}$/);
+const releaseIdentityOutputSchema = z.object({
+  pluginId: z.string().min(1),
+  pluginVersion: z.string().min(1),
+  serverBuildDigest: digestSchema,
+  widgetAssetDigest: digestSchema,
+  fingerprint: fingerprintSchema,
+  resourceUris: z.object({ result: z.string().url(), editor: z.string().url() }),
+});
+const runtimeObservationOutputSchema = z.object({
+  cwdFingerprint: fingerprintSchema,
+  pluginRootFingerprint: fingerprintSchema,
+  projectRootFingerprint: fingerprintSchema,
+  cwdRelationToPlugin: z.enum(["same", "descendant", "outside"]),
+  projectRootRelationToPlugin: z.enum(["same", "descendant", "outside"]),
+  projectRootSource: z.string().min(1),
+  client: z.object({
+    reported: z.boolean(),
+    nameFingerprint: fingerprintSchema.nullable(),
+    nameLength: z.number().int().min(0),
+    versionFingerprint: fingerprintSchema.nullable(),
+    versionLength: z.number().int().min(0),
+    capabilityCount: z.number().int().min(0),
+    rootsDeclared: z.boolean(),
+  }),
+  roots: z.object({
+    status: z.enum(["unsupported", "available", "error"]),
+    count: z.number().int().min(0),
+    entries: z.array(z.object({
+      scheme: z.string().min(1),
+      fingerprint: fingerprintSchema,
+      hasName: z.boolean(),
+      comparable: z.boolean(),
+      relationToCwd: z.enum(["same", "descendant", "outside"]).nullable(),
+      relationToPlugin: z.enum(["same", "descendant", "outside"]).nullable(),
+      relationToProject: z.enum(["same", "descendant", "outside"]).nullable(),
+    })),
+    errorCode: z.string().nullable(),
+  }),
+});
 
-export function createImagegenServer({ releaseIdentity, readWidgetHtml, runTask, readArtifact, readAnnotation, saveAnnotations }) {
+export function createImagegenServer({ releaseIdentity, launchContext, readWidgetHtml, runTask, readArtifact, readAnnotation, saveAnnotations }) {
   requireReleaseIdentity(releaseIdentity);
+  requireLaunchContext(launchContext);
   const { result: resultWidgetUri, editor: editorWidgetUri } = releaseIdentity.resourceUris;
   const server = new McpServer({
     name: releaseIdentity.pluginId,
@@ -51,6 +95,46 @@ export function createImagegenServer({ releaseIdentity, readWidgetHtml, runTask,
     releaseIdentity,
     readWidgetHtml,
   });
+
+  server.registerTool(
+    "inspect_imagegen_runtime",
+    {
+      title: "检查图片运行环境",
+      description: "返回当前 MCP server、启动根关系和客户端 roots 能力的脱敏诊断信息，不返回本机路径或 root URI。",
+      inputSchema: {},
+      outputSchema: {
+        releaseIdentity: releaseIdentityOutputSchema,
+        runtime: runtimeObservationOutputSchema,
+      },
+      annotations: readAnnotations(),
+    },
+    async () => {
+      const clientCapabilities = server.server.getClientCapabilities() ?? {};
+      const rootsSupported = Boolean(clientCapabilities.roots);
+      let roots = [];
+      let rootsErrorCode = null;
+      if (rootsSupported) {
+        try {
+          roots = (await server.server.listRoots()).roots ?? [];
+        } catch {
+          rootsErrorCode = "roots_list_failed";
+        }
+      }
+      const runtime = createRuntimeObservation({
+        ...launchContext,
+        clientVersion: server.server.getClientVersion(),
+        clientCapabilities,
+        rootsSupported,
+        roots,
+        rootsErrorCode,
+      });
+      return {
+        content: [{ type: "text", text: "已读取图片 MCP 的脱敏运行环境。" }],
+        structuredContent: { releaseIdentity, runtime },
+        _meta: { releaseIdentity },
+      };
+    },
+  );
 
   server.registerTool(
     "list_image_models",
@@ -449,6 +533,19 @@ function requireReleaseIdentity(releaseIdentity) {
     || typeof releaseIdentity.resourceUris?.editor !== "string"
   ) {
     throw new Error("releaseIdentity is required to create the MCP server");
+  }
+}
+
+
+function requireLaunchContext(launchContext) {
+  if (
+    !launchContext
+    || typeof launchContext.cwd !== "string"
+    || typeof launchContext.pluginRoot !== "string"
+    || typeof launchContext.projectRoot !== "string"
+    || typeof launchContext.projectRootSource !== "string"
+  ) {
+    throw new Error("launchContext is required to create the MCP server");
   }
 }
 

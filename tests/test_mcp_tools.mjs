@@ -40,6 +40,12 @@ function artifact(id, parentIds = []) {
 async function withClient(dependencies, callback) {
   const server = createImagegenServer({
     releaseIdentity: TEST_RELEASE_IDENTITY,
+    launchContext: {
+      cwd: "F:/test/current-project",
+      pluginRoot: "F:/test/plugin-root",
+      projectRoot: "F:/test/current-project",
+      projectRootSource: "test-fixture",
+    },
     readWidgetHtml: async () => "<html>editor</html>",
     ...dependencies,
   });

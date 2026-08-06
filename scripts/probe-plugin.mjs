@@ -7,6 +7,8 @@ import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
+import { containsAbsolutePath, fingerprintPath, pathRelation } from "../mcp/runtime-diagnostics.mjs";
+
 const defaultRoot = fileURLToPath(new URL("..", import.meta.url));
 const PLUGIN_ID = "openai-compatible-imagegen-v2";
 const APP_ONLY_TOOLS = [
@@ -102,15 +104,44 @@ function requireRemoteSmokeRoot(root) {
   );
 }
 
-function requireSafeToolResults(results, root) {
+function requireSafeToolResults(results, ...roots) {
   const safeResult = results.map((result) => ({
     content: result.content?.filter((item) => item.type !== "image"),
     structuredContent: result.structuredContent,
     meta: result._meta,
   }));
+  const stringValues = collectStringValues(safeResult);
   const text = JSON.stringify(safeResult);
-  requireValue(!text.includes(path.resolve(root)), "remote smoke result exposed the project root");
+  for (const root of roots) {
+    const normalizedRoot = normalizePathForComparison(path.resolve(root));
+    requireValue(
+      !stringValues.some((value) => (
+        normalizePathForComparison(value).includes(normalizedRoot)
+      )),
+      "tool result exposed a local root",
+    );
+  }
+  requireValue(!stringValues.some(containsAbsolutePath), "tool result exposed an absolute local path");
   requireValue(!/authorization|api[_-]?key|config\.json/i.test(text), "remote smoke result exposed configuration or auth fields");
+}
+
+function collectStringValues(value, result = []) {
+  if (typeof value === "string") {
+    result.push(value);
+  } else if (Array.isArray(value)) {
+    for (const item of value) collectStringValues(item, result);
+  } else if (value && typeof value === "object") {
+    for (const [key, item] of Object.entries(value)) {
+      result.push(key);
+      collectStringValues(item, result);
+    }
+  }
+  return result;
+}
+
+function normalizePathForComparison(value) {
+  const normalized = String(value).replaceAll("\\", "/");
+  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
 }
 
 async function readJson(path) {
@@ -265,6 +296,7 @@ async function main() {
     requireValue(tools.includes("generate_image"), "MCP server does not expose generate_image");
     requireValue(tools.includes("edit_image"), "MCP server does not expose edit_image");
     requireValue(tools.includes("get_image_artifact"), "MCP server does not expose get_image_artifact");
+    requireValue(tools.includes("inspect_imagegen_runtime"), "MCP server does not expose inspect_imagegen_runtime");
     requireValue(tools.includes("read_image_artifact_data"), "MCP server does not expose read_image_artifact_data");
     requireValue(tools.includes("destroy_image_editor"), "MCP server does not expose destroy_image_editor");
     requireValue(tools.includes("get_image_editor_session"), "MCP server does not expose get_image_editor_session");
@@ -304,6 +336,23 @@ async function main() {
       )),
       "widget resources expose a different release identity",
     );
+    const runtimeDiagnosticResult = await client.callTool({
+      name: "inspect_imagegen_runtime",
+      arguments: {},
+    });
+    const runtimeDiagnostic = runtimeDiagnosticResult.structuredContent?.runtime;
+    requireValue(runtimeDiagnosticResult.isError !== true && runtimeDiagnostic, "runtime diagnostic failed");
+    requireValue(
+      JSON.stringify(runtimeDiagnosticResult.structuredContent?.releaseIdentity) === JSON.stringify(releaseIdentity),
+      "runtime diagnostic release identity differs",
+    );
+    requireValue(
+      runtimeDiagnostic.pluginRootFingerprint === fingerprintPath(pluginRoot)
+        && runtimeDiagnostic.projectRootFingerprint === fingerprintPath(projectRoot)
+        && runtimeDiagnostic.projectRootSource === "process.cwd",
+      "runtime diagnostic root identity differs",
+    );
+    requireSafeToolResults([runtimeDiagnosticResult], pluginRoot, projectRoot);
     requireValue(
       !resourceTemplates.includes("imagegen://artifact/{imageId}"),
       "MCP server still exposes the unsupported widget image resource template",
@@ -504,6 +553,7 @@ async function main() {
       plugin: manifest.name,
       version: manifest.version,
       releaseIdentity,
+      runtimeDiagnostic,
       packageIdentityChecked: Boolean(packageManifest || packageLock),
       pluginRootFingerprint: fingerprintPath(pluginRoot),
       projectRootFingerprint: fingerprintPath(projectRoot),
@@ -532,20 +582,6 @@ async function main() {
   } finally {
     await client.close();
   }
-}
-
-function fingerprintPath(value) {
-  return createHash("sha256")
-    .update(path.resolve(value).replaceAll("\\", "/").toLowerCase(), "utf8")
-    .digest("hex")
-    .slice(0, 20);
-}
-
-function pathRelation(child, parent) {
-  const relative = path.relative(path.resolve(parent), path.resolve(child));
-  if (!relative) return "same";
-  if (!relative.startsWith("..") && !path.isAbsolute(relative)) return "descendant";
-  return "outside";
 }
 
 async function readArtifactData(client, artifacts, imageContents) {

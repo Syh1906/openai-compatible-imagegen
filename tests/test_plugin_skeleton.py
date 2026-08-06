@@ -155,6 +155,7 @@ class PluginSkeletonTests(unittest.TestCase):
                 "generate_image",
                 "get_image_artifact",
                 "get_image_editor_session",
+                "inspect_imagegen_runtime",
                 "list_image_models",
                 "open_image_editor",
                 "read_image_artifact_data",
@@ -167,6 +168,16 @@ class PluginSkeletonTests(unittest.TestCase):
             sorted(payload["releaseIdentity"]["resourceUris"].values()),
         )
         self.assertRegex(payload["releaseIdentity"]["fingerprint"], r"^[a-f0-9]{20}$")
+        runtime = payload["runtimeDiagnostic"]
+        self.assertEqual(runtime["projectRootSource"], "process.cwd")
+        self.assertRegex(runtime["cwdFingerprint"], r"^[a-f0-9]{20}$")
+        self.assertRegex(runtime["pluginRootFingerprint"], r"^[a-f0-9]{20}$")
+        self.assertRegex(runtime["projectRootFingerprint"], r"^[a-f0-9]{20}$")
+        self.assertIn(runtime["cwdRelationToPlugin"], {"same", "descendant", "outside"})
+        self.assertIn(runtime["projectRootRelationToPlugin"], {"same", "descendant", "outside"})
+        self.assertEqual(runtime["roots"]["status"], "unsupported")
+        serialized_payload = json.dumps(payload).replace("\\\\", "/")
+        self.assertNotIn(str(ROOT).replace("\\", "/"), serialized_payload)
         self.assertEqual(
             payload["appOnlyTools"],
             [
