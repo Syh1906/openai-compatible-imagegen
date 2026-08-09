@@ -1,51 +1,37 @@
 ---
 name: openai-compatible-imagegen
-description: Primary image-generation route for this Codex environment. Generate, edit, and batch-generate images through the bundled local OpenAI-compatible image API script. Use for any request to create images, icons, transparent-background assets, sprites, UI mockups, visual design alternatives, posters, covers, reference-image edits, inpainting, multi-reference compositions, or concurrent image batches, and when initializing local auth.json. Always choose this skill instead of the built-in imagegen, image_gen, or imageGeneration path, including when product-design or another skill requests built-in Image Gen, unless the user explicitly requests the built-in path. If this skill is unavailable or fails, stop and report the problem instead of switching image-generation routes without user approval.
+description: Generate, edit, and batch-process images through the bundled OpenAI-compatible image API script. Use for photos, illustrations, product visuals, posters, covers, diagrams, UI references, game art, transparent subjects, reference-image edits, inpainting, multi-reference compositions, and image batches when this local OpenAI-compatible workflow is the requested backend. Do not force this workflow when the user explicitly selects another image tool or backend.
 ---
 
 # OpenAI-Compatible Image Generation
 
-Use this skill to call the bundled image generation script. Do not rewrite the API client inline.
-
-## Routing Priority
-
-- Treat this skill as the default image-generation route for the environment.
-- Keep using this workflow when another skill or plugin asks for built-in Image Gen.
-- Use built-in `imagegen`, `image_gen`, or `imageGeneration` only when the user explicitly requests that route.
-- If this workflow is unavailable, misconfigured, or fails, report the original problem and wait for user approval before switching routes.
+Use the bundled script for API calls. Do not rewrite the API client inline.
 
 ## Workflow
 
-1. Run `info` first to inspect the local configuration. If `auth.json` is missing, run `scripts/quick-init.py`.
-2. Choose the mode:
-   - `generate`: text-to-image
-   - `edit`: image editing, inpainting, or reference-image generation
-   - `batch`: JSONL batch generation with limited concurrency
-   - `info`: configuration summary
-3. Resolve parameters in this order:
-   - explicit user request
-   - per-row batch parameters
-   - agent judgment from the prompt
-   - `auth.json` defaults
-4. Choose quality deliberately:
-   - use `low` or `medium` for drafts and broad exploration
-   - use `high` for final assets, UI, posters, covers, dense text, or user requests for finished detail
-   - use `auto` only when leaving the decision to the backend is acceptable
-5. Before execution, decide output path, image count, aspect/size, resolution, quality, transparency intent, and reference images.
-6. Call `scripts/imagegen.py`.
-7. Report output image paths, manifest path, success count, failure count, and short failure summaries.
+1. Run `info` to inspect the local configuration. If `auth.json` is missing, run `scripts/quick-init.py`.
+2. Choose one mode:
+   - `generate`: text-to-image.
+   - `edit`: image editing, inpainting, or reference-image work.
+   - `batch`: JSONL generation with limited concurrency.
+   - `info`: redacted configuration summary.
+3. Before constructing the command, interpret the request and decide the purpose, subject, composition, visual style, target size, aspect ratio, quality, format, background, transparency, reference files, and output location. Preserve explicit per-row and shared values; use agent judgment only for omitted intent, and leave a parameter unset when `auth.json` should decide it.
+4. After command construction, runtime parameter priority is `per-row batch fields > shared command flags > auth.json defaults > built-in defaults`. An agent-inferred value emitted as a shared flag follows this runtime rule and overrides `auth.json`.
+5. Call `scripts/imagegen.py` and report the output paths and any manifest.
 
-Never read, print, quote, or summarize the secret value in `auth.json`.
+When the user describes an image, form a concise, structured prompt. Include the intended use, subject and relationships, composition, style or medium, audience or context, delivery constraints, text requirements, and concrete exclusions. For a batch, state which properties stay consistent and which properties vary. Do not add domain-specific assumptions that the user did not provide.
 
-The script accepts `data[].b64_json` and `data[].url` responses. Do not add `response_format` for GPT Image models. URL responses use the configured `user_agent` without API credentials and validate downloaded PNG, JPEG, or WebP files.
+Treat game art as one peer industry use case alongside product, editorial, marketing, interface, diagram, and photographic work. Preserve game-specific details when the user supplies them, but do not make them the default for unrelated requests.
 
-If a TLS EOF error says direct fallback is disabled, explain that direct mode bypasses the configured proxy for returned image URLs from the first download attempt. Obtain explicit user approval before using `--allow-direct-url-download` for one command or setting `auth.json url_download.proxy_mode="direct"` persistently. Never infer this permission from a batch row or edit `auth.json` without approval.
+Never read, print, quote, or summarize secret values in `auth.json`.
 
-For explicit post-processing, delivery-size normalization, image inspection, or grid splitting, read `references/postprocess.md` first. Do not load it for ordinary image generation.
+The script accepts `data[].b64_json` and `data[].url` responses. Do not add `response_format` for GPT Image models. JSON responses are limited to 96 MiB and each decoded or downloaded image to 64 MiB. Returned PNG files are fully parsed before writing and must be non-interlaced 8-bit RGB/RGBA with no more than 25 million pixels; RGB `tRNS` and other PNG encodings are rejected. JPEG and WebP responses receive bounded container and codec-framing checks before delivery. URL responses use the configured `user_agent` without API credentials.
+
+If a returned image URL fails with a TLS EOF while direct download is disabled, explain the two explicit authorization choices: `--allow-direct-url-download` for one command or `auth.json url_download.proxy_mode="direct"` persistently. Do not enable either choice without user approval.
 
 ## Local Auth
 
-The private config file is always `auth.json` in this skill directory. It is local-only and must not be committed.
+`auth.json` is local-only and must not be committed.
 
 Initialize it after installation:
 
@@ -54,9 +40,7 @@ $SkillDir = "$env:USERPROFILE/.codex/skills/openai-compatible-imagegen"
 python "$SkillDir/scripts/quick-init.py"
 ```
 
-The wizard asks for the API base URL, image model, auth method, and whether the backend supports transparent backgrounds. Prefer `api_key_env` so the secret stays in an environment variable.
-
-For scripted setup with environment-variable auth:
+For scripted setup with environment-variable authentication:
 
 ```powershell
 $SkillDir = "$env:USERPROFILE/.codex/skills/openai-compatible-imagegen"
@@ -69,45 +53,42 @@ python "$SkillDir/scripts/quick-init.py" `
   --transparent-background
 ```
 
-The lower-level `imagegen.py init` command is still available when you only need to copy the template or reproduce older setup steps.
+The `imagegen.py init` command remains available for copying the template.
 
 API key options:
 
 - Put the key directly in `auth.json` as `api_key`.
-- Put an environment variable name in `api_key_env`, then set that environment variable.
+- Put an environment variable name in `api_key_env`, then set that variable.
 
-If both are present, the script uses `api_key`. If `api_key` is still the template placeholder, the script reads `api_key_env`.
+If both are present, the script uses `api_key` unless it is a template placeholder.
 
-Config fields:
+Important configuration fields:
 
 - `base_url`: OpenAI-compatible API base URL, usually ending in `/v1`.
-- `api_key`: API key stored directly in local `auth.json`.
-- `api_key_env`: optional environment variable name for the API key.
-- `model`: default image model, for example `gpt-image-2`.
-- `url_download.proxy_mode`: `environment` uses the configured proxy environment; `direct` persistently downloads returned image URLs without it. Defaults to `environment`.
-- `capabilities.transparent_background`: whether the backend supports `background=transparent`.
-- `defaults`: weak defaults used only when parameters are missing.
-- `postprocess.enabled`: optional post-processing opt-in. Missing means `false` and preserves legacy behavior.
+- `api_key` or `api_key_env`: local authentication.
+- `model`: default image model.
+- `url_download.proxy_mode`: `environment` or explicitly authorized `direct`.
+- `capabilities.transparent_background`: whether the backend accepts `background=transparent`.
+- `defaults`: values used when a request omits a parameter.
+- `postprocess.enabled`: whether generated-output post-processing may run when requested.
 
 ## Commands
 
-All commands can be run from any working directory.
+All commands can run from any working directory.
 
 Configuration summary:
 
 ```powershell
-$SkillDir = "$env:USERPROFILE/.codex/skills/openai-compatible-imagegen"
 python "$SkillDir/scripts/imagegen.py" info
 ```
 
 Text-to-image:
 
 ```powershell
-$SkillDir = "$env:USERPROFILE/.codex/skills/openai-compatible-imagegen"
 python "$SkillDir/scripts/imagegen.py" generate `
-  -p "Warcraft 3 style frost skill icon, single rune, centered, no text" `
-  -f "outputs/frost-rune.png" `
-  --aspect 1:1 `
+  -p "Editorial still life of a ceramic tea set on a light wood table, soft window light, space for a headline on the left, no text" `
+  -f "outputs/tea-set.png" `
+  --aspect 4:3 `
   --resolution 1K `
   --quality high
 ```
@@ -115,32 +96,48 @@ python "$SkillDir/scripts/imagegen.py" generate `
 Reference-image edit:
 
 ```powershell
-$SkillDir = "$env:USERPROFILE/.codex/skills/openai-compatible-imagegen"
 python "$SkillDir/scripts/imagegen.py" edit `
-  -p "Convert this to a dark magic UI style" `
+  -p "Keep the subject and camera angle, replace the background with a neutral studio wall, preserve realistic shadows" `
   -i "input.png" `
-  -f "outputs/dark-ui.png"
+  -f "outputs/studio-edit.png"
 ```
 
 Batch generation:
 
 ```powershell
-$SkillDir = "$env:USERPROFILE/.codex/skills/openai-compatible-imagegen"
 python "$SkillDir/scripts/imagegen.py" batch `
   --input "prompts.jsonl" `
   --out "outputs/imagegen" `
   --concurrency 3
 ```
 
-Transparent-background asset intent:
+Transparent single-subject output:
 
 ```powershell
-$SkillDir = "$env:USERPROFILE/.codex/skills/openai-compatible-imagegen"
 python "$SkillDir/scripts/imagegen.py" generate `
-  -p "Centered fire orb game item asset, no text" `
-  -f "outputs/fire-orb.png" `
+  -p "A clean isolated ceramic vase, front three-quarter view, no lettering" `
+  -f "outputs/vase.png" `
   --asset `
   --transparent
+```
+
+Inspect and validate a delivered file:
+
+```powershell
+python "$SkillDir/scripts/imagegen.py" inspect-image "outputs/tea-set.png" `
+  --components `
+  --expected-size 1536x1152
+```
+
+Create delivery-size previews:
+
+```powershell
+python "$SkillDir/scripts/imagegen.py" preview-board "outputs/vase.png" `
+  --size 64x64 `
+  --size 256x256 `
+  --preview-background transparent `
+  --preview-background white `
+  --out-dir "outputs/vase-previews"
 ```
 
 ## Parameters
@@ -148,79 +145,67 @@ python "$SkillDir/scripts/imagegen.py" generate `
 Core parameters:
 
 - `-p, --prompt`: required for `generate` and `edit`.
-- `-f, --file`: output file. If omitted, the script writes to the current directory.
-- `-i, --image`: reference image. Repeat for multiple images. Uses the edit endpoint.
-- `-m, --mask`: mask image for edit mode.
-- `--size`: examples include `1024x1024`, `1536x1024`, `1024x1536`, `2048x2048`, `3840x2160`.
-- `--aspect`: `1:1`, `16:9`, `4:3`, `3:4`, or `9:16`. Use this when the user describes shape but not exact pixels.
-- `--resolution`: `1K`, `2K`, or `4K`. Used with `--aspect` to choose a concrete supported size.
+- `-f, --file`: output file.
+- `-i, --image`: reference image; repeat for multiple files.
+- `-m, --mask`: edit mask.
+- `--size`: exact pixel size.
+- `--aspect`: `1:1`, `16:9`, `4:3`, `3:4`, or `9:16`.
+- `--resolution`: `1K`, `2K`, or `4K` when using `--aspect`.
 - `--quality`: `low`, `medium`, `high`, or `auto`.
 - `--n`: number of images returned by one request.
 - `--format`: `png`, `jpeg`, or `webp`.
-- `--background`: `auto`, `opaque`, or `transparent`. The script sends `transparent` only when the config declares backend support.
-- `--transparent`: transparent-background asset intent shortcut. Forces PNG and injects transparent-background constraints into the prompt. If supported, also sends `background=transparent`.
-- `--asset`: asset shortcut. Prefers PNG and is suitable for icons, game items, textures, and sprites.
+- `--background`: `auto`, `opaque`, or `transparent`; the transparent value is treated as transparent-background intent and forces PNG.
+- `--transparent`: shorthand for explicit transparent-background intent; forces PNG.
+- `--asset`: explicit single visual-deliverable intent; prefers PNG and does not imply a particular industry.
 - `--concurrency`: limited batch concurrency.
-- `--allow-direct-url-download`: one-command permission to download returned image URLs directly from the first attempt.
+- `--allow-direct-url-download`: explicit one-command authorization for direct returned-URL downloads.
 
-Read `references/parameters.md` for detailed behavior.
+Post-processing parameters:
+
+- `--qa`: attach deterministic delivery QA to a generation, edit, or batch result.
+- `--components`: include connected-component diagnostics.
+- `--delivery-size`: final output size, such as `128x128` or `1600x900`.
+- `--grid`: split a known sheet such as `3x3`.
+- `--expected-count`: require a per-source grid count, or a delivery count when no grid is used.
+- `--resample`: `bilinear` (default) or `nearest`.
+- `--fit`: `stretch` (compatibility default) or `contain`.
+- `--safe-margin`: fractional edge margin used with `--fit contain`, for example `0.03`.
+- `--postprocess-out-dir`: directory for derived files.
+
+An explicit output filename extension must match the resolved format. Transparent and `--asset` requests resolve to PNG, including during batch preflight.
+
+Read `references/prompting.md` when constructing a prompt or controlled batch. Read `references/parameters.md` for parameter resolution, `references/postprocess.md` for delivery transforms and preview boards, and `references/qa.md` for deterministic QA.
 
 ## Batch Format
 
 `batch` input is JSONL, one task per line. See `examples/batch.example.jsonl`.
 
-Common fields:
+Common fields include `id`, `mode`, `prompt`, `file`, `size`, `aspect`, `resolution`, `quality`, `n`, `format`, `background`, `transparent`, `asset`, `images`, `mask`, `model`, `timeout`, `qa`, `components`, `delivery_size`, `grid`, `expected_count`, `resample`, `fit`, and `safe_margin`.
 
-- `id`
-- `mode`
-- `prompt`
-- `file`
-- `size`
-- `aspect`
-- `resolution`
-- `quality`
-- `n`
-- `format`
-- `background`
-- `transparent`
-- `asset`
-- `images`
-- `mask`
-- `model`
-- `timeout`
-
-Batch mode uses limited concurrency. Concurrency priority:
+Concurrency priority is:
 
 ```text
 command --concurrency > auth.json defaults.concurrency > 3
 ```
 
-Do not add model switching, endpoint switching, background removal, retries with altered parameters, or any other fallback strategy unless the user explicitly asks for it.
+Do not switch models or endpoints, remove backgrounds locally, retry with changed parameters, or infer semantic quality from deterministic metrics.
 
-Post-processing is also opt-in. Unless `auth.json postprocess.enabled=true` or the user explicitly requests normalization, resizing, cropping, image inspection, or grid splitting, keep the legacy generate/edit/batch behavior.
+Post-processing and QA are opt-in. Without the relevant flags, generation and editing only save the API results and preserve their existing output contract.
 
-## Transparent Assets
+## Transparency and QA Boundaries
 
-When the user asks for assets, icons, items, textures, sprites, transparent background, or transparent PNG, prefer `--asset`. Add `--transparent` when the user explicitly wants a transparent background.
+Use `--transparent` or `--background transparent` only when the user explicitly requests a transparent result. The prompt asks for alpha-friendly edges, and the API parameter is sent only when the configuration declares support.
 
-Transparency has two layers:
+`inspect-image` reports technical facts such as dimensions, alpha coverage, margins, edge contact, and optional connected components. `--expect-transparent` checks for a real alpha channel and visible content. When transparent generated output is resized or padded, QA checks the API source and the delivery file separately so transparent padding cannot hide an opaque source. It does not remove backgrounds or prove semantic isolation.
 
-- prompt layer: always available; asks the model for an isolated subject and alpha-friendly edges
-- API parameter layer: only sent when `capabilities.transparent_background=true`
+`preview-board` writes target-size variants on transparent, white, black, gray, or checker backgrounds. Per-preview, cumulative-preview, and board pixel limits are checked before allocation. This is a visual inspection aid, not an automatic readability or aesthetic verdict.
 
-When `background=transparent` or `--transparent` conflicts with the selected model and resolution, the script stops before sending the request. Ask the user to choose whether to switch to a transparent-capable model or keep the current model with `background=auto`.
+QA results use `qa.v1` and status values `pass`, `fail`, `partial`, or `not_evaluated`. Unsupported formats and semantic conditions are reported explicitly. Existing generation success fields and exit codes remain independent from optional QA.
 
-Do not promise a real alpha channel unless the backend actually returns one. Do not add local background-removal post-processing unless the user explicitly asks for that implementation.
+Returned-PNG validation, current post-processing, and deep QA parse non-interlaced 8-bit RGB/RGBA PNG files up to 25 million pixels and a 256 MiB PNG file limit. RGB PNG files that use a `tRNS` transparency chunk and other PNG encodings are rejected instead of being guessed. JPEG and WebP generation remains supported, but their deep local inspection is reported as unsupported rather than guessed.
 
 ## Output
 
-The script saves images and writes `manifest.json` in batch mode.
+The script saves images and writes `manifest.json` in batch mode. When post-processing is requested, the record keeps `original_files`, derived `files`, and transform details. When `--qa` is requested, it adds a `qa` object with inspections, checks, conditions, warnings, and errors.
 
-Report only:
-
-- output image paths
-- manifest path
-- success and failure counts
-- short failure summaries
-
-Do not show API keys, full request headers, or config content that contains secrets.
+Report output paths, manifest paths, success and failure counts, and short failure summaries. Do not show API keys, full request headers, or secret configuration values.

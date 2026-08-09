@@ -1,111 +1,114 @@
 # Post-Processing Reference
 
-Post-processing converts returned PNG files into delivery-ready files. It covers inspection, resizing, and grid splitting. You can run it on existing files or directly after `generate`, `edit`, and `batch`.
+Post-processing converts returned PNG files into delivery files. It covers deterministic inspection, resizing, fit behavior, safe margins, grid splitting, QA, and preview boards. In generation, edit, and batch workflows, API originals remain recorded in `original_files` while derived outputs are recorded in `files`.
 
-Use post-processing when the API request size differs from the file size you want to deliver. For example, generate a `1024x1024` source image, then write a `128x128` icon.
+Read [qa.md](qa.md) when the request includes quality checks. Read [prompting.md](prompting.md) when the request needs structured prompt construction or controlled batch variation.
 
-## Asking Your Agent
+## Natural-Language Requests
 
-Describe the source image and the final delivery file in the same request:
-
-- "Generate a 1024x1024 source icon, then deliver a 128x128 PNG."
-- "Generate a 3x3 candidate sheet and split it into 9 normalized 128x128 PNG files."
-- "Inspect this PNG, report whether it has alpha, then resize it to 128x128."
-- "Resize `raw.png` to `128x128` and save it as `icon.png` without calling the image API."
-
-## Config
-
-`postprocess.enabled` enables generated-output post-processing in `auth.json`.
-
-`auth.json` does not store a final output size. Use `--delivery-size` on commands that resize or split images.
-
-Example config:
-
-```json
-{
-  "postprocess": {
-    "enabled": false
-  }
-}
-```
-
-With this config, generated-output post-processing can run when a command includes post-processing flags. Standalone commands such as `normalize` and `split-grid` always use the flags passed to that command.
+- "Generate a 1536x1152 editorial source image, then deliver a 1200x900 PNG."
+- "Resize this product cutout to 512x512, contain it with a 3% margin, and keep the source file."
+- "Inspect this transparent logo, report edge contact and connected components, then preview it on white and black backgrounds."
+- "Generate a 3x3 concept sheet and split it into nine 256x256 PNG files."
+- "Create a square game ability icon, then preview it at 64x64 and 128x128."
 
 ## Output Model
 
-Post-processing writes new files and leaves the source PNG in place.
-
-For `generate`, `edit`, and `batch` with post-processing flags:
+Generated-output post-processing adds these fields:
 
 | JSON field | Meaning |
 | --- | --- |
-| `original_files` | Files returned by the image API. |
-| `files` | Files written by post-processing. |
-| `postprocess` | Inspection, resize, or grid-split details. |
+| `original_files` | Files returned by the image API |
+| `files` | Derived delivery files |
+| `postprocess` | Transform details and inspections |
+| `qa` | Optional `qa.v1` checks requested with `--qa` |
 
-The default generated-output folder is next to the source file and ends with `-postprocess`. Use `--postprocess-out-dir` to choose another folder.
+The default derived-output directory is next to the source file and ends with `-postprocess`. Use `--postprocess-out-dir` to select another directory.
 
-## Commands
-
-Inspect a PNG without modifying it:
+## Inspect
 
 ```powershell
 python "$SkillDir/scripts/imagegen.py" inspect-image "input.png"
 ```
 
-Example effect: a returned `1024x1024` PNG with transparent pixels prints its dimensions, `has_alpha=true`, and the alpha bounding box. Use this before deciding whether a file needs resizing or grid splitting.
+Optional expectations:
 
-Normalize one PNG to a final delivery size:
+```powershell
+python "$SkillDir/scripts/imagegen.py" inspect-image "input.png" `
+  --components `
+  --expected-size 512x512 `
+  --expect-transparent
+```
+
+Without expectations, the command prints inspection metrics. With expectations, it prints a `qa.v1` result.
+
+## Normalize
+
+Stretch to an exact delivery size:
 
 ```powershell
 python "$SkillDir/scripts/imagegen.py" normalize "input.png" `
-  --delivery-size 128x128 `
+  --delivery-size 1200x900 `
+  --resample bilinear `
   --out "output.png"
 ```
 
-Example effect: `input.png` remains unchanged, and `output.png` is written at `128x128`.
-
-Split a known grid into complete cells, trim transparent bounds, and normalize each candidate:
+Preserve aspect ratio with a fractional edge margin:
 
 ```powershell
-python "$SkillDir/scripts/imagegen.py" split-grid "grid.png" `
-  --grid 3x3 `
-  --delivery-size 128x128 `
-  --out-dir "candidates" `
-  --expected-count 9
+python "$SkillDir/scripts/imagegen.py" normalize "input.png" `
+  --delivery-size 512x512 `
+  --fit contain `
+  --safe-margin 0.03 `
+  --out "output.png"
 ```
 
-Example effect: a `3x3` candidate sheet writes 9 PNG files into `candidates`. Each output is resized to `128x128`.
+`stretch` is the compatibility fit mode. `contain` preserves aspect ratio on a transparent canvas. `bilinear` is the dependency-free default; `nearest` is available for intentional pixel replication.
 
-Run post-processing after generation:
+## Split a Known Grid
+
+```powershell
+python "$SkillDir/scripts/imagegen.py" split-grid "sheet.png" `
+  --grid 3x3 `
+  --delivery-size 256x256 `
+  --expected-count 9 `
+  --resample bilinear `
+  --out-dir "candidates"
+```
+
+The command divides the complete canvas using the explicit grid, trims transparent bounds inside each cell, and contains each result in the delivery canvas. It does not detect grids automatically.
+
+## Preview Board
+
+```powershell
+python "$SkillDir/scripts/imagegen.py" preview-board "input.png" `
+  --size 64x64 `
+  --size 256x256 `
+  --preview-background transparent `
+  --preview-background white `
+  --preview-background checker `
+  --out-dir "previews"
+```
+
+The output directory contains each size/background variant, a combined board, and `preview-manifest.json`. The manifest maps every board cell to its file, size, and background. The command checks each preview, the cumulative preview workload, and the combined board against pixel limits before allocating their buffers.
+
+## Generated-Output QA
 
 ```powershell
 python "$SkillDir/scripts/imagegen.py" generate `
-  -p "single centered game icon" `
+  -p "Wide editorial illustration about urban shade" `
   -f "raw.png" `
-  --delivery-size 128x128 `
+  --delivery-size 1200x900 `
+  --qa `
   --postprocess-out-dir "final"
 ```
 
-Example effect: the API response is saved as `raw.png`, and the resized delivery file is written under `final`.
-
-For a generated grid:
-
-```powershell
-python "$SkillDir/scripts/imagegen.py" generate `
-  -p "3x3 sheet of distinct game icon candidates" `
-  -f "grid.png" `
-  --grid 3x3 `
-  --delivery-size 128x128 `
-  --expected-count 9 `
-  --postprocess-out-dir "candidates"
-```
-
-Example effect: the API response is saved as `grid.png`, and 9 normalized PNG files are written under `candidates`.
+`--qa` can also run without a delivery transform. It attaches deterministic checks to the saved API files. For transparent requests with a transform, source and delivery transparency are checked separately. QA does not change generation success or retry a request.
 
 ## Current Limits
 
-- Post-processing currently supports PNG input/output.
-- `normalize` uses deterministic local resizing.
-- `split-grid` requires an explicit grid such as `3x3`; automatic grid detection is not implemented.
-- Background removal and semantic segmentation are not included.
+- Deep inspection and local transforms support non-interlaced 8-bit RGB/RGBA PNG input up to 25 million pixels and 256 MiB, with PNG output. RGB PNG files with a `tRNS` transparency chunk are rejected.
+- JPEG and WebP generation remain supported, but deep local QA reports those formats as unsupported.
+- `split-grid` requires an explicit grid.
+- Preview boards do not include text labels; use `preview-manifest.json` for cell metadata.
+- Background removal, semantic segmentation, OCR, brand validation, and aesthetic scoring are not included.

@@ -3,35 +3,37 @@
 ## Parameter Priority
 
 ```text
-command flags > per-row batch fields > auth.json defaults > built-in defaults
+per-row batch fields > shared command flags > auth.json defaults > built-in defaults
 ```
 
-Command flags override config defaults. Batch rows can override shared batch settings for each item.
+Command flags override configuration defaults. Batch rows override shared command values for each task. Command-only authorization such as `--allow-direct-url-download` cannot be enabled by a batch row.
+
+This is the runtime order after the agent has interpreted the request and constructed the command. If agent judgment is written as a shared flag, that value follows the same runtime order and overrides `auth.json`. Leave the flag unset when the configured default should remain authoritative.
 
 ## Modes
 
-| Mode | Command | Endpoint |
+| Mode | Command | Behavior |
 | --- | --- | --- |
 | Text-to-image | `generate` | `POST /v1/images/generations` |
-| Image edit / reference image | `edit` | `POST /v1/images/edits` |
+| Image edit | `edit` | `POST /v1/images/edits` |
 | Batch | `batch` | Selects `generate` or `edit` per row |
 | Config summary | `info` | No API call |
+| Inspect | `inspect-image` | Local PNG inspection and optional expectations |
+| Normalize | `normalize` | Local PNG delivery transform |
+| Grid split | `split-grid` | Local explicit-grid extraction |
+| Preview | `preview-board` | Local target-size and background previews |
 
 ## Size Guidance
 
-Use `--size` for an exact pixel request. Use `--aspect` plus `--resolution` when the user describes the image shape or clarity but not exact pixels.
-
-Shape choices:
+Use `--size` for exact API output pixels. Use `--aspect` plus `--resolution` when the request describes shape and clarity without exact pixels.
 
 | User intent | Aspect |
 | --- | --- |
-| Icons, avatars, centered assets, square product images | `1:1` |
-| Wide banners, stream backdrops, covers, desktop scenes | `16:9` |
-| Landscape illustrations, UI panels, card art | `4:3` |
-| Portrait posters, character cards, vertical art | `3:4` |
-| Phone wallpapers, short-video covers, tall posters | `9:16` |
-
-Concrete mapping:
+| Square product image, profile image, centered mark, game icon | `1:1` |
+| Wide banner, cover, presentation background, desktop scene | `16:9` |
+| Landscape illustration, interface panel, editorial image | `4:3` |
+| Portrait poster, product card, editorial portrait | `3:4` |
+| Phone wallpaper, story graphic, vertical poster | `9:16` |
 
 | Aspect | `1K` | `2K` | `4K` |
 | --- | --- | --- | --- |
@@ -41,64 +43,54 @@ Concrete mapping:
 | `3:4` | `1152x1536` | `1536x2048` | `3072x4096` |
 | `9:16` | `864x1536` | `1152x2048` | `2160x3840` |
 
-If `--size` is present, it wins over `--aspect` and `--resolution`. If `--size` and `--aspect` are both omitted, the script uses `defaults.size` from `auth.json`, then the built-in default.
+`--size` wins over `--aspect` and `--resolution`. When all are omitted, the script uses `defaults.size`, then its built-in size.
 
 ## Quality Guidance
 
 | Quality | Use case |
 | --- | --- |
-| `low` | Low-cost drafts, direction exploration, many variants |
-| `medium` | Normal assets, concept exploration, balanced batch generation |
-| `high` | Final assets, text-heavy images, UI, posters, diagrams, detail-sensitive outputs |
-| `auto` | Backend decision; useful as an `auth.json` default |
+| `low` | Low-cost drafts and direction exploration |
+| `medium` | General creation and balanced batches |
+| `high` | Final visuals, text-sensitive layouts, posters, interfaces, and detailed images |
+| `auto` | Backend-selected quality |
 
-If `--quality` is omitted, the script uses `defaults.quality` from `auth.json`, then the built-in default.
+## Visual Deliverables and Transparency
 
-## Transparent Assets
+`--asset` marks an explicit single visual deliverable and prefers PNG. It can represent a logo element, product cutout, sticker, interface element, game asset, diagram element, or other isolated deliverable. It does not select an industry or force a centered composition.
 
-Use `--asset` for asset scenarios. It prefers PNG and fits icons, game items, textures, and sprites.
+`--transparent` and `--background transparent` express the same transparent-background intent. Either form forces PNG and adds isolated-subject constraints; the API receives `background=transparent` only when `auth.json` declares support.
 
-Use `--transparent` for transparent-background intent. It forces PNG and injects isolated-subject constraints into the prompt.
+An explicit `--file` extension must match the resolved output format. For example, a transparent or `--asset` request cannot target a `.jpeg` path because those intents resolve to PNG.
 
-The script sends `background=transparent` only when `auth.json` contains:
+Real alpha pixels depend on the backend response. Use `inspect-image --expect-transparent` to validate the returned file.
 
-```json
-{
-  "capabilities": {
-    "transparent_background": true
-  }
-}
-```
-
-Transparency has two layers:
-
-```text
-prompt layer: always available; requests an isolated subject and alpha-friendly edges
-API parameter layer: sent only when the backend supports background=transparent
-```
-
-Real alpha pixels depend on the backend response. Use `inspect-image` to verify transparency.
-
-## Transparent Background Conflicts
-
-Some backends reject transparent background for selected model and resolution combinations. The script stops before request submission for the known conflicting case:
+Known conflict validation stops this request before submission:
 
 ```text
 model=gpt-image-2 + background=transparent + resolution=2K or 4K
 ```
 
-For explicit `--size`, the script infers this check from the longest side: values at or above 2000 pixels are treated as `2K`, and values at or above 3800 pixels are treated as `4K`.
+When a conflict occurs, choose explicitly whether to change the model or keep the model with `background=auto`. The script does not make that choice automatically.
 
-When this happens, ask the user to choose one path:
+## Delivery Transform Parameters
 
-1. Switch to `gpt-image-1.5` and keep transparent background.
-2. Keep `gpt-image-2` and use `background=auto`.
+| Parameter | Meaning |
+| --- | --- |
+| `--delivery-size` | Exact local output size |
+| `--resample` | `bilinear` (default) or `nearest` |
+| `--fit` | `stretch` or `contain` for normalization |
+| `--safe-margin` | Fractional edge margin used with `contain` |
+| `--grid` | Explicit rows and columns such as `3x3` |
+| `--expected-count` | Per-source grid count, or QA output count when no grid is used |
+| `--qa` | Attach `qa.v1` delivery checks |
+| `--components` | Add connected-component diagnostics |
+| `--postprocess-out-dir` | Derived-output directory |
 
-Do not switch model, drop transparency, retry with altered parameters, or remove the background locally unless the user explicitly chooses that path.
+`bilinear` is dependency-free and alpha-aware. Use `nearest` when exact pixel replication is intentional.
+
+Returned-PNG validation, local deep inspection, and transforms accept non-interlaced 8-bit RGB/RGBA PNG files up to 25 million pixels and a 256 MiB PNG file limit. RGB PNG files with a `tRNS` transparency chunk and other PNG encodings are rejected because this local codec does not implement them. API generation can still return supported JPEG or WebP files, but local deep QA reports those formats as unsupported.
 
 ## Batch Concurrency
-
-Batch mode uses limited concurrency:
 
 ```text
 command --concurrency > auth.json defaults.concurrency > 3
@@ -110,33 +102,21 @@ High concurrency can trigger rate limits, failures, or unexpected cost.
 
 | Field | Description |
 | --- | --- |
-| `id` | Task ID used for filenames and manifest entries |
-| `mode` | `generate` or `edit`; omitted means edit when `images` exists, otherwise generate |
+| `id` | Stable task identifier |
+| `mode` | `generate` or `edit` |
 | `prompt` | Prompt text |
 | `file` | Output file path |
-| `size` | Image size |
-| `aspect` | `1:1`, `16:9`, `4:3`, `3:4`, or `9:16` |
-| `resolution` | `1K`, `2K`, or `4K` |
-| `quality` | `low`, `medium`, `high`, or `auto` |
-| `n` | Number of images returned by one request |
-| `format` | `png`, `jpeg`, or `webp` |
-| `background` | `auto`, `opaque`, or `transparent` |
-| `transparent` | Boolean transparent-background shortcut |
-| `asset` | Boolean asset shortcut |
-| `images` | Reference image path array |
-| `mask` | Mask image path |
-| `model` | Override default model |
-| `timeout` | Request timeout in seconds |
+| `size`, `aspect`, `resolution` | API output dimensions |
+| `quality`, `n`, `format`, `background` | API request options |
+| `transparent`, `asset` | Explicit output intentions |
+| `images`, `mask` | Edit inputs |
+| `model`, `timeout` | Per-task request overrides |
+| `qa`, `components` | Optional deterministic QA |
+| `delivery_size`, `grid`, `expected_count` | Optional derived outputs |
+| `resample`, `fit`, `safe_margin` | Optional transform behavior |
 
 ## Output
 
-The script prints output image paths. In batch mode, it also writes `manifest.json`.
+Batch mode writes `manifest.json`. Optional post-processing preserves API output paths in `original_files` and writes derived paths in `files`. Optional QA adds a `qa` object without changing `ok` or the command exit code.
 
-Image API responses may provide image bytes as `data[].b64_json` or an HTTP(S) download in `data[].url`. The script detects either field and does not send `response_format`, because GPT Image models do not support that DALL-E-only parameter. URL downloads reuse the configured `user_agent`, never forward the API key, and validate PNG, JPEG, or WebP completeness.
-
-Direct image URL download is disabled by default. After repeated proxy TLS EOF errors, obtain user approval before choosing one authorization:
-
-- Pass `--allow-direct-url-download` to authorize one command.
-- Set `auth.json url_download.proxy_mode="direct"` for a known provider that needs persistent authorization.
-
-Direct mode bypasses the configured proxy only for returned image URLs, starting with the first download attempt. A direct TLS EOF is retried once. Batch JSONL rows cannot enable it.
+Image responses may contain `data[].b64_json` or HTTP(S) `data[].url`. JSON responses are limited to 96 MiB, and each decoded base64 image or streamed URL image is limited to 64 MiB. URL downloads use the configured `user_agent` and never forward the API key. PNG is fully parsed; JPEG and WebP receive bounded container and codec-framing checks before delivery.

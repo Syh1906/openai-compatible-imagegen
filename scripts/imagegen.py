@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import base64
 import concurrent.futures
 import http.client
 import json
@@ -16,11 +15,39 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-import zlib
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+
+SCRIPT_DIR = Path(__file__).resolve().parent
+if str(SCRIPT_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPT_DIR))
+
+from image_preview import preview_board_image as build_preview_board
+from image_cli import build_parser as build_cli_parser
+from image_batch import fail_record, prepare_batch_targets as plan_batch_targets, read_jsonl, validate_output_path
+from image_png import (
+    PNG_SIGNATURE,
+    alpha_bbox,
+    crop_pixels as crop_png_pixels,
+    grid_edges as png_grid_edges,
+    read_png_rgba as read_png,
+    write_png_rgba as write_png,
+)
+from image_qa import analyze_pixels, evaluate_delivery as evaluate_delivery_report, sha256_file
+from image_resize import fit_to_canvas as fit_pixels_to_canvas, resize_pixels
+from image_transaction import OutputTransaction, remap_transaction_paths
+from image_response import (
+    MAX_IMAGE_RESPONSE_BYTES,
+    MAX_JSON_RESPONSE_BYTES,
+    decode_base64_image,
+    detect_image_format,
+    read_json_response,
+    read_limited_bytes,
+    safe_error_body,
+)
 
 
 SKILL_DIR = Path(__file__).resolve().parents[1]
@@ -61,7 +88,6 @@ DEFAULT_POSTPROCESS = {
     "enabled": False,
 }
 DEFAULT_URL_DOWNLOAD = {"proxy_mode": "environment"}
-PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 PLACEHOLDER_API_KEYS = {
     "",
     "replace-with-temporary-local-key",
@@ -316,14 +342,14 @@ def validate_transparent_background_request(model: str, background: str | None, 
 def resolve_common_params(args: argparse.Namespace, cfg: Config, task: dict[str, Any] | None = None) -> dict[str, Any]:
     task = task or {}
     asset = bool(get_value("asset", args, task, False))
-    transparent = bool(get_value("transparent", args, task, False))
+    background = get_value("background", args, task, None)
+    transparent = transparent_intent(args, task)
     fmt = normalize_format(get_value("format", args, task, None), cfg)
     if asset:
         fmt = "png"
     if transparent:
         fmt = "png"
 
-    background = get_value("background", args, task, None)
     if transparent:
         background = "transparent" if cfg.capabilities.get("transparent_background") else None
     elif background == "transparent" and not cfg.capabilities.get("transparent_background"):
@@ -376,11 +402,11 @@ def resolve_common_params(args: argparse.Namespace, cfg: Config, task: dict[str,
 
 
 def apply_prompt_directives(prompt: str, args: argparse.Namespace, task: dict[str, Any]) -> str:
-    transparent = bool(get_value("transparent", args, task, False))
+    transparent = transparent_intent(args, task)
     asset = bool(get_value("asset", args, task, False))
     directives: list[str] = []
     if asset:
-        directives.append("single isolated asset, centered composition, no text unless explicitly requested")
+        directives.append("single visual deliverable, preserve the requested composition, no extra text unless explicitly requested")
     if transparent:
         directives.append(
             "transparent background intent: isolated subject, clean alpha-friendly edges, no floor, no shadow backdrop, no solid background"
@@ -400,6 +426,10 @@ def get_value(name: str, args: argparse.Namespace, task: dict[str, Any], fallbac
     return getattr(args, name, fallback)
 
 
+def transparent_intent(args: argparse.Namespace, task: dict[str, Any]) -> bool:
+    return bool(get_value("transparent", args, task, False)) or get_value("background", args, task, None) == "transparent"
+
+
 def api_url(cfg: Config, path: str) -> str:
     parsed = urllib.parse.urlparse(cfg.base_url)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
@@ -417,12 +447,14 @@ def request_json(cfg: Config, path: str, payload: dict[str, Any], timeout: int) 
     )
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return json.loads(resp.read().decode("utf-8"))
+            return read_json_response(resp, MAX_JSON_RESPONSE_BYTES)
     except urllib.error.HTTPError as exc:
         detail = safe_error_body(exc)
         raise ImagegenError(f"API HTTP {exc.code}: {detail}") from exc
     except urllib.error.URLError as exc:
         raise ImagegenError(f"API request failed: {exc.reason}") from exc
+    except ValueError as exc:
+        raise ImagegenError(str(exc)) from exc
 
 
 def request_multipart(
@@ -442,12 +474,14 @@ def request_multipart(
     )
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return json.loads(resp.read().decode("utf-8"))
+            return read_json_response(resp, MAX_JSON_RESPONSE_BYTES)
     except urllib.error.HTTPError as exc:
         detail = safe_error_body(exc)
         raise ImagegenError(f"API HTTP {exc.code}: {detail}") from exc
     except urllib.error.URLError as exc:
         raise ImagegenError(f"API request failed: {exc.reason}") from exc
+    except ValueError as exc:
+        raise ImagegenError(str(exc)) from exc
 
 
 def request_headers(cfg: Config, content_type: str) -> dict[str, str]:
@@ -490,14 +524,6 @@ def build_multipart_body(boundary: str, fields: dict[str, Any], files: list[tupl
     return b"".join(chunks)
 
 
-def safe_error_body(exc: urllib.error.HTTPError) -> str:
-    try:
-        text = exc.read().decode("utf-8", errors="replace")
-    except Exception:
-        return exc.reason
-    return text[:2000]
-
-
 def drop_none(values: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in values.items() if value is not None}
 
@@ -528,6 +554,7 @@ def generate(cfg: Config, args: argparse.Namespace, task: dict[str, Any] | None 
         params["output_format"],
         cfg.user_agent,
         params["direct_url_download"],
+        expected_count=params["n"],
     )
     return success_record(task, prompt, "generate", written, params)
 
@@ -568,6 +595,7 @@ def edit(cfg: Config, args: argparse.Namespace, task: dict[str, Any] | None = No
         params["output_format"],
         cfg.user_agent,
         params["direct_url_download"],
+        expected_count=params["n"],
     )
     return success_record(task, prompt, "edit", written, params)
 
@@ -582,7 +610,10 @@ def normalize_paths(value: Any) -> list[Path]:
 def resolve_output_file(args: argparse.Namespace, task: dict[str, Any], fmt: str, prompt: str) -> Path:
     file_value = task.get("file") or getattr(args, "file", None)
     if file_value:
-        return Path(str(file_value)).expanduser().resolve()
+        try:
+            return validate_output_path(Path(str(file_value)).expanduser().resolve(), fmt)
+        except ValueError as exc:
+            raise ImagegenError(str(exc)) from exc
 
     out_dir = Path(str(task.get("out") or getattr(args, "out", "") or ".")).expanduser().resolve()
     task_id = str(task.get("id") or "").strip()
@@ -596,16 +627,29 @@ def write_response_images(
     fmt: str,
     user_agent: str = DEFAULT_USER_AGENT,
     direct_url_download: bool = False,
+    expected_count: int | None = None,
 ) -> list[str]:
     data = response.get("data")
     if not isinstance(data, list) or not data:
         raise ImagegenError("API response did not include data images")
+    if any(not isinstance(item, dict) for item in data):
+        bad_index = next(index for index, item in enumerate(data) if not isinstance(item, dict))
+        raise ImagegenError(f"API response data[{bad_index}] is not an object")
+    if expected_count is not None and len(data) != expected_count:
+        raise ImagegenError(f"API returned {len(data)} image(s), requested {expected_count}")
+
+    # Decode every item before writing so a later malformed item cannot leave a partial delivery.
+    decoded = [decode_image_item(item, user_agent, direct_url_download) for item in data]
+    for raw in decoded:
+        actual_format = detect_image_format(raw)
+        if actual_format is None:
+            raise ImagegenError("image response did not contain a complete PNG, JPEG, or WebP image")
+        if actual_format != fmt:
+            raise ImagegenError(f"image response actual format {actual_format} does not match requested {fmt}")
+
     out_file.parent.mkdir(parents=True, exist_ok=True)
     written: list[str] = []
-    for index, item in enumerate(data):
-        if not isinstance(item, dict):
-            continue
-        raw = decode_image_item(item, user_agent, direct_url_download)
+    for index, raw in enumerate(decoded):
         target = numbered_path(out_file, index, len(data), fmt)
         target.write_bytes(raw)
         written.append(str(target))
@@ -621,7 +665,10 @@ def decode_image_item(
 ) -> bytes:
     b64_value = item.get("b64_json")
     if isinstance(b64_value, str) and b64_value.strip():
-        return base64.b64decode(strip_data_url_prefix(b64_value))
+        try:
+            return decode_base64_image(strip_data_url_prefix(b64_value), MAX_IMAGE_RESPONSE_BYTES)
+        except ValueError as exc:
+            raise ImagegenError(str(exc)) from exc
     url = item.get("url")
     if isinstance(url, str) and url.strip():
         return download_image_url(url, user_agent, direct_url_download)
@@ -688,31 +735,31 @@ def url_download_error_reason(error: Any, direct_url_download: bool) -> str:
 
 def read_downloaded_image(response: Any) -> bytes:
     try:
-        data = response.read()
+        data = read_limited_bytes(response, MAX_IMAGE_RESPONSE_BYTES, "image response")
     except http.client.IncompleteRead as exc:
         raise ImagegenError("image URL download was incomplete") from exc
-    headers = getattr(response, "headers", None)
-    content_length = headers.get("Content-Length") if headers is not None else None
-    if isinstance(content_length, str) and content_length.isdigit() and len(data) != int(content_length):
-        raise ImagegenError("image URL download was incomplete")
-    if not is_complete_image_data(data):
+    except ValueError as exc:
+        if "incomplete" in str(exc):
+            raise ImagegenError("image URL download was incomplete") from exc
+        raise ImagegenError(str(exc)) from exc
+    actual_format = detect_image_format(data)
+    if actual_format is None:
         raise ImagegenError("image URL download did not contain a complete PNG, JPEG, or WebP image")
     return data
 
 
 def is_complete_image_data(data: bytes) -> bool:
-    if data.startswith(PNG_SIGNATURE):
-        return data.endswith(b"IEND\xaeB`\x82")
-    if data.startswith(b"\xff\xd8"):
-        return data.endswith(b"\xff\xd9")
-    if len(data) >= 12 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
-        return int.from_bytes(data[4:8], "little") + 8 == len(data)
-    return False
+    return detect_image_format(data) is not None
 
 
-def inspect_image_file(path: Path) -> dict[str, Any]:
+def inspect_image_file(path: Path, include_components: bool = False) -> dict[str, Any]:
     image = read_png_rgba(path)
-    bbox = alpha_bbox(image["pixels"], image["width"], image["height"])
+    metrics = analyze_pixels(
+        image["pixels"],
+        image["width"],
+        image["height"],
+        include_components=include_components,
+    )
     return {
         "path": display_path(path),
         "format": "png",
@@ -720,18 +767,68 @@ def inspect_image_file(path: Path) -> dict[str, Any]:
         "height": image["height"],
         "mode": "rgba",
         "has_alpha": any(pixel[3] < 255 for pixel in image["pixels"]),
-        "alpha_bbox": list(bbox) if bbox else None,
-        "nontransparent_pixels": sum(1 for pixel in image["pixels"] if pixel[3] > 0),
+        "sha256": sha256_file(path),
+        **metrics,
     }
 
 
-def normalize_image_file(source: Path, output: Path, delivery_size: tuple[int, int]) -> dict[str, Any]:
+def evaluate_delivery(
+    paths: list[Path],
+    expectations: dict[str, Any] | None = None,
+    conditions: list[dict[str, Any]] | None = None,
+    source_paths: list[Path] | None = None,
+) -> dict[str, Any]:
+    return evaluate_delivery_report(
+        paths,
+        expectations=expectations,
+        conditions=conditions,
+        inspect_fn=inspect_image_file,
+        source_paths=source_paths,
+    )
+
+
+def normalize_image_file(
+    source: Path,
+    output: Path,
+    delivery_size: tuple[int, int],
+    resample: str = "bilinear",
+    fit_mode: str = "stretch",
+    safe_margin: float = 0.0,
+) -> dict[str, Any]:
     image = read_png_rgba(source)
-    resized = resize_nearest(image["pixels"], image["width"], image["height"], delivery_size[0], delivery_size[1])
+    if fit_mode == "stretch":
+        if safe_margin:
+            raise ImagegenError("safe margin requires fit_mode=contain")
+        resized = resize_pixels(
+            image["pixels"],
+            image["width"],
+            image["height"],
+            delivery_size[0],
+            delivery_size[1],
+            resample,
+        )
+    elif fit_mode == "contain":
+        resized = fit_to_canvas(
+            image["pixels"],
+            image["width"],
+            image["height"],
+            delivery_size[0],
+            delivery_size[1],
+            resample=resample,
+            safe_margin=safe_margin,
+        )
+    else:
+        raise ImagegenError(f"unsupported fit mode: {fit_mode}")
     write_png_rgba(output, delivery_size[0], delivery_size[1], resized)
     return {
         "source": display_path(source),
         "file": display_path(output),
+        "transform": {
+            "delivery_size": list(delivery_size),
+            "resample": resample,
+            "fit": fit_mode,
+            "safe_margin": safe_margin,
+        },
         "input": inspect_image_payload(source, image),
         "output": inspect_image_file(output),
     }
@@ -744,6 +841,8 @@ def split_grid_image(
     cols: int,
     delivery_size: tuple[int, int],
     expected_count: int | None = None,
+    resample: str = "bilinear",
+    safe_margin: float = 0.0,
 ) -> dict[str, Any]:
     if rows < 1 or cols < 1:
         raise ImagegenError("grid rows and cols must be >= 1")
@@ -790,7 +889,15 @@ def split_grid_image(
                 cropped = cell
                 crop_w = cell_w
                 crop_h = cell_h
-            resized = fit_to_canvas(cropped, crop_w, crop_h, delivery_size[0], delivery_size[1])
+            resized = fit_to_canvas(
+                cropped,
+                crop_w,
+                crop_h,
+                delivery_size[0],
+                delivery_size[1],
+                resample=resample,
+                safe_margin=safe_margin,
+            )
             target = out_dir / f"{source.stem}_{index:02d}.png"
             write_png_rgba(target, delivery_size[0], delivery_size[1], resized)
             outputs.append(
@@ -808,6 +915,8 @@ def split_grid_image(
         "source": display_path(source),
         "grid": {"rows": rows, "cols": cols, "count": count},
         "delivery_size": list(delivery_size),
+        "resample": resample,
+        "safe_margin": safe_margin,
         "outputs": outputs,
     }
 
@@ -825,136 +934,17 @@ def inspect_image_payload(path: Path, image: dict[str, Any]) -> dict[str, Any]:
 
 
 def read_png_rgba(path: Path) -> dict[str, Any]:
-    data = path.read_bytes()
-    if not data.startswith(PNG_SIGNATURE):
-        raise ImagegenError("only PNG post-processing is currently supported")
-
-    offset = len(PNG_SIGNATURE)
-    width = height = None
-    bit_depth = color_type = None
-    idat_chunks: list[bytes] = []
-    while offset < len(data):
-        if offset + 8 > len(data):
-            raise ImagegenError("invalid PNG chunk header")
-        length = int.from_bytes(data[offset : offset + 4], "big")
-        kind = data[offset + 4 : offset + 8]
-        chunk_data = data[offset + 8 : offset + 8 + length]
-        offset += 12 + length
-        if kind == b"IHDR":
-            width = int.from_bytes(chunk_data[0:4], "big")
-            height = int.from_bytes(chunk_data[4:8], "big")
-            bit_depth = chunk_data[8]
-            color_type = chunk_data[9]
-        elif kind == b"IDAT":
-            idat_chunks.append(chunk_data)
-        elif kind == b"IEND":
-            break
-
-    if width is None or height is None or bit_depth is None or color_type is None:
-        raise ImagegenError("invalid PNG: missing IHDR")
-    if bit_depth != 8 or color_type not in {2, 6}:
-        raise ImagegenError("only 8-bit RGB/RGBA PNG post-processing is currently supported")
-
-    channels = 4 if color_type == 6 else 3
-    stride = width * channels
-    raw = zlib.decompress(b"".join(idat_chunks))
-    rows: list[bytes] = []
-    previous = bytes(stride)
-    pos = 0
-    for _ in range(height):
-        filter_type = raw[pos]
-        pos += 1
-        scanline = raw[pos : pos + stride]
-        pos += stride
-        row = unfilter_png_scanline(filter_type, scanline, previous, channels)
-        rows.append(row)
-        previous = row
-
-    pixels: list[tuple[int, int, int, int]] = []
-    for row in rows:
-        for x in range(width):
-            start = x * channels
-            if channels == 4:
-                pixels.append((row[start], row[start + 1], row[start + 2], row[start + 3]))
-            else:
-                pixels.append((row[start], row[start + 1], row[start + 2], 255))
-    return {"width": width, "height": height, "pixels": pixels}
-
-
-def unfilter_png_scanline(filter_type: int, scanline: bytes, previous: bytes, bpp: int) -> bytes:
-    row = bytearray(scanline)
-    for index in range(len(row)):
-        left = row[index - bpp] if index >= bpp else 0
-        up = previous[index] if previous else 0
-        up_left = previous[index - bpp] if previous and index >= bpp else 0
-        if filter_type == 0:
-            continue
-        if filter_type == 1:
-            row[index] = (row[index] + left) & 0xFF
-        elif filter_type == 2:
-            row[index] = (row[index] + up) & 0xFF
-        elif filter_type == 3:
-            row[index] = (row[index] + ((left + up) // 2)) & 0xFF
-        elif filter_type == 4:
-            row[index] = (row[index] + paeth_predictor(left, up, up_left)) & 0xFF
-        else:
-            raise ImagegenError(f"unsupported PNG filter type: {filter_type}")
-    return bytes(row)
-
-
-def paeth_predictor(left: int, up: int, up_left: int) -> int:
-    p = left + up - up_left
-    pa = abs(p - left)
-    pb = abs(p - up)
-    pc = abs(p - up_left)
-    if pa <= pb and pa <= pc:
-        return left
-    if pb <= pc:
-        return up
-    return up_left
+    try:
+        return read_png(path)
+    except (OSError, ValueError) as exc:
+        raise ImagegenError(str(exc)) from exc
 
 
 def write_png_rgba(path: Path, width: int, height: int, pixels: list[tuple[int, int, int, int]]) -> None:
-    if len(pixels) != width * height:
-        raise ImagegenError("pixel count does not match image dimensions")
-    raw = bytearray()
-    for y in range(height):
-        raw.append(0)
-        for x in range(width):
-            raw.extend(pixels[y * width + x])
-    chunks = [
-        png_chunk(b"IHDR", width.to_bytes(4, "big") + height.to_bytes(4, "big") + b"\x08\x06\x00\x00\x00"),
-        png_chunk(b"IDAT", zlib.compress(bytes(raw))),
-        png_chunk(b"IEND", b""),
-    ]
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(PNG_SIGNATURE + b"".join(chunks))
-
-
-def png_chunk(kind: bytes, data: bytes) -> bytes:
-    crc = zlib.crc32(kind + data) & 0xFFFFFFFF
-    return len(data).to_bytes(4, "big") + kind + data + crc.to_bytes(4, "big")
-
-
-def alpha_bbox(
-    pixels: list[tuple[int, int, int, int]],
-    width: int,
-    height: int,
-) -> tuple[int, int, int, int] | None:
-    min_x = width
-    min_y = height
-    max_x = -1
-    max_y = -1
-    for y in range(height):
-        for x in range(width):
-            if pixels[y * width + x][3] > 0:
-                min_x = min(min_x, x)
-                min_y = min(min_y, y)
-                max_x = max(max_x, x)
-                max_y = max(max_y, y)
-    if max_x < 0:
-        return None
-    return (min_x, min_y, max_x, max_y)
+    try:
+        write_png(path, width, height, pixels)
+    except (OSError, ValueError) as exc:
+        raise ImagegenError(str(exc)) from exc
 
 
 def crop_pixels(
@@ -966,15 +956,17 @@ def crop_pixels(
     width: int,
     height: int,
 ) -> list[tuple[int, int, int, int]]:
-    if left < 0 or top < 0 or width < 1 or height < 1 or left + width > source_w or top + height > source_h:
-        raise ImagegenError("crop is outside image bounds")
-    return [pixels[(top + y) * source_w + left + x] for y in range(height) for x in range(width)]
+    try:
+        return crop_png_pixels(pixels, source_w, source_h, left, top, width, height)
+    except ValueError as exc:
+        raise ImagegenError(str(exc)) from exc
 
 
 def grid_edges(length: int, parts: int) -> list[int]:
-    if parts < 1 or length < parts:
-        raise ImagegenError("grid parts must fit inside the image dimensions")
-    return [round(index * length / parts) for index in range(parts + 1)]
+    try:
+        return png_grid_edges(length, parts)
+    except ValueError as exc:
+        raise ImagegenError(str(exc)) from exc
 
 
 def resize_nearest(
@@ -984,13 +976,10 @@ def resize_nearest(
     target_w: int,
     target_h: int,
 ) -> list[tuple[int, int, int, int]]:
-    if target_w < 1 or target_h < 1:
-        raise ImagegenError("target size must be positive")
-    return [
-        pixels[min(source_h - 1, (y * source_h) // target_h) * source_w + min(source_w - 1, (x * source_w) // target_w)]
-        for y in range(target_h)
-        for x in range(target_w)
-    ]
+    try:
+        return resize_pixels(pixels, source_w, source_h, target_w, target_h, "nearest")
+    except ValueError as exc:
+        raise ImagegenError(str(exc)) from exc
 
 
 def fit_to_canvas(
@@ -999,18 +988,34 @@ def fit_to_canvas(
     source_h: int,
     target_w: int,
     target_h: int,
+    resample: str = "bilinear",
+    safe_margin: float = 0.0,
 ) -> list[tuple[int, int, int, int]]:
-    scale = min(target_w / source_w, target_h / source_h)
-    scaled_w = max(1, int(round(source_w * scale)))
-    scaled_h = max(1, int(round(source_h * scale)))
-    scaled = resize_nearest(pixels, source_w, source_h, scaled_w, scaled_h)
-    canvas = [(0, 0, 0, 0)] * (target_w * target_h)
-    offset_x = (target_w - scaled_w) // 2
-    offset_y = (target_h - scaled_h) // 2
-    for y in range(scaled_h):
-        for x in range(scaled_w):
-            canvas[(offset_y + y) * target_w + offset_x + x] = scaled[y * scaled_w + x]
-    return canvas
+    try:
+        return fit_pixels_to_canvas(
+            pixels,
+            source_w,
+            source_h,
+            target_w,
+            target_h,
+            resample=resample,
+            safe_margin=safe_margin,
+        )
+    except ValueError as exc:
+        raise ImagegenError(str(exc)) from exc
+
+
+def preview_board_image(
+    source: Path,
+    out_dir: Path,
+    sizes: list[tuple[int, int]],
+    backgrounds: list[str],
+    resample: str = "bilinear",
+) -> dict[str, Any]:
+    try:
+        return build_preview_board(source, out_dir, sizes, backgrounds, resample)
+    except (OSError, ValueError) as exc:
+        raise ImagegenError(str(exc)) from exc
 
 
 def strip_data_url_prefix(value: str) -> str:
@@ -1062,77 +1067,116 @@ def success_record(
     }
 
 
-def apply_postprocess(record: dict[str, Any], args: argparse.Namespace, cfg: Config) -> dict[str, Any]:
+def apply_postprocess(
+    record: dict[str, Any],
+    args: argparse.Namespace,
+    cfg: Config,
+    task: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     if not record.get("ok"):
         return record
+    task = task or {}
+    qa_requested = bool(get_value("qa", args, task, False))
     explicit = any(
         [
             bool(getattr(args, "postprocess", False)),
-            bool(getattr(args, "delivery_size", None)),
-            bool(getattr(args, "grid", None)),
+            bool(get_value("delivery_size", args, task, None)),
+            bool(get_value("grid", args, task, None)),
+            qa_requested,
         ]
     )
     if not explicit and not cfg.postprocess.get("enabled"):
         return record
 
-    delivery_value = getattr(args, "delivery_size", None)
+    delivery_value = get_value("delivery_size", args, task, None)
+    grid_value = get_value("grid", args, task, None)
+    expected_count = get_value("expected_count", args, task, None)
+    out_dir_value = get_value("postprocess_out_dir", args, task, None)
+    resample = str(get_value("resample", args, task, "bilinear") or "bilinear")
+    fit_mode = str(get_value("fit", args, task, "stretch") or "stretch")
+    safe_margin = float(get_value("safe_margin", args, task, 0.0) or 0.0)
+    components = bool(get_value("components", args, task, False))
+    transparent = transparent_intent(args, task)
+    original_files = list(record.get("files", []))
+    if grid_value and not delivery_value:
+        raise ImagegenError("grid requires delivery_size")
     if not delivery_value:
-        return record
+        if not qa_requested:
+            return record
+        updated = dict(record)
+        updated["qa"] = evaluate_delivery(
+            [Path(file_text) for file_text in original_files],
+            expectations={"expected_count": expected_count, "components": components}
+            if expected_count is not None or components
+            else None,
+            conditions=[{"kind": "transparent", "requested": True}] if transparent else None,
+        )
+        return updated
+
     delivery_size = parse_size(str(delivery_value))
-    grid_value = getattr(args, "grid", None)
-    expected_count = getattr(args, "expected_count", None)
-    out_dir_value = getattr(args, "postprocess_out_dir", None)
 
     output_files: list[str] = []
     postprocess_results: list[dict[str, Any]] = []
-    original_files = list(record.get("files", []))
-    for file_text in original_files:
-        source = Path(file_text).expanduser().resolve()
-        if out_dir_value:
-            out_dir = Path(out_dir_value).expanduser().resolve()
-        else:
-            out_dir = source.parent / f"{source.stem}-postprocess"
-        if grid_value:
-            rows, cols = parse_grid(str(grid_value))
-            result = split_grid_image(source, out_dir, rows, cols, delivery_size, expected_count=expected_count)
-            output_files.extend(item["file"] for item in result["outputs"])
-            postprocess_results.append(result)
-        else:
-            target = out_dir / f"{source.stem}-{delivery_size[0]}x{delivery_size[1]}.png"
-            result = normalize_image_file(source, target, delivery_size)
-            output_files.append(result["file"])
-            postprocess_results.append(result)
+    with OutputTransaction() as transaction:
+        for file_text in original_files:
+            source = Path(file_text).expanduser().resolve()
+            if out_dir_value:
+                out_dir = Path(out_dir_value).expanduser().resolve()
+            else:
+                out_dir = source.parent / f"{source.stem}-postprocess"
+            if grid_value:
+                rows, cols = parse_grid(str(grid_value))
+                stage_dir = transaction.directory(out_dir)
+                result = split_grid_image(
+                    source,
+                    stage_dir,
+                    rows,
+                    cols,
+                    delivery_size,
+                    expected_count=expected_count,
+                    resample=resample,
+                    safe_margin=safe_margin,
+                )
+                for item in result["outputs"]:
+                    staged = Path(item["file"])
+                    final = out_dir / staged.name
+                    transaction.register(staged, final)
+                    output_files.append(display_path(final))
+                postprocess_results.append(result)
+            else:
+                final = out_dir / f"{source.stem}-{delivery_size[0]}x{delivery_size[1]}.png"
+                staged = transaction.stage_path(final)
+                result = normalize_image_file(
+                    source,
+                    staged,
+                    delivery_size,
+                    resample=resample,
+                    fit_mode=fit_mode,
+                    safe_margin=safe_margin,
+                )
+                output_files.append(display_path(final))
+                postprocess_results.append(result)
+        path_mapping = transaction.commit()
+
+    postprocess_results = remap_transaction_paths(postprocess_results, path_mapping)
 
     updated = dict(record)
     updated["original_files"] = original_files
     updated["files"] = output_files
     updated["postprocess"] = postprocess_results
+    if qa_requested:
+        qa_expected_count = len(output_files) if grid_value else expected_count
+        updated["qa"] = evaluate_delivery(
+            [Path(file_text) for file_text in output_files],
+            expectations={
+                "expected_size": list(delivery_size),
+                "expected_count": qa_expected_count if qa_expected_count is not None else len(output_files),
+                "components": components,
+            },
+            conditions=[{"kind": "transparent", "requested": True}] if transparent else None,
+            source_paths=[Path(file_text) for file_text in original_files] if transparent else None,
+        )
     return updated
-
-
-def fail_record(task: dict[str, Any], mode: str, exc: Exception) -> dict[str, Any]:
-    return {
-        "id": task.get("id"),
-        "mode": mode,
-        "ok": False,
-        "error": str(exc),
-    }
-
-
-def read_jsonl(path: Path) -> list[dict[str, Any]]:
-    tasks: list[dict[str, Any]] = []
-    for line_no, line in enumerate(path.read_text(encoding="utf-8-sig").splitlines(), start=1):
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            task = json.loads(line)
-        except json.JSONDecodeError as exc:
-            raise ImagegenError(f"invalid JSONL at line {line_no}: {exc}") from exc
-        if not isinstance(task, dict):
-            raise ImagegenError(f"invalid JSONL at line {line_no}: expected object")
-        tasks.append(task)
-    return tasks
 
 
 def run_one_task(cfg: Config, base_args: argparse.Namespace, task: dict[str, Any]) -> dict[str, Any]:
@@ -1141,9 +1185,9 @@ def run_one_task(cfg: Config, base_args: argparse.Namespace, task: dict[str, Any
         mode = "edit" if task.get("images") else "generate"
     try:
         if mode == "generate":
-            return apply_postprocess(generate(cfg, base_args, task), base_args, cfg)
+            return apply_postprocess(generate(cfg, base_args, task), base_args, cfg, task)
         if mode in {"edit", "multi-reference", "multi_reference"}:
-            return apply_postprocess(edit(cfg, base_args, task), base_args, cfg)
+            return apply_postprocess(edit(cfg, base_args, task), base_args, cfg, task)
         raise ImagegenError(f"unsupported batch mode: {mode}")
     except Exception as exc:
         return fail_record(task, mode, exc)
@@ -1154,8 +1198,20 @@ def batch(cfg: Config, args: argparse.Namespace) -> int:
     tasks = read_jsonl(input_path)
     out_dir = Path(args.out).expanduser().resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
-    for task in tasks:
-        task.setdefault("out", str(out_dir))
+    try:
+        plan_batch_targets(
+            tasks,
+            {
+                name: getattr(args, name, None)
+                for name in ("file", "format", "n", "delivery_size", "grid", "postprocess_out_dir")
+            },
+            out_dir,
+            now_stamp(),
+            slugify,
+            lambda task: str(resolve_common_params(args, cfg, task)["output_format"]),
+        )
+    except (TypeError, ValueError) as exc:
+        raise ImagegenError(str(exc)) from exc
 
     concurrency = args.concurrency or cfg.defaults.get("concurrency") or DEFAULT_CONCURRENCY
     try:
@@ -1224,7 +1280,15 @@ def info(cfg: Config) -> int:
 
 
 def inspect_image_command(args: argparse.Namespace) -> int:
-    result = inspect_image_file(Path(args.file).expanduser().resolve())
+    path = Path(args.file).expanduser().resolve()
+    if args.expected_size or args.expect_transparent:
+        expectations: dict[str, Any] = {"components": args.components}
+        if args.expected_size:
+            expectations["expected_size"] = list(parse_size(args.expected_size))
+        conditions = [{"kind": "transparent", "requested": True}] if args.expect_transparent else None
+        result = evaluate_delivery([path], expectations=expectations, conditions=conditions)
+    else:
+        result = inspect_image_file(path, include_components=args.components)
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0
 
@@ -1235,6 +1299,9 @@ def normalize_command(args: argparse.Namespace) -> int:
         Path(args.file).expanduser().resolve(),
         Path(args.out).expanduser().resolve(),
         delivery_size,
+        resample=args.resample,
+        fit_mode=args.fit,
+        safe_margin=args.safe_margin,
     )
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0
@@ -1250,94 +1317,29 @@ def split_grid_command(args: argparse.Namespace) -> int:
         cols=cols,
         delivery_size=delivery_size,
         expected_count=args.expected_count,
+        resample=args.resample,
+        safe_margin=args.safe_margin,
+    )
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
+def preview_board_command(args: argparse.Namespace) -> int:
+    sizes = [parse_size(value) for value in args.size]
+    backgrounds = args.preview_background or ["transparent", "white", "black", "gray", "checker"]
+    result = preview_board_image(
+        Path(args.file).expanduser().resolve(),
+        Path(args.out_dir).expanduser().resolve(),
+        sizes=sizes,
+        backgrounds=backgrounds,
+        resample=args.resample,
     )
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="imagegen")
-    sub = parser.add_subparsers(dest="command", required=True)
-
-    init_parser = sub.add_parser("init")
-    init_parser.add_argument("--force", action="store_true", help="Recreate auth.json from the example template")
-    init_parser.add_argument("--base-url", default=None, help="OpenAI-compatible API base URL, usually ending in /v1")
-    init_parser.add_argument("--model", default=None, help="Default image model")
-    init_parser.add_argument("--api-key-env", default=None, help="Environment variable name to read the API key from")
-    init_parser.add_argument(
-        "--transparent-background",
-        action=argparse.BooleanOptionalAction,
-        default=None,
-        help="Whether the API supports background=transparent",
-    )
-
-    add_generate_args(sub.add_parser("generate"))
-    add_generate_args(sub.add_parser("edit"), edit=True)
-
-    batch_parser = sub.add_parser("batch")
-    add_common_args(batch_parser)
-    batch_parser.add_argument("--input", required=True, help="JSONL task file")
-    batch_parser.add_argument("--out", required=True, help="Output directory")
-    batch_parser.add_argument("--concurrency", type=int, default=None, help="Limited batch concurrency")
-    add_postprocess_args(batch_parser)
-
-    inspect_parser = sub.add_parser("inspect-image")
-    inspect_parser.add_argument("file")
-
-    normalize_parser = sub.add_parser("normalize")
-    normalize_parser.add_argument("file")
-    normalize_parser.add_argument("--delivery-size", required=True)
-    normalize_parser.add_argument("--out", required=True)
-
-    grid_parser = sub.add_parser("split-grid")
-    grid_parser.add_argument("file")
-    grid_parser.add_argument("--grid", required=True, help="Grid rows and columns, for example 3x3")
-    grid_parser.add_argument("--delivery-size", required=True)
-    grid_parser.add_argument("--out-dir", required=True)
-    grid_parser.add_argument("--expected-count", type=int, default=None)
-
-    sub.add_parser("info")
-    return parser
-
-
-def add_generate_args(parser: argparse.ArgumentParser, edit: bool = False) -> None:
-    add_common_args(parser)
-    parser.add_argument("-p", "--prompt", required=True)
-    parser.add_argument("-f", "--file", default=None)
-    parser.add_argument("--out", default=None)
-    if edit:
-        parser.add_argument("-i", "--image", action="append", default=None)
-        parser.add_argument("-m", "--mask", default=None)
-    add_postprocess_args(parser)
-
-
-def add_common_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--model", default=None)
-    parser.add_argument("--size", default=None)
-    parser.add_argument("--aspect", default=None, choices=sorted(SUPPORTED_ASPECTS))
-    parser.add_argument("--resolution", default=None, choices=sorted(SUPPORTED_RESOLUTIONS))
-    parser.add_argument("--quality", default=None, choices=["auto", "low", "medium", "high"])
-    parser.add_argument("--n", type=int, default=None)
-    parser.add_argument("--format", default=None, choices=["png", "jpeg", "jpg", "webp"])
-    parser.add_argument("--background", default=None, choices=["auto", "opaque", "transparent"])
-    parser.add_argument("--transparent", action="store_true")
-    parser.add_argument("--asset", action="store_true")
-    parser.add_argument("--moderation", default=None, choices=["auto", "low"])
-    parser.add_argument("--compression", type=int, default=None)
-    parser.add_argument("--timeout", type=int, default=None)
-    parser.add_argument(
-        "--allow-direct-url-download",
-        action="store_true",
-        help="Allow this run to download returned image URLs directly without the configured proxy",
-    )
-
-
-def add_postprocess_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--postprocess", action="store_true", help="Enable optional post-processing for this run")
-    parser.add_argument("--delivery-size", default=None, help="Final delivery size, for example 128x128")
-    parser.add_argument("--grid", default=None, help="Split generated output as rows x cols, for example 3x3")
-    parser.add_argument("--expected-count", type=int, default=None)
-    parser.add_argument("--postprocess-out-dir", default=None)
+    return build_cli_parser(SUPPORTED_ASPECTS, SUPPORTED_RESOLUTIONS)
 
 
 def main() -> int:
@@ -1350,6 +1352,8 @@ def main() -> int:
             return normalize_command(args)
         if args.command == "split-grid":
             return split_grid_command(args)
+        if args.command == "preview-board":
+            return preview_board_command(args)
         if args.command == "init":
             return init_auth(args)
         cfg = load_config(require_api_key=args.command != "info")

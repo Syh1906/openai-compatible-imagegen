@@ -14,5 +14,5 @@ jobs:
           python-version: "3.12"
       - name: Run tests
         run: python -m unittest discover -s tests
-      - name: Compile script
-        run: python -m py_compile scripts/imagegen.py
+      - name: Compile scripts
+        run: python -m compileall -q scripts

@@ -1,4 +1,4 @@
 interface:
   display_name: "OpenAI-Compatible Image Generation"
-  short_description: "Generate, edit, and batch-create images through an OpenAI-compatible image API."
-  default_prompt: "Use the openai-compatible-imagegen skill to create images."
+  short_description: "Generate, edit, batch, and QA images via compatible APIs."
+  default_prompt: "Use $openai-compatible-imagegen to create or edit images through the configured OpenAI-compatible API."

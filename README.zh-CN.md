@@ -2,7 +2,7 @@
 
 # OpenAI 兼容图片生成 Skill
 
-**让 Codex、Claude Code、OpenCode 等 agent 客户端通过 OpenAI 兼容图片 API 生成、编辑和批量创建图片。**
+**通过 OpenAI 兼容图片 API 生成、编辑、批量创建、检查并交付图片。**
 
 [![Release](https://img.shields.io/github/v/release/Syh1906/openai-compatible-imagegen?style=flat-square)](https://github.com/Syh1906/openai-compatible-imagegen/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
@@ -15,195 +15,114 @@
 
 ---
 
-## 为什么需要它
+## 能做什么
 
-这个仓库是一个可移植的 agent skill。它让 Codex、Claude Code、OpenCode 和其他兼容 Agent Skills 标准的客户端使用同一套本地图片生成流程。
+这个可移植的 Agent Skill 为兼容客户端提供统一的图片工作流，可用于营销视觉、商品抠图、编辑插图、品牌素材、界面图形、游戏美术及其他图片交付物。
 
-| 需求 | 这个 skill 提供什么 |
+| 需求 | 能力 |
 | --- | --- |
-| 根据提示词生成图片 | `generate` 文生图命令 |
-| 根据参考图编辑或转换图片 | 支持一个或多个输入图的 `edit` 命令 |
-| 批量生成资产 | 基于 JSONL 和限流并发的 `batch` 命令 |
-| 创建图标、sprite、透明底素材 | `--asset` 与 `--transparent` 意图开关 |
-| 可选后处理 | 显式 `inspect-image`、`normalize`、`split-grid` 命令 |
-| 保持密钥本地私有 | 忽略 `auth.json`，支持直写 `api_key` 或 `api_key_env` |
+| 创建或修改图片 | 文生图和参考图编辑 |
+| 生成受控变体 | 支持逐任务参数和限流并发的 JSONL 批处理 |
+| 交付精确文件 | PNG 缩放、contain/stretch 适配、安全边距和网格拆分 |
+| 检查技术要求 | `qa.v1` 确定性检查，包括尺寸、alpha、边缘接触和可选连通组件 |
+| 检查展示效果 | 在多种尺寸和背景上生成预览板 |
+| 保持凭据私有 | git 忽略的 `auth.json`，支持直接密钥或环境变量认证 |
 
----
+图片生成由 OpenAI 兼容后端完成。本地后处理是确定性操作，不会调用图片 API。
 
 ## 兼容范围
 
-这个 skill 面向在 `base_url` 下提供以下接口的 OpenAI 兼容图片 API：
+配置的 `base_url` 必须提供以下接口：
 
 | 模式 | 接口 | 请求类型 |
 | --- | --- | --- |
 | `generate` | `POST /v1/images/generations` | JSON |
 | `edit` | `POST /v1/images/edits` | `multipart/form-data` |
 
-`base_url` 通常以 `/v1` 结尾，例如：
+图片响应可以包含 `data[].b64_json` 或 `data[].url`。JSON 响应上限为 96 MiB，解码或下载后的单张图片上限为 64 MiB。返回的 PNG 会在写入前完整解析，并且必须是不超过 2500 万像素的非交错 8 位 RGB/RGBA；RGB `tRNS` 和其他 PNG 编码会被拒绝。JPEG 和 WebP 响应会检查容器与关键编码帧结构。图片 URL 不会收到 API 凭据。
+
+请求参数支持精确像素尺寸、比例与分辨率预设、质量、输出格式、透明背景意图、moderation 和 compression。不同后端支持范围不同，请让 `auth.json` 与供应商能力保持一致。
+
+## 安装
+
+从 [Releases](https://github.com/Syh1906/openai-compatible-imagegen/releases) 下载 `openai-compatible-imagegen-<version>.zip`，解压到 agent 客户端支持的 skills 目录。也可以把仓库直接 clone 到该目录。
+
+| 客户端 | 用户级路径 | 项目级路径 |
+| --- | --- | --- |
+| Codex | `~/.codex/skills/openai-compatible-imagegen` | `.codex/skills/openai-compatible-imagegen` |
+| Claude Code | `~/.claude/skills/openai-compatible-imagegen` | `.claude/skills/openai-compatible-imagegen` |
+| OpenCode | `~/.config/opencode/skill/openai-compatible-imagegen` | `.opencode/skill/openai-compatible-imagegen` |
+
+安装目录根部必须包含 `SKILL.md`。
+
+## 配置后端
+
+在安装后的 skill 目录运行配置向导：
+
+```powershell
+$SkillDir = "/path/to/openai-compatible-imagegen"
+python "$SkillDir/scripts/quick-init.py"
+```
+
+需要手动配置时，把 `examples/auth.example.json` 复制到 skill 目录并命名为 `auth.json`，再填写后端地址、模型和认证来源。git 会忽略 `auth.json`。
 
 ```json
 {
   "base_url": "https://example.com/v1",
-  "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-  "url_download": { "proxy_mode": "environment" },
-  "model": "gpt-image-2"
+  "api_key": "",
+  "api_key_env": "OPENAI_API_KEY",
+  "model": "gpt-image-2",
+  "capabilities": {
+    "transparent_background": false
+  }
 }
 ```
 
-`examples/auth.example.json` 里的默认模型只是模板值。你可以把 `model` 改成后端支持的任意图片模型，例如你的网关或供应商暴露的 OpenAI 兼容图片生成模型。
-
-请求默认使用浏览器兼容的 Windows Chrome `User-Agent`。如果供应商要求其他值，请修改 `user_agent`。JSON 生成请求、multipart 编辑请求和返回图片 URL 的下载请求使用同一个值；下载返回图片时不会转发 API key。
-
-图片响应可以包含 `data[].b64_json` 或 `data[].url`。脚本根据实际返回字段处理图片，不发送 GPT Image 模型不支持的 `response_format`。返回 URL 必须使用 HTTP(S)，下载得到的 PNG、JPEG 或 WebP 还会检查文件完整性。
-
-如果图片 URL 通过代理连续发生 TLS EOF，错误会给出两种需要明确授权的直连方式：当前命令使用 `--allow-direct-url-download`，或为已确认的固定渠道设置 `url_download.proxy_mode="direct"`。两种方式都会让返回图片 URL 从第一次下载开始直连，并在直连 TLS EOF 时重试一次；图片 API 请求仍使用正常网络环境，也不会把 API 凭据转发给图片地址。除非你接受图片主机直接看到本机连接，否则保持 `proxy_mode="environment"`。
-
-脚本层支持的参数包括：
-
-- `1024x1024`、`1536x1024`、`1024x1536`、`2048x2048` 等精确尺寸；后端支持时也可使用 4K 类尺寸
-- 通过 `--aspect`（`1:1`、`16:9`、`4:3`、`3:4`、`9:16`）和 `--resolution`（`1K`、`2K`、`4K`）按形状和清晰度选择尺寸
-- `low`、`medium`、`high`、`auto` 质量参数
-- `png`、`jpeg`、`webp` 输出格式
-- 仅当 `capabilities.transparent_background=true` 时发送 `background=transparent`
-- 后端支持时可使用 moderation 和 compression 参数
-
-不同后端的参数支持不完全一样。命令参数和 `auth.json` defaults 需要与你使用的供应商保持一致。
-
----
-
-## 安装
-
-### 从发布包安装
-
-从 [Releases](https://github.com/Syh1906/openai-compatible-imagegen/releases) 下载最新的 `openai-compatible-imagegen-<latest>.zip`，然后解压到你的 agent 客户端支持的 skills 目录。
-
-### 从 Git 安装
-
-如果你希望后续用 `git pull` 更新，可以直接 clone 到目标 skills 目录。
-
-| 客户端 | 用户级安装路径 | 命令 |
-| --- | --- | --- |
-| Codex | `~/.codex/skills/openai-compatible-imagegen` | `git clone https://github.com/Syh1906/openai-compatible-imagegen.git ~/.codex/skills/openai-compatible-imagegen` |
-| Claude Code | `~/.claude/skills/openai-compatible-imagegen` | `git clone https://github.com/Syh1906/openai-compatible-imagegen.git ~/.claude/skills/openai-compatible-imagegen` |
-| OpenCode | `~/.config/opencode/skill/openai-compatible-imagegen` | `git clone https://github.com/Syh1906/openai-compatible-imagegen.git ~/.config/opencode/skill/openai-compatible-imagegen` |
-
-只希望某个项目使用这个 skill 时，可以放到项目内目录：
-
-| 客户端 | 项目内路径 |
-| --- | --- |
-| Codex | `.codex/skills/openai-compatible-imagegen` |
-| Claude Code | `.claude/skills/openai-compatible-imagegen` |
-| OpenCode | `.opencode/skill/openai-compatible-imagegen` |
-
-skill 目录根部必须包含 `SKILL.md`。
-
----
-
-## 初始化认证
-
-首次使用前创建本地私有配置：
+`api_key` 用于把密钥保存在本地配置中；`api_key_env` 用于填写环境变量名。运行 `info` 可查看打码后的配置摘要：
 
 ```powershell
-$SkillDir = "$env:USERPROFILE/.codex/skills/openai-compatible-imagegen"
-python "$SkillDir/scripts/quick-init.py"
-```
-
-向导会询问：
-
-- API 基础地址，通常以 `/v1` 结尾
-- 图片模型
-- 认证方式，推荐使用环境变量
-- 后端是否支持透明背景
-
-如果要用非交互方式配置环境变量认证：
-
-```powershell
-$SkillDir = "$env:USERPROFILE/.codex/skills/openai-compatible-imagegen"
-python "$SkillDir/scripts/quick-init.py" `
-  --non-interactive `
-  --base-url "https://example.com/v1" `
-  --model "gpt-image-2" `
-  --auth-method env `
-  --api-key-env "OPENAI_API_KEY" `
-  --transparent-background
-```
-
-`auth.json` 是本地私有文件，已被 git 忽略。密钥支持两种写法：
-
-- 直接写入 `auth.json` 的 `api_key` 字段。
-- 在 `auth.json` 写 `api_key_env`，再把 key 放入对应环境变量。
-
-如果两者同时存在，脚本优先使用 `api_key`。如果 `api_key` 仍是模板占位值，脚本才读取 `api_key_env`。
-
-底层的 `imagegen.py init` 命令仍然保留，适合只需要复制模板或复现旧初始化步骤时使用。
-
-检查配置摘要：
-
-```powershell
+$SkillDir = "/path/to/openai-compatible-imagegen"
 python "$SkillDir/scripts/imagegen.py" info
 ```
 
-`info` 会打码密钥，只显示来源。
+只有后端接受 `background=transparent` 时，才设置 `capabilities.transparent_background=true`。
 
----
+## 向 Agent 提需求
 
-## 使用
+用自然语言说明主体、视觉方向、最终尺寸、透明度、数量、检查要求和输出目录。
 
-### 向你的 agent 提需求
+- “生成一张 `16:9`、`2K` 的新品发布横幅，再交付 `1200x675` PNG 到 `outputs/campaign`。”
+- “把这张商品照片处理成透明底 `512x512` PNG，四周保留 3% 安全边距。确认真实 alpha，并生成白色、黑色和棋盘格背景预览。”
+- “按这些提示词批量生成 4 张公共交通主题编辑插图，并保存 batch manifest。”
+- “创建一个方形品牌标志，报告连通组件和边缘接触，再生成 `64x64` 与 `256x256` 预览。”
+- “生成一张 `3x3` 的 UI 概念图，并拆成 9 张 `256x256` PNG。”
+- “创建一个幻想策略游戏的冰霜技能图标，不要文字，并交付 `64x64` 和 `128x128` 预览。”
 
-安装 skill 并配置 `auth.json` 后，直接用自然语言告诉 agent 你要什么图片结果。说明最终素材形态、透明背景、数量和后处理需求。
+生成尺寸和交付尺寸相互独立。你可以先生成较大的源图，再输出精确尺寸的本地交付文件。
 
-示例：
+## 手动命令
 
-- “使用 OpenAI 兼容图片生成 skill，生成一张 `1024x1024` 的 Warcraft 3 风格冰霜技能图标，不要文字，最终 PNG 存到 `outputs/`。”
-- “生成一张 `16:9`、`2K` 的直播卖货横幅，风格是商品展示海报，保存为 WebP。”
-- “生成一张 `9:16`、`4K` 的手机壁纸，主题是赛博朋克集市。”
-- “创建一个透明背景的物品素材，主体是居中的火焰宝珠。如果后端支持真实 alpha，就输出透明 PNG。”
-- “生成一张 `3x3` 的游戏物品候选图，然后拆成 9 张独立的 `128x128` PNG。”
-- “使用这张参考图，把它转换成暗黑魔法 UI 风格，结果保留为 PNG。”
-- “按这些提示词批量生成 4 个独立图标方案，并保存 batch manifest。”
+手动命令适合验证和脚本化工作流。请先把 `$SkillDir` 设为 skill 的安装目录。
 
-需要后处理时，同时说明源图生成尺寸和最终交付尺寸：
-
-- “生成 `1024x1024` 源图标，然后交付 `128x128` PNG。”
-- “检查这张 PNG 是否有 alpha，然后缩放到 `128x128`。”
-- “把这张 `3x3` 候选图拆成 9 张归一化的 `128x128` 文件。”
-
-### 手动命令
-
-文生图：
+### 生成与编辑
 
 ```powershell
 python "$SkillDir/scripts/imagegen.py" generate `
-  -p "Warcraft 3 style frost skill icon, single rune, centered, no text" `
-  -f "outputs/frost-rune.png" `
-  --aspect 1:1 `
-  --resolution 1K `
-  --quality high
-```
-
-按形状和清晰度选择尺寸：
-
-```powershell
-python "$SkillDir/scripts/imagegen.py" generate `
-  -p "Livestream shopping banner for discounted transit-station tokens, bold product showcase style" `
-  -f "outputs/token-banner.webp" `
-  --aspect 16:9 `
+  -p "Editorial illustration about urban shade, clear focal subject, no text" `
+  -f "outputs/urban-shade.png" `
+  --aspect 4:3 `
   --resolution 2K `
-  --format webp `
-  --quality medium
-```
+  --quality high
 
-参考图编辑：
-
-```powershell
 python "$SkillDir/scripts/imagegen.py" edit `
-  -p "Convert this to a dark magic UI style" `
+  -p "Convert this product photo into a clean catalog cutout" `
   -i "input.png" `
-  -f "outputs/dark-ui.png"
+  -f "outputs/product-cutout.png" `
+  --asset `
+  --transparent
 ```
 
-批量生成：
+### 批量生成
 
 ```powershell
 python "$SkillDir/scripts/imagegen.py" batch `
@@ -212,117 +131,99 @@ python "$SkillDir/scripts/imagegen.py" batch `
   --concurrency 3
 ```
 
-透明底素材意图：
+批处理行可以设置 `qa`、`components`、`delivery_size`、`grid`、`expected_count`、`resample`、`fit` 和 `safe_margin`。命令会写出 `manifest.json`；交付文件位于 `files`，API 原图保留在 `original_files`。
+
+### 检查与验证
 
 ```powershell
-python "$SkillDir/scripts/imagegen.py" generate `
-  -p "Centered fire orb game item asset, no text" `
-  -f "outputs/fire-orb.png" `
-  --asset `
-  --transparent
+python "$SkillDir/scripts/imagegen.py" inspect-image "input.png" `
+  --components `
+  --expected-size 512x512 `
+  --expect-transparent
 ```
 
-如果所选模型和分辨率不支持透明背景，脚本会在发送请求前停止。此时选择一种路径：切换到支持透明背景的模型并保留透明，或保留当前模型并改用 `background=auto`。
+`--expected-size` 检查精确尺寸。`--expect-transparent` 要求图片包含可见内容和真实 alpha。`--components` 为商品抠图、标志、界面元素和游戏素材等独立主体增加连通组件诊断。
 
-可选后处理：
+QA 只检查确定性的技术指标，不判断审美、身份、布局或语义一致性。API 返回 PNG 验证、深度检查和本地变换使用同一解析器：支持不超过 2500 万像素、PNG 文件不超过 256 MiB 的非交错 8 位 RGB/RGBA。带 `tRNS` 透明色块的 RGB PNG 会被明确拒绝，不会按不透明图片处理。
+
+### 准备交付文件
 
 ```powershell
-python "$SkillDir/scripts/imagegen.py" inspect-image "input.png"
-
 python "$SkillDir/scripts/imagegen.py" normalize "input.png" `
-  --delivery-size 128x128 `
-  --out "output.png"
+  --delivery-size 512x512 `
+  --fit contain `
+  --safe-margin 0.03 `
+  --resample bilinear `
+  --out "outputs/final.png"
 
-python "$SkillDir/scripts/imagegen.py" split-grid "grid.png" `
+python "$SkillDir/scripts/imagegen.py" split-grid "sheet.png" `
   --grid 3x3 `
-  --delivery-size 128x128 `
-  --out-dir "candidates"
+  --delivery-size 256x256 `
+  --expected-count 9 `
+  --resample bilinear `
+  --out-dir "outputs/candidates"
 ```
 
-后处理用于把 API 返回的 PNG 转成可交付文件。它覆盖三类常见任务：
+`stretch` 会填满精确交付尺寸。`contain` 在透明画布上保持宽高比。使用 `contain` 时，`--safe-margin` 会在每条边保留指定比例的边距。默认重采样方式是 `bilinear`；需要有意复制像素时使用 `nearest`。
 
-| 任务 | 命令 | 结果 |
-| --- | --- | --- |
-| 检查 PNG | `inspect-image` | 输出宽高、是否有 alpha 通道、alpha 有效边界。 |
-| 缩放单图 | `normalize` | 按 `--delivery-size` 写出一张 PNG。 |
-| 拆候选图 | `split-grid` | 按网格单元写出多张归一化 PNG。 |
+`generate`、`edit` 和 `batch` 也支持这些交付参数。添加 `--qa` 会附加 `qa.v1` 结果，不会改变生成成功状态或重试请求。透明请求包含交付变换时，QA 会分别检查 API 源图和交付图，透明留白不能让不透明源图误判通过。
 
-API 请求尺寸和最终交付尺寸是两件事。例如后端可能返回 `1024x1024` PNG，但你需要 `128x128` 图标。此时用 `--delivery-size 128x128` 写出最终图标文件。
+### 生成预览板
 
-`generate`、`edit` 和 `batch` 也可以在传入 `--delivery-size`、`--grid` 或 `--postprocess-out-dir` 时写出后处理结果。这个模式下，命令会把 API 原图路径放在 `original_files`，把后处理文件路径放在 `files`。
+```powershell
+python "$SkillDir/scripts/imagegen.py" preview-board "input.png" `
+  --size 64x64 `
+  --size 256x256 `
+  --preview-background transparent `
+  --preview-background white `
+  --preview-background checker `
+  --out-dir "outputs/previews"
+```
 
----
+输出目录包含每种尺寸和背景组合、汇总预览板以及 `preview-manifest.json`。
 
 ## 配置字段
 
-`examples/auth.example.json` 是本地配置模板。
+`auth.json` 的关键字段：
 
-关键字段：
+| 字段 | 用途 |
+| --- | --- |
+| `base_url` | OpenAI 兼容 API 基础地址，通常以 `/v1` 结尾 |
+| `api_key` / `api_key_env` | 本地密钥或环境变量名 |
+| `model` | 默认图片模型 |
+| `user_agent` | 图片 API 和图片 URL 请求使用的 HTTP 客户端标识 |
+| `url_download.proxy_mode` | 默认使用 `environment`，也可明确设置为 `direct` 直连下载 |
+| `capabilities.transparent_background` | 声明后端是否支持透明背景请求 |
+| `defaults.*` | 默认尺寸、比例、分辨率、质量、格式、超时和并发数 |
+| `postprocess.enabled` | 允许执行已请求的生成结果后处理 |
 
-- `base_url`：OpenAI 兼容 API 基础地址，通常以 `/v1` 结尾。
-- `user_agent`：发送给图片 API 和返回图片 URL 的 HTTP `User-Agent`，默认使用上方示例中的浏览器兼容值。
-- `url_download.proxy_mode`：`environment` 使用当前代理环境；`direct` 持久直连下载返回图片 URL。默认值为 `environment`。
-- `api_key`：直接写在本地配置里的 API key。不要提交真实值。
-- `api_key_env`：当 `api_key` 为空或仍是占位值时读取的环境变量名。
-- `model`：`generate`、`edit`、`batch` 默认使用的图片模型。
-- `capabilities.transparent_background`：只有接口接受 `background=transparent` 时才设为 `true`。
-- `defaults.size`：未传 `--size` 时使用的 API 请求尺寸。
-- `defaults.aspect`：未传 `--size` 时，可与 `defaults.resolution` 搭配使用的默认比例。
-- `defaults.resolution`：未传 `--size` 时，可与 `defaults.aspect` 搭配使用的默认 `1K`、`2K` 或 `4K` 清晰度。
-- `defaults.quality`：未传 `--quality` 时使用的质量参数。
-- `defaults.output_format`：未传 `--format` 时使用的输出格式。
-- `defaults.timeout_seconds`：单次请求超时时间，单位秒。
-- `defaults.concurrency`：未传 `--concurrency` 时使用的批量并发数。
-- `postprocess.enabled`：启用生成结果后处理。最终输出尺寸不写入 `auth.json`；需要缩放或拆网格的命令使用 `--delivery-size`。
+如果图片 URL 通过代理反复出现 TLS EOF，可为单次命令明确使用 `--allow-direct-url-download`，或为已确认的供应商设置 `url_download.proxy_mode="direct"`。图片 API 请求仍使用正常网络路径。
 
-后处理需求示例：
+## 支持的命令
 
-- 单图图标：“生成 `1024x1024` 源图，然后在 `outputs/final` 交付 `128x128` PNG。”
-- 候选图网格：“生成一张 `3x3` 候选图，并拆成 9 张归一化的 `128x128` PNG。”
-- 已有文件：“把 `raw.png` 缩放到 `128x128`，保存为 `icon.png`，不要调用图片 API。”
+| 命令 | 用途 |
+| --- | --- |
+| `info` | 显示打码后的配置摘要 |
+| `generate` | 根据提示词生成图片 |
+| `edit` | 编辑一张或多张参考图 |
+| `batch` | 执行 JSONL 生成和编辑任务 |
+| `inspect-image` | 检查 PNG 属性和可选预期 |
+| `normalize` | 写出精确尺寸的 PNG 交付文件 |
+| `split-grid` | 把显式网格拆成独立 PNG 文件 |
+| `preview-board` | 渲染目标尺寸和背景预览 |
 
----
+详细行为见 [提示词参考](references/prompting.md)、[参数参考](references/parameters.md)、[后处理参考](references/postprocess.md)和 [QA 参考](references/qa.md)。
 
 ## 质量检查
 
-运行本地检查：
-
 ```powershell
 python -m unittest discover -s tests
-python -m py_compile scripts/imagegen.py
+python -m compileall -q scripts
 ```
 
-测试不会调用图片 API。
-
----
-
-## 发布包
-
-发布 zip 包包含一个顶层目录、配置向导和当前参考文档：
-
-```text
-openai-compatible-imagegen/
-├── .github/workflows/ci.yml
-├── .gitignore
-├── CHANGELOG.md
-├── LICENSE
-├── README.md
-├── README.zh-CN.md
-├── SKILL.md
-├── agents/openai.yaml
-├── examples/
-├── references/
-├── scripts/
-│   ├── imagegen.py
-│   └── quick-init.py
-└── tests/
-```
-
-本地 `auth.json`、`.local/`、`outputs/` 和 `dist/` 文件不会包含在发布包里。
+这些检查不会调用图片 API。
 
 版本历史见 [CHANGELOG.md](CHANGELOG.md)。
-
----
 
 ## 许可证
 

@@ -2,6 +2,32 @@
 
 This file records user-visible changes for each release of `openai-compatible-imagegen`.
 
+## [0.2.0] - 2026-08-10
+
+### Added
+
+- Add deterministic `qa.v1` delivery checks for expected size, transparency, alpha geometry, edge contact, and optional connected-component diagnostics.
+- Add exact delivery sizing with selectable resampling, stretch or contain fitting, and fractional safe margins.
+- Add target-size and background preview boards with a machine-readable preview manifest.
+
+### Changed
+
+- Expand examples and user documentation across product, editorial, brand, interface, marketing, and game image workflows.
+- Document per-row batch QA and delivery controls, including `delivery_size`, `resample`, `fit`, `safe_margin`, and `components`.
+- Use alpha-aware bilinear resizing by default; `nearest` remains available for intentional pixel replication.
+- Respect explicit image-backend choices instead of claiming priority over other image-generation routes.
+
+### Fixed
+
+- Validate Base64 image structure, response item types, and requested image counts before writing output files.
+- Bound API JSON, image, and error-response reads; reject format mismatches and header-only or truncated JPEG/WebP frames.
+- Reject malformed, interlaced, unsupported-encoding, oversized, or structurally invalid PNG responses and local inputs before delivery or transformation.
+- Reject RGB PNG `tRNS` transparency instead of silently treating it as opaque.
+- Preserve source edge pixels during bilinear resizing and keep large decoded PNG buffers compact.
+- Preflight batch output conflicts and publish multi-file post-processing results transactionally.
+- Check source and delivery transparency separately so transparent padding cannot hide an opaque API result.
+- Enforce per-preview, cumulative-preview, and preview-board pixel limits before allocation.
+
 ## [0.1.4] - 2026-08-04
 
 ### Added
@@ -56,6 +82,7 @@ This file records user-visible changes for each release of `openai-compatible-im
 - Publish the initial Agent Skills-compatible image generation workflow.
 - Support OpenAI-compatible image generation, image editing, local authentication, transparent asset intent, and JSONL batches.
 
+[0.2.0]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v0.1.4...v0.2.0
 [0.1.4]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/Syh1906/openai-compatible-imagegen/releases/tag/v0.1.2

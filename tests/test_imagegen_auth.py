@@ -28,7 +28,7 @@ def load_imagegen():
     return module
 
 
-def make_rgba_png(path: Path, width: int, height: int, pixels: list[tuple[int, int, int, int]]) -> None:
+def rgba_png_bytes(width: int, height: int, pixels: list[tuple[int, int, int, int]]) -> bytes:
     if len(pixels) != width * height:
         raise ValueError("pixel count does not match dimensions")
     raw = bytearray()
@@ -41,7 +41,11 @@ def make_rgba_png(path: Path, width: int, height: int, pixels: list[tuple[int, i
         png_chunk(b"IDAT", zlib.compress(bytes(raw))),
         png_chunk(b"IEND", b""),
     ]
-    path.write_bytes(PNG_SIGNATURE + b"".join(chunks))
+    return PNG_SIGNATURE + b"".join(chunks)
+
+
+def make_rgba_png(path: Path, width: int, height: int, pixels: list[tuple[int, int, int, int]]) -> None:
+    path.write_bytes(rgba_png_bytes(width, height, pixels))
 
 
 def png_chunk(kind: bytes, data: bytes) -> bytes:
@@ -314,7 +318,7 @@ class RequestHeaderTests(unittest.TestCase):
     def mock_json_response(self):
         response = mock.MagicMock()
         response.__enter__.return_value = response
-        response.read.return_value = b'{"data": []}'
+        response.read.side_effect = [b'{"data": []}', b""]
         return response
 
     def test_request_json_sends_configured_user_agent(self) -> None:
@@ -329,6 +333,28 @@ class RequestHeaderTests(unittest.TestCase):
         self.assertEqual(request.get_header("User-agent"), "Micu-Compatible-Client/1.0")
         self.assertEqual(request.get_header("Authorization"), "Bearer secret")
 
+    def test_request_json_rejects_response_over_byte_limit(self) -> None:
+        response = self.mock_json_response()
+        response.read.side_effect = [b'{"data":[]}', b""]
+
+        with (
+            mock.patch.object(self.imagegen, "MAX_JSON_RESPONSE_BYTES", 8, create=True),
+            mock.patch.object(self.imagegen.urllib.request, "urlopen", return_value=response),
+        ):
+            with self.assertRaisesRegex(self.imagegen.ImagegenError, "JSON response exceeds"):
+                self.imagegen.request_json(self.cfg, "images/generations", {"prompt": "test"}, 10)
+
+        self.assertEqual(response.read.call_args.args, (9,))
+
+    def test_safe_error_body_uses_a_bounded_read(self) -> None:
+        response = mock.Mock(reason="bad request")
+        response.read.return_value = b"x" * 2001
+
+        detail = self.imagegen.safe_error_body(response)
+
+        response.read.assert_called_once_with(2001)
+        self.assertEqual(detail, "x" * 2000)
+
     def test_request_multipart_sends_configured_user_agent(self) -> None:
         with mock.patch.object(
             self.imagegen.urllib.request,
@@ -342,10 +368,10 @@ class RequestHeaderTests(unittest.TestCase):
         self.assertEqual(request.get_header("Authorization"), "Bearer secret")
 
     def test_url_image_download_sends_user_agent_without_authorization(self) -> None:
-        image_bytes = PNG_SIGNATURE + b"\x00\x00\x00\x00IEND\xaeB`\x82"
+        image_bytes = rgba_png_bytes(1, 1, [(255, 0, 0, 255)])
         response = mock.MagicMock()
         response.__enter__.return_value = response
-        response.read.return_value = image_bytes
+        response.read.side_effect = [image_bytes, b""]
         with mock.patch.object(
             self.imagegen.urllib.request,
             "urlopen",
@@ -365,10 +391,10 @@ class RequestHeaderTests(unittest.TestCase):
         tls_eof = self.imagegen.urllib.error.URLError(
             ssl.SSLEOFError(8, "UNEXPECTED_EOF_WHILE_READING")
         )
-        image_bytes = PNG_SIGNATURE + b"\x00\x00\x00\x00IEND\xaeB`\x82"
+        image_bytes = rgba_png_bytes(1, 1, [(255, 0, 0, 255)])
         response = mock.MagicMock()
         response.__enter__.return_value = response
-        response.read.return_value = image_bytes
+        response.read.side_effect = [image_bytes, b""]
 
         with mock.patch.object(
             self.imagegen.urllib.request,
@@ -384,10 +410,10 @@ class RequestHeaderTests(unittest.TestCase):
         self.assertEqual(urlopen.call_count, 2)
 
     def test_url_image_download_uses_direct_connection_immediately_when_enabled(self) -> None:
-        image_bytes = PNG_SIGNATURE + b"\x00\x00\x00\x00IEND\xaeB`\x82"
+        image_bytes = rgba_png_bytes(1, 1, [(255, 0, 0, 255)])
         response = mock.MagicMock()
         response.__enter__.return_value = response
-        response.read.return_value = image_bytes
+        response.read.side_effect = [image_bytes, b""]
         opener = mock.MagicMock()
         opener.open.return_value = response
 
@@ -415,10 +441,10 @@ class RequestHeaderTests(unittest.TestCase):
         tls_eof = self.imagegen.urllib.error.URLError(
             ssl.SSLEOFError(8, "UNEXPECTED_EOF_WHILE_READING")
         )
-        image_bytes = PNG_SIGNATURE + b"\x00\x00\x00\x00IEND\xaeB`\x82"
+        image_bytes = rgba_png_bytes(1, 1, [(255, 0, 0, 255)])
         response = mock.MagicMock()
         response.__enter__.return_value = response
-        response.read.return_value = image_bytes
+        response.read.side_effect = [image_bytes, b""]
         opener = mock.MagicMock()
         opener.open.side_effect = [tls_eof, response]
 
@@ -446,7 +472,7 @@ class RequestHeaderTests(unittest.TestCase):
         response = mock.MagicMock()
         response.__enter__.return_value = response
         response.headers.get.return_value = "100"
-        response.read.return_value = PNG_SIGNATURE
+        response.read.side_effect = [PNG_SIGNATURE, b""]
 
         with mock.patch.object(
             self.imagegen.urllib.request,
