@@ -177,14 +177,18 @@ def run(
     if postprocess_results:
         updated["postprocess"] = postprocess_results
     if transparency_requested:
-        updated["transparency"] = {
-            "requested": True,
-            "mode": (transparency_record or {}).get("mode", "prompt-alpha"),
-            "key": (transparency_record or {}).get("key"),
-            "status": "pass" if transparency_passed else "unmet",
-            "artifacts": transparency_results,
-            "warnings": transparency_warnings,
-        }
+        transparency_summary = dict(transparency_record or {})
+        transparency_summary.update(
+            {
+                "requested": True,
+                "mode": (transparency_record or {}).get("mode", "prompt-alpha"),
+                "key": (transparency_record or {}).get("key"),
+                "status": "pass" if transparency_passed else "unmet",
+                "artifacts": transparency_results,
+                "warnings": transparency_warnings,
+            }
+        )
+        updated["transparency"] = transparency_summary
         updated["warnings"] = list(record.get("warnings", [])) + transparency_warnings
     if qa_requested:
         qa_expected_count = expected_count
@@ -198,6 +202,10 @@ def run(
                 "components": components,
             },
             conditions=[{"kind": "transparent", "requested": True}] if transparency_requested else None,
+        )
+    if transparency_requested:
+        updated["delivery_ready"] = transparency_passed and (
+            not qa_requested or updated["qa"].get("status") == "pass"
         )
     return updated
 

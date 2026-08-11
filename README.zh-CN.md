@@ -76,7 +76,16 @@ python "$SkillDir/scripts/quick-init.py"
     "enabled": false
   },
   "transparency": {
-    "prompt_only_allow": []
+    "default_route": "chroma-matting",
+    "prompt_only_allow": [],
+    "llm_assisted": {
+      "enabled": false,
+      "max_attempts": 2,
+      "allow_parameter_tuning": true,
+      "allow_route_change": true,
+      "allow_api_retry": false,
+      "allow_generated_code": false
+    }
   }
 }
 ```
@@ -90,9 +99,11 @@ python "$SkillDir/scripts/imagegen.py" info
 
 旧的 `capabilities.transparent_background` 配置和 `background=transparent` 请求值都已移除，不要把它们转换成 API 参数。需要默认允许本地透明处理时，把 `postprocess.enabled` 设为 `true`；需要允许仅靠提示词生成 alpha 时，在 `transparency.prompt_only_allow` 中填写精确的 `model`、`mode` 和 `size` 组合。
 
-请求透明结果时优先使用本地后处理。后处理关闭时，只有精确的提示词白名单规则才能追加真实 alpha 提示词。两条路线都不保证模型一定返回透明图；检查未通过时仍返回 API 原图，同时记录 warning 和 `transparency.status=unmet`。
+请求透明结果时优先使用本地后处理。纯色色键背景使用 `chroma-matting`，黑底发光特效使用 `emissive-alpha`，已有明确 mask 时使用 `mask-alpha`。后处理关闭时，只有精确的提示词白名单规则才能追加真实 alpha 提示词。任何路线都不能保证一定得到合格抠图。
 
-本地 `chroma-key` 路线要求画布边缘是连通且统一的色键背景，并在发布派生文件前检查残留色键污染。检查失败时不会发布猜测性的抠图结果。
+透明检查未通过时，API 原图会原样返回，并记录 `ok=true`、`transparency.status=unmet` 和 `delivery_ready=false`。skill 只告知实际状态，不拒绝或隐藏图片。
+
+可选的 `transparency.llm_assisted` 允许 Agent 查看失败结果，并在限定次数内调整路线或参数。该模式只使用 skill 自带的确定性处理器，不安装本地模型、不下载权重、不执行生成的图片处理代码，也不会留下后台 Python 工作进程。
 
 ## 向 Agent 提需求
 
@@ -139,9 +150,21 @@ python "$SkillDir/scripts/imagegen.py" batch `
   --concurrency 3
 ```
 
-批处理行可以设置 `postprocess`、`qa`、`components`、`delivery_size`、`grid`、`expected_count`、`resample`、`fit` 和 `safe_margin`。命令会写出 `manifest.json`。生成派生文件时，派生路径位于 `files`，API 源图保留在 `original_files`；透明未达标时，`files` 保留 API 源图路径。
+批处理行可以设置 `postprocess`、`transparency_route`、`transparency_mask`、`transparency_options`、`qa`、`components`、`delivery_size`、`grid`、`expected_count`、`resample`、`fit` 和 `safe_margin`。命令会写出 `manifest.json`。生成派生文件时，派生路径位于 `files`，API 源图保留在 `original_files`；透明未达标时，`files` 保留 API 源图路径。
 
-批处理路径使用两个明确基准：JSONL 中的 `images` 和 `mask` 相对于 JSONL 文件目录；任务级或共享的 `file`、`out` 和 `postprocess_out_dir` 相对于 batch `--out`。绝对路径保持不变。manifest 会记录解析后的 `output_root` 和文件存在性 `path_contract`。
+批处理路径使用两个明确基准：JSONL 中的 `images`、`mask` 和 `transparency_mask` 相对于 JSONL 文件目录；任务级或共享的 `file`、`out` 和 `postprocess_out_dir` 相对于 batch `--out`。绝对路径保持不变。manifest 会记录解析后的 `output_root` 和文件存在性 `path_contract`。
+
+### 对已有图片应用透明处理
+
+```powershell
+python "$SkillDir/scripts/imagegen.py" apply-transparency "effect.png" `
+  --out "outputs/effect-transparent.png" `
+  --route emissive-alpha `
+  --transparency-param "black_point=8" `
+  --transparency-param "gamma=1.2"
+```
+
+命令以前台方式运行，并在写出结果后退出。处理未达标时，会把原图复制到 `--out`，返回 `delivery_ready=false`，同时保持成功退出，让调用方可以连同 warning 一起返回这张保留图。
 
 ### 检查与验证
 
@@ -205,7 +228,9 @@ python "$SkillDir/scripts/imagegen.py" preview-board "input.png" `
 | `url_download.proxy_mode` | 默认使用 `environment`，也可明确设置为 `direct` 直连下载 |
 | `defaults.*` | 默认尺寸、比例、分辨率、质量、格式、超时和并发数 |
 | `postprocess.enabled` | 默认允许本地透明处理 |
+| `transparency.default_route` | 默认本地透明路线 |
 | `transparency.prompt_only_allow` | 允许提示词生成 alpha 的精确模型、模式和尺寸规则 |
+| `transparency.llm_assisted.*` | Agent 在限定范围内调整路线和参数的策略 |
 
 如果图片 URL 通过代理反复出现 TLS EOF，可为单次命令明确使用 `--allow-direct-url-download`，或为已确认的供应商设置 `url_download.proxy_mode="direct"`。图片 API 请求仍使用正常网络路径。
 
@@ -225,6 +250,7 @@ HTTP 4xx 属于 API 拒绝，会记录为 `error_kind=api_rejected` 和 `status_
 | `normalize` | 写出精确尺寸的 PNG 交付文件 |
 | `split-grid` | 把显式网格拆成独立 PNG 文件 |
 | `preview-board` | 渲染目标尺寸和背景预览 |
+| `apply-transparency` | 对已有 PNG 应用指定的本地透明路线 |
 
 详细行为见 [提示词参考](references/prompting.md)、[参数参考](references/parameters.md)、[后处理参考](references/postprocess.md)和 [QA 参考](references/qa.md)。
 

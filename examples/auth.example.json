@@ -18,6 +18,15 @@
     "enabled": false
   },
   "transparency": {
-    "prompt_only_allow": []
+    "default_route": "chroma-matting",
+    "prompt_only_allow": [],
+    "llm_assisted": {
+      "enabled": false,
+      "max_attempts": 2,
+      "allow_parameter_tuning": true,
+      "allow_route_change": true,
+      "allow_api_retry": false,
+      "allow_generated_code": false
+    }
   }
 }

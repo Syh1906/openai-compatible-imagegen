@@ -65,6 +65,18 @@ def build_parser(
     )
     preview_parser.add_argument("--resample", choices=["nearest", "bilinear"], default="bilinear")
 
+    transparency_parser = sub.add_parser("apply-transparency")
+    transparency_parser.add_argument("file")
+    transparency_parser.add_argument("--out", required=True)
+    transparency_parser.add_argument(
+        "--route",
+        required=True,
+        choices=["chroma-matting", "emissive-alpha", "mask-alpha"],
+    )
+    transparency_parser.add_argument("--key", default=None)
+    transparency_parser.add_argument("--transparency-mask", default=None)
+    transparency_parser.add_argument("--transparency-param", action="append", default=None)
+
     sub.add_parser("info")
     return parser
 
@@ -123,6 +135,13 @@ def add_postprocess_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--grid", default=None, help="Split generated output as rows x cols, for example 3x3")
     parser.add_argument("--expected-count", type=int, default=None)
     parser.add_argument("--postprocess-out-dir", default=None)
+    parser.add_argument(
+        "--transparency-route",
+        choices=["chroma-matting", "emissive-alpha", "mask-alpha", "prompt-alpha"],
+        default=None,
+    )
+    parser.add_argument("--transparency-mask", default=None)
+    parser.add_argument("--transparency-param", action="append", default=None)
     add_transform_args(parser, include_fit=True)
 
 

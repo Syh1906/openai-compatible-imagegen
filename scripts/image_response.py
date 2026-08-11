@@ -54,6 +54,8 @@ def safe_error_body(stream: Any) -> str:
         return stream.read(2001).decode("utf-8", errors="replace")[:2000]
     except Exception:
         return str(getattr(stream, "reason", "request failed"))
+    finally:
+        stream.close()
 
 
 def decode_base64_image(value: str, limit: int = MAX_IMAGE_RESPONSE_BYTES) -> bytes:

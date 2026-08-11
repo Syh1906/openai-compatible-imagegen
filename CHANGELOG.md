@@ -6,19 +6,29 @@ This file records user-visible changes for each release of `openai-compatible-im
 
 ### Added
 
-- Add deterministic `chroma-key` transparency processing with edge-connected key-color removal, edge despill, and alpha validation.
+- Add deterministic `chroma-matting` transparency processing with edge-connected key-color removal, edge despill, and alpha validation.
+- Add `emissive-alpha` and explicit `mask-alpha` local transparency routes with bounded tuning parameters.
+- Add `apply-transparency` for processing existing PNG files without another image API request.
 - Add exact `transparency.prompt_only_allow` rules for explicitly permitted prompt-only alpha generation.
+- Add optional bounded `transparency.llm_assisted` route and parameter adjustment policy without local model runtimes or weights.
 - Add technical reference-image metadata without using semantic heuristics to block edit requests.
 
 ### Changed
 
 - Treat `--transparent` as delivery intent and never send `background=transparent` to the image API.
 - Return API images unchanged with `transparency.status=unmet` and warnings when prompt alpha or local processing does not meet the transparency checks.
+- Report `delivery_ready` separately from API success, and keep preserved originals available when transparency remains unmet.
 - Evaluate transparency independently for each returned image and skip dependent delivery transforms only for unmet images.
 - Preserve API originals when publishing derived transparent files.
 - Classify HTTP 4xx image requests as `api_rejected`, separate from post-response transparency checks.
 - Reject API images whose actual pixel dimensions differ from the resolved generation size before publication.
 - Resolve batch input paths from the JSONL directory and output paths from `--out`, then record `output_root` and `path_contract` in the manifest.
+- Run bundled Python commands in the foreground without child processes or persistent local-model workers.
+
+### Fixed
+
+- Keep chroma contamination QA independent from matte tuning, preventing reduced tolerances from falsely passing visible key-color edges.
+- Preserve an already-valid native alpha image before any local transparency route can reprocess or reject it.
 
 ### Removed
 

@@ -22,6 +22,7 @@ Generated-output post-processing adds these fields:
 | `files` | Derived delivery files |
 | `postprocess` | Transform details and inspections |
 | `transparency` | Selected route, aggregate status, per-image artifacts, checks, and warnings |
+| `delivery_ready` | Whether the requested transparency and optional QA conditions passed |
 | `warnings` | Non-blocking conditions such as unmet alpha or skipped dependent transforms |
 | `qa` | Optional `qa.v1` checks requested with `--qa` |
 
@@ -31,23 +32,53 @@ The default derived-output directory is next to the source file and ends with `-
 
 Use `--transparent` for a transparent delivery request. The flag forces PNG and never becomes an API `background` parameter.
 
-When local post-processing is allowed, the script adds a prompt contract asking for one uniform flat key-color background, then applies `chroma-key` locally. It removes only key-color pixels connected to the canvas edge, preserves the subject, applies limited edge despill, and validates the resulting alpha before publication. When pixels are changed, the derived file is named `<source-stem>-transparent.png`. If the API image already has usable alpha, that original file remains the delivery file.
+When local post-processing is allowed, the explicit route wins; otherwise the script uses `transparency.default_route`.
 
-The quality gate checks edge key-color coverage, transparent-pixel ratio, visible-pixel ratio, visible border ratio, and key-color contamination around partial-alpha or transparency-adjacent subject edges. A non-uniform edge or unrecoverable contamination is an `unmet` result; the processor does not publish a guessed cutout.
+| Route | Use when | Processing contract |
+| --- | --- | --- |
+| `chroma-matting` | General isolated objects, marks, UI elements, and solid assets | Generate one uniform key-color background, remove only edge-connected key pixels, despill edges, then validate alpha |
+| `emissive-alpha` | Fire, particles, lightning, smoke, glow, and other additive effects | Generate on pure black, map luminance to alpha, preserve soft falloff, then validate alpha |
+| `mask-alpha` | A trusted mask already exists | Read mask alpha or luminance, apply bounded threshold/feather/expand controls, then validate alpha |
+
+If the API image already has usable alpha, that original file remains the delivery file. When local pixels change, the derived file is named `<source-stem>-transparent.png`.
+
+The quality gate checks edge key-color coverage, transparent-pixel ratio, visible-pixel ratio, visible border ratio, and key-color contamination around partial-alpha or transparency-adjacent subject edges. Its contamination tolerance is independent from `inner_tolerance` and `outer_tolerance`, so narrowing the processing range cannot weaken acceptance. A non-uniform edge or unrecoverable contamination is an `unmet` result; the processor does not publish a guessed cutout.
 
 When local post-processing is disabled, the request can use the `prompt-alpha` route only if `auth.json.transparency.prompt_only_allow` exactly matches the model, mode, and pixel size. The prompt requests a real alpha channel, but the model may still return an opaque image.
 
 Transparency processing is observational after the API response exists:
 
-- `pass`: keep a native-alpha API file as-is, or publish the derived chroma-key file when pixels changed, then apply any requested delivery transform.
-- `unmet`: keep the API file in `files`, set `transparency.status` to `unmet`, and add a warning.
+- `pass`: keep a native-alpha API file as-is, or publish the validated derived file, set `delivery_ready=true`, then apply any requested delivery transform.
+- `unmet`: keep the API file in `files`, set `transparency.status=unmet` and `delivery_ready=false`, and add a warning.
 - If a transparent delivery transform cannot run because transparency is unmet, skip that transform for that image. Do not create transparent padding around an opaque source.
 
 The API request remains successful when transparency is unmet. For a batch, each returned image is evaluated independently.
 
 An HTTP 4xx response is different: it is an API rejection before an image exists (`error_kind=api_rejected`), so there is no original image to return and no transparency result to attach.
 
-Batch relative output paths are based at `--out`; JSONL `images` and `mask` inputs are based at the JSONL file directory. The manifest records the resolved `output_root` and file-existence `path_contract`.
+Batch relative output paths are based at `--out`; JSONL `images`, `mask`, and `transparency_mask` inputs are based at the JSONL file directory. The manifest records the resolved `output_root` and file-existence `path_contract`.
+
+## Apply Transparency to an Existing PNG
+
+Use `apply-transparency` to reprocess an original API image without another API request:
+
+```powershell
+python "$SkillDir/scripts/imagegen.py" apply-transparency "effect.png" `
+  --out "effect-transparent.png" `
+  --route emissive-alpha `
+  --transparency-param "black_point=8" `
+  --transparency-param "gamma=1.2"
+```
+
+For `chroma-matting`, also pass `--key "#00FF00"`. For `mask-alpha`, pass `--transparency-mask "mask.png"`. The command always emits a JSON result after processing. A validated output returns `status=pass` and `delivery_ready=true`. An unmet route copies the original image to `--out`, returns `status=unmet` and `delivery_ready=false`, and still exits successfully so the caller can return the preserved file with its warning.
+
+## LLM-Assisted Adjustment
+
+When `transparency.llm_assisted.enabled=true`, the agent can inspect the original image and route checks, then run bounded additional `apply-transparency` attempts. `max_attempts` includes the first local run. Parameter tuning and route changes obey their individual switches and the route input contracts. Each attempt must pass the unchanged deterministic checks and be reviewed on contrasting preview backgrounds; tuning a processing tolerance never relaxes the quality gate. Another image API call requires `allow_api_retry=true`.
+
+This mode uses the current agent's visual reasoning only to select a route and documented parameter values. It does not add a model to the Python process, execute generated algorithms, install inference packages, or download weights. If every permitted attempt remains unmet, the original API image and warnings remain the result.
+
+Every bundled Python command runs in the foreground. The scripts do not spawn child processes or retain background workers; batch threads are joined before process exit. The caller must wait for completion and close the launched process after an interrupt or launcher timeout.
 
 Example:
 
@@ -146,4 +177,4 @@ python "$SkillDir/scripts/imagegen.py" generate `
 - JPEG and WebP generation remain supported, but deep local QA reports those formats as unsupported.
 - `split-grid` requires an explicit grid.
 - Preview boards do not include text labels; use `preview-manifest.json` for cell metadata.
-- Semantic background removal, segmentation, OCR, brand validation, and aesthetic scoring are not included. The local transparency route only handles a uniform edge-connected key-color plate or a native alpha channel.
+- Automatic semantic segmentation, OCR, brand validation, and aesthetic scoring are not included. Local transparency supports native alpha, edge-connected key-color matting, emissive luminance alpha, and explicit masks.

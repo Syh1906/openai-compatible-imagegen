@@ -240,6 +240,34 @@ class AuthConfigTests(unittest.TestCase):
         self.assertEqual(len(cfg.transparency.prompt_only_allow), 1)
         self.assertEqual(cfg.transparency.prompt_only_allow[0].size, "1024x1024")
 
+    def test_load_config_reads_llm_assisted_transparency_policy(self) -> None:
+        self.auth_path.write_text(
+            json.dumps(
+                {
+                    "base_url": "https://images.example.test/v1",
+                    "api_key": "file-secret",
+                    "model": "gpt-image-2",
+                    "transparency": {
+                        "default_route": "emissive-alpha",
+                        "llm_assisted": {
+                            "enabled": True,
+                            "max_attempts": 2,
+                            "allow_parameter_tuning": True,
+                            "allow_route_change": True,
+                            "allow_api_retry": False,
+                            "allow_generated_code": False,
+                        },
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        cfg = self.imagegen.load_config()
+
+        self.assertEqual(cfg.transparency.default_route, "emissive-alpha")
+        self.assertTrue(cfg.transparency.llm_assisted.enabled)
+
     def test_url_download_proxy_mode_defaults_to_environment(self) -> None:
         self.auth_path.write_text(
             json.dumps(
@@ -414,6 +442,30 @@ class RequestHeaderTests(unittest.TestCase):
         self.assertEqual(raised.exception.status_code, 400)
         self.assertEqual(raised.exception.error_kind, "api_rejected")
         self.assertIn("API HTTP 400", str(raised.exception))
+        response.close.assert_called_once_with()
+
+    def test_request_multipart_closes_http_error_response(self) -> None:
+        response = mock.Mock()
+        response.read.return_value = b'{"error":"request rejected"}'
+        error = self.imagegen.urllib.error.HTTPError(
+            "https://example.test/v1/images/edits",
+            400,
+            "Bad Request",
+            hdrs={},
+            fp=response,
+        )
+
+        with mock.patch.object(self.imagegen.urllib.request, "urlopen", side_effect=error):
+            with self.assertRaises(self.imagegen.ApiRequestError):
+                self.imagegen.request_multipart(
+                    self.cfg,
+                    "images/edits",
+                    {"prompt": "test"},
+                    [],
+                    10,
+                )
+
+        response.close.assert_called_once_with()
 
     def test_main_reports_http_400_classification_fields(self) -> None:
         stderr = io.StringIO()
@@ -647,6 +699,25 @@ class RequestHeaderTests(unittest.TestCase):
 
         urlopen.assert_not_called()
 
+    def test_url_image_download_closes_http_error_response(self) -> None:
+        response = mock.Mock()
+        error = self.imagegen.urllib.error.HTTPError(
+            "https://cdn.example.test/image.png",
+            403,
+            "Forbidden",
+            hdrs={},
+            fp=response,
+        )
+
+        with mock.patch.object(self.imagegen.urllib.request, "urlopen", side_effect=error):
+            with self.assertRaisesRegex(
+                self.imagegen.ImagegenError,
+                "image URL download failed: HTTP 403",
+            ):
+                self.imagegen.download_image_url("https://cdn.example.test/image.png")
+
+        response.close.assert_called_once_with()
+
     def test_info_reports_effective_user_agent(self) -> None:
         with mock.patch("builtins.print") as print_mock:
             self.imagegen.info(self.cfg)
@@ -654,6 +725,8 @@ class RequestHeaderTests(unittest.TestCase):
         summary = json.loads(print_mock.call_args.args[0])
         self.assertEqual(summary["user_agent"], "Micu-Compatible-Client/1.0")
         self.assertEqual(summary["api_key"], "***REDACTED***")
+        self.assertEqual(summary["transparency"]["default_route"], "chroma-matting")
+        self.assertFalse(summary["transparency"]["llm_assisted"]["enabled"])
 
 
 class ParameterResolutionTests(unittest.TestCase):
@@ -684,6 +757,10 @@ class ParameterResolutionTests(unittest.TestCase):
             "compression": None,
             "moderation": None,
             "allow_direct_url_download": False,
+            "postprocess": None,
+            "transparency_route": None,
+            "transparency_mask": None,
+            "transparency_param": None,
         }
         values.update(overrides)
         return SimpleNamespace(**values)
@@ -762,6 +839,29 @@ class ParameterResolutionTests(unittest.TestCase):
                 ["generate", "--prompt", "test", "--background", "transparent"]
             )
 
+    def test_build_parser_accepts_explicit_transparency_route_mask_and_parameters(self) -> None:
+        args = self.imagegen.build_parser().parse_args(
+            [
+                "generate",
+                "--prompt",
+                "test",
+                "--transparent",
+                "--postprocess",
+                "--transparency-route",
+                "mask-alpha",
+                "--transparency-mask",
+                "subject-mask.png",
+                "--transparency-param",
+                "threshold=128",
+                "--transparency-param",
+                "feather=1",
+            ]
+        )
+
+        self.assertEqual(args.transparency_route, "mask-alpha")
+        self.assertEqual(args.transparency_mask, "subject-mask.png")
+        self.assertEqual(args.transparency_param, ["threshold=128", "feather=1"])
+
     def test_transparent_intent_forces_png_without_setting_api_background(self) -> None:
         args = self.make_args(transparent=True, size="1024x1024")
 
@@ -806,7 +906,109 @@ class ParameterResolutionTests(unittest.TestCase):
         payload = self.imagegen.drop_none(request_json.call_args.args[2])
         self.assertNotIn("background", payload)
         self.assertIn("#00FF00", payload["prompt"])
-        self.assertEqual(result["transparency"]["mode"], "chroma-key")
+        self.assertEqual(result["transparency"]["mode"], "chroma-matting")
+
+    def test_generate_uses_explicit_emissive_route_and_tuning(self) -> None:
+        args = self.make_args(
+            transparent=True,
+            size="1024x1024",
+            postprocess=True,
+            transparency_route="emissive-alpha",
+            transparency_param=["black_point=12", "gamma=1.5"],
+            prompt="A cyan magic particle burst",
+            file=str(ROOT / "unused-emissive-result.png"),
+            out=None,
+        )
+
+        with (
+            mock.patch.object(self.imagegen, "request_json", return_value={"data": []}) as request_json,
+            mock.patch.object(
+                self.imagegen,
+                "write_response_images",
+                return_value=[str(ROOT / "unused-emissive-result.png")],
+            ),
+        ):
+            result = self.imagegen.generate(self.cfg, args)
+
+        payload = self.imagegen.drop_none(request_json.call_args.args[2])
+        self.assertIn("pure black", payload["prompt"].lower())
+        self.assertEqual(result["transparency"]["mode"], "emissive-alpha")
+        self.assertEqual(result["transparency"]["options"]["black_point"], 12)
+
+    def test_invalid_transparency_parameter_is_reported_as_imagegen_error(self) -> None:
+        args = self.make_args(
+            transparent=True,
+            size="1024x1024",
+            postprocess=True,
+            transparency_route="emissive-alpha",
+            transparency_param=["unknown=1"],
+        )
+        params = self.imagegen.resolve_common_params(args, self.cfg)
+
+        with self.assertRaisesRegex(
+            self.imagegen.ImagegenError,
+            "unsupported transparency option",
+        ):
+            self.imagegen.resolve_request_transparency(
+                "A cyan magic particle burst",
+                "generate",
+                params,
+                args,
+                self.cfg,
+                {},
+            )
+
+    def test_apply_transparency_invalid_parameter_uses_normal_error_exit(self) -> None:
+        stderr = io.StringIO()
+        with (
+            mock.patch.object(
+                self.imagegen.sys,
+                "argv",
+                [
+                    "imagegen",
+                    "apply-transparency",
+                    "source.png",
+                    "--out",
+                    "result.png",
+                    "--route",
+                    "emissive-alpha",
+                    "--transparency-param",
+                    "unknown=1",
+                ],
+            ),
+            mock.patch.object(self.imagegen.sys, "stderr", stderr),
+        ):
+            exit_code = self.imagegen.main()
+
+        self.assertEqual(exit_code, 2)
+        self.assertIn("unsupported transparency option", stderr.getvalue())
+        self.assertNotIn("unexpected failure", stderr.getvalue())
+
+    def test_apply_transparency_malformed_parameter_uses_normal_error_exit(self) -> None:
+        stderr = io.StringIO()
+        with (
+            mock.patch.object(
+                self.imagegen.sys,
+                "argv",
+                [
+                    "imagegen",
+                    "apply-transparency",
+                    "source.png",
+                    "--out",
+                    "result.png",
+                    "--route",
+                    "emissive-alpha",
+                    "--transparency-param",
+                    "not-an-assignment",
+                ],
+            ),
+            mock.patch.object(self.imagegen.sys, "stderr", stderr),
+        ):
+            exit_code = self.imagegen.main()
+
+        self.assertEqual(exit_code, 2)
+        self.assertIn("invalid transparency parameter", stderr.getvalue())
+        self.assertNotIn("unexpected failure", stderr.getvalue())
 
     def test_generate_rejects_undeclared_transparency_route_before_request(self) -> None:
         args = self.make_args(

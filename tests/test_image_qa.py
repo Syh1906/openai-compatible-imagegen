@@ -487,6 +487,7 @@ class GenericImageQATests(unittest.TestCase):
         )
 
         self.assertTrue(result["ok"])
+        self.assertFalse(result["delivery_ready"])
         self.assertEqual(result["transparency"]["status"], "unmet")
         self.assertEqual(result["files"], [source.resolve().as_posix()])
         self.assertTrue(result["warnings"])
@@ -538,13 +539,14 @@ class GenericImageQATests(unittest.TestCase):
         )
 
         self.assertTrue(result["ok"])
+        self.assertTrue(result["delivery_ready"])
         self.assertEqual(result["transparency"]["status"], "pass")
         self.assertEqual(result["files"], [source.resolve().as_posix()])
         self.assertNotIn("original_files", result)
         self.assertFalse(out_dir.exists())
         self.assertEqual(result["qa"]["status"], "pass")
 
-    def test_chroma_key_success_preserves_api_original_and_delivers_derived_file(self) -> None:
+    def test_chroma_matting_success_preserves_api_original_and_delivers_derived_file(self) -> None:
         source = self.temp_dir / "chroma-source.png"
         green = (0, 255, 0, 255)
         red = (220, 30, 40, 255)
@@ -583,7 +585,7 @@ class GenericImageQATests(unittest.TestCase):
                 "files": [str(source)],
                 "transparency": {
                     "requested": True,
-                    "mode": "chroma-key",
+                    "mode": "chroma-matting",
                     "key": "#00FF00",
                     "status": "pending",
                 },
@@ -593,6 +595,7 @@ class GenericImageQATests(unittest.TestCase):
         )
 
         self.assertTrue(result["ok"])
+        self.assertTrue(result["delivery_ready"])
         self.assertEqual(result["transparency"]["status"], "pass")
         self.assertEqual(result["original_files"], [str(source)])
         self.assertEqual(source.read_bytes(), original)
@@ -640,7 +643,7 @@ class GenericImageQATests(unittest.TestCase):
                 "files": [str(passing), str(failing)],
                 "transparency": {
                     "requested": True,
-                    "mode": "chroma-key",
+                    "mode": "chroma-matting",
                     "key": "#00FF00",
                     "status": "pending",
                 },
@@ -650,6 +653,7 @@ class GenericImageQATests(unittest.TestCase):
         )
 
         self.assertTrue(result["ok"])
+        self.assertFalse(result["delivery_ready"])
         self.assertEqual(result["transparency"]["status"], "unmet")
         self.assertEqual(
             [item["status"] for item in result["transparency"]["artifacts"]],
@@ -691,7 +695,7 @@ class GenericImageQATests(unittest.TestCase):
                     "files": [str(source)],
                     "transparency": {
                         "requested": True,
-                        "mode": "chroma-key",
+                        "mode": "chroma-matting",
                         "key": "#00FF00",
                         "status": "pending",
                     },
@@ -701,6 +705,7 @@ class GenericImageQATests(unittest.TestCase):
             )
 
         self.assertTrue(result["ok"])
+        self.assertFalse(result["delivery_ready"])
         self.assertEqual(result["files"], [source.resolve().as_posix()])
         self.assertEqual(result["transparency"]["status"], "unmet")
         self.assertIn("local_transparency_processing_failed", result["warnings"][0])
@@ -748,7 +753,7 @@ class GenericImageQATests(unittest.TestCase):
                     "files": [str(source)],
                     "transparency": {
                         "requested": True,
-                        "mode": "chroma-key",
+                        "mode": "chroma-matting",
                         "key": "#00FF00",
                         "status": "pending",
                     },
@@ -758,6 +763,7 @@ class GenericImageQATests(unittest.TestCase):
             )
 
         self.assertTrue(result["ok"])
+        self.assertFalse(result["delivery_ready"])
         self.assertEqual(result["files"], [source.resolve().as_posix()])
         self.assertEqual(source.read_bytes(), original)
         self.assertEqual(result["transparency"]["status"], "unmet")

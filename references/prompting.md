@@ -33,12 +33,16 @@ For transparent output, describe an isolated subject and clean subject edges onl
 
 Choose the wording from the selected runtime route:
 
-- Local post-processing: ask for one uniform flat key-color background, no gradient, texture, shadow, glow, floor, or key color on the subject. The local processor needs a solid canvas edge to distinguish background from subject.
+- `chroma-matting`: ask for one uniform flat key-color background, no gradient, texture, shadow, glow, floor, or key color on the subject. The local processor needs a solid canvas edge to distinguish background from subject.
+- `emissive-alpha`: ask for particles, fire, lightning, smoke, or glow on uniform pure black. Keep the canvas edge black and preserve soft light falloff.
+- `mask-alpha`: keep the subject aligned to the supplied mask and prohibit content outside its bounds. This route requires an explicit mask.
 - Prompt-only alpha: explicitly request a PNG with a real alpha channel, alpha 0 outside the subject, and antialiased partially transparent edges. Use this only for an exact `transparency.prompt_only_allow` rule.
 
 Prompt-only wording increases the chance of alpha output; it does not guarantee it. If the returned image is opaque, the skill returns that API image unchanged and reports `transparency.status=unmet`. Do not describe the result as transparent merely because the prompt contained alpha instructions.
 
-For a model or size that is not explicitly allowed, report the unavailable route before sending a request. Do not silently downgrade a 2K or 4K request to 1K, change models, or retry with a stronger prompt. A 1K rule must match the exact pixel size, mode, and model in `auth.json`; a failed alpha prompt still returns the API image unchanged.
+For a model or size that is not explicitly allowed, report the unavailable route before sending a request. Do not silently downgrade a 2K or 4K request to 1K or change models. A 1K rule must match the exact pixel size, mode, and model in `auth.json`; a failed alpha prompt still returns the API image unchanged.
+
+When `transparency.llm_assisted.enabled=true`, prompt changes remain bounded by the policy. A second API request is permitted only when `allow_api_retry=true`; it keeps the configured model, endpoint, and requested size. Local adjustment uses `apply-transparency` on the original image and changes only documented route parameters. If the attempt limit is reached, return the original image and factual warnings instead of refusing it.
 
 ## Cross-Industry Examples
 
@@ -48,6 +52,8 @@ For a model or size that is not explicitly allowed, report the unavailable route
 - Interface: "Desktop analytics dashboard reference, dense but readable tables and charts, light neutral theme, realistic application layout."
 - Game: "Square fantasy strategy game ability icon, a cracked ice sigil with a distinct silhouette, high contrast at small display sizes, no text."
 - Transparent with local processing: "Isolated ceramic vase, front three-quarter view, one uniform flat #00FF00 background, no floor, shadow, glow, texture, or lettering; keep the key color off the vase and its antialiased edge."
+- Transparent emissive effect: "Isolated cyan lightning burst with branching particles on uniform pure black #000000, preserve soft glow falloff, keep every canvas edge pure black, no scenery, frame, or text."
+- Transparent with mask: "Isolated cosmetic bottle aligned to the supplied delivery mask, preserve the full product, no cast shadow, glow, or content outside the mask bounds."
 - Transparent with prompt-only alpha: "Isolated ceramic vase, front three-quarter view, PNG with a real alpha channel, alpha 0 outside the vase, antialiased partially transparent edges, no floor, backdrop, shadow, glow, or lettering."
 
 ## Batch Variation

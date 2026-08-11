@@ -76,7 +76,16 @@ For manual setup, copy `examples/auth.example.json` to `auth.json` in the skill 
     "enabled": false
   },
   "transparency": {
-    "prompt_only_allow": []
+    "default_route": "chroma-matting",
+    "prompt_only_allow": [],
+    "llm_assisted": {
+      "enabled": false,
+      "max_attempts": 2,
+      "allow_parameter_tuning": true,
+      "allow_route_change": true,
+      "allow_api_retry": false,
+      "allow_generated_code": false
+    }
   }
 }
 ```
@@ -90,9 +99,11 @@ python "$SkillDir/scripts/imagegen.py" info
 
 The old `capabilities.transparent_background` setting and `background=transparent` request value are removed. Do not translate them into an API parameter. To allow local transparency processing by default, set `postprocess.enabled` to `true`; to allow prompt-only alpha generation, add exact `model`/`mode`/`size` entries under `transparency.prompt_only_allow`.
 
-When a transparent result is requested, local processing has priority. If it is disabled, an exact prompt-only rule may add a real-alpha prompt contract. Neither route guarantees alpha. If the returned image does not meet the transparency checks, the API image is still returned unchanged with a warning and `transparency.status=unmet`.
+When a transparent result is requested, local processing has priority. Choose `chroma-matting` for solid key-color plates, `emissive-alpha` for light effects on black, or `mask-alpha` when an explicit mask exists. If local processing is disabled, an exact prompt-only rule may add a real-alpha prompt contract. None of these routes guarantees a valid cutout.
 
-The local `chroma-key` route requires a uniform edge-connected key-color plate and checks residual key-color contamination before publishing a derived file. It does not publish a guessed cutout when those checks fail.
+If the result does not meet transparency checks, the API image is returned unchanged with `ok=true`, `transparency.status=unmet`, and `delivery_ready=false`. The skill reports that state instead of rejecting or hiding the image.
+
+Optional `transparency.llm_assisted` lets the agent inspect the failed result and make a bounded number of route or parameter adjustments. It uses only the bundled deterministic processors. It does not install a local model, download weights, execute generated image-processing code, or leave a background Python worker running.
 
 ## Ask Your Agent
 
@@ -139,9 +150,21 @@ python "$SkillDir/scripts/imagegen.py" batch `
   --concurrency 3
 ```
 
-Batch rows can set `postprocess`, `qa`, `components`, `delivery_size`, `grid`, `expected_count`, `resample`, `fit`, and `safe_margin`. The command writes `manifest.json`. When a derived file is published, it appears in `files` and the API source remains in `original_files`. When transparency is unmet, `files` keeps the API source path.
+Batch rows can set `postprocess`, `transparency_route`, `transparency_mask`, `transparency_options`, `qa`, `components`, `delivery_size`, `grid`, `expected_count`, `resample`, `fit`, and `safe_margin`. The command writes `manifest.json`. When a derived file is published, it appears in `files` and the API source remains in `original_files`. When transparency is unmet, `files` keeps the API source path.
 
-For batch paths, JSONL `images` and `mask` values are relative to the JSONL file directory. Task or shared `file`, `out`, and `postprocess_out_dir` values are relative to batch `--out`; absolute paths remain unchanged. The manifest records the resolved `output_root` and a `path_contract` file-existence check.
+For batch paths, JSONL `images`, `mask`, and `transparency_mask` values are relative to the JSONL file directory. Task or shared `file`, `out`, and `postprocess_out_dir` values are relative to batch `--out`; absolute paths remain unchanged. The manifest records the resolved `output_root` and a `path_contract` file-existence check.
+
+### Apply transparency locally
+
+```powershell
+python "$SkillDir/scripts/imagegen.py" apply-transparency "effect.png" `
+  --out "outputs/effect-transparent.png" `
+  --route emissive-alpha `
+  --transparency-param "black_point=8" `
+  --transparency-param "gamma=1.2"
+```
+
+The command runs in the foreground and exits after writing its result. When processing is unmet, it copies the original image to `--out`, returns `delivery_ready=false`, and still exits successfully so the preserved image can be returned with its warning.
 
 ### Inspect and validate
 
@@ -205,7 +228,9 @@ Key `auth.json` fields:
 | `url_download.proxy_mode` | `environment` by default, or explicit `direct` URL downloading |
 | `defaults.*` | Default size, aspect, resolution, quality, format, timeout, and concurrency |
 | `postprocess.enabled` | Allows the local transparency route by default |
+| `transparency.default_route` | Default local transparency route |
 | `transparency.prompt_only_allow` | Exact model/mode/size rules for prompt-only alpha generation |
+| `transparency.llm_assisted.*` | Bounded agent-guided route and parameter adjustment policy |
 
 If image URL downloads repeatedly fail with TLS EOF through a proxy, choose direct downloading explicitly with `--allow-direct-url-download` for one command or `url_download.proxy_mode="direct"` for a known provider. Image API requests continue to use the normal network path.
 
@@ -225,6 +250,7 @@ HTTP 4xx responses are API rejections, reported as `error_kind=api_rejected` wit
 | `normalize` | Write an exact-size PNG delivery file |
 | `split-grid` | Extract an explicit grid into separate PNG files |
 | `preview-board` | Render target-size and background previews |
+| `apply-transparency` | Apply a declared local transparency route to an existing PNG |
 
 Detailed behavior is documented in [references/prompting.md](references/prompting.md), [references/parameters.md](references/parameters.md), [references/postprocess.md](references/postprocess.md), and [references/qa.md](references/qa.md).
 

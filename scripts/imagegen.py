@@ -50,12 +50,19 @@ from image_qa import analyze_pixels, evaluate_delivery as evaluate_delivery_repo
 from image_postprocess import PostprocessOperations, run as run_postprocess
 from image_resize import fit_to_canvas as fit_pixels_to_canvas, resize_pixels
 from image_transparency import (
-    TransparencyContext,
+    LOCAL_ROUTES,
     TransparencyPlan,
     TransparencyPolicy,
     TransparencyUnavailableError,
-    resolve_plan as resolve_transparency_plan,
+    normalize_route_options,
+    parse_option_assignments,
+    process_file as process_transparency_file,
     resolve_policy as resolve_transparency_policy,
+)
+from image_transparency_runtime import (
+    apply_prompt_directives,
+    resolve_request as resolve_transparency_request,
+    transparent_intent,
 )
 from image_response import (
     MAX_IMAGE_RESPONSE_BYTES,
@@ -437,34 +444,10 @@ def resolve_common_params(args: argparse.Namespace, cfg: Config, task: dict[str,
     }
 
 
-def apply_prompt_directives(
-    prompt: str,
-    args: argparse.Namespace,
-    task: dict[str, Any],
-    transparency_plan: TransparencyPlan | None = None,
-) -> str:
-    prompt = transparency_plan.prompt if transparency_plan else prompt
-    asset = bool(get_value("asset", args, task, False))
-    directives: list[str] = []
-    if asset:
-        directives.append("single visual deliverable, preserve the requested composition, no extra text unless explicitly requested")
-    if not directives:
-        return prompt
-    lower_prompt = prompt.lower()
-    additions = [item for item in directives if item.lower() not in lower_prompt]
-    if not additions:
-        return prompt
-    return f"{prompt}\n\nGeneration constraints: {'; '.join(additions)}."
-
-
 def get_value(name: str, args: argparse.Namespace, task: dict[str, Any], fallback: Any) -> Any:
     if name in task and task[name] not in (None, ""):
         return task[name]
     return getattr(args, name, fallback)
-
-
-def transparent_intent(args: argparse.Namespace, task: dict[str, Any]) -> bool:
-    return bool(get_value("transparent", args, task, False))
 
 
 def resolve_request_transparency(
@@ -476,24 +459,18 @@ def resolve_request_transparency(
     task: dict[str, Any],
     reference_paths: list[Path] | None = None,
 ) -> TransparencyPlan:
-    explicit_postprocess = get_value("postprocess", args, task, None)
-    postprocess_allowed = (
-        bool(cfg.postprocess.get("enabled"))
-        if explicit_postprocess is None
-        else bool(explicit_postprocess)
-    )
-    context = TransparencyContext(
-        requested=transparent_intent(args, task),
-        prompt=prompt,
-        model=str(params["model"]),
-        mode=mode,
-        size=str(params["size"]),
-        postprocess_allowed=postprocess_allowed,
-        reference_paths=tuple(reference_paths or ()),
-    )
     try:
-        plan = resolve_transparency_plan(context, cfg.transparency)
-    except TransparencyUnavailableError as exc:
+        plan = resolve_transparency_request(
+            prompt,
+            mode,
+            params,
+            args,
+            cfg.postprocess,
+            cfg.transparency,
+            task,
+            reference_paths,
+        )
+    except (TransparencyUnavailableError, ValueError) as exc:
         raise ImagegenError(str(exc)) from exc
     if plan.mode == "prompt-alpha" and params.get("background") == "opaque":
         raise ImagegenError(
@@ -859,6 +836,7 @@ def download_image_url(
             with response:
                 return read_downloaded_image(response)
         except urllib.error.HTTPError as exc:
+            exc.close()
             raise ImagegenError(f"image URL download failed: HTTP {exc.code}") from exc
         except urllib.error.URLError as exc:
             if attempt == 0 and is_tls_eof_error(exc.reason):
@@ -1279,6 +1257,10 @@ def batch(cfg: Config, args: argparse.Namespace) -> int:
                 "delivery_size",
                 "grid",
                 "postprocess_out_dir",
+                "transparency_route",
+                "transparency_mask",
+                "transparency_param",
+                "transparency_options",
             )
         },
         input_path.parent,
@@ -1292,7 +1274,7 @@ def batch(cfg: Config, args: argparse.Namespace) -> int:
             now_stamp(),
             slugify,
             lambda task: str(resolve_common_params(batch_args, cfg, task)["output_format"]),
-            lambda task: resolve_batch_transparency(task, batch_args, cfg).mode == "chroma-key",
+            lambda task: resolve_batch_transparency(task, batch_args, cfg).mode in LOCAL_ROUTES,
         )
     except (TypeError, ValueError) as exc:
         raise ImagegenError(str(exc)) from exc
@@ -1355,10 +1337,12 @@ def info(cfg: Config) -> int:
         "defaults": cfg.defaults,
         "postprocess": cfg.postprocess,
         "transparency": {
+            "default_route": cfg.transparency.default_route,
             "prompt_only_allow": [
                 {"model": rule.model, "mode": rule.mode, "size": rule.size}
                 for rule in cfg.transparency.prompt_only_allow
-            ]
+            ],
+            "llm_assisted": cfg.transparency.llm_assisted.to_record(),
         },
         "url_download": cfg.url_download,
         "auth_json": display_path(AUTH_PATH),
@@ -1428,6 +1412,39 @@ def preview_board_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def apply_transparency_command(args: argparse.Namespace) -> int:
+    source = Path(args.file).expanduser().resolve()
+    target = Path(args.out).expanduser().resolve()
+    key = args.key.strip() if args.key else None
+    mask_path = Path(args.transparency_mask).expanduser().resolve() if args.transparency_mask else None
+    if args.route == "chroma-matting" and not key:
+        raise ImagegenError("apply-transparency chroma-matting requires --key")
+    if args.route != "chroma-matting" and key:
+        raise ImagegenError(f"apply-transparency {args.route} does not accept --key")
+    if args.route == "mask-alpha" and mask_path is None:
+        raise ImagegenError("apply-transparency mask-alpha requires --transparency-mask")
+    if args.route != "mask-alpha" and mask_path is not None:
+        raise ImagegenError(f"apply-transparency {args.route} does not accept --transparency-mask")
+    try:
+        options = parse_option_assignments(args.transparency_param)
+        normalized_options = normalize_route_options(args.route, options)
+    except ValueError as exc:
+        raise ImagegenError(str(exc)) from exc
+    result = process_transparency_file(
+        source,
+        target,
+        TransparencyPlan(
+            mode=args.route,
+            prompt="",
+            key_hex=key,
+            mask_path=mask_path,
+            options=normalized_options,
+        ),
+    )
+    print(json.dumps(result, ensure_ascii=False, indent=2))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     return build_cli_parser(SUPPORTED_ASPECTS, SUPPORTED_RESOLUTIONS)
 
@@ -1444,6 +1461,8 @@ def main() -> int:
             return split_grid_command(args)
         if args.command == "preview-board":
             return preview_board_command(args)
+        if args.command == "apply-transparency":
+            return apply_transparency_command(args)
         if args.command == "init":
             return init_auth(args)
         cfg = load_config(require_api_key=args.command != "info")

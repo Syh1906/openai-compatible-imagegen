@@ -14,6 +14,7 @@ def fail_record(task: dict[str, Any], mode: str, exc: Exception) -> dict[str, An
         "id": task.get("id"),
         "mode": mode,
         "ok": False,
+        "delivery_ready": False,
         "error": str(exc),
     }
     error_kind = getattr(exc, "error_kind", None)
@@ -68,7 +69,7 @@ def normalize_batch_shared(
     for name in ("file", "out", "postprocess_out_dir"):
         if normalized.get(name) not in (None, ""):
             normalized[name] = _resolve_path(normalized[name], output_root)
-    for name in ("images", "mask"):
+    for name in ("images", "mask", "transparency_mask"):
         if normalized.get(name) not in (None, ""):
             normalized[name] = _resolve_input_value(normalized[name], input_root)
     return normalized
@@ -82,7 +83,14 @@ def normalize_batch_args(args: Any, input_path: Path, output_root: Path) -> Any:
     path_values = normalize_batch_shared(
         {
             name: getattr(normalized, name, None)
-            for name in ("file", "out", "postprocess_out_dir", "images", "mask")
+            for name in (
+                "file",
+                "out",
+                "postprocess_out_dir",
+                "images",
+                "mask",
+                "transparency_mask",
+            )
         },
         input_path.parent,
         output_root,
@@ -133,7 +141,7 @@ def normalize_batch_task(
     for name in ("file", "postprocess_out_dir"):
         if task.get(name) not in (None, ""):
             normalized[name] = _resolve_path(task[name], output_root)
-    for name in ("images", "mask"):
+    for name in ("images", "mask", "transparency_mask"):
         if task.get(name) not in (None, ""):
             normalized[name] = _resolve_input_value(task[name], input_root)
     return normalized

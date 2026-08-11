@@ -58,13 +58,13 @@ Connected components are diagnostics for isolated subjects, marks, cutouts, and 
 | `partial` | Some checks passed while another check or format is unsupported or not evaluated. |
 | `not_evaluated` | No deterministic check produced a result. |
 
-Generation success remains separate from QA. `ok=true` means the API request and file-writing workflow completed; it does not claim semantic, aesthetic, or transparency quality. A transparency failure is reported as `transparency.status=unmet` with warnings while the API image remains deliverable.
+Generation success remains separate from QA. `ok=true` means the API request and file-writing workflow completed; it does not claim semantic, aesthetic, or transparency quality. A transparency failure is reported as `transparency.status=unmet` and `delivery_ready=false` with warnings while the API image remains available.
 
 The response writer also enforces the resolved API pixel size before publication. A backend response with different dimensions is rejected and no mismatched source file is published. This check is separate from an explicit `delivery_size`, which describes a permitted local derivative.
 
-For transparent generation or editing, the transparency record contains route-specific checks for the API image and, when used, the chroma-key output. QA evaluates the file returned in `files`. A failed transparency route skips dependent resize or grid transforms, so `contain` padding or a safe margin cannot make an opaque source look transparent.
+For transparent generation or editing, the transparency record contains route-specific checks for the API image and any local output. QA evaluates the file returned in `files`. A failed transparency route skips dependent resize or grid transforms, so `contain` padding or a safe margin cannot make an opaque source look transparent.
 
-The chroma-key checks also report `key_contamination` for residual key color near partial-alpha and subject-boundary pixels. This is a quality signal for the local route, not a semantic claim about the subject.
+`chroma-matting` reports residual `key_contamination`; its contamination threshold is fixed independently from the tunable matte tolerances, so a narrower processing range cannot convert a visible key-color edge into a pass. `emissive-alpha` reports dark-border and luminance mapping checks; `mask-alpha` reports mask-source and mask-processing checks. These are technical signals, not semantic claims about the subject.
 
 ## Boundaries
 
@@ -72,9 +72,10 @@ The chroma-key checks also report `key_contamination` for residual key color nea
 - JPEG and WebP generation remain supported, but deep local QA reports them as unsupported.
 - `--expect-transparent` checks alpha and visible content. It does not prove semantic isolation or remove a non-uniform background.
 - `--transparent` is delivery intent; it does not send a transparent background parameter to the API.
-- If the prompt-only alpha route fails, or chroma-key validation fails, the original API file is returned with a warning instead of being rejected.
+- If prompt-only alpha or a local route fails, the original API file is returned with a warning instead of being rejected.
 - An HTTP 4xx response is `api_rejected`, not a transparency failure; no image exists to return.
 - Reference-image technical metadata may be `not_evaluated` for semantics. It does not automatically block an edit request.
 - Component metrics do not prove that the subject is correct.
 - Reference-image style, identity, layout, and semantic fidelity require an external visual review.
 - QA never changes the model, endpoint, prompt, background, or request parameters.
+- LLM-assisted adjustment can select only documented local routes and parameters within its configured attempt limit. It does not change what deterministic QA proves.

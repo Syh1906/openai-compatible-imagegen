@@ -34,6 +34,7 @@ class BatchPathTests(unittest.TestCase):
                     "postprocess_out_dir": "derived",
                     "images": "references/source.png",
                     "mask": "masks/mask.png",
+                    "transparency_mask": "masks/alpha.png",
                 }
             ]
 
@@ -54,6 +55,10 @@ class BatchPathTests(unittest.TestCase):
             self.assertEqual(
                 normalized[0]["mask"],
                 str((input_root / "masks/mask.png").resolve()),
+            )
+            self.assertEqual(
+                normalized[0]["transparency_mask"],
+                str((input_root / "masks/alpha.png").resolve()),
             )
 
     def test_default_task_output_is_anchored_to_batch_output_root(self) -> None:
@@ -103,6 +108,7 @@ class BatchPathTests(unittest.TestCase):
                     "postprocess_out_dir": "derived",
                     "images": ["references/a.png", "references/b.png"],
                     "mask": "masks/mask.png",
+                    "transparency_mask": "masks/alpha.png",
                 },
                 root / "requests",
                 root / "deliveries",
@@ -119,6 +125,10 @@ class BatchPathTests(unittest.TestCase):
                 ],
             )
             self.assertEqual(shared["mask"], str((root / "requests/masks/mask.png").resolve()))
+            self.assertEqual(
+                shared["transparency_mask"],
+                str((root / "requests/masks/alpha.png").resolve()),
+            )
 
     def test_api_rejection_fields_are_preserved_in_batch_record(self) -> None:
         error = RuntimeError("API HTTP 400: request rejected")
@@ -130,6 +140,7 @@ class BatchPathTests(unittest.TestCase):
         result = fail_record({"id": "edit-1"}, "edit", error)
 
         self.assertFalse(result["ok"])
+        self.assertFalse(result["delivery_ready"])
         self.assertEqual(result["error_kind"], "api_rejected")
         self.assertEqual(result["status_code"], 400)
         self.assertEqual(result["operation"], "images/edits")

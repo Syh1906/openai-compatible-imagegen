@@ -14,6 +14,7 @@ Use the bundled script for API calls. Do not rewrite the API client inline.
    - `generate`: text-to-image.
    - `edit`: image editing, inpainting, or reference-image work.
    - `batch`: JSONL generation with limited concurrency.
+   - `apply-transparency`: run one declared local transparency route on an existing PNG.
    - `info`: redacted configuration summary.
 3. Before constructing the command, interpret the request and decide the purpose, subject, composition, visual style, target size, aspect ratio, quality, format, background, transparency, reference files, and output location. Preserve explicit per-row and shared values; use agent judgment only for omitted intent, and leave a parameter unset when `auth.json` should decide it.
 4. After command construction, runtime parameter priority is `per-row batch fields > shared command flags > auth.json defaults > built-in defaults`. An agent-inferred value emitted as a shared flag follows this runtime rule and overrides `auth.json`.
@@ -72,29 +73,51 @@ Important configuration fields:
 - `url_download.proxy_mode`: `environment` or explicitly authorized `direct`.
 - `defaults`: values used when a request omits a parameter.
 - `postprocess.enabled`: whether generated-output post-processing may run when requested.
+- `transparency.default_route`: default local route: `chroma-matting`, `emissive-alpha`, or `mask-alpha`.
 - `transparency.prompt_only_allow`: exact model/mode/size combinations allowed to use prompt-only alpha generation when local post-processing is disabled.
+- `transparency.llm_assisted`: bounded agent-guided route selection and parameter tuning after an unmet result.
 
 The old `capabilities.transparent_background` setting is removed. If it remains in `auth.json`, report the migration error and ask for that field to be removed; do not send the old API background parameter.
 
 ## Transparency Workflow
 
-Treat `--transparent` as a delivery intent, not as an API `background` parameter. Never send `background=transparent` to the image API. The script selects the first available declared route:
+Treat `--transparent` as a delivery intent, not as an API `background` parameter. Never send `background=transparent` to the image API.
 
 Map an explicit user preference to an explicit per-run switch: use `--postprocess` when the user allows or requests local transparency processing, and use `--no-postprocess` when the user prohibits it. Omitting both switches inherits `postprocess.enabled`; omission must never represent an explicit prohibition.
 
-1. When local post-processing is allowed, append a chroma-key prompt contract, request an ordinary PNG, and remove only edge-connected key-color pixels locally.
-2. When local post-processing is disabled, use prompt-only alpha generation only if `transparency.prompt_only_allow` exactly matches the model, mode, and pixel size.
-3. When neither route is declared, report that no image request was sent. Do not silently change the model, endpoint, size, prompt, or retry policy.
+Choose one declared route before sending the request:
+
+1. Honor an explicit `--transparency-route` or batch `transparency_route`.
+2. Otherwise use `transparency.default_route` when local post-processing is allowed.
+3. When local post-processing is disabled, use `prompt-alpha` only if `transparency.prompt_only_allow` exactly matches the model, mode, and pixel size.
+4. When no route is available, report that no image request was sent. Do not silently change the model, endpoint, size, prompt, or retry policy.
+
+Use `chroma-matting` for general isolated subjects that can be rendered against a solid key color. Use `emissive-alpha` for particles, fire, lightning, smoke, and glow rendered against pure black. Use `mask-alpha` only when an explicit mask exists. A mask path is an input requirement, not something the deterministic processor guesses.
 
 Keep `transparency.prompt_only_allow` empty unless the configured backend has been verified for that exact model, mode, and pixel size. A `1K` rule is an exact pixel-size rule such as `1024x1024`; do not downgrade a 2K or 4K request to make it match.
 
 The prompt-only route is a request to the model, not a guarantee. After an API response is written:
 
-- If alpha or chroma-key processing passes, report `transparency.status=pass`.
-- If it does not pass, keep `ok=true`, return the API image unchanged, and add a warning explaining the unmet transparency condition.
+- If native alpha or local processing passes, report `transparency.status=pass` and `delivery_ready=true`.
+- If it does not pass, keep `ok=true`, set `delivery_ready=false`, return the API image unchanged, and add a warning explaining the unmet transparency condition.
 - If a delivery resize or grid transform depends on transparency and transparency is unmet, skip that transform for that image and return the API image unchanged.
 
-For multiple returned images, evaluate each image independently. A failed transparency check must not discard successful images or turn a successful API response into a command failure.
+For multiple returned images, evaluate each image independently. A failed transparency check must not discard successful images, turn a successful API response into a command failure, or cause the skill to refuse the returned file.
+
+### LLM-assisted adjustment
+
+Read the effective policy from `info`. This policy controls agent decisions; it does not load another model into the Python process.
+
+When `llm_assisted.enabled=true` and the first result is `unmet`:
+
+1. Inspect the original API image, route checks, warnings, and previews. Count the first local processing run as attempt 1.
+2. Re-run the original image with `apply-transparency` only while the total attempt count remains within `max_attempts`.
+3. Tune only documented route parameters when `allow_parameter_tuning=true`. Treat them as processing controls, not QA controls: every attempt must pass the unchanged deterministic quality gate and multi-background preview review. Never lower a tolerance merely to make a failed result report `pass`.
+4. Change routes only when `allow_route_change=true` and the candidate route's input contract is satisfied. Never invent a mask.
+5. Send another image API request only when `allow_api_retry=true`; keep the configured model, endpoint, and requested size.
+6. Never generate or execute image-processing code, install a runtime, download weights, or start a local model. `allow_generated_code` must remain `false`.
+
+If every permitted attempt remains unmet, return the original API image and its factual warnings. The skill informs the user; it does not hard-block or hide the image.
 
 An HTTP error happens before an image exists and is separate from transparency QA. A 4xx response is recorded as `error_kind=api_rejected` with its `status_code`; it is not reported as `transparency.status=unmet`. For edit requests, technical reference metadata may be attached with `status=not_evaluated`; reference semantics are not automatically judged or used to block the API request.
 
@@ -147,6 +170,18 @@ python "$SkillDir/scripts/imagegen.py" generate `
   --transparent
 ```
 
+Apply a declared local route to an existing image:
+
+```powershell
+python "$SkillDir/scripts/imagegen.py" apply-transparency "source.png" `
+  --out "outputs/source-transparent.png" `
+  --route emissive-alpha `
+  --transparency-param "black_point=8" `
+  --transparency-param "gamma=1.2"
+```
+
+The command exits after writing its JSON result. `status=unmet` still exits successfully when the original image was copied to the output; use `delivery_ready` to distinguish a valid transparent delivery from a preserved original.
+
 Inspect and validate a delivered file:
 
 ```powershell
@@ -198,6 +233,9 @@ Post-processing parameters:
 - `--safe-margin`: fractional edge margin used with `--fit contain`, for example `0.03`.
 - `--postprocess-out-dir`: directory for derived files.
 - `--postprocess` / `--no-postprocess`: allow or prohibit the local post-processing transparency route for this run.
+- `--transparency-route`: `chroma-matting`, `emissive-alpha`, `mask-alpha`, or explicitly allowed `prompt-alpha`.
+- `--transparency-mask`: explicit mask input required by `mask-alpha`.
+- `--transparency-param NAME=VALUE`: repeatable, route-specific parameter override.
 
 An explicit output filename extension must match the resolved format. Transparent and `--asset` requests resolve to PNG, including during batch preflight.
 
@@ -207,11 +245,11 @@ Read `references/prompting.md` when constructing a prompt or controlled batch. R
 
 `batch` input is JSONL, one task per line. See `examples/batch.example.jsonl`.
 
-Common fields include `id`, `mode`, `prompt`, `file`, `size`, `aspect`, `resolution`, `quality`, `n`, `format`, `background`, `transparent`, `asset`, `images`, `mask`, `model`, `timeout`, `postprocess`, `qa`, `components`, `delivery_size`, `grid`, `expected_count`, `resample`, `fit`, and `safe_margin`.
+Common fields include `id`, `mode`, `prompt`, `file`, `size`, `aspect`, `resolution`, `quality`, `n`, `format`, `background`, `transparent`, `asset`, `images`, `mask`, `model`, `timeout`, `postprocess`, `transparency_route`, `transparency_mask`, `transparency_options`, `qa`, `components`, `delivery_size`, `grid`, `expected_count`, `resample`, `fit`, and `safe_margin`.
 
 Batch path contract:
 
-- `--input` is resolved from the caller's working directory, then JSONL input fields `images` and `mask` are resolved relative to the JSONL file directory.
+- `--input` is resolved from the caller's working directory, then JSONL input fields `images`, `mask`, and `transparency_mask` are resolved relative to the JSONL file directory.
 - Task and shared output fields `file`, `out`, and `postprocess_out_dir` are resolved relative to `--out`; absolute paths remain absolute.
 - The same normalized paths are used for preflight and worker execution. `manifest.json` records `output_root` and `path_contract`, including any missing published files.
 
@@ -221,13 +259,15 @@ Concurrency priority is:
 command --concurrency > auth.json defaults.concurrency > 3
 ```
 
-Do not switch models or endpoints, retry with changed parameters, or infer semantic quality from deterministic metrics. Local transparency processing is used only when the selected route explicitly allows it.
+Do not switch models or endpoints or infer semantic quality from deterministic metrics. Do not retry an API request unless `llm_assisted.enabled` and `allow_api_retry` are both true. Local transparency processing is used only when the selected route explicitly allows it.
+
+Run every bundled Python command in the foreground and wait for its exit. Do not launch it with `Start-Process`, `Popen`, a daemon, a scheduled task, or a detached shell. If the launcher is interrupted or times out, close the launched process before continuing. The bundled scripts do not spawn child processes, start local model servers, or keep background workers after completion; batch threads are bounded and joined before exit.
 
 Post-processing and QA are opt-in. Without the relevant flags, generation and editing only save the API results and preserve their existing output contract.
 
 ## Transparency and QA Boundaries
 
-Use `--transparent` only when the user explicitly requests a transparent result. It forces PNG and selects a local chroma-key route when post-processing is allowed; it never becomes an API `background` parameter. With post-processing disabled, only an exact `transparency.prompt_only_allow` rule can authorize prompt-only alpha generation.
+Use `--transparent` only when the user explicitly requests a transparent result. It forces PNG and selects the explicit route or `transparency.default_route` when post-processing is allowed; it never becomes an API `background` parameter. With post-processing disabled, only an exact `transparency.prompt_only_allow` rule can authorize prompt-only alpha generation.
 
 `inspect-image` reports technical facts such as dimensions, alpha coverage, margins, edge contact, and optional connected components. `--expect-transparent` checks for a real alpha channel and visible content. Transparency processing validates the returned image before publishing a derived file. If validation fails, the API file remains the result and the record carries `status=unmet` plus warnings. It does not prove semantic isolation.
 
@@ -239,6 +279,6 @@ Returned-PNG validation, current post-processing, and deep QA parse non-interlac
 
 ## Output
 
-The script saves images and writes `manifest.json` in batch mode. When a derived file is published, the record keeps `original_files`, derived `files`, and transform details. A transparency record includes its route, status, checks, and warnings. When `--qa` is requested, it adds a `qa` object with inspections, checks, conditions, warnings, and errors. API success remains `ok=true` when transparency is unmet; report that state instead of refusing the image. A request rejected by the API has no deliverable image and is reported separately with its HTTP classification.
+The script saves images and writes `manifest.json` in batch mode. When a derived file is published, the record keeps `original_files`, derived `files`, and transform details. A transparency record includes its route, status, `delivery_ready`, checks, and warnings. When `--qa` is requested, it adds a `qa` object with inspections, checks, conditions, warnings, and errors. API success remains `ok=true` when transparency is unmet; report that state instead of refusing the image. A request rejected by the API has no deliverable image and is reported separately with its HTTP classification; its batch record carries `delivery_ready=false`.
 
 Report output paths, manifest paths, success and failure counts, and short failure summaries. Do not show API keys, full request headers, or secret configuration values.
