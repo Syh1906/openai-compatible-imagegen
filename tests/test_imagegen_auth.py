@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import importlib.util
 import http.client
+import io
 import json
 import os
 from pathlib import Path
 import ssl
 import sys
+import tempfile
 from types import SimpleNamespace
 import unittest
 from unittest import mock
@@ -67,7 +69,6 @@ class AuthConfigTests(unittest.TestCase):
                     "api_key": "replace-with-temporary-local-key",
                     "api_key_env": "OPENAI_API_KEY",
                     "model": "gpt-image-2",
-                    "capabilities": {"transparent_background": True},
                     "defaults": {
                         "size": "2048x2048",
                         "quality": "auto",
@@ -95,7 +96,7 @@ class AuthConfigTests(unittest.TestCase):
             base_url="https://images.example.test/v1",
             model="gpt-image-2",
             api_key_env="IMAGEGEN_API_KEY",
-            transparent_background=False,
+            postprocess=False,
         )
 
         exit_code = self.imagegen.init_auth(args)
@@ -106,7 +107,7 @@ class AuthConfigTests(unittest.TestCase):
         self.assertEqual(data["api_key"], "replace-with-temporary-local-key")
         self.assertEqual(data["api_key_env"], "IMAGEGEN_API_KEY")
         self.assertEqual(data["model"], "gpt-image-2")
-        self.assertFalse(data["capabilities"]["transparent_background"])
+        self.assertNotIn("capabilities", data)
 
     def test_load_config_uses_api_key_env_when_file_key_is_placeholder(self) -> None:
         self.auth_path.write_text(
@@ -197,6 +198,47 @@ class AuthConfigTests(unittest.TestCase):
         cfg = self.imagegen.load_config()
 
         self.assertFalse(cfg.postprocess["enabled"])
+
+    def test_load_config_rejects_obsolete_transparent_background_capability(self) -> None:
+        self.auth_path.write_text(
+            json.dumps(
+                {
+                    "base_url": "https://images.example.test/v1",
+                    "api_key": "file-secret",
+                    "model": "gpt-image-2",
+                    "capabilities": {"transparent_background": True},
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        with self.assertRaisesRegex(
+            self.imagegen.ImagegenError,
+            "capabilities.transparent_background is obsolete",
+        ):
+            self.imagegen.load_config()
+
+    def test_load_config_reads_exact_prompt_only_rules(self) -> None:
+        self.auth_path.write_text(
+            json.dumps(
+                {
+                    "base_url": "https://images.example.test/v1",
+                    "api_key": "file-secret",
+                    "model": "gpt-image-2",
+                    "transparency": {
+                        "prompt_only_allow": [
+                            {"model": "gpt-image-2", "mode": "generate", "size": "1024x1024"}
+                        ]
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+
+        cfg = self.imagegen.load_config()
+
+        self.assertEqual(len(cfg.transparency.prompt_only_allow), 1)
+        self.assertEqual(cfg.transparency.prompt_only_allow[0].size, "1024x1024")
 
     def test_url_download_proxy_mode_defaults_to_environment(self) -> None:
         self.auth_path.write_text(
@@ -310,7 +352,6 @@ class RequestHeaderTests(unittest.TestCase):
             api_key_source="test",
             model="gpt-image-2",
             defaults={},
-            capabilities={},
             postprocess={"enabled": False},
             user_agent="Micu-Compatible-Client/1.0",
         )
@@ -354,6 +395,51 @@ class RequestHeaderTests(unittest.TestCase):
 
         response.read.assert_called_once_with(2001)
         self.assertEqual(detail, "x" * 2000)
+
+    def test_request_json_classifies_http_400_as_api_rejected(self) -> None:
+        response = mock.Mock()
+        response.read.return_value = b'{"error":"request rejected"}'
+        error = self.imagegen.urllib.error.HTTPError(
+            "https://example.test/v1/images/generations",
+            400,
+            "Bad Request",
+            hdrs={},
+            fp=response,
+        )
+
+        with mock.patch.object(self.imagegen.urllib.request, "urlopen", side_effect=error):
+            with self.assertRaises(self.imagegen.ApiRequestError) as raised:
+                self.imagegen.request_json(self.cfg, "images/generations", {"prompt": "test"}, 10)
+
+        self.assertEqual(raised.exception.status_code, 400)
+        self.assertEqual(raised.exception.error_kind, "api_rejected")
+        self.assertIn("API HTTP 400", str(raised.exception))
+
+    def test_main_reports_http_400_classification_fields(self) -> None:
+        stderr = io.StringIO()
+        rejection = self.imagegen.ApiRequestError(
+            "API HTTP 400: request rejected",
+            400,
+            "images/generations",
+        )
+
+        with (
+            mock.patch.object(self.imagegen, "load_config", return_value=self.cfg),
+            mock.patch.object(self.imagegen, "generate", side_effect=rejection),
+            mock.patch.object(
+                self.imagegen.sys,
+                "argv",
+                ["imagegen", "generate", "--prompt", "test"],
+            ),
+            mock.patch.object(self.imagegen.sys, "stderr", stderr),
+        ):
+            exit_code = self.imagegen.main()
+
+        self.assertEqual(exit_code, 2)
+        output = stderr.getvalue()
+        self.assertIn("error_kind=api_rejected", output)
+        self.assertIn("status_code=400", output)
+        self.assertIn("operation=images/generations", output)
 
     def test_request_multipart_sends_configured_user_agent(self) -> None:
         with mock.patch.object(
@@ -579,7 +665,6 @@ class ParameterResolutionTests(unittest.TestCase):
             api_key_source="test",
             model="gpt-image-2",
             defaults={},
-            capabilities={"transparent_background": True},
             postprocess={"enabled": False},
         )
 
@@ -642,7 +727,6 @@ class ParameterResolutionTests(unittest.TestCase):
             api_key_source="test",
             model="gpt-image-2",
             defaults={},
-            capabilities={},
             postprocess={"enabled": False},
             url_download={"proxy_mode": "direct"},
         )
@@ -672,41 +756,103 @@ class ParameterResolutionTests(unittest.TestCase):
 
         self.assertTrue(args.allow_direct_url_download)
 
-    def test_resolve_common_params_rejects_transparent_2k_on_gpt_image_2_before_request(self) -> None:
+    def test_build_parser_rejects_transparent_as_api_background(self) -> None:
+        with self.assertRaises(SystemExit):
+            self.imagegen.build_parser().parse_args(
+                ["generate", "--prompt", "test", "--background", "transparent"]
+            )
+
+    def test_transparent_intent_forces_png_without_setting_api_background(self) -> None:
+        args = self.make_args(transparent=True, size="1024x1024")
+
+        result = self.imagegen.resolve_common_params(args, self.cfg)
+
+        self.assertEqual(result["output_format"], "png")
+        self.assertIsNone(result["background"])
+
+    def test_reference_metadata_reports_shape_without_semantic_gate(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            reference = Path(temp) / "reference.png"
+            make_rgba_png(reference, 12, 2, [(220, 30, 40, 255)] * 24)
+
+            report = self.imagegen.inspect_reference_metadata([reference])
+
+            self.assertEqual(report["status"], "not_evaluated")
+            self.assertEqual(report["items"][0]["width"], 12)
+            self.assertEqual(report["items"][0]["height"], 2)
+            self.assertIn("reference_shape_unusual", report["warnings"])
+            self.assertIn("reference_semantics_not_evaluated", report["warnings"])
+
+    def test_generate_uses_chroma_prompt_without_transparent_api_parameter(self) -> None:
+        args = self.make_args(
+            transparent=True,
+            size="1024x1024",
+            postprocess=True,
+            prompt="A red enamel badge",
+            file=str(ROOT / "unused-transparent-result.png"),
+            out=None,
+        )
+
+        with (
+            mock.patch.object(self.imagegen, "request_json", return_value={"data": []}) as request_json,
+            mock.patch.object(
+                self.imagegen,
+                "write_response_images",
+                return_value=[str(ROOT / "unused-transparent-result.png")],
+            ),
+        ):
+            result = self.imagegen.generate(self.cfg, args)
+
+        payload = self.imagegen.drop_none(request_json.call_args.args[2])
+        self.assertNotIn("background", payload)
+        self.assertIn("#00FF00", payload["prompt"])
+        self.assertEqual(result["transparency"]["mode"], "chroma-key")
+
+    def test_generate_rejects_undeclared_transparency_route_before_request(self) -> None:
+        args = self.make_args(
+            transparent=True,
+            size="1024x1024",
+            postprocess=False,
+            prompt="A red enamel badge",
+            file=str(ROOT / "unused-transparent-result.png"),
+            out=None,
+        )
+
+        with mock.patch.object(self.imagegen, "request_json") as request_json:
+            with self.assertRaisesRegex(
+                self.imagegen.ImagegenError,
+                "No image request was sent",
+            ):
+                self.imagegen.generate(self.cfg, args)
+
+        request_json.assert_not_called()
+
+    def test_resolve_common_params_rejects_removed_transparent_background_value(self) -> None:
         args = self.make_args(background="transparent", aspect="1:1", resolution="2K")
 
         with self.assertRaisesRegex(
             self.imagegen.ImagegenError,
-            "transparent background with gpt-image-2 at 2K is not supported",
+            "background=transparent has been removed",
         ):
             self.imagegen.resolve_common_params(args, self.cfg)
 
-    def test_resolve_common_params_rejects_transparent_explicit_2k_size_on_gpt_image_2(self) -> None:
+    def test_resolve_common_params_rejects_removed_value_at_1k_too(self) -> None:
+        args = self.make_args(background="transparent", size="1024x1024")
+
+        with self.assertRaisesRegex(
+            self.imagegen.ImagegenError,
+            "background=transparent has been removed",
+        ):
+            self.imagegen.resolve_common_params(args, self.cfg)
+
+    def test_resolve_common_params_rejects_removed_value_for_explicit_2k_size(self) -> None:
         args = self.make_args(background="transparent", size="2048x2048")
 
         with self.assertRaisesRegex(
             self.imagegen.ImagegenError,
-            "transparent background with gpt-image-2 at 2K is not supported",
+            "background=transparent has been removed",
         ):
             self.imagegen.resolve_common_params(args, self.cfg)
-
-    def test_resolve_common_params_rejects_transparent_default_2k_size_on_gpt_image_2(self) -> None:
-        args = self.make_args(background="transparent")
-        cfg = self.imagegen.Config(
-            base_url="https://example.test/v1",
-            api_key="secret",
-            api_key_source="test",
-            model="gpt-image-2",
-            defaults={"size": "2048x2048"},
-            capabilities={"transparent_background": True},
-            postprocess={"enabled": False},
-        )
-
-        with self.assertRaisesRegex(
-            self.imagegen.ImagegenError,
-            "transparent background with gpt-image-2 at 2K is not supported",
-        ):
-            self.imagegen.resolve_common_params(args, cfg)
 
 
 class PostprocessImageTests(unittest.TestCase):
@@ -798,7 +944,6 @@ class PostprocessImageTests(unittest.TestCase):
             api_key_source="test",
             model="gpt-image-2",
             defaults={},
-            capabilities={},
             postprocess={"enabled": False},
         )
         args = SimpleNamespace(
@@ -823,7 +968,6 @@ class PostprocessImageTests(unittest.TestCase):
             api_key_source="test",
             model="gpt-image-2",
             defaults={},
-            capabilities={},
             postprocess={"enabled": True, "delivery_size": "2x2"},
         )
         args = SimpleNamespace(
@@ -849,7 +993,6 @@ class PostprocessImageTests(unittest.TestCase):
             api_key_source="test",
             model="gpt-image-2",
             defaults={},
-            capabilities={},
             postprocess={"enabled": False},
         )
         args = SimpleNamespace(

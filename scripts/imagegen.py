@@ -27,7 +27,17 @@ if str(SCRIPT_DIR) not in sys.path:
 
 from image_preview import preview_board_image as build_preview_board
 from image_cli import build_parser as build_cli_parser
-from image_batch import fail_record, prepare_batch_targets as plan_batch_targets, read_jsonl, validate_output_path
+from image_batch import (
+    fail_record,
+    normalize_batch_args,
+    normalize_batch_shared,
+    normalize_batch_tasks,
+    prepare_batch_targets as plan_batch_targets,
+    read_jsonl,
+    task_mode,
+    validate_output_path,
+    write_manifest as write_batch_manifest,
+)
 from image_png import (
     PNG_SIGNATURE,
     alpha_bbox,
@@ -37,13 +47,22 @@ from image_png import (
     write_png_rgba as write_png,
 )
 from image_qa import analyze_pixels, evaluate_delivery as evaluate_delivery_report, sha256_file
+from image_postprocess import PostprocessOperations, run as run_postprocess
 from image_resize import fit_to_canvas as fit_pixels_to_canvas, resize_pixels
-from image_transaction import OutputTransaction, remap_transaction_paths
+from image_transparency import (
+    TransparencyContext,
+    TransparencyPlan,
+    TransparencyPolicy,
+    TransparencyUnavailableError,
+    resolve_plan as resolve_transparency_plan,
+    resolve_policy as resolve_transparency_policy,
+)
 from image_response import (
     MAX_IMAGE_RESPONSE_BYTES,
     MAX_JSON_RESPONSE_BYTES,
     decode_base64_image,
     detect_image_format,
+    image_dimensions,
     read_json_response,
     read_limited_bytes,
     safe_error_body,
@@ -101,6 +120,27 @@ class ImagegenError(Exception):
     """User-facing script error."""
 
 
+class ApiRequestError(ImagegenError):
+    """An image API request was rejected or failed before an image existed."""
+
+    def __init__(
+        self,
+        message: str,
+        status_code: int | None = None,
+        operation: str | None = None,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+        self.operation = operation
+        self.details = details or {}
+        self.error_kind = (
+            "api_rejected"
+            if status_code is not None and 400 <= status_code < 500
+            else "api_http_error"
+        )
+
+
 @dataclass(frozen=True)
 class Config:
     base_url: str
@@ -108,8 +148,8 @@ class Config:
     api_key_source: str
     model: str
     defaults: dict[str, Any]
-    capabilities: dict[str, Any]
     postprocess: dict[str, Any]
+    transparency: TransparencyPolicy = field(default_factory=TransparencyPolicy)
     user_agent: str = DEFAULT_USER_AGENT
     url_download: dict[str, Any] = field(default_factory=lambda: dict(DEFAULT_URL_DOWNLOAD))
 
@@ -133,8 +173,17 @@ def load_config(require_api_key: bool = True) -> Config:
     model = str(raw.get("model") or DEFAULT_MODEL).strip()
     user_agent = resolve_user_agent(raw.get("user_agent"))
     defaults = raw.get("defaults") if isinstance(raw.get("defaults"), dict) else {}
-    capabilities = raw.get("capabilities") if isinstance(raw.get("capabilities"), dict) else {}
+    capabilities = raw.get("capabilities")
+    if isinstance(capabilities, dict) and "transparent_background" in capabilities:
+        raise ImagegenError(
+            "auth.json capabilities.transparent_background is obsolete. Remove it; "
+            "use postprocess.enabled or transparency.prompt_only_allow instead."
+        )
     postprocess = resolve_postprocess_config(raw.get("postprocess"))
+    try:
+        transparency = resolve_transparency_policy(raw.get("transparency"))
+    except ValueError as exc:
+        raise ImagegenError(str(exc)) from exc
     url_download = resolve_url_download_config(raw.get("url_download"))
 
     if not base_url:
@@ -149,8 +198,8 @@ def load_config(require_api_key: bool = True) -> Config:
         api_key_source=api_key_source,
         model=model,
         defaults=defaults,
-        capabilities=capabilities,
         postprocess=postprocess,
+        transparency=transparency,
         user_agent=user_agent,
         url_download=url_download,
     )
@@ -241,10 +290,12 @@ def init_auth(args: argparse.Namespace) -> int:
         data["model"] = args.model.strip()
     if args.api_key_env:
         data["api_key_env"] = args.api_key_env.strip()
-    if args.transparent_background is not None:
-        capabilities = data.get("capabilities") if isinstance(data.get("capabilities"), dict) else {}
-        capabilities["transparent_background"] = bool(args.transparent_background)
-        data["capabilities"] = capabilities
+    data.pop("capabilities", None)
+    postprocess_value = getattr(args, "postprocess", None)
+    if postprocess_value is not None:
+        postprocess = data.get("postprocess") if isinstance(data.get("postprocess"), dict) else {}
+        postprocess["enabled"] = bool(postprocess_value)
+        data["postprocess"] = postprocess
 
     AUTH_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"created local auth config: {display_path(AUTH_PATH)}")
@@ -328,21 +379,12 @@ def infer_resolution_from_size(size: str) -> str | None:
     return "1K"
 
 
-def validate_transparent_background_request(model: str, background: str | None, resolution: str | None) -> None:
-    if background != "transparent":
-        return
-    if model == "gpt-image-2" and resolution in {"2K", "4K"}:
-        raise ImagegenError(
-            f"transparent background with gpt-image-2 at {resolution} is not supported. "
-            "Ask the user to choose: switch to gpt-image-1.5 and keep transparent background, "
-            "or keep gpt-image-2 and use background=auto."
-        )
-
-
 def resolve_common_params(args: argparse.Namespace, cfg: Config, task: dict[str, Any] | None = None) -> dict[str, Any]:
     task = task or {}
     asset = bool(get_value("asset", args, task, False))
     background = get_value("background", args, task, None)
+    if background == "transparent":
+        raise ImagegenError("background=transparent has been removed; use transparent=true for delivery intent")
     transparent = transparent_intent(args, task)
     fmt = normalize_format(get_value("format", args, task, None), cfg)
     if asset:
@@ -350,15 +392,9 @@ def resolve_common_params(args: argparse.Namespace, cfg: Config, task: dict[str,
     if transparent:
         fmt = "png"
 
-    if transparent:
-        background = "transparent" if cfg.capabilities.get("transparent_background") else None
-    elif background == "transparent" and not cfg.capabilities.get("transparent_background"):
-        background = None
-
     quality = get_value("quality", args, task, None) or cfg.defaults.get("quality") or DEFAULT_QUALITY
     model = get_value("model", args, task, None) or cfg.model
     size, aspect, resolution = resolve_size(args, cfg, task)
-    validate_transparent_background_request(str(model), background, resolution)
     timeout = get_value("timeout", args, task, None) or cfg.defaults.get("timeout_seconds") or DEFAULT_TIMEOUT_SECONDS
     n = get_value("n", args, task, None) or 1
 
@@ -401,16 +437,17 @@ def resolve_common_params(args: argparse.Namespace, cfg: Config, task: dict[str,
     }
 
 
-def apply_prompt_directives(prompt: str, args: argparse.Namespace, task: dict[str, Any]) -> str:
-    transparent = transparent_intent(args, task)
+def apply_prompt_directives(
+    prompt: str,
+    args: argparse.Namespace,
+    task: dict[str, Any],
+    transparency_plan: TransparencyPlan | None = None,
+) -> str:
+    prompt = transparency_plan.prompt if transparency_plan else prompt
     asset = bool(get_value("asset", args, task, False))
     directives: list[str] = []
     if asset:
         directives.append("single visual deliverable, preserve the requested composition, no extra text unless explicitly requested")
-    if transparent:
-        directives.append(
-            "transparent background intent: isolated subject, clean alpha-friendly edges, no floor, no shadow backdrop, no solid background"
-        )
     if not directives:
         return prompt
     lower_prompt = prompt.lower()
@@ -427,7 +464,43 @@ def get_value(name: str, args: argparse.Namespace, task: dict[str, Any], fallbac
 
 
 def transparent_intent(args: argparse.Namespace, task: dict[str, Any]) -> bool:
-    return bool(get_value("transparent", args, task, False)) or get_value("background", args, task, None) == "transparent"
+    return bool(get_value("transparent", args, task, False))
+
+
+def resolve_request_transparency(
+    prompt: str,
+    mode: str,
+    params: dict[str, Any],
+    args: argparse.Namespace,
+    cfg: Config,
+    task: dict[str, Any],
+    reference_paths: list[Path] | None = None,
+) -> TransparencyPlan:
+    explicit_postprocess = get_value("postprocess", args, task, None)
+    postprocess_allowed = (
+        bool(cfg.postprocess.get("enabled"))
+        if explicit_postprocess is None
+        else bool(explicit_postprocess)
+    )
+    context = TransparencyContext(
+        requested=transparent_intent(args, task),
+        prompt=prompt,
+        model=str(params["model"]),
+        mode=mode,
+        size=str(params["size"]),
+        postprocess_allowed=postprocess_allowed,
+        reference_paths=tuple(reference_paths or ()),
+    )
+    try:
+        plan = resolve_transparency_plan(context, cfg.transparency)
+    except TransparencyUnavailableError as exc:
+        raise ImagegenError(str(exc)) from exc
+    if plan.mode == "prompt-alpha" and params.get("background") == "opaque":
+        raise ImagegenError(
+            "transparent prompt-only delivery conflicts with background=opaque; "
+            "remove the API background option or allow local post-processing"
+        )
+    return plan
 
 
 def api_url(cfg: Config, path: str) -> str:
@@ -450,7 +523,7 @@ def request_json(cfg: Config, path: str, payload: dict[str, Any], timeout: int) 
             return read_json_response(resp, MAX_JSON_RESPONSE_BYTES)
     except urllib.error.HTTPError as exc:
         detail = safe_error_body(exc)
-        raise ImagegenError(f"API HTTP {exc.code}: {detail}") from exc
+        raise ApiRequestError(f"API HTTP {exc.code}: {detail}", exc.code, path) from exc
     except urllib.error.URLError as exc:
         raise ImagegenError(f"API request failed: {exc.reason}") from exc
     except ValueError as exc:
@@ -477,7 +550,7 @@ def request_multipart(
             return read_json_response(resp, MAX_JSON_RESPONSE_BYTES)
     except urllib.error.HTTPError as exc:
         detail = safe_error_body(exc)
-        raise ImagegenError(f"API HTTP {exc.code}: {detail}") from exc
+        raise ApiRequestError(f"API HTTP {exc.code}: {detail}", exc.code, path) from exc
     except urllib.error.URLError as exc:
         raise ImagegenError(f"API request failed: {exc.reason}") from exc
     except ValueError as exc:
@@ -534,7 +607,8 @@ def generate(cfg: Config, args: argparse.Namespace, task: dict[str, Any] | None 
     if not prompt:
         raise ImagegenError("prompt is required")
     params = resolve_common_params(args, cfg, task)
-    prompt = apply_prompt_directives(prompt, args, task)
+    transparency_plan = resolve_request_transparency(prompt, "generate", params, args, cfg, task)
+    prompt = apply_prompt_directives(prompt, args, task, transparency_plan)
     out_file = resolve_output_file(args, task, params["output_format"], prompt)
     payload = {
         "model": params["model"],
@@ -555,8 +629,9 @@ def generate(cfg: Config, args: argparse.Namespace, task: dict[str, Any] | None 
         cfg.user_agent,
         params["direct_url_download"],
         expected_count=params["n"],
+        expected_size=parse_size(params["size"]),
     )
-    return success_record(task, prompt, "generate", written, params)
+    return success_record(task, prompt, "generate", written, params, transparency_plan)
 
 
 def edit(cfg: Config, args: argparse.Namespace, task: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -569,11 +644,21 @@ def edit(cfg: Config, args: argparse.Namespace, task: dict[str, Any] | None = No
     image_paths = normalize_paths(images_value)
     if not image_paths:
         raise ImagegenError("edit requires at least one --image")
+    reference_report = inspect_reference_metadata(image_paths)
     mask_value = task.get("mask") if "mask" in task else getattr(args, "mask", None)
     mask_path = Path(mask_value).expanduser().resolve() if mask_value else None
 
     params = resolve_common_params(args, cfg, task)
-    prompt = apply_prompt_directives(prompt, args, task)
+    transparency_plan = resolve_request_transparency(
+        prompt,
+        "edit",
+        params,
+        args,
+        cfg,
+        task,
+        image_paths,
+    )
+    prompt = apply_prompt_directives(prompt, args, task, transparency_plan)
     out_file = resolve_output_file(args, task, params["output_format"], prompt)
     fields = {
         "model": params["model"],
@@ -588,7 +673,11 @@ def edit(cfg: Config, args: argparse.Namespace, task: dict[str, Any] | None = No
     files = [("image[]", path) for path in image_paths]
     if mask_path:
         files.append(("mask", mask_path))
-    response = request_multipart(cfg, "images/edits", fields, files, params["timeout"])
+    try:
+        response = request_multipart(cfg, "images/edits", fields, files, params["timeout"])
+    except ApiRequestError as exc:
+        exc.details["references"] = reference_report
+        raise
     written = write_response_images(
         response,
         out_file,
@@ -596,8 +685,17 @@ def edit(cfg: Config, args: argparse.Namespace, task: dict[str, Any] | None = No
         cfg.user_agent,
         params["direct_url_download"],
         expected_count=params["n"],
+        expected_size=parse_size(params["size"]),
     )
-    return success_record(task, prompt, "edit", written, params)
+    return success_record(
+        task,
+        prompt,
+        "edit",
+        written,
+        params,
+        transparency_plan,
+        references=reference_report,
+    )
 
 
 def normalize_paths(value: Any) -> list[Path]:
@@ -605,6 +703,55 @@ def normalize_paths(value: Any) -> list[Path]:
         return []
     values = value if isinstance(value, list) else [value]
     return [Path(str(item)).expanduser().resolve() for item in values if str(item).strip()]
+
+
+def inspect_reference_metadata(paths: list[Path]) -> dict[str, Any]:
+    items: list[dict[str, Any]] = []
+    warnings: list[str] = []
+    for path_value in paths:
+        path = Path(path_value).expanduser().resolve()
+        item: dict[str, Any] = {
+            "file": display_path(path),
+            "exists": path.is_file(),
+        }
+        if not path.is_file():
+            item["status"] = "unavailable"
+            item["reason"] = "reference file not found"
+            warnings.append("reference_metadata_unavailable")
+            items.append(item)
+            continue
+        try:
+            item["size_bytes"] = path.stat().st_size
+            if path.suffix.lower() == ".png":
+                image = read_png(path)
+                width = image["width"]
+                height = image["height"]
+                item.update(
+                    {
+                        "format": "png",
+                        "width": width,
+                        "height": height,
+                        "has_alpha": any(pixel[3] < 255 for pixel in image["pixels"]),
+                        "aspect_ratio": round(width / height, 6),
+                    }
+                )
+                if width / height > 3 or width / height < 1 / 3:
+                    warnings.append("reference_shape_unusual")
+            else:
+                item["format"] = path.suffix.lower().lstrip(".") or "unknown"
+                item["status"] = "technical_metadata_limited"
+        except (OSError, ValueError) as exc:
+            item["status"] = "unavailable"
+            item["reason"] = str(exc)
+            warnings.append("reference_metadata_unavailable")
+        items.append(item)
+    if paths:
+        warnings.append("reference_semantics_not_evaluated")
+    return {
+        "status": "not_evaluated",
+        "items": items,
+        "warnings": list(dict.fromkeys(warnings)),
+    }
 
 
 def resolve_output_file(args: argparse.Namespace, task: dict[str, Any], fmt: str, prompt: str) -> Path:
@@ -628,6 +775,7 @@ def write_response_images(
     user_agent: str = DEFAULT_USER_AGENT,
     direct_url_download: bool = False,
     expected_count: int | None = None,
+    expected_size: tuple[int, int] | None = None,
 ) -> list[str]:
     data = response.get("data")
     if not isinstance(data, list) or not data:
@@ -646,6 +794,17 @@ def write_response_images(
             raise ImagegenError("image response did not contain a complete PNG, JPEG, or WebP image")
         if actual_format != fmt:
             raise ImagegenError(f"image response actual format {actual_format} does not match requested {fmt}")
+        if expected_size is not None:
+            try:
+                actual_width, actual_height = image_dimensions(raw, actual_format)
+            except ValueError as exc:
+                raise ImagegenError(f"image response dimensions are unavailable: {exc}") from exc
+            if (actual_width, actual_height) != expected_size:
+                expected_width, expected_height = expected_size
+                raise ImagegenError(
+                    f"image response size {actual_width}x{actual_height} does not match "
+                    f"requested size {expected_width}x{expected_height}"
+                )
 
     out_file.parent.mkdir(parents=True, exist_ok=True)
     written: list[str] = []
@@ -1056,8 +1215,10 @@ def success_record(
     mode: str,
     written: list[str],
     params: dict[str, Any],
+    transparency_plan: TransparencyPlan | None = None,
+    references: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    return {
+    result = {
         "id": task.get("id"),
         "mode": mode,
         "ok": True,
@@ -1065,6 +1226,11 @@ def success_record(
         "files": written,
         "params": {key: value for key, value in params.items() if key != "timeout"},
     }
+    if transparency_plan and transparency_plan.mode != "none":
+        result["transparency"] = transparency_plan.to_record()
+    if references is not None:
+        result["references"] = references
+    return result
 
 
 def apply_postprocess(
@@ -1073,116 +1239,20 @@ def apply_postprocess(
     cfg: Config,
     task: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    if not record.get("ok"):
-        return record
-    task = task or {}
-    qa_requested = bool(get_value("qa", args, task, False))
-    explicit = any(
-        [
-            bool(getattr(args, "postprocess", False)),
-            bool(get_value("delivery_size", args, task, None)),
-            bool(get_value("grid", args, task, None)),
-            qa_requested,
-        ]
+    _ = cfg
+    operations = PostprocessOperations(
+        normalize=normalize_image_file,
+        split_grid=split_grid_image,
+        evaluate=evaluate_delivery,
     )
-    if not explicit and not cfg.postprocess.get("enabled"):
-        return record
-
-    delivery_value = get_value("delivery_size", args, task, None)
-    grid_value = get_value("grid", args, task, None)
-    expected_count = get_value("expected_count", args, task, None)
-    out_dir_value = get_value("postprocess_out_dir", args, task, None)
-    resample = str(get_value("resample", args, task, "bilinear") or "bilinear")
-    fit_mode = str(get_value("fit", args, task, "stretch") or "stretch")
-    safe_margin = float(get_value("safe_margin", args, task, 0.0) or 0.0)
-    components = bool(get_value("components", args, task, False))
-    transparent = transparent_intent(args, task)
-    original_files = list(record.get("files", []))
-    if grid_value and not delivery_value:
-        raise ImagegenError("grid requires delivery_size")
-    if not delivery_value:
-        if not qa_requested:
-            return record
-        updated = dict(record)
-        updated["qa"] = evaluate_delivery(
-            [Path(file_text) for file_text in original_files],
-            expectations={"expected_count": expected_count, "components": components}
-            if expected_count is not None or components
-            else None,
-            conditions=[{"kind": "transparent", "requested": True}] if transparent else None,
-        )
-        return updated
-
-    delivery_size = parse_size(str(delivery_value))
-
-    output_files: list[str] = []
-    postprocess_results: list[dict[str, Any]] = []
-    with OutputTransaction() as transaction:
-        for file_text in original_files:
-            source = Path(file_text).expanduser().resolve()
-            if out_dir_value:
-                out_dir = Path(out_dir_value).expanduser().resolve()
-            else:
-                out_dir = source.parent / f"{source.stem}-postprocess"
-            if grid_value:
-                rows, cols = parse_grid(str(grid_value))
-                stage_dir = transaction.directory(out_dir)
-                result = split_grid_image(
-                    source,
-                    stage_dir,
-                    rows,
-                    cols,
-                    delivery_size,
-                    expected_count=expected_count,
-                    resample=resample,
-                    safe_margin=safe_margin,
-                )
-                for item in result["outputs"]:
-                    staged = Path(item["file"])
-                    final = out_dir / staged.name
-                    transaction.register(staged, final)
-                    output_files.append(display_path(final))
-                postprocess_results.append(result)
-            else:
-                final = out_dir / f"{source.stem}-{delivery_size[0]}x{delivery_size[1]}.png"
-                staged = transaction.stage_path(final)
-                result = normalize_image_file(
-                    source,
-                    staged,
-                    delivery_size,
-                    resample=resample,
-                    fit_mode=fit_mode,
-                    safe_margin=safe_margin,
-                )
-                output_files.append(display_path(final))
-                postprocess_results.append(result)
-        path_mapping = transaction.commit()
-
-    postprocess_results = remap_transaction_paths(postprocess_results, path_mapping)
-
-    updated = dict(record)
-    updated["original_files"] = original_files
-    updated["files"] = output_files
-    updated["postprocess"] = postprocess_results
-    if qa_requested:
-        qa_expected_count = len(output_files) if grid_value else expected_count
-        updated["qa"] = evaluate_delivery(
-            [Path(file_text) for file_text in output_files],
-            expectations={
-                "expected_size": list(delivery_size),
-                "expected_count": qa_expected_count if qa_expected_count is not None else len(output_files),
-                "components": components,
-            },
-            conditions=[{"kind": "transparent", "requested": True}] if transparent else None,
-            source_paths=[Path(file_text) for file_text in original_files] if transparent else None,
-        )
-    return updated
+    try:
+        return run_postprocess(record, args, task, operations)
+    except ValueError as exc:
+        raise ImagegenError(str(exc)) from exc
 
 
 def run_one_task(cfg: Config, base_args: argparse.Namespace, task: dict[str, Any]) -> dict[str, Any]:
-    mode = str(task.get("mode") or "").strip().lower()
-    if not mode:
-        mode = "edit" if task.get("images") else "generate"
+    mode = task_mode(task)
     try:
         if mode == "generate":
             return apply_postprocess(generate(cfg, base_args, task), base_args, cfg, task)
@@ -1195,23 +1265,39 @@ def run_one_task(cfg: Config, base_args: argparse.Namespace, task: dict[str, Any
 
 def batch(cfg: Config, args: argparse.Namespace) -> int:
     input_path = Path(args.input).expanduser().resolve()
-    tasks = read_jsonl(input_path)
     out_dir = Path(args.out).expanduser().resolve()
-    out_dir.mkdir(parents=True, exist_ok=True)
+    tasks = normalize_batch_tasks(read_jsonl(input_path), input_path.parent, out_dir)
+    batch_args = normalize_batch_args(args, input_path, out_dir)
+    shared = normalize_batch_shared(
+        {
+            name: getattr(batch_args, name, None)
+            for name in (
+                "file",
+                "format",
+                "n",
+                "transparent",
+                "delivery_size",
+                "grid",
+                "postprocess_out_dir",
+            )
+        },
+        input_path.parent,
+        out_dir,
+    )
     try:
         plan_batch_targets(
             tasks,
-            {
-                name: getattr(args, name, None)
-                for name in ("file", "format", "n", "delivery_size", "grid", "postprocess_out_dir")
-            },
+            shared,
             out_dir,
             now_stamp(),
             slugify,
-            lambda task: str(resolve_common_params(args, cfg, task)["output_format"]),
+            lambda task: str(resolve_common_params(batch_args, cfg, task)["output_format"]),
+            lambda task: resolve_batch_transparency(task, batch_args, cfg).mode == "chroma-key",
         )
     except (TypeError, ValueError) as exc:
         raise ImagegenError(str(exc)) from exc
+
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     concurrency = args.concurrency or cfg.defaults.get("concurrency") or DEFAULT_CONCURRENCY
     try:
@@ -1223,29 +1309,26 @@ def batch(cfg: Config, args: argparse.Namespace) -> int:
 
     results: list[dict[str, Any]] = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=concurrency) as executor:
-        future_map = {executor.submit(run_one_task, cfg, args, task): task for task in tasks}
+        future_map = {executor.submit(run_one_task, cfg, batch_args, task): task for task in tasks}
         for future in concurrent.futures.as_completed(future_map):
             results.append(future.result())
 
     results.sort(key=lambda item: str(item.get("id") or ""))
-    manifest = write_manifest(out_dir, results)
+    manifest, path_contract_ok = write_batch_manifest(out_dir, results)
     print_summary(results, manifest)
-    return 0 if all(item.get("ok") for item in results) else 1
+    return 0 if all(item.get("ok") for item in results) and path_contract_ok else 1
 
 
-def write_manifest(out_dir: Path, results: list[dict[str, Any]]) -> Path:
-    manifest = out_dir / "manifest.json"
-    payload = {
-        "created_at": datetime.now().isoformat(timespec="seconds"),
-        "results": results,
-        "summary": {
-            "total": len(results),
-            "ok": sum(1 for item in results if item.get("ok")),
-            "failed": sum(1 for item in results if not item.get("ok")),
-        },
-    }
-    manifest.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    return manifest
+def resolve_batch_transparency(
+    task: dict[str, Any],
+    args: argparse.Namespace,
+    cfg: Config,
+) -> TransparencyPlan:
+    mode = task_mode(task)
+    params = resolve_common_params(args, cfg, task)
+    prompt = str(task.get("prompt") or "").strip()
+    references = normalize_paths(task.get("images")) if mode == "edit" else []
+    return resolve_request_transparency(prompt, mode, params, args, cfg, task, references)
 
 
 def print_summary(results: list[dict[str, Any]], manifest: Path | None = None) -> None:
@@ -1255,6 +1338,8 @@ def print_summary(results: list[dict[str, Any]], manifest: Path | None = None) -
         if item.get("ok"):
             for file_path in item.get("files", []):
                 print(file_path)
+            for warning in item.get("warnings", []):
+                print(f"WARNING {item.get('id') or ''}: {warning}", file=sys.stderr)
         else:
             print(f"FAILED {item.get('id') or ''}: {item.get('error')}", file=sys.stderr)
     if manifest:
@@ -1267,9 +1352,14 @@ def info(cfg: Config) -> int:
         "model": cfg.model,
         "base_url": cfg.base_url,
         "user_agent": cfg.user_agent,
-        "capabilities": cfg.capabilities,
         "defaults": cfg.defaults,
         "postprocess": cfg.postprocess,
+        "transparency": {
+            "prompt_only_allow": [
+                {"model": rule.model, "mode": rule.mode, "size": rule.size}
+                for rule in cfg.transparency.prompt_only_allow
+            ]
+        },
         "url_download": cfg.url_download,
         "auth_json": display_path(AUTH_PATH),
         "api_key_source": cfg.api_key_source,
@@ -1370,6 +1460,14 @@ def main() -> int:
         if args.command == "batch":
             return batch(cfg, args)
         raise ImagegenError(f"unsupported command: {args.command}")
+    except ApiRequestError as exc:
+        fields = [f"error_kind={exc.error_kind}"]
+        if exc.status_code is not None:
+            fields.append(f"status_code={exc.status_code}")
+        if exc.operation:
+            fields.append(f"operation={exc.operation}")
+        print(f"error: {' '.join(fields)}: {exc}", file=sys.stderr)
+        return 2
     except ImagegenError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2

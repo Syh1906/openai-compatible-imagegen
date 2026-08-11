@@ -37,13 +37,13 @@ class QuickInitTests(unittest.TestCase):
                     "api_key": "replace-with-temporary-local-key",
                     "api_key_env": "OPENAI_API_KEY",
                     "model": "gpt-image-2",
-                    "capabilities": {"transparent_background": True},
                     "defaults": {
                         "size": "2048x2048",
                         "quality": "auto",
                         "output_format": "png",
                     },
                     "postprocess": {"enabled": False},
+                    "transparency": {"prompt_only_allow": []},
                 },
                 indent=2,
             ),
@@ -72,7 +72,7 @@ class QuickInitTests(unittest.TestCase):
                 "env",
                 "--api-key-env",
                 "IMAGEGEN_API_KEY",
-                "--no-transparent-background",
+                "--no-postprocess",
             ]
         )
 
@@ -82,7 +82,8 @@ class QuickInitTests(unittest.TestCase):
         self.assertEqual(data["model"], "gpt-image-2")
         self.assertEqual(data["api_key"], "replace-with-temporary-local-key")
         self.assertEqual(data["api_key_env"], "IMAGEGEN_API_KEY")
-        self.assertFalse(data["capabilities"]["transparent_background"])
+        self.assertFalse(data["postprocess"]["enabled"])
+        self.assertNotIn("capabilities", data)
 
     def test_interactive_local_auth_writes_key_without_printing_it(self) -> None:
         stdout = io.StringIO()
@@ -187,7 +188,7 @@ class QuickInitTests(unittest.TestCase):
                 "env",
                 "--api-key-env",
                 "NEW_KEY",
-                "--transparent-background",
+                "--postprocess",
             ]
         )
 
@@ -197,7 +198,7 @@ class QuickInitTests(unittest.TestCase):
         self.assertEqual(data["api_key"], "replace-with-temporary-local-key")
         self.assertEqual(data["api_key_env"], "NEW_KEY")
         self.assertEqual(data["model"], "new-model")
-        self.assertTrue(data["capabilities"]["transparent_background"])
+        self.assertTrue(data["postprocess"]["enabled"])
 
     def test_interactive_env_auth_accepts_prompted_answers(self) -> None:
         answers = iter(
@@ -218,7 +219,7 @@ class QuickInitTests(unittest.TestCase):
         self.assertEqual(data["base_url"], "https://images.example.test/v1")
         self.assertEqual(data["model"], "gpt-image-2")
         self.assertEqual(data["api_key_env"], "IMAGEGEN_API_KEY")
-        self.assertFalse(data["capabilities"]["transparent_background"])
+        self.assertFalse(data["postprocess"]["enabled"])
 
     def test_non_interactive_requires_api_key_env_for_env_auth(self) -> None:
         stderr = io.StringIO()
@@ -240,7 +241,7 @@ class QuickInitTests(unittest.TestCase):
         self.assertFalse(self.auth_path.exists())
         self.assertIn("--api-key-env is required", stderr.getvalue())
 
-    def test_non_interactive_requires_transparent_background_choice(self) -> None:
+    def test_non_interactive_requires_postprocess_choice(self) -> None:
         stderr = io.StringIO()
 
         with mock.patch("sys.stderr", stderr):
@@ -260,7 +261,7 @@ class QuickInitTests(unittest.TestCase):
 
         self.assertEqual(exit_code, 1)
         self.assertFalse(self.auth_path.exists())
-        self.assertIn("--transparent-background or --no-transparent-background is required", stderr.getvalue())
+        self.assertIn("--postprocess or --no-postprocess is required", stderr.getvalue())
 
 
 if __name__ == "__main__":

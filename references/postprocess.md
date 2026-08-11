@@ -1,6 +1,6 @@
 # Post-Processing Reference
 
-Post-processing converts returned PNG files into delivery files. It covers deterministic inspection, resizing, fit behavior, safe margins, grid splitting, QA, and preview boards. In generation, edit, and batch workflows, API originals remain recorded in `original_files` while derived outputs are recorded in `files`.
+Post-processing converts returned PNG files into delivery files. It covers deterministic transparency processing, inspection, resizing, fit behavior, safe margins, grid splitting, QA, and preview boards. In generation, edit, and batch workflows, an API original remains recorded in `original_files` whenever a derived output is published.
 
 Read [qa.md](qa.md) when the request includes quality checks. Read [prompting.md](prompting.md) when the request needs structured prompt construction or controlled batch variation.
 
@@ -21,9 +21,44 @@ Generated-output post-processing adds these fields:
 | `original_files` | Files returned by the image API |
 | `files` | Derived delivery files |
 | `postprocess` | Transform details and inspections |
+| `transparency` | Selected route, aggregate status, per-image artifacts, checks, and warnings |
+| `warnings` | Non-blocking conditions such as unmet alpha or skipped dependent transforms |
 | `qa` | Optional `qa.v1` checks requested with `--qa` |
 
 The default derived-output directory is next to the source file and ends with `-postprocess`. Use `--postprocess-out-dir` to select another directory.
+
+## Transparency Processing
+
+Use `--transparent` for a transparent delivery request. The flag forces PNG and never becomes an API `background` parameter.
+
+When local post-processing is allowed, the script adds a prompt contract asking for one uniform flat key-color background, then applies `chroma-key` locally. It removes only key-color pixels connected to the canvas edge, preserves the subject, applies limited edge despill, and validates the resulting alpha before publication. When pixels are changed, the derived file is named `<source-stem>-transparent.png`. If the API image already has usable alpha, that original file remains the delivery file.
+
+The quality gate checks edge key-color coverage, transparent-pixel ratio, visible-pixel ratio, visible border ratio, and key-color contamination around partial-alpha or transparency-adjacent subject edges. A non-uniform edge or unrecoverable contamination is an `unmet` result; the processor does not publish a guessed cutout.
+
+When local post-processing is disabled, the request can use the `prompt-alpha` route only if `auth.json.transparency.prompt_only_allow` exactly matches the model, mode, and pixel size. The prompt requests a real alpha channel, but the model may still return an opaque image.
+
+Transparency processing is observational after the API response exists:
+
+- `pass`: keep a native-alpha API file as-is, or publish the derived chroma-key file when pixels changed, then apply any requested delivery transform.
+- `unmet`: keep the API file in `files`, set `transparency.status` to `unmet`, and add a warning.
+- If a transparent delivery transform cannot run because transparency is unmet, skip that transform for that image. Do not create transparent padding around an opaque source.
+
+The API request remains successful when transparency is unmet. For a batch, each returned image is evaluated independently.
+
+An HTTP 4xx response is different: it is an API rejection before an image exists (`error_kind=api_rejected`), so there is no original image to return and no transparency result to attach.
+
+Batch relative output paths are based at `--out`; JSONL `images` and `mask` inputs are based at the JSONL file directory. The manifest records the resolved `output_root` and file-existence `path_contract`.
+
+Example:
+
+```powershell
+python "$SkillDir/scripts/imagegen.py" generate `
+  -p "Isolated ceramic vase, front three-quarter view, no floor, no lettering" `
+  -f "outputs/vase.png" `
+  --transparent `
+  --postprocess `
+  --qa
+```
 
 ## Inspect
 
@@ -103,7 +138,7 @@ python "$SkillDir/scripts/imagegen.py" generate `
   --postprocess-out-dir "final"
 ```
 
-`--qa` can also run without a delivery transform. It attaches deterministic checks to the saved API files. For transparent requests with a transform, source and delivery transparency are checked separately. QA does not change generation success or retry a request.
+`--qa` can also run without a delivery transform. It attaches deterministic checks to the files actually returned. Transparency processing records its own source checks and route warnings; QA checks the published delivery file rather than treating an opaque key-color API source as the final transparent result. QA does not change generation success or retry a request.
 
 ## Current Limits
 
@@ -111,4 +146,4 @@ python "$SkillDir/scripts/imagegen.py" generate `
 - JPEG and WebP generation remain supported, but deep local QA reports those formats as unsupported.
 - `split-grid` requires an explicit grid.
 - Preview boards do not include text labels; use `preview-manifest.json` for cell metadata.
-- Background removal, semantic segmentation, OCR, brand validation, and aesthetic scoring are not included.
+- Semantic background removal, segmentation, OCR, brand validation, and aesthetic scoring are not included. The local transparency route only handles a uniform edge-connected key-color plate or a native alpha channel.

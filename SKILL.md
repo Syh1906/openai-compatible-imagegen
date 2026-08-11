@@ -19,6 +19,8 @@ Use the bundled script for API calls. Do not rewrite the API client inline.
 4. After command construction, runtime parameter priority is `per-row batch fields > shared command flags > auth.json defaults > built-in defaults`. An agent-inferred value emitted as a shared flag follows this runtime rule and overrides `auth.json`.
 5. Call `scripts/imagegen.py` and report the output paths and any manifest.
 
+The script validates every returned image against the resolved API pixel `size` before writing it. A backend size mismatch fails without publishing the mismatched file. Treat `delivery_size` as a separate local transform and report both source and derived paths when it is used.
+
 When the user describes an image, form a concise, structured prompt. Include the intended use, subject and relationships, composition, style or medium, audience or context, delivery constraints, text requirements, and concrete exclusions. For a batch, state which properties stay consistent and which properties vary. Do not add domain-specific assumptions that the user did not provide.
 
 Treat game art as one peer industry use case alongside product, editorial, marketing, interface, diagram, and photographic work. Preserve game-specific details when the user supplies them, but do not make them the default for unrelated requests.
@@ -50,7 +52,7 @@ python "$SkillDir/scripts/quick-init.py" `
   --model "gpt-image-2" `
   --auth-method env `
   --api-key-env "OPENAI_API_KEY" `
-  --transparent-background
+  --postprocess
 ```
 
 The `imagegen.py init` command remains available for copying the template.
@@ -68,9 +70,33 @@ Important configuration fields:
 - `api_key` or `api_key_env`: local authentication.
 - `model`: default image model.
 - `url_download.proxy_mode`: `environment` or explicitly authorized `direct`.
-- `capabilities.transparent_background`: whether the backend accepts `background=transparent`.
 - `defaults`: values used when a request omits a parameter.
 - `postprocess.enabled`: whether generated-output post-processing may run when requested.
+- `transparency.prompt_only_allow`: exact model/mode/size combinations allowed to use prompt-only alpha generation when local post-processing is disabled.
+
+The old `capabilities.transparent_background` setting is removed. If it remains in `auth.json`, report the migration error and ask for that field to be removed; do not send the old API background parameter.
+
+## Transparency Workflow
+
+Treat `--transparent` as a delivery intent, not as an API `background` parameter. Never send `background=transparent` to the image API. The script selects the first available declared route:
+
+Map an explicit user preference to an explicit per-run switch: use `--postprocess` when the user allows or requests local transparency processing, and use `--no-postprocess` when the user prohibits it. Omitting both switches inherits `postprocess.enabled`; omission must never represent an explicit prohibition.
+
+1. When local post-processing is allowed, append a chroma-key prompt contract, request an ordinary PNG, and remove only edge-connected key-color pixels locally.
+2. When local post-processing is disabled, use prompt-only alpha generation only if `transparency.prompt_only_allow` exactly matches the model, mode, and pixel size.
+3. When neither route is declared, report that no image request was sent. Do not silently change the model, endpoint, size, prompt, or retry policy.
+
+Keep `transparency.prompt_only_allow` empty unless the configured backend has been verified for that exact model, mode, and pixel size. A `1K` rule is an exact pixel-size rule such as `1024x1024`; do not downgrade a 2K or 4K request to make it match.
+
+The prompt-only route is a request to the model, not a guarantee. After an API response is written:
+
+- If alpha or chroma-key processing passes, report `transparency.status=pass`.
+- If it does not pass, keep `ok=true`, return the API image unchanged, and add a warning explaining the unmet transparency condition.
+- If a delivery resize or grid transform depends on transparency and transparency is unmet, skip that transform for that image and return the API image unchanged.
+
+For multiple returned images, evaluate each image independently. A failed transparency check must not discard successful images or turn a successful API response into a command failure.
+
+An HTTP error happens before an image exists and is separate from transparency QA. A 4xx response is recorded as `error_kind=api_rejected` with its `status_code`; it is not reported as `transparency.status=unmet`. For edit requests, technical reference metadata may be attached with `status=not_evaluated`; reference semantics are not automatically judged or used to block the API request.
 
 ## Commands
 
@@ -154,8 +180,8 @@ Core parameters:
 - `--quality`: `low`, `medium`, `high`, or `auto`.
 - `--n`: number of images returned by one request.
 - `--format`: `png`, `jpeg`, or `webp`.
-- `--background`: `auto`, `opaque`, or `transparent`; the transparent value is treated as transparent-background intent and forces PNG.
-- `--transparent`: shorthand for explicit transparent-background intent; forces PNG.
+- `--background`: `auto` or `opaque`; `transparent` was removed.
+- `--transparent`: explicit transparent delivery intent; forces PNG but is not sent as an API background parameter.
 - `--asset`: explicit single visual-deliverable intent; prefers PNG and does not imply a particular industry.
 - `--concurrency`: limited batch concurrency.
 - `--allow-direct-url-download`: explicit one-command authorization for direct returned-URL downloads.
@@ -171,6 +197,7 @@ Post-processing parameters:
 - `--fit`: `stretch` (compatibility default) or `contain`.
 - `--safe-margin`: fractional edge margin used with `--fit contain`, for example `0.03`.
 - `--postprocess-out-dir`: directory for derived files.
+- `--postprocess` / `--no-postprocess`: allow or prohibit the local post-processing transparency route for this run.
 
 An explicit output filename extension must match the resolved format. Transparent and `--asset` requests resolve to PNG, including during batch preflight.
 
@@ -180,7 +207,13 @@ Read `references/prompting.md` when constructing a prompt or controlled batch. R
 
 `batch` input is JSONL, one task per line. See `examples/batch.example.jsonl`.
 
-Common fields include `id`, `mode`, `prompt`, `file`, `size`, `aspect`, `resolution`, `quality`, `n`, `format`, `background`, `transparent`, `asset`, `images`, `mask`, `model`, `timeout`, `qa`, `components`, `delivery_size`, `grid`, `expected_count`, `resample`, `fit`, and `safe_margin`.
+Common fields include `id`, `mode`, `prompt`, `file`, `size`, `aspect`, `resolution`, `quality`, `n`, `format`, `background`, `transparent`, `asset`, `images`, `mask`, `model`, `timeout`, `postprocess`, `qa`, `components`, `delivery_size`, `grid`, `expected_count`, `resample`, `fit`, and `safe_margin`.
+
+Batch path contract:
+
+- `--input` is resolved from the caller's working directory, then JSONL input fields `images` and `mask` are resolved relative to the JSONL file directory.
+- Task and shared output fields `file`, `out`, and `postprocess_out_dir` are resolved relative to `--out`; absolute paths remain absolute.
+- The same normalized paths are used for preflight and worker execution. `manifest.json` records `output_root` and `path_contract`, including any missing published files.
 
 Concurrency priority is:
 
@@ -188,15 +221,15 @@ Concurrency priority is:
 command --concurrency > auth.json defaults.concurrency > 3
 ```
 
-Do not switch models or endpoints, remove backgrounds locally, retry with changed parameters, or infer semantic quality from deterministic metrics.
+Do not switch models or endpoints, retry with changed parameters, or infer semantic quality from deterministic metrics. Local transparency processing is used only when the selected route explicitly allows it.
 
 Post-processing and QA are opt-in. Without the relevant flags, generation and editing only save the API results and preserve their existing output contract.
 
 ## Transparency and QA Boundaries
 
-Use `--transparent` or `--background transparent` only when the user explicitly requests a transparent result. The prompt asks for alpha-friendly edges, and the API parameter is sent only when the configuration declares support.
+Use `--transparent` only when the user explicitly requests a transparent result. It forces PNG and selects a local chroma-key route when post-processing is allowed; it never becomes an API `background` parameter. With post-processing disabled, only an exact `transparency.prompt_only_allow` rule can authorize prompt-only alpha generation.
 
-`inspect-image` reports technical facts such as dimensions, alpha coverage, margins, edge contact, and optional connected components. `--expect-transparent` checks for a real alpha channel and visible content. When transparent generated output is resized or padded, QA checks the API source and the delivery file separately so transparent padding cannot hide an opaque source. It does not remove backgrounds or prove semantic isolation.
+`inspect-image` reports technical facts such as dimensions, alpha coverage, margins, edge contact, and optional connected components. `--expect-transparent` checks for a real alpha channel and visible content. Transparency processing validates the returned image before publishing a derived file. If validation fails, the API file remains the result and the record carries `status=unmet` plus warnings. It does not prove semantic isolation.
 
 `preview-board` writes target-size variants on transparent, white, black, gray, or checker backgrounds. Per-preview, cumulative-preview, and board pixel limits are checked before allocation. This is a visual inspection aid, not an automatic readability or aesthetic verdict.
 
@@ -206,6 +239,6 @@ Returned-PNG validation, current post-processing, and deep QA parse non-interlac
 
 ## Output
 
-The script saves images and writes `manifest.json` in batch mode. When post-processing is requested, the record keeps `original_files`, derived `files`, and transform details. When `--qa` is requested, it adds a `qa` object with inspections, checks, conditions, warnings, and errors.
+The script saves images and writes `manifest.json` in batch mode. When a derived file is published, the record keeps `original_files`, derived `files`, and transform details. A transparency record includes its route, status, checks, and warnings. When `--qa` is requested, it adds a `qa` object with inspections, checks, conditions, warnings, and errors. API success remains `ok=true` when transparency is unmet; report that state instead of refusing the image. A request rejected by the API has no deliverable image and is reported separately with its HTTP classification.
 
 Report output paths, manifest paths, success and failure counts, and short failure summaries. Do not show API keys, full request headers, or secret configuration values.

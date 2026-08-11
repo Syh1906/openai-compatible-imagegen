@@ -41,7 +41,7 @@
 
 图片响应可以包含 `data[].b64_json` 或 `data[].url`。JSON 响应上限为 96 MiB，解码或下载后的单张图片上限为 64 MiB。返回的 PNG 会在写入前完整解析，并且必须是不超过 2500 万像素的非交错 8 位 RGB/RGBA；RGB `tRNS` 和其他 PNG 编码会被拒绝。JPEG 和 WebP 响应会检查容器与关键编码帧结构。图片 URL 不会收到 API 凭据。
 
-请求参数支持精确像素尺寸、比例与分辨率预设、质量、输出格式、透明背景意图、moderation 和 compression。不同后端支持范围不同，请让 `auth.json` 与供应商能力保持一致。
+请求参数支持精确像素尺寸、比例与分辨率预设、质量、输出格式、透明交付意图、moderation 和 compression。透明交付通过明确的本地路线或精确的提示词白名单处理，不会作为透明背景参数发送给 API。
 
 ## 安装
 
@@ -72,8 +72,11 @@ python "$SkillDir/scripts/quick-init.py"
   "api_key": "",
   "api_key_env": "OPENAI_API_KEY",
   "model": "gpt-image-2",
-  "capabilities": {
-    "transparent_background": false
+  "postprocess": {
+    "enabled": false
+  },
+  "transparency": {
+    "prompt_only_allow": []
   }
 }
 ```
@@ -85,7 +88,11 @@ $SkillDir = "/path/to/openai-compatible-imagegen"
 python "$SkillDir/scripts/imagegen.py" info
 ```
 
-只有后端接受 `background=transparent` 时，才设置 `capabilities.transparent_background=true`。
+旧的 `capabilities.transparent_background` 配置和 `background=transparent` 请求值都已移除，不要把它们转换成 API 参数。需要默认允许本地透明处理时，把 `postprocess.enabled` 设为 `true`；需要允许仅靠提示词生成 alpha 时，在 `transparency.prompt_only_allow` 中填写精确的 `model`、`mode` 和 `size` 组合。
+
+请求透明结果时优先使用本地后处理。后处理关闭时，只有精确的提示词白名单规则才能追加真实 alpha 提示词。两条路线都不保证模型一定返回透明图；检查未通过时仍返回 API 原图，同时记录 warning 和 `transparency.status=unmet`。
+
+本地 `chroma-key` 路线要求画布边缘是连通且统一的色键背景，并在发布派生文件前检查残留色键污染。检查失败时不会发布猜测性的抠图结果。
 
 ## 向 Agent 提需求
 
@@ -98,7 +105,7 @@ python "$SkillDir/scripts/imagegen.py" info
 - “生成一张 `3x3` 的 UI 概念图，并拆成 9 张 `256x256` PNG。”
 - “创建一个幻想策略游戏的冰霜技能图标，不要文字，并交付 `64x64` 和 `128x128` 预览。”
 
-生成尺寸和交付尺寸相互独立。你可以先生成较大的源图，再输出精确尺寸的本地交付文件。
+生成尺寸和交付尺寸相互独立。你可以先生成较大的源图，再输出精确尺寸的本地交付文件。API 返回的源图必须匹配解析后的生成尺寸；如果后端返回其他尺寸，会在发布前拒绝，不会留下错误尺寸文件。
 
 ## 手动命令
 
@@ -119,7 +126,8 @@ python "$SkillDir/scripts/imagegen.py" edit `
   -i "input.png" `
   -f "outputs/product-cutout.png" `
   --asset `
-  --transparent
+  --transparent `
+  --postprocess
 ```
 
 ### 批量生成
@@ -131,7 +139,9 @@ python "$SkillDir/scripts/imagegen.py" batch `
   --concurrency 3
 ```
 
-批处理行可以设置 `qa`、`components`、`delivery_size`、`grid`、`expected_count`、`resample`、`fit` 和 `safe_margin`。命令会写出 `manifest.json`；交付文件位于 `files`，API 原图保留在 `original_files`。
+批处理行可以设置 `postprocess`、`qa`、`components`、`delivery_size`、`grid`、`expected_count`、`resample`、`fit` 和 `safe_margin`。命令会写出 `manifest.json`。生成派生文件时，派生路径位于 `files`，API 源图保留在 `original_files`；透明未达标时，`files` 保留 API 源图路径。
+
+批处理路径使用两个明确基准：JSONL 中的 `images` 和 `mask` 相对于 JSONL 文件目录；任务级或共享的 `file`、`out` 和 `postprocess_out_dir` 相对于 batch `--out`。绝对路径保持不变。manifest 会记录解析后的 `output_root` 和文件存在性 `path_contract`。
 
 ### 检查与验证
 
@@ -166,7 +176,7 @@ python "$SkillDir/scripts/imagegen.py" split-grid "sheet.png" `
 
 `stretch` 会填满精确交付尺寸。`contain` 在透明画布上保持宽高比。使用 `contain` 时，`--safe-margin` 会在每条边保留指定比例的边距。默认重采样方式是 `bilinear`；需要有意复制像素时使用 `nearest`。
 
-`generate`、`edit` 和 `batch` 也支持这些交付参数。添加 `--qa` 会附加 `qa.v1` 结果，不会改变生成成功状态或重试请求。透明请求包含交付变换时，QA 会分别检查 API 源图和交付图，透明留白不能让不透明源图误判通过。
+`generate`、`edit` 和 `batch` 也支持这些交付参数。添加 `--qa` 会附加 `qa.v1` 结果，不会改变生成成功状态或重试请求。透明检查未通过时，会跳过依赖透明结果的交付变换，并原样返回 API 图片。
 
 ### 生成预览板
 
@@ -193,11 +203,15 @@ python "$SkillDir/scripts/imagegen.py" preview-board "input.png" `
 | `model` | 默认图片模型 |
 | `user_agent` | 图片 API 和图片 URL 请求使用的 HTTP 客户端标识 |
 | `url_download.proxy_mode` | 默认使用 `environment`，也可明确设置为 `direct` 直连下载 |
-| `capabilities.transparent_background` | 声明后端是否支持透明背景请求 |
 | `defaults.*` | 默认尺寸、比例、分辨率、质量、格式、超时和并发数 |
-| `postprocess.enabled` | 允许执行已请求的生成结果后处理 |
+| `postprocess.enabled` | 默认允许本地透明处理 |
+| `transparency.prompt_only_allow` | 允许提示词生成 alpha 的精确模型、模式和尺寸规则 |
 
 如果图片 URL 通过代理反复出现 TLS EOF，可为单次命令明确使用 `--allow-direct-url-download`，或为已确认的供应商设置 `url_download.proxy_mode="direct"`。图片 API 请求仍使用正常网络路径。
+
+透明未达标时，只要 API 图片已经写入，命令仍会保持成功。请先查看 warning 和 manifest 中的 `transparency` 记录，再判断文件是否适合最终使用。
+
+HTTP 4xx 属于 API 拒绝，会记录为 `error_kind=api_rejected` 和 `status_code`；由于此时还没有图片，它不是透明失败。编辑结果或编辑错误可以附带参考图技术元数据，语义状态为 `not_evaluated`。异常长宽比会如实提示，但不会自动拦截请求。
 
 ## 支持的命令
 

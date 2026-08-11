@@ -2,6 +2,28 @@
 
 This file records user-visible changes for each release of `openai-compatible-imagegen`.
 
+## [Unreleased]
+
+### Added
+
+- Add deterministic `chroma-key` transparency processing with edge-connected key-color removal, edge despill, and alpha validation.
+- Add exact `transparency.prompt_only_allow` rules for explicitly permitted prompt-only alpha generation.
+- Add technical reference-image metadata without using semantic heuristics to block edit requests.
+
+### Changed
+
+- Treat `--transparent` as delivery intent and never send `background=transparent` to the image API.
+- Return API images unchanged with `transparency.status=unmet` and warnings when prompt alpha or local processing does not meet the transparency checks.
+- Evaluate transparency independently for each returned image and skip dependent delivery transforms only for unmet images.
+- Preserve API originals when publishing derived transparent files.
+- Classify HTTP 4xx image requests as `api_rejected`, separate from post-response transparency checks.
+- Reject API images whose actual pixel dimensions differ from the resolved generation size before publication.
+- Resolve batch input paths from the JSONL directory and output paths from `--out`, then record `output_root` and `path_contract` in the manifest.
+
+### Removed
+
+- Remove `--background transparent` and the `capabilities.transparent_background` configuration field.
+
 ## [0.2.0] - 2026-08-10
 
 ### Added

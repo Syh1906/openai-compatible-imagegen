@@ -18,10 +18,10 @@ def build_parser(
     init_parser.add_argument("--model", default=None, help="Default image model")
     init_parser.add_argument("--api-key-env", default=None, help="Environment variable name to read the API key from")
     init_parser.add_argument(
-        "--transparent-background",
+        "--postprocess",
         action=argparse.BooleanOptionalAction,
         default=None,
-        help="Whether the API supports background=transparent",
+        help="Allow generated-output post-processing by default",
     )
 
     add_generate_args(sub.add_parser("generate"), supported_aspects, supported_resolutions)
@@ -97,7 +97,7 @@ def add_common_args(
     parser.add_argument("--quality", default=None, choices=["auto", "low", "medium", "high"])
     parser.add_argument("--n", type=int, default=None)
     parser.add_argument("--format", default=None, choices=["png", "jpeg", "jpg", "webp"])
-    parser.add_argument("--background", default=None, choices=["auto", "opaque", "transparent"])
+    parser.add_argument("--background", default=None, choices=["auto", "opaque"])
     parser.add_argument("--transparent", action="store_true")
     parser.add_argument("--asset", action="store_true")
     parser.add_argument("--moderation", default=None, choices=["auto", "low"])
@@ -111,7 +111,12 @@ def add_common_args(
 
 
 def add_postprocess_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--postprocess", action="store_true", help="Enable optional post-processing for this run")
+    parser.add_argument(
+        "--postprocess",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="Allow or prohibit optional post-processing for this run",
+    )
     parser.add_argument("--qa", action="store_true", help="Attach deterministic delivery QA to the result")
     parser.add_argument("--components", action="store_true", help="Include connected-component diagnostics in QA")
     parser.add_argument("--delivery-size", default=None, help="Final delivery size, for example 128x128")

@@ -27,6 +27,8 @@ This is the runtime order after the agent has interpreted the request and constr
 
 Use `--size` for exact API output pixels. Use `--aspect` plus `--resolution` when the request describes shape and clarity without exact pixels.
 
+Before publication, the returned image dimensions are checked against the resolved API `size`. If the backend returns a different size, the request fails without creating a mismatched source file. `--delivery-size` remains an independent local transform applied after a correctly sized source image exists.
+
 | User intent | Aspect |
 | --- | --- |
 | Square product image, profile image, centered mark, game icon | `1:1` |
@@ -58,19 +60,44 @@ Use `--size` for exact API output pixels. Use `--aspect` plus `--resolution` whe
 
 `--asset` marks an explicit single visual deliverable and prefers PNG. It can represent a logo element, product cutout, sticker, interface element, game asset, diagram element, or other isolated deliverable. It does not select an industry or force a centered composition.
 
-`--transparent` and `--background transparent` express the same transparent-background intent. Either form forces PNG and adds isolated-subject constraints; the API receives `background=transparent` only when `auth.json` declares support.
+`--transparent` marks a transparent delivery intent and forces PNG. It is never sent to the API as a background value. `--background` accepts only `auto` or `opaque`; the former transparent value was removed.
 
 An explicit `--file` extension must match the resolved output format. For example, a transparent or `--asset` request cannot target a `.jpeg` path because those intents resolve to PNG.
 
-Real alpha pixels depend on the backend response. Use `inspect-image --expect-transparent` to validate the returned file.
+Transparency route selection is deterministic:
 
-Known conflict validation stops this request before submission:
+| Condition | Route | API request | Result when transparency fails |
+| --- | --- | --- | --- |
+| `postprocess.enabled=true` or per-run `--postprocess` | `chroma-key` | Normal PNG request with a flat key-color prompt contract | Return the API image unchanged and warn |
+| Post-processing disabled and exact `prompt_only_allow` match | `prompt-alpha` | PNG request with a real-alpha prompt contract | Return the API image unchanged and warn |
+| No route declared | None | No image request is sent | Report the missing route |
 
-```text
-model=gpt-image-2 + background=transparent + resolution=2K or 4K
+The prompt-only allow list matches `model`, `mode`, and exact pixel `size` together. A rule for `1024x1024` does not authorize another 1K aspect preset. A prompt can improve the probability of alpha output, but it cannot guarantee alpha.
+
+Only add a prompt-only rule after verifying that exact backend combination. In particular, do not turn a 2K or 4K request into a 1K request just to use an alpha prompt. If the route is not declared, report the unsupported combination before sending an image request.
+
+Example configuration:
+
+```json
+{
+  "postprocess": {
+    "enabled": false
+  },
+  "transparency": {
+    "prompt_only_allow": [
+      {
+        "model": "gpt-image-2",
+        "mode": "generate",
+        "size": "1024x1024"
+      }
+    ]
+  }
+}
 ```
 
-When a conflict occurs, choose explicitly whether to change the model or keep the model with `background=auto`. The script does not make that choice automatically.
+The old `capabilities.transparent_background` setting and `background=transparent` request value are not supported. Remove them instead of translating them into an API parameter.
+
+Real alpha pixels depend on the returned image. Use `inspect-image --expect-transparent` or request `--qa` to report technical results.
 
 ## Delivery Transform Parameters
 
@@ -82,6 +109,7 @@ When a conflict occurs, choose explicitly whether to change the model or keep th
 | `--safe-margin` | Fractional edge margin used with `contain` |
 | `--grid` | Explicit rows and columns such as `3x3` |
 | `--expected-count` | Per-source grid count, or QA output count when no grid is used |
+| `--postprocess` / `--no-postprocess` | Per-run transparency route override |
 | `--qa` | Attach `qa.v1` delivery checks |
 | `--components` | Add connected-component diagnostics |
 | `--postprocess-out-dir` | Derived-output directory |
@@ -107,16 +135,32 @@ High concurrency can trigger rate limits, failures, or unexpected cost.
 | `prompt` | Prompt text |
 | `file` | Output file path |
 | `size`, `aspect`, `resolution` | API output dimensions |
-| `quality`, `n`, `format`, `background` | API request options |
+| `quality`, `n`, `format`, `background` | API request options; background is `auto` or `opaque` |
 | `transparent`, `asset` | Explicit output intentions |
 | `images`, `mask` | Edit inputs |
 | `model`, `timeout` | Per-task request overrides |
 | `qa`, `components` | Optional deterministic QA |
 | `delivery_size`, `grid`, `expected_count` | Optional derived outputs |
 | `resample`, `fit`, `safe_margin` | Optional transform behavior |
+| `postprocess` | Per-row permission for the local transparency route |
+
+## Batch Path Contract
+
+Relative paths have separate, deterministic bases:
+
+| Field | Relative to |
+| --- | --- |
+| `images`, `mask` in a JSONL task | JSONL file directory |
+| `file`, `out`, `postprocess_out_dir` in a task or shared command value | batch `--out` directory |
+
+Absolute paths are preserved. Preflight, API task execution, post-processing, and manifest use the same normalized values. The batch manifest records `output_root` and `path_contract`; a failed file-existence check is reported instead of silently claiming a complete delivery.
+
+## API Errors and References
+
+An HTTP 4xx response is an API rejection (`error_kind=api_rejected`) and is not a transparency QA result. It means no image was delivered. Reference-image edits may include technical file metadata and `reference_semantics_not_evaluated`; unusual dimensions or screenshot-like content are reported, not automatically blocked.
 
 ## Output
 
-Batch mode writes `manifest.json`. Optional post-processing preserves API output paths in `original_files` and writes derived paths in `files`. Optional QA adds a `qa` object without changing `ok` or the command exit code.
+Batch mode writes `manifest.json`. When a derived file is published, the API output stays in `original_files` and the deliverable appears in `files`. If transparency is unmet, that row keeps the API path in `files`, records `transparency.status=unmet`, and remains `ok=true`; warnings explain why no derived transform was published. Optional QA adds a `qa` object without changing `ok` or retrying the request.
 
 Image responses may contain `data[].b64_json` or HTTP(S) `data[].url`. JSON responses are limited to 96 MiB, and each decoded base64 image or streamed URL image is limited to 64 MiB. URL downloads use the configured `user_agent` and never forward the API key. PNG is fully parsed; JPEG and WebP receive bounded container and codec-framing checks before delivery.

@@ -268,6 +268,25 @@ class GenericImageQATests(unittest.TestCase):
                 expected_count=2,
             )
 
+    def test_write_response_images_rejects_response_size_mismatch_before_write(self) -> None:
+        source = self.temp_dir / "wrong-size.png"
+        target = self.temp_dir / "result.png"
+        make_rgba_png(source, 2, 3, [(255, 0, 0, 255)] * 6)
+        response = {"data": [{"b64_json": base64.b64encode(source.read_bytes()).decode("ascii")}]}
+
+        with self.assertRaisesRegex(
+            self.imagegen.ImagegenError,
+            r"image response size 2x3 does not match requested size 4x4",
+        ):
+            self.imagegen.write_response_images(
+                response,
+                target,
+                "png",
+                expected_size=(4, 4),
+            )
+
+        self.assertFalse(target.exists())
+
     def test_decode_base64_rejects_encoded_image_over_byte_limit(self) -> None:
         encoded = base64.b64encode(b"12345").decode("ascii")
 
@@ -343,6 +362,8 @@ class GenericImageQATests(unittest.TestCase):
 
         self.assertEqual(self.imagegen.detect_image_format(jpeg), "jpeg")
         self.assertEqual(self.imagegen.detect_image_format(webp), "webp")
+        self.assertEqual(self.imagegen.image_dimensions(jpeg, "jpeg"), (1, 1))
+        self.assertEqual(self.imagegen.image_dimensions(webp, "webp"), (1, 1))
 
     def test_write_response_images_rejects_actual_format_mismatch(self) -> None:
         source = self.temp_dir / "valid.png"
@@ -371,7 +392,6 @@ class GenericImageQATests(unittest.TestCase):
             api_key_source="test",
             model="test-model",
             defaults={},
-            capabilities={},
             postprocess={"enabled": False},
         )
         args = SimpleNamespace(
@@ -407,7 +427,6 @@ class GenericImageQATests(unittest.TestCase):
             api_key_source="test",
             model="test-model",
             defaults={},
-            capabilities={},
             postprocess={"enabled": False},
         )
         args = SimpleNamespace(
@@ -427,7 +446,7 @@ class GenericImageQATests(unittest.TestCase):
         with self.assertRaisesRegex(self.imagegen.ImagegenError, "grid requires delivery_size"):
             self.imagegen.apply_postprocess({"ok": True, "files": [str(source)]}, args, cfg)
 
-    def test_transparent_postprocess_checks_source_before_transparent_padding(self) -> None:
+    def test_unmet_transparency_returns_original_without_padding(self) -> None:
         source = self.temp_dir / "opaque-source.png"
         make_rgba_png(source, 4, 4, [(20, 40, 60, 255)] * 16)
         cfg = self.imagegen.Config(
@@ -436,7 +455,6 @@ class GenericImageQATests(unittest.TestCase):
             api_key_source="test",
             model="test-model",
             defaults={},
-            capabilities={},
             postprocess={"enabled": False},
         )
         args = SimpleNamespace(
@@ -454,28 +472,40 @@ class GenericImageQATests(unittest.TestCase):
         )
 
         result = self.imagegen.apply_postprocess(
-            {"ok": True, "files": [str(source)]},
+            {
+                "ok": True,
+                "files": [str(source)],
+                "transparency": {
+                    "requested": True,
+                    "mode": "prompt-alpha",
+                    "key": None,
+                    "status": "pending",
+                },
+            },
             args,
             cfg,
         )
 
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["transparency"]["status"], "unmet")
+        self.assertEqual(result["files"], [source.resolve().as_posix()])
+        self.assertTrue(result["warnings"])
         self.assertEqual(result["qa"]["status"], "fail")
-        self.assertEqual([item["role"] for item in result["qa"]["artifacts"]], ["source", "delivery"])
-        self.assertEqual(
-            [(item["scope"], item["status"]) for item in result["qa"]["conditions"]],
-            [("source", "fail"), ("delivery", "pass")],
-        )
+        self.assertEqual([item["role"] for item in result["qa"]["artifacts"]], ["delivery"])
+        self.assertFalse((self.temp_dir / "transparent-delivery").exists())
 
-    def test_background_transparent_triggers_transparency_qa_without_delivery_transform(self) -> None:
-        source = self.temp_dir / "opaque-background-request.png"
-        make_rgba_png(source, 2, 2, [(20, 40, 60, 255)] * 4)
+    def test_prompt_alpha_success_keeps_api_file_as_delivery(self) -> None:
+        source = self.temp_dir / "native-alpha.png"
+        pixels = [(0, 0, 0, 0)] * 16
+        pixels[5] = (220, 30, 40, 255)
+        make_rgba_png(source, 4, 4, pixels)
+        out_dir = self.temp_dir / "unused-delivery"
         cfg = self.imagegen.Config(
             base_url="https://example.test/v1",
             api_key="secret",
             api_key_source="test",
             model="test-model",
             defaults={},
-            capabilities={"transparent_background": True},
             postprocess={"enabled": False},
         )
         args = SimpleNamespace(
@@ -485,22 +515,270 @@ class GenericImageQATests(unittest.TestCase):
             delivery_size=None,
             grid=None,
             expected_count=None,
-            transparent=False,
-            background="transparent",
+            postprocess_out_dir=str(out_dir),
+            resample="nearest",
+            fit="contain",
+            safe_margin=0.0,
+            transparent=True,
         )
 
-        result = self.imagegen.apply_postprocess({"ok": True, "files": [str(source)]}, args, cfg)
+        result = self.imagegen.apply_postprocess(
+            {
+                "ok": True,
+                "files": [str(source)],
+                "transparency": {
+                    "requested": True,
+                    "mode": "prompt-alpha",
+                    "key": None,
+                    "status": "pending",
+                },
+            },
+            args,
+            cfg,
+        )
 
-        self.assertEqual(result["qa"]["status"], "fail")
-        self.assertEqual(result["qa"]["conditions"][0]["kind"], "transparent")
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["transparency"]["status"], "pass")
+        self.assertEqual(result["files"], [source.resolve().as_posix()])
+        self.assertNotIn("original_files", result)
+        self.assertFalse(out_dir.exists())
+        self.assertEqual(result["qa"]["status"], "pass")
 
-    def test_background_transparent_adds_transparent_prompt_constraints(self) -> None:
-        args = SimpleNamespace(transparent=False, background="transparent", asset=False)
+    def test_chroma_key_success_preserves_api_original_and_delivers_derived_file(self) -> None:
+        source = self.temp_dir / "chroma-source.png"
+        green = (0, 255, 0, 255)
+        red = (220, 30, 40, 255)
+        pixels = [green] * 49
+        for y in range(2, 5):
+            for x in range(2, 5):
+                pixels[y * 7 + x] = red
+        make_rgba_png(source, 7, 7, pixels)
+        original = source.read_bytes()
+        out_dir = self.temp_dir / "transparent-delivery"
+        cfg = self.imagegen.Config(
+            base_url="https://example.test/v1",
+            api_key="secret",
+            api_key_source="test",
+            model="test-model",
+            defaults={},
+            postprocess={"enabled": True},
+        )
+        args = SimpleNamespace(
+            postprocess=True,
+            qa=True,
+            components=False,
+            delivery_size=None,
+            grid=None,
+            expected_count=None,
+            postprocess_out_dir=str(out_dir),
+            resample="nearest",
+            fit="contain",
+            safe_margin=0.0,
+            transparent=True,
+        )
 
-        prompt = self.imagegen.apply_prompt_directives("A clinic calendar", args, {})
+        result = self.imagegen.apply_postprocess(
+            {
+                "ok": True,
+                "files": [str(source)],
+                "transparency": {
+                    "requested": True,
+                    "mode": "chroma-key",
+                    "key": "#00FF00",
+                    "status": "pending",
+                },
+            },
+            args,
+            cfg,
+        )
 
-        self.assertIn("transparent background intent", prompt)
-        self.assertIn("alpha-friendly edges", prompt)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["transparency"]["status"], "pass")
+        self.assertEqual(result["original_files"], [str(source)])
+        self.assertEqual(source.read_bytes(), original)
+        self.assertEqual(len(result["files"]), 1)
+        self.assertNotEqual(result["files"][0], source.resolve().as_posix())
+        self.assertTrue(Path(result["files"][0]).is_file())
+        self.assertEqual(result["qa"]["status"], "pass")
+
+    def test_mixed_transparency_results_are_delivered_per_image(self) -> None:
+        passing = self.temp_dir / "passing.png"
+        failing = self.temp_dir / "failing.png"
+        green = (0, 255, 0, 255)
+        red = (220, 30, 40, 255)
+        keyed_pixels = [green] * 49
+        for y in range(2, 5):
+            for x in range(2, 5):
+                keyed_pixels[y * 7 + x] = red
+        make_rgba_png(passing, 7, 7, keyed_pixels)
+        make_rgba_png(failing, 7, 7, [(30, 40, 50, 255)] * 49)
+        cfg = self.imagegen.Config(
+            base_url="https://example.test/v1",
+            api_key="secret",
+            api_key_source="test",
+            model="test-model",
+            defaults={},
+            postprocess={"enabled": True},
+        )
+        args = SimpleNamespace(
+            postprocess=True,
+            qa=False,
+            components=False,
+            delivery_size=None,
+            grid=None,
+            expected_count=None,
+            postprocess_out_dir=str(self.temp_dir / "mixed-delivery"),
+            resample="nearest",
+            fit="contain",
+            safe_margin=0.0,
+            transparent=True,
+        )
+
+        result = self.imagegen.apply_postprocess(
+            {
+                "ok": True,
+                "files": [str(passing), str(failing)],
+                "transparency": {
+                    "requested": True,
+                    "mode": "chroma-key",
+                    "key": "#00FF00",
+                    "status": "pending",
+                },
+            },
+            args,
+            cfg,
+        )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["transparency"]["status"], "unmet")
+        self.assertEqual(
+            [item["status"] for item in result["transparency"]["artifacts"]],
+            ["pass", "unmet"],
+        )
+        self.assertNotEqual(result["files"][0], passing.resolve().as_posix())
+        self.assertEqual(result["files"][1], failing.resolve().as_posix())
+        self.assertTrue(Path(result["files"][0]).is_file())
+
+    def test_transparency_processing_exception_returns_api_original(self) -> None:
+        source = self.temp_dir / "source.png"
+        make_rgba_png(source, 4, 4, [(20, 40, 60, 255)] * 16)
+        cfg = self.imagegen.Config(
+            base_url="https://example.test/v1",
+            api_key="secret",
+            api_key_source="test",
+            model="test-model",
+            defaults={},
+            postprocess={"enabled": True},
+        )
+        args = SimpleNamespace(
+            postprocess=True,
+            qa=False,
+            components=False,
+            delivery_size=None,
+            grid=None,
+            expected_count=None,
+            postprocess_out_dir=str(self.temp_dir / "failed-delivery"),
+            resample="nearest",
+            fit="contain",
+            safe_margin=0.0,
+            transparent=True,
+        )
+
+        with mock.patch("image_postprocess.process_transparency_file", side_effect=RuntimeError("test failure")):
+            result = self.imagegen.apply_postprocess(
+                {
+                    "ok": True,
+                    "files": [str(source)],
+                    "transparency": {
+                        "requested": True,
+                        "mode": "chroma-key",
+                        "key": "#00FF00",
+                        "status": "pending",
+                    },
+                },
+                args,
+                cfg,
+            )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["files"], [source.resolve().as_posix()])
+        self.assertEqual(result["transparency"]["status"], "unmet")
+        self.assertIn("local_transparency_processing_failed", result["warnings"][0])
+
+    def test_transparency_delivery_failure_returns_api_original(self) -> None:
+        source = self.temp_dir / "source.png"
+        green = (0, 255, 0, 255)
+        pixels = [green] * 49
+        for y in range(2, 5):
+            for x in range(2, 5):
+                pixels[y * 7 + x] = (220, 30, 40, 255)
+        make_rgba_png(source, 7, 7, pixels)
+        original = source.read_bytes()
+        out_dir = self.temp_dir / "failed-delivery"
+        cfg = self.imagegen.Config(
+            base_url="https://example.test/v1",
+            api_key="secret",
+            api_key_source="test",
+            model="test-model",
+            defaults={},
+            postprocess={"enabled": True},
+        )
+        args = SimpleNamespace(
+            postprocess=True,
+            qa=False,
+            components=False,
+            delivery_size="4x4",
+            grid=None,
+            expected_count=None,
+            postprocess_out_dir=str(out_dir),
+            resample="nearest",
+            fit="contain",
+            safe_margin=0.0,
+            transparent=True,
+        )
+
+        with mock.patch.object(
+            self.imagegen,
+            "normalize_image_file",
+            side_effect=self.imagegen.ImagegenError("test delivery failure"),
+        ):
+            result = self.imagegen.apply_postprocess(
+                {
+                    "ok": True,
+                    "files": [str(source)],
+                    "transparency": {
+                        "requested": True,
+                        "mode": "chroma-key",
+                        "key": "#00FF00",
+                        "status": "pending",
+                    },
+                },
+                args,
+                cfg,
+            )
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["files"], [source.resolve().as_posix()])
+        self.assertEqual(source.read_bytes(), original)
+        self.assertEqual(result["transparency"]["status"], "unmet")
+        self.assertIn("postprocess_publish_failed", result["warnings"][0])
+        self.assertEqual(list(out_dir.glob("*.png")), [])
+
+    def test_transparent_intent_uses_only_the_delivery_flag(self) -> None:
+        args = SimpleNamespace(transparent=False, background="transparent")
+
+        self.assertFalse(self.imagegen.transparent_intent(args, {}))
+
+    def test_apply_prompt_directives_uses_resolved_transparency_plan(self) -> None:
+        args = SimpleNamespace(asset=False)
+        plan = self.imagegen.TransparencyPlan(
+            mode="prompt-alpha",
+            prompt="A clinic calendar\n\nOutput a PNG with a real alpha channel.",
+        )
+
+        prompt = self.imagegen.apply_prompt_directives("A clinic calendar", args, {}, plan)
+
+        self.assertIn("real alpha channel", prompt)
 
     def test_preview_board_writes_manifest_and_background_variants(self) -> None:
         source = self.temp_dir / "source.png"
@@ -581,7 +859,6 @@ class GenericImageQATests(unittest.TestCase):
             api_key_source="test",
             model="test-model",
             defaults={},
-            capabilities={},
             postprocess={"enabled": False},
         )
         args = SimpleNamespace(
@@ -608,6 +885,143 @@ class GenericImageQATests(unittest.TestCase):
 
         run_one.assert_not_called()
 
+    def test_batch_rejects_duplicate_transparency_targets_before_workers_start(self) -> None:
+        cfg = self.imagegen.Config(
+            base_url="https://example.test/v1",
+            api_key="secret",
+            api_key_source="test",
+            model="test-model",
+            defaults={},
+            postprocess={"enabled": True},
+        )
+        derived = self.temp_dir / "derived"
+        args = SimpleNamespace(
+            input=str(self.temp_dir / "tasks.jsonl"),
+            out=str(self.temp_dir / "batch"),
+            concurrency=2,
+            file=None,
+            format="png",
+            n=1,
+            transparent=False,
+            delivery_size=None,
+            grid=None,
+            postprocess_out_dir=str(derived),
+        )
+        tasks = [
+            {
+                "id": "first",
+                "prompt": "first",
+                "file": str(self.temp_dir / "a" / "same.png"),
+                "transparent": True,
+            },
+            {
+                "id": "second",
+                "prompt": "second",
+                "file": str(self.temp_dir / "b" / "same.png"),
+                "transparent": True,
+            },
+        ]
+
+        with (
+            mock.patch.object(self.imagegen, "read_jsonl", return_value=tasks),
+            mock.patch.object(self.imagegen, "run_one_task") as run_one,
+        ):
+            with self.assertRaisesRegex(self.imagegen.ImagegenError, "batch target path conflict"):
+                self.imagegen.batch(cfg, args)
+
+        run_one.assert_not_called()
+
+    def test_batch_prompt_alpha_does_not_reserve_unused_transparency_targets(self) -> None:
+        cfg = self.imagegen.Config(
+            base_url="https://example.test/v1",
+            api_key="secret",
+            api_key_source="test",
+            model="gpt-image-2",
+            defaults={},
+            postprocess={"enabled": False},
+            transparency=self.imagegen.resolve_transparency_policy(
+                {
+                    "prompt_only_allow": [
+                        {
+                            "model": "gpt-image-2",
+                            "mode": "generate",
+                            "size": "1024x1024",
+                        }
+                    ]
+                }
+            ),
+        )
+        derived = self.temp_dir / "derived"
+        args = SimpleNamespace(
+            input=str(self.temp_dir / "tasks.jsonl"),
+            out=str(self.temp_dir / "batch-prompt-alpha"),
+            concurrency=2,
+            file=None,
+            format="png",
+            n=1,
+            transparent=False,
+            delivery_size=None,
+            grid=None,
+            postprocess_out_dir=str(derived),
+            postprocess=False,
+        )
+        tasks = [
+            {
+                "id": "first",
+                "prompt": "first",
+                "file": str(self.temp_dir / "a" / "same.png"),
+                "transparent": True,
+                "size": "1024x1024",
+            },
+            {
+                "id": "second",
+                "prompt": "second",
+                "file": str(self.temp_dir / "b" / "same.png"),
+                "transparent": True,
+                "size": "1024x1024",
+            },
+        ]
+
+        def successful_result(_cfg: object, _args: object, task: dict[str, object]) -> dict[str, object]:
+            return {"id": task["id"], "ok": True, "files": []}
+
+        with (
+            mock.patch.object(self.imagegen, "read_jsonl", return_value=tasks),
+            mock.patch.object(self.imagegen, "run_one_task", side_effect=successful_result) as run_one,
+        ):
+            self.assertEqual(self.imagegen.batch(cfg, args), 0)
+
+        self.assertEqual(run_one.call_count, 2)
+
+    def test_batch_rejects_undeclared_transparency_route_before_workers_start(self) -> None:
+        cfg = self.imagegen.Config(
+            base_url="https://example.test/v1",
+            api_key="secret",
+            api_key_source="test",
+            model="gpt-image-2",
+            defaults={},
+            postprocess={"enabled": False},
+        )
+        args = SimpleNamespace(
+            input=str(self.temp_dir / "tasks.jsonl"),
+            out=str(self.temp_dir / "batch-transparent-unavailable"),
+            concurrency=1,
+            file=None,
+            format=None,
+            n=None,
+            postprocess=False,
+        )
+        tasks = [{"id": "transparent", "prompt": "isolated badge", "transparent": True, "size": "1024x1024"}]
+
+        with (
+            mock.patch.object(self.imagegen, "read_jsonl", return_value=tasks),
+            mock.patch.object(self.imagegen, "run_one_task") as run_one,
+        ):
+            with self.assertRaisesRegex(self.imagegen.ImagegenError, "No image request was sent"):
+                self.imagegen.batch(cfg, args)
+
+        run_one.assert_not_called()
+
     def test_batch_uses_resolved_png_format_for_transparent_unnamed_task(self) -> None:
         cfg = self.imagegen.Config(
             base_url="https://example.test/v1",
@@ -615,7 +1029,6 @@ class GenericImageQATests(unittest.TestCase):
             api_key_source="test",
             model="test-model",
             defaults={"output_format": "jpeg"},
-            capabilities={"transparent_background": True},
             postprocess={"enabled": False},
         )
         args = SimpleNamespace(
@@ -625,16 +1038,59 @@ class GenericImageQATests(unittest.TestCase):
             file=None,
             format=None,
             n=None,
+            postprocess=True,
         )
         tasks = [{"prompt": "transparent subject", "transparent": True}]
 
         with (
             mock.patch.object(self.imagegen, "read_jsonl", return_value=tasks),
-            mock.patch.object(self.imagegen, "run_one_task", return_value={"id": None, "ok": True}),
+            mock.patch.object(
+                self.imagegen,
+                "run_one_task",
+                return_value={"id": None, "ok": True, "files": []},
+            ) as run_one,
         ):
             self.assertEqual(self.imagegen.batch(cfg, args), 0)
 
-        self.assertEqual(Path(tasks[0]["file"]).suffix, ".png")
+        submitted_task = run_one.call_args.args[2]
+        self.assertEqual(Path(submitted_task["file"]).suffix, ".png")
+
+    def test_batch_workers_receive_normalized_shared_output_paths(self) -> None:
+        cfg = self.imagegen.Config(
+            base_url="https://example.test/v1",
+            api_key="secret",
+            api_key_source="test",
+            model="test-model",
+            defaults={},
+            postprocess={"enabled": False},
+        )
+        output_root = self.temp_dir / "batch-relative"
+        args = SimpleNamespace(
+            input=str(self.temp_dir / "tasks.jsonl"),
+            out=str(output_root),
+            concurrency=1,
+            file="shared/result.png",
+            format="png",
+            n=1,
+            postprocess=False,
+            postprocess_out_dir="derived",
+        )
+        tasks = [{"id": "one", "prompt": "one"}]
+
+        with (
+            mock.patch.object(self.imagegen, "read_jsonl", return_value=tasks),
+            mock.patch.object(
+                self.imagegen,
+                "run_one_task",
+                return_value={"id": "one", "ok": True, "files": []},
+            ) as run_one,
+        ):
+            self.assertEqual(self.imagegen.batch(cfg, args), 0)
+
+        worker_args = run_one.call_args.args[1]
+        self.assertEqual(Path(worker_args.file), (output_root / "shared/result.png").resolve())
+        self.assertEqual(Path(worker_args.postprocess_out_dir), (output_root / "derived").resolve())
+        self.assertEqual(args.file, "shared/result.png")
 
     def test_batch_rejects_explicit_extension_that_conflicts_with_resolved_format(self) -> None:
         cfg = self.imagegen.Config(
@@ -643,7 +1099,6 @@ class GenericImageQATests(unittest.TestCase):
             api_key_source="test",
             model="test-model",
             defaults={"output_format": "jpeg"},
-            capabilities={"transparent_background": True},
             postprocess={"enabled": False},
         )
         args = SimpleNamespace(
@@ -653,6 +1108,7 @@ class GenericImageQATests(unittest.TestCase):
             file=None,
             format=None,
             n=None,
+            postprocess=True,
         )
         tasks = [
             {
@@ -702,7 +1158,6 @@ class GenericImageQATests(unittest.TestCase):
             api_key_source="test",
             model="test-model",
             defaults={},
-            capabilities={},
             postprocess={"enabled": False},
         )
         args = SimpleNamespace(

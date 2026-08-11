@@ -27,7 +27,18 @@ Do not invent an industry, audience, brand, platform, or composition that the us
 [Delivery context and target dimensions]. [Required text or no-text rule]. [Concrete exclusions].
 ```
 
-For transparent output, describe an isolated subject and alpha-friendly edges only when transparency is requested. Do not use those constraints for scenes, posters, backgrounds, or layouts.
+For transparent output, describe an isolated subject and clean subject edges only when transparency is requested. Do not add transparency constraints to scenes, posters, backgrounds, or layouts.
+
+## Transparency Prompts
+
+Choose the wording from the selected runtime route:
+
+- Local post-processing: ask for one uniform flat key-color background, no gradient, texture, shadow, glow, floor, or key color on the subject. The local processor needs a solid canvas edge to distinguish background from subject.
+- Prompt-only alpha: explicitly request a PNG with a real alpha channel, alpha 0 outside the subject, and antialiased partially transparent edges. Use this only for an exact `transparency.prompt_only_allow` rule.
+
+Prompt-only wording increases the chance of alpha output; it does not guarantee it. If the returned image is opaque, the skill returns that API image unchanged and reports `transparency.status=unmet`. Do not describe the result as transparent merely because the prompt contained alpha instructions.
+
+For a model or size that is not explicitly allowed, report the unavailable route before sending a request. Do not silently downgrade a 2K or 4K request to 1K, change models, or retry with a stronger prompt. A 1K rule must match the exact pixel size, mode, and model in `auth.json`; a failed alpha prompt still returns the API image unchanged.
 
 ## Cross-Industry Examples
 
@@ -36,7 +47,8 @@ For transparent output, describe an isolated subject and alpha-friendly edges on
 - Marketing: "Vertical launch poster for a community workshop, energetic paper-cut style, clear top area for a headline, no generated lettering."
 - Interface: "Desktop analytics dashboard reference, dense but readable tables and charts, light neutral theme, realistic application layout."
 - Game: "Square fantasy strategy game ability icon, a cracked ice sigil with a distinct silhouette, high contrast at small display sizes, no text."
-- Transparent subject: "Isolated ceramic vase, front three-quarter view, clean alpha-friendly edges, no floor or backdrop, no lettering."
+- Transparent with local processing: "Isolated ceramic vase, front three-quarter view, one uniform flat #00FF00 background, no floor, shadow, glow, texture, or lettering; keep the key color off the vase and its antialiased edge."
+- Transparent with prompt-only alpha: "Isolated ceramic vase, front three-quarter view, PNG with a real alpha channel, alpha 0 outside the vase, antialiased partially transparent edges, no floor, backdrop, shadow, glow, or lettering."
 
 ## Batch Variation
 

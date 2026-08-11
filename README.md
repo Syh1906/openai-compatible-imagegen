@@ -41,7 +41,7 @@ The configured `base_url` must expose these endpoints:
 
 Image responses may contain `data[].b64_json` or `data[].url`. JSON responses are limited to 96 MiB, and each decoded or downloaded image is limited to 64 MiB. Returned PNG files are fully parsed before writing and must be non-interlaced 8-bit RGB/RGBA with no more than 25 million pixels; RGB `tRNS` and other PNG encodings are rejected. JPEG and WebP responses are checked for container and key codec framing before delivery. API credentials are not forwarded to returned image URLs.
 
-Supported request controls include exact pixel sizes, aspect and resolution presets, quality, output format, transparent-background intent, moderation, and compression. Backend support varies, so keep `auth.json` aligned with your provider.
+Supported request controls include exact pixel sizes, aspect and resolution presets, quality, output format, transparent delivery intent, moderation, and compression. Transparent delivery is handled by a declared local route or an exact prompt-only allow rule; it is not sent as an API background parameter.
 
 ## Installation
 
@@ -72,8 +72,11 @@ For manual setup, copy `examples/auth.example.json` to `auth.json` in the skill 
   "api_key": "",
   "api_key_env": "OPENAI_API_KEY",
   "model": "gpt-image-2",
-  "capabilities": {
-    "transparent_background": false
+  "postprocess": {
+    "enabled": false
+  },
+  "transparency": {
+    "prompt_only_allow": []
   }
 }
 ```
@@ -85,7 +88,11 @@ $SkillDir = "/path/to/openai-compatible-imagegen"
 python "$SkillDir/scripts/imagegen.py" info
 ```
 
-Set `capabilities.transparent_background=true` only when the selected backend accepts `background=transparent`.
+The old `capabilities.transparent_background` setting and `background=transparent` request value are removed. Do not translate them into an API parameter. To allow local transparency processing by default, set `postprocess.enabled` to `true`; to allow prompt-only alpha generation, add exact `model`/`mode`/`size` entries under `transparency.prompt_only_allow`.
+
+When a transparent result is requested, local processing has priority. If it is disabled, an exact prompt-only rule may add a real-alpha prompt contract. Neither route guarantees alpha. If the returned image does not meet the transparency checks, the API image is still returned unchanged with a warning and `transparency.status=unmet`.
+
+The local `chroma-key` route requires a uniform edge-connected key-color plate and checks residual key-color contamination before publishing a derived file. It does not publish a guessed cutout when those checks fail.
 
 ## Ask Your Agent
 
@@ -98,7 +105,7 @@ Describe the subject, visual direction, final size, transparency, quantity, chec
 - "Generate a 3x3 UI concept sheet and split it into nine 256x256 PNG files."
 - "Create a fantasy strategy game frost ability icon, no text, and deliver 64x64 and 128x128 previews."
 
-Generation size and delivery size are separate. A request can generate a larger source image and then produce an exact local deliverable.
+Generation size and delivery size are separate. A request can generate a larger source image and then produce an exact local deliverable. The returned source image must match the resolved API generation size; a backend response with different dimensions is rejected before publication.
 
 ## Manual Commands
 
@@ -119,7 +126,8 @@ python "$SkillDir/scripts/imagegen.py" edit `
   -i "input.png" `
   -f "outputs/product-cutout.png" `
   --asset `
-  --transparent
+  --transparent `
+  --postprocess
 ```
 
 ### Run a batch
@@ -131,7 +139,9 @@ python "$SkillDir/scripts/imagegen.py" batch `
   --concurrency 3
 ```
 
-Batch rows can set `qa`, `components`, `delivery_size`, `grid`, `expected_count`, `resample`, `fit`, and `safe_margin`. The command writes `manifest.json`. Derived files appear in `files`, while API originals remain in `original_files`.
+Batch rows can set `postprocess`, `qa`, `components`, `delivery_size`, `grid`, `expected_count`, `resample`, `fit`, and `safe_margin`. The command writes `manifest.json`. When a derived file is published, it appears in `files` and the API source remains in `original_files`. When transparency is unmet, `files` keeps the API source path.
+
+For batch paths, JSONL `images` and `mask` values are relative to the JSONL file directory. Task or shared `file`, `out`, and `postprocess_out_dir` values are relative to batch `--out`; absolute paths remain unchanged. The manifest records the resolved `output_root` and a `path_contract` file-existence check.
 
 ### Inspect and validate
 
@@ -166,7 +176,7 @@ python "$SkillDir/scripts/imagegen.py" split-grid "sheet.png" `
 
 `stretch` fills the exact delivery size. `contain` preserves aspect ratio on a transparent canvas. `--safe-margin` reserves a fractional margin on every edge when using `contain`. `bilinear` is the default resampler; use `nearest` for intentional pixel replication.
 
-`generate`, `edit`, and `batch` accept the same delivery controls. Add `--qa` to attach `qa.v1` results without changing generation success or retrying the request. For transparent requests with delivery transforms, QA checks the API source and the delivery file separately, so transparent padding cannot make an opaque source pass.
+`generate`, `edit`, and `batch` accept the same delivery controls. Add `--qa` to attach `qa.v1` results without changing generation success or retrying the request. For transparent requests, a failed transparency route skips dependent delivery transforms and returns the API file unchanged.
 
 ### Build a preview board
 
@@ -193,11 +203,15 @@ Key `auth.json` fields:
 | `model` | Default image model |
 | `user_agent` | HTTP client signature used for API and image URL requests |
 | `url_download.proxy_mode` | `environment` by default, or explicit `direct` URL downloading |
-| `capabilities.transparent_background` | Declares backend support for transparent requests |
 | `defaults.*` | Default size, aspect, resolution, quality, format, timeout, and concurrency |
-| `postprocess.enabled` | Allows requested generated-output post-processing to run |
+| `postprocess.enabled` | Allows the local transparency route by default |
+| `transparency.prompt_only_allow` | Exact model/mode/size rules for prompt-only alpha generation |
 
 If image URL downloads repeatedly fail with TLS EOF through a proxy, choose direct downloading explicitly with `--allow-direct-url-download` for one command or `url_download.proxy_mode="direct"` for a known provider. Image API requests continue to use the normal network path.
+
+When transparency is unmet, the command remains successful if the API image was written. Read the warning and the `transparency` record in the manifest before deciding whether the file is suitable for the final use.
+
+HTTP 4xx responses are API rejections, reported as `error_kind=api_rejected` with `status_code`; they are not transparency failures because no image exists yet. Edit results and edit errors may include technical reference metadata with semantic status `not_evaluated`. Unusual reference dimensions are reported, not automatically blocked.
 
 ## Supported Commands
 

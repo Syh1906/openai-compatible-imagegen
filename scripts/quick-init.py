@@ -30,19 +30,19 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--api-key-env", default=None, help="Environment variable name to read the API key from")
     parser.add_argument("--force", action="store_true", help="Recreate auth.json if it already exists")
     parser.add_argument("--non-interactive", action="store_true", help="Require all setup values as flags")
-    transparent = parser.add_mutually_exclusive_group()
-    transparent.add_argument(
-        "--transparent-background",
+    postprocess = parser.add_mutually_exclusive_group()
+    postprocess.add_argument(
+        "--postprocess",
         action="store_true",
-        dest="transparent_background",
+        dest="postprocess",
         default=None,
-        help="Mark the backend as supporting background=transparent",
+        help="Allow generated-output post-processing by default",
     )
-    transparent.add_argument(
-        "--no-transparent-background",
+    postprocess.add_argument(
+        "--no-postprocess",
         action="store_false",
-        dest="transparent_background",
-        help="Mark the backend as not supporting background=transparent",
+        dest="postprocess",
+        help="Keep generated-output post-processing disabled by default",
     )
     return parser
 
@@ -107,11 +107,11 @@ def collect_values(args: argparse.Namespace, template: dict[str, Any]) -> dict[s
             api_key = str(template.get("api_key") or "").strip()
         else:
             raise QuickInitError("local auth requires interactive setup so the API key is not stored in shell history")
-        if args.transparent_background is None:
+        if args.postprocess is None:
             raise QuickInitError(
-                "--transparent-background or --no-transparent-background is required in --non-interactive mode"
+                "--postprocess or --no-postprocess is required in --non-interactive mode"
             )
-        transparent_background = bool(args.transparent_background)
+        postprocess_enabled = bool(args.postprocess)
     else:
         base_url = (args.base_url or prompt_text("API base URL", base_url_default)).strip()
         if not base_url:
@@ -130,10 +130,10 @@ def collect_values(args: argparse.Namespace, template: dict[str, Any]) -> dict[s
             if not api_key:
                 raise QuickInitError("API key is required for local auth")
             api_key_env = ""
-        transparent_background = (
-            bool(args.transparent_background)
-            if args.transparent_background is not None
-            else prompt_yes_no("Does this backend support transparent backgrounds?", False)
+        postprocess_enabled = (
+            bool(args.postprocess)
+            if args.postprocess is not None
+            else prompt_yes_no("Allow local generated-output post-processing?", False)
         )
 
     return {
@@ -141,7 +141,7 @@ def collect_values(args: argparse.Namespace, template: dict[str, Any]) -> dict[s
         "model": model,
         "api_key": api_key,
         "api_key_env": api_key_env,
-        "transparent_background": transparent_background,
+        "postprocess_enabled": postprocess_enabled,
     }
 
 
@@ -151,9 +151,10 @@ def write_auth_config(values: dict[str, Any], template: dict[str, Any]) -> None:
     data["model"] = values["model"]
     data["api_key"] = values["api_key"]
     data["api_key_env"] = values["api_key_env"]
-    capabilities = data.get("capabilities") if isinstance(data.get("capabilities"), dict) else {}
-    capabilities["transparent_background"] = bool(values["transparent_background"])
-    data["capabilities"] = capabilities
+    data.pop("capabilities", None)
+    postprocess = data.get("postprocess") if isinstance(data.get("postprocess"), dict) else {}
+    postprocess["enabled"] = bool(values["postprocess_enabled"])
+    data["postprocess"] = postprocess
     imagegen.AUTH_PATH.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
