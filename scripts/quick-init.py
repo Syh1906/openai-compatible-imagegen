@@ -36,13 +36,13 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         dest="postprocess",
         default=None,
-        help="Allow generated-output post-processing by default",
+        help="Prefer local transparency processing when a route can be selected",
     )
     postprocess.add_argument(
         "--no-postprocess",
         action="store_false",
         dest="postprocess",
-        help="Keep generated-output post-processing disabled by default",
+        help="Prefer prompt-only transparency only where an exact allow rule exists",
     )
     return parser
 
@@ -133,7 +133,7 @@ def collect_values(args: argparse.Namespace, template: dict[str, Any]) -> dict[s
         postprocess_enabled = (
             bool(args.postprocess)
             if args.postprocess is not None
-            else prompt_yes_no("Allow local generated-output post-processing?", False)
+            else prompt_yes_no("Prefer local transparency processing when available?", False)
         )
 
     return {

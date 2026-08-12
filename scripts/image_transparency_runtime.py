@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from image_transparency import (
+    LOCAL_ROUTES,
     TransparencyContext,
     TransparencyPlan,
     TransparencyPolicy,
@@ -25,11 +26,17 @@ def resolve_request(
     reference_paths: list[Path] | None = None,
 ) -> TransparencyPlan:
     explicit_postprocess = get_value("postprocess", args, task, None)
+    requested_route = get_value("transparency_route", args, task, None)
+    normalized_route = str(requested_route or "").strip().lower()
+    if explicit_postprocess is False and normalized_route in LOCAL_ROUTES:
+        raise ValueError(f"--no-postprocess conflicts with transparency route {normalized_route}")
     postprocess_allowed = (
         bool(postprocess_config.get("enabled"))
         if explicit_postprocess is None
         else bool(explicit_postprocess)
     )
+    if normalized_route in LOCAL_ROUTES:
+        postprocess_allowed = True
     mask_value = get_value("transparency_mask", args, task, None)
     options_value = task.get("transparency_options")
     if options_value is None:
@@ -45,7 +52,7 @@ def resolve_request(
         size=str(params["size"]),
         postprocess_allowed=postprocess_allowed,
         reference_paths=tuple(reference_paths or ()),
-        route=get_value("transparency_route", args, task, None),
+        route=requested_route,
         mask_path=Path(str(mask_value)).expanduser().resolve() if mask_value else None,
         options=options_value or {},
     )

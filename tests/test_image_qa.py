@@ -231,62 +231,6 @@ class GenericImageQATests(unittest.TestCase):
         self.assertFalse(self.imagegen.get_value("qa", args, task, False))
         self.assertEqual(self.imagegen.get_value("resample", args, task, None), "bilinear")
 
-    def test_write_response_images_rejects_incomplete_base64_before_write(self) -> None:
-        target = self.temp_dir / "result.png"
-        response = {"data": [{"b64_json": base64.b64encode(PNG_SIGNATURE).decode("ascii")}]}
-
-        with self.assertRaisesRegex(self.imagegen.ImagegenError, "complete PNG, JPEG, or WebP"):
-            self.imagegen.write_response_images(response, target, "png")
-
-        self.assertFalse(target.exists())
-
-    def test_write_response_images_rejects_non_object_before_any_write(self) -> None:
-        source = self.temp_dir / "valid.png"
-        make_rgba_png(source, 1, 1, [(255, 0, 0, 255)])
-        response = {
-            "data": [
-                {"b64_json": base64.b64encode(source.read_bytes()).decode("ascii")},
-                None,
-            ]
-        }
-
-        with self.assertRaisesRegex(self.imagegen.ImagegenError, r"data\[1\].*object"):
-            self.imagegen.write_response_images(response, self.temp_dir / "result.png", "png")
-
-        self.assertEqual(list(self.temp_dir.glob("result*.png")), [])
-
-    def test_write_response_images_requires_requested_count(self) -> None:
-        source = self.temp_dir / "valid.png"
-        make_rgba_png(source, 1, 1, [(255, 0, 0, 255)])
-        response = {"data": [{"b64_json": base64.b64encode(source.read_bytes()).decode("ascii")}]}
-
-        with self.assertRaisesRegex(self.imagegen.ImagegenError, "returned 1 image.*requested 2"):
-            self.imagegen.write_response_images(
-                response,
-                self.temp_dir / "result.png",
-                "png",
-                expected_count=2,
-            )
-
-    def test_write_response_images_rejects_response_size_mismatch_before_write(self) -> None:
-        source = self.temp_dir / "wrong-size.png"
-        target = self.temp_dir / "result.png"
-        make_rgba_png(source, 2, 3, [(255, 0, 0, 255)] * 6)
-        response = {"data": [{"b64_json": base64.b64encode(source.read_bytes()).decode("ascii")}]}
-
-        with self.assertRaisesRegex(
-            self.imagegen.ImagegenError,
-            r"image response size 2x3 does not match requested size 4x4",
-        ):
-            self.imagegen.write_response_images(
-                response,
-                target,
-                "png",
-                expected_size=(4, 4),
-            )
-
-        self.assertFalse(target.exists())
-
     def test_decode_base64_rejects_encoded_image_over_byte_limit(self) -> None:
         encoded = base64.b64encode(b"12345").decode("ascii")
 
@@ -365,16 +309,6 @@ class GenericImageQATests(unittest.TestCase):
         self.assertEqual(self.imagegen.image_dimensions(jpeg, "jpeg"), (1, 1))
         self.assertEqual(self.imagegen.image_dimensions(webp, "webp"), (1, 1))
 
-    def test_write_response_images_rejects_actual_format_mismatch(self) -> None:
-        source = self.temp_dir / "valid.png"
-        make_rgba_png(source, 1, 1, [(255, 0, 0, 255)])
-        response = {"data": [{"b64_json": base64.b64encode(source.read_bytes()).decode("ascii")}]}
-
-        with self.assertRaisesRegex(self.imagegen.ImagegenError, "actual format png.*requested jpeg"):
-            self.imagegen.write_response_images(response, self.temp_dir / "result.jpeg", "jpeg")
-
-        self.assertFalse((self.temp_dir / "result.jpeg").exists())
-
     def test_resolved_png_rejects_jpeg_output_extension(self) -> None:
         args = SimpleNamespace(file=str(self.temp_dir / "result.jpeg"), out=str(self.temp_dir))
 
@@ -414,7 +348,13 @@ class GenericImageQATests(unittest.TestCase):
             cfg,
         )
 
-        self.assertEqual(len(result["files"]), 2)
+        self.assertEqual(
+            result["original_files"],
+            [first.resolve().as_posix(), second.resolve().as_posix()],
+        )
+        self.assertEqual(len(result["files"]), 4)
+        self.assertEqual(result["derived_files"], [result["files"][1], result["files"][3]])
+        self.assertTrue(result["delivery_ready"])
         self.assertEqual(result["qa"]["status"], "pass")
         self.assertEqual(result["qa"]["checks"][0]["expected"], 2)
 
@@ -542,9 +482,14 @@ class GenericImageQATests(unittest.TestCase):
         self.assertTrue(result["delivery_ready"])
         self.assertEqual(result["transparency"]["status"], "pass")
         self.assertEqual(result["files"], [source.resolve().as_posix()])
-        self.assertNotIn("original_files", result)
+        self.assertEqual(result["original_files"], [source.resolve().as_posix()])
+        self.assertNotIn("derived_files", result)
         self.assertFalse(out_dir.exists())
         self.assertEqual(result["qa"]["status"], "pass")
+        self.assertEqual(
+            result["transparency"]["artifacts"][0]["file"],
+            source.resolve().as_posix(),
+        )
 
     def test_chroma_matting_success_preserves_api_original_and_delivers_derived_file(self) -> None:
         source = self.temp_dir / "chroma-source.png"
@@ -597,12 +542,239 @@ class GenericImageQATests(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertTrue(result["delivery_ready"])
         self.assertEqual(result["transparency"]["status"], "pass")
-        self.assertEqual(result["original_files"], [str(source)])
+        self.assertEqual(result["original_files"], [source.resolve().as_posix()])
         self.assertEqual(source.read_bytes(), original)
-        self.assertEqual(len(result["files"]), 1)
-        self.assertNotEqual(result["files"][0], source.resolve().as_posix())
-        self.assertTrue(Path(result["files"][0]).is_file())
+        self.assertEqual(result["files"][0], source.resolve().as_posix())
+        self.assertEqual(result["derived_files"], [result["files"][1]])
+        self.assertNotEqual(result["files"][1], source.resolve().as_posix())
+        self.assertTrue(Path(result["files"][1]).is_file())
         self.assertEqual(result["qa"]["status"], "pass")
+
+    def test_transparency_success_returns_original_and_delivery_size_result(self) -> None:
+        source = self.temp_dir / "chroma-sized-source.png"
+        green = (0, 255, 0, 255)
+        red = (220, 30, 40, 255)
+        pixels = [green] * 49
+        for y in range(2, 5):
+            for x in range(2, 5):
+                pixels[y * 7 + x] = red
+        make_rgba_png(source, 7, 7, pixels)
+        out_dir = self.temp_dir / "sized-transparent-delivery"
+        cfg = self.imagegen.Config(
+            base_url="https://example.test/v1",
+            api_key="secret",
+            api_key_source="test",
+            model="test-model",
+            defaults={},
+            postprocess={"enabled": True},
+        )
+        args = SimpleNamespace(
+            postprocess=True,
+            qa=True,
+            components=False,
+            delivery_size="4x4",
+            grid=None,
+            expected_count=None,
+            postprocess_out_dir=str(out_dir),
+            resample="nearest",
+            fit="contain",
+            safe_margin=0.0,
+            transparent=True,
+        )
+
+        result = self.imagegen.apply_postprocess(
+            {
+                "ok": True,
+                "files": [str(source)],
+                "transparency": {
+                    "requested": True,
+                    "mode": "chroma-matting",
+                    "key": "#00FF00",
+                    "status": "pending",
+                },
+            },
+            args,
+            cfg,
+        )
+
+        self.assertTrue(result["delivery_ready"])
+        self.assertEqual(result["files"][0], source.resolve().as_posix())
+        self.assertEqual(len(result["derived_files"]), 1)
+        self.assertEqual(result["files"][1], result["derived_files"][0])
+        self.assertEqual(
+            self.imagegen.inspect_image_file(Path(result["files"][1]))["width"],
+            4,
+        )
+        self.assertEqual(result["qa"]["status"], "pass")
+
+    def test_transparency_grid_returns_original_and_final_grid_without_intermediate_file(self) -> None:
+        source = self.temp_dir / "grid-source.png"
+        green = (0, 255, 0, 255)
+        red = (220, 30, 40, 255)
+        pixels = [green] * 64
+        for y in range(1, 7):
+            for x in range(1, 7):
+                pixels[y * 8 + x] = red
+        make_rgba_png(source, 8, 8, pixels)
+        out_dir = self.temp_dir / "grid-transparent-delivery"
+        cfg = self.imagegen.Config(
+            base_url="https://example.test/v1",
+            api_key="secret",
+            api_key_source="test",
+            model="test-model",
+            defaults={},
+            postprocess={"enabled": True},
+        )
+        args = SimpleNamespace(
+            postprocess=True,
+            qa=False,
+            components=False,
+            delivery_size="4x4",
+            grid="2x2",
+            expected_count=None,
+            postprocess_out_dir=str(out_dir),
+            resample="nearest",
+            fit="contain",
+            safe_margin=0.0,
+            transparent=True,
+        )
+
+        result = self.imagegen.apply_postprocess(
+            {
+                "ok": True,
+                "files": [str(source)],
+                "transparency": {
+                    "requested": True,
+                    "mode": "chroma-matting",
+                    "key": "#00FF00",
+                    "status": "pending",
+                },
+            },
+            args,
+            cfg,
+        )
+
+        expected_derived = [
+            (out_dir / f"grid-source_{index:02d}.png").resolve().as_posix()
+            for index in range(1, 5)
+        ]
+        self.assertTrue(result["delivery_ready"])
+        self.assertEqual(result["files"], [source.resolve().as_posix(), *expected_derived])
+        self.assertEqual(result["derived_files"], expected_derived)
+        self.assertEqual(result["transparency"]["artifacts"][0]["files"], expected_derived)
+        self.assertFalse((out_dir / "grid-source-transparent.png").exists())
+        self.assertEqual(sorted(path.resolve().as_posix() for path in out_dir.glob("*.png")), expected_derived)
+
+    def test_multiple_transparency_successes_return_each_original_and_derived_pair(self) -> None:
+        first = self.temp_dir / "first-keyed.png"
+        second = self.temp_dir / "second-keyed.png"
+        green = (0, 255, 0, 255)
+        red = (220, 30, 40, 255)
+        pixels = [green] * 49
+        for y in range(2, 5):
+            for x in range(2, 5):
+                pixels[y * 7 + x] = red
+        make_rgba_png(first, 7, 7, pixels)
+        make_rgba_png(second, 7, 7, pixels)
+        cfg = self.imagegen.Config(
+            base_url="https://example.test/v1",
+            api_key="secret",
+            api_key_source="test",
+            model="test-model",
+            defaults={},
+            postprocess={"enabled": True},
+        )
+        args = SimpleNamespace(
+            postprocess=True,
+            qa=False,
+            components=False,
+            delivery_size=None,
+            grid=None,
+            expected_count=None,
+            postprocess_out_dir=str(self.temp_dir / "multi-transparent-delivery"),
+            resample="nearest",
+            fit="contain",
+            safe_margin=0.0,
+            transparent=True,
+        )
+
+        result = self.imagegen.apply_postprocess(
+            {
+                "ok": True,
+                "files": [str(first), str(second)],
+                "transparency": {
+                    "requested": True,
+                    "mode": "chroma-matting",
+                    "key": "#00FF00",
+                    "status": "pending",
+                },
+            },
+            args,
+            cfg,
+        )
+
+        self.assertTrue(result["delivery_ready"])
+        self.assertEqual(result["original_files"], [first.resolve().as_posix(), second.resolve().as_posix()])
+        self.assertEqual(len(result["derived_files"]), 2)
+        self.assertEqual(
+            result["files"],
+            [
+                first.resolve().as_posix(),
+                result["derived_files"][0],
+                second.resolve().as_posix(),
+                result["derived_files"][1],
+            ],
+        )
+        self.assertTrue(all(Path(path).is_file() for path in result["derived_files"]))
+
+    def test_transparency_reprocess_uses_api_originals_instead_of_previous_derived_files(self) -> None:
+        source = self.temp_dir / "rerun-source.png"
+        green = (0, 255, 0, 255)
+        red = (220, 30, 40, 255)
+        pixels = [green] * 49
+        for y in range(2, 5):
+            for x in range(2, 5):
+                pixels[y * 7 + x] = red
+        make_rgba_png(source, 7, 7, pixels)
+        cfg = self.imagegen.Config(
+            base_url="https://example.test/v1",
+            api_key="secret",
+            api_key_source="test",
+            model="test-model",
+            defaults={},
+            postprocess={"enabled": True},
+        )
+        args = SimpleNamespace(
+            postprocess=True,
+            qa=False,
+            components=False,
+            delivery_size=None,
+            grid=None,
+            expected_count=None,
+            postprocess_out_dir=str(self.temp_dir / "rerun-transparent-delivery"),
+            resample="nearest",
+            fit="contain",
+            safe_margin=0.0,
+            transparent=True,
+        )
+        record = {
+            "ok": True,
+            "files": [str(source)],
+            "transparency": {
+                "requested": True,
+                "mode": "chroma-matting",
+                "key": "#00FF00",
+                "status": "pending",
+            },
+        }
+
+        first = self.imagegen.apply_postprocess(record, args, cfg)
+        second = self.imagegen.apply_postprocess(first, args, cfg)
+
+        self.assertEqual(second["original_files"], [source.resolve().as_posix()])
+        self.assertEqual(len(second["derived_files"]), 1)
+        self.assertEqual(second["files"][0], source.resolve().as_posix())
+        self.assertTrue(Path(second["derived_files"][0]).is_file())
 
     def test_mixed_transparency_results_are_delivered_per_image(self) -> None:
         passing = self.temp_dir / "passing.png"
@@ -659,9 +831,15 @@ class GenericImageQATests(unittest.TestCase):
             [item["status"] for item in result["transparency"]["artifacts"]],
             ["pass", "unmet"],
         )
-        self.assertNotEqual(result["files"][0], passing.resolve().as_posix())
-        self.assertEqual(result["files"][1], failing.resolve().as_posix())
-        self.assertTrue(Path(result["files"][0]).is_file())
+        self.assertEqual(
+            result["files"],
+            [
+                passing.resolve().as_posix(),
+                result["derived_files"][0],
+                failing.resolve().as_posix(),
+            ],
+        )
+        self.assertTrue(Path(result["derived_files"][0]).is_file())
 
     def test_transparency_processing_exception_returns_api_original(self) -> None:
         source = self.temp_dir / "source.png"
@@ -765,10 +943,66 @@ class GenericImageQATests(unittest.TestCase):
         self.assertTrue(result["ok"])
         self.assertFalse(result["delivery_ready"])
         self.assertEqual(result["files"], [source.resolve().as_posix()])
+        self.assertNotIn("derived_files", result)
         self.assertEqual(source.read_bytes(), original)
         self.assertEqual(result["transparency"]["status"], "unmet")
-        self.assertIn("postprocess_publish_failed", result["warnings"][0])
+        self.assertIn("postprocess_item_failed", result["warnings"][0])
         self.assertEqual(list(out_dir.glob("*.png")), [])
+
+    def test_native_alpha_transform_failure_is_not_delivery_ready(self) -> None:
+        source = self.temp_dir / "native-alpha.png"
+        pixels = [(0, 0, 0, 0)] * 16
+        for y in range(1, 3):
+            for x in range(1, 3):
+                pixels[y * 4 + x] = (40, 90, 180, 255)
+        make_rgba_png(source, 4, 4, pixels)
+        cfg = self.imagegen.Config(
+            base_url="https://example.test/v1",
+            api_key="secret",
+            api_key_source="test",
+            model="test-model",
+            defaults={},
+            postprocess={"enabled": True},
+        )
+        args = SimpleNamespace(
+            postprocess=True,
+            qa=False,
+            components=False,
+            delivery_size="2x2",
+            grid=None,
+            expected_count=None,
+            postprocess_out_dir=str(self.temp_dir / "native-alpha-delivery"),
+            resample="nearest",
+            fit="contain",
+            safe_margin=0.0,
+            transparent=True,
+        )
+
+        with mock.patch.object(
+            self.imagegen,
+            "normalize_image_file",
+            side_effect=self.imagegen.ImagegenError("test delivery failure"),
+        ):
+            result = self.imagegen.apply_postprocess(
+                {
+                    "ok": True,
+                    "files": [str(source)],
+                    "transparency": {
+                        "requested": True,
+                        "mode": "prompt-alpha",
+                        "status": "pending",
+                    },
+                },
+                args,
+                cfg,
+            )
+
+        self.assertEqual(result["files"], [source.resolve().as_posix()])
+        self.assertEqual(result["transparency"]["status"], "pass")
+        self.assertFalse(result["delivery_ready"])
+        self.assertTrue(
+            any(warning.startswith("postprocess_item_failed:") for warning in result["warnings"])
+        )
 
     def test_transparent_intent_uses_only_the_delivery_flag(self) -> None:
         args = SimpleNamespace(transparent=False, background="transparent")
@@ -999,7 +1233,7 @@ class GenericImageQATests(unittest.TestCase):
 
         self.assertEqual(run_one.call_count, 2)
 
-    def test_batch_rejects_undeclared_transparency_route_before_workers_start(self) -> None:
+    def test_batch_2k_transparency_without_prompt_only_rule_reaches_workers(self) -> None:
         cfg = self.imagegen.Config(
             base_url="https://example.test/v1",
             api_key="secret",
@@ -1017,13 +1251,55 @@ class GenericImageQATests(unittest.TestCase):
             n=None,
             postprocess=False,
         )
-        tasks = [{"id": "transparent", "prompt": "isolated badge", "transparent": True, "size": "1024x1024"}]
+        tasks = [{"id": "transparent", "prompt": "isolated badge", "transparent": True, "size": "2048x2048"}]
+
+        with (
+            mock.patch.object(self.imagegen, "read_jsonl", return_value=tasks),
+            mock.patch.object(
+                self.imagegen,
+                "run_one_task",
+                return_value={"id": "transparent", "ok": True, "files": []},
+            ) as run_one,
+        ):
+            self.assertEqual(self.imagegen.batch(cfg, args), 0)
+
+        run_one.assert_called_once()
+
+    def test_batch_rejects_removed_background_before_workers_start(self) -> None:
+        cfg = self.imagegen.Config(
+            base_url="https://example.test/v1",
+            api_key="secret",
+            api_key_source="test",
+            model="gpt-image-2",
+            defaults={},
+            postprocess={"enabled": False},
+        )
+        args = SimpleNamespace(
+            input=str(self.temp_dir / "tasks.jsonl"),
+            out=str(self.temp_dir / "batch-invalid-background"),
+            concurrency=1,
+            file=None,
+            format=None,
+            n=None,
+            postprocess=False,
+        )
+        tasks = [
+            {
+                "id": "transparent",
+                "prompt": "isolated badge",
+                "background": " TRANSPARENT ",
+                "size": "2048x2048",
+            }
+        ]
 
         with (
             mock.patch.object(self.imagegen, "read_jsonl", return_value=tasks),
             mock.patch.object(self.imagegen, "run_one_task") as run_one,
         ):
-            with self.assertRaisesRegex(self.imagegen.ImagegenError, "No image request was sent"):
+            with self.assertRaisesRegex(
+                self.imagegen.ImagegenError,
+                "background=transparent has been removed",
+            ):
                 self.imagegen.batch(cfg, args)
 
         run_one.assert_not_called()
@@ -1152,7 +1428,7 @@ class GenericImageQATests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "invalid JSONL at line 2"):
             self.imagegen.read_jsonl(path)
 
-    def test_postprocess_failure_leaves_no_partial_delivery(self) -> None:
+    def test_postprocess_failure_keeps_successful_peer_derivative(self) -> None:
         first = self.temp_dir / "first.png"
         second = self.temp_dir / "second.png"
         make_rgba_png(first, 2, 2, [(255, 0, 0, 255)] * 4)
@@ -1190,14 +1466,27 @@ class GenericImageQATests(unittest.TestCase):
             return real_normalize(*call_args, **call_kwargs)
 
         with mock.patch.object(self.imagegen, "normalize_image_file", side_effect=fail_second):
-            with self.assertRaisesRegex(self.imagegen.ImagegenError, "second transform failed"):
-                self.imagegen.apply_postprocess(
-                    {"ok": True, "files": [str(first), str(second)]},
-                    args,
-                    cfg,
-                )
+            result = self.imagegen.apply_postprocess(
+                {"ok": True, "files": [str(first), str(second)]},
+                args,
+                cfg,
+            )
 
-        self.assertEqual(list(out_dir.glob("*.png")), [])
+        expected = (out_dir / "first-1x1.png").resolve().as_posix()
+        self.assertEqual(
+            [path.resolve().as_posix() for path in out_dir.glob("*.png")],
+            [expected],
+        )
+        self.assertTrue(result["ok"])
+        self.assertFalse(result["delivery_ready"])
+        self.assertEqual(
+            result["files"],
+            [first.resolve().as_posix(), expected, second.resolve().as_posix()],
+        )
+        self.assertEqual(result["derived_files"], [expected])
+        self.assertTrue(
+            any(warning.startswith("postprocess_item_failed:") for warning in result["warnings"])
+        )
 
 
 if __name__ == "__main__":

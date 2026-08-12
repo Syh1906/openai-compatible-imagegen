@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections import deque
 from dataclasses import dataclass, field
 import math
 import json
@@ -11,6 +10,13 @@ import re
 import shutil
 from typing import Any
 
+from image_alpha import (
+    KEY_SPILL_THRESHOLD,
+    edge_connected_color_alpha,
+    key_spill_score,
+    refine_alpha,
+    remove_matte_and_defringe,
+)
 from image_png import PixelBuffer, read_png_rgba, write_png_rgba
 from image_emissive_alpha import EmissiveAlphaError, process as process_emissive_alpha
 from image_mask_alpha import MaskAlphaError, process as process_mask_alpha
@@ -24,6 +30,7 @@ KEY_CANDIDATES: tuple[tuple[str, tuple[int, int, int], tuple[str, ...]], ...] = 
 )
 LOCAL_ROUTES = {"chroma-matting", "emissive-alpha", "mask-alpha"}
 TRANSPARENCY_ROUTES = LOCAL_ROUTES | {"prompt-alpha"}
+INSPECT_ALPHA_ROUTE = "inspect-alpha"
 MAX_TRANSPARENCY_PIXELS = 4096 * 4096
 FULL_TOLERANCE = 56.0
 BORDER_SOFT_TOLERANCE = 92.0
@@ -209,11 +216,16 @@ def normalize_route_options(route: str, value: Any) -> dict[str, Any]:
         raise ValueError("transparency options must be an object")
     specs: dict[str, dict[str, tuple[str, float, float] | tuple[str, tuple[str, ...]]]] = {
         "chroma-matting": {
+            "background_scope": ("enum", ("edge-connected", "global")),
             "inner_tolerance": ("number", 1.0, 200.0),
             "outer_tolerance": ("number", 2.0, 300.0),
             "despill_strength": ("number", 0.0, 1.0),
             "border_hard_coverage": ("number", 0.0, 1.0),
             "border_soft_coverage": ("number", 0.0, 1.0),
+            "expand": ("integer", -16.0, 16.0),
+            "feather": ("integer", 0.0, 16.0),
+            "min_component_area": ("integer", 0.0, 65536.0),
+            "defringe_radius": ("integer", 0.0, 16.0),
         },
         "emissive-alpha": {
             "black_point": ("number", 0.0, 254.0),
@@ -223,12 +235,15 @@ def normalize_route_options(route: str, value: Any) -> dict[str, Any]:
             "min_border_dark_coverage": ("number", 0.5, 1.0),
         },
         "mask-alpha": {
-            "source": ("enum", ("auto", "alpha", "luminance")),
+            "source": ("enum", ("auto", "alpha", "luminance", "red", "green", "blue")),
             "invert": ("bool", ()),
             "gamma": ("number", 0.25, 4.0),
             "threshold": ("number", 0.0, 255.0),
             "feather": ("integer", 0.0, 16.0),
             "expand": ("integer", -16.0, 16.0),
+            "min_component_area": ("integer", 0.0, 65536.0),
+            "matte": ("enum", ("none", "black", "white")),
+            "defringe_radius": ("integer", 0.0, 16.0),
         },
     }
     route_specs = specs.get(route, {})
@@ -303,7 +318,19 @@ def resolve_plan(context: TransparencyContext, policy: TransparencyPolicy) -> Tr
     requested_route = str(context.route or "").strip().lower() or None
     if requested_route is not None and requested_route not in TRANSPARENCY_ROUTES:
         raise ValueError(f"unsupported transparency route: {requested_route}")
-    route = requested_route or (policy.default_route if context.postprocess_allowed else "prompt-alpha")
+    route = requested_route
+    if route is None:
+        prompt_only_matches = _prompt_only_matches(context, policy)
+        if context.postprocess_allowed:
+            route = policy.default_route
+        elif prompt_only_matches:
+            route = "prompt-alpha"
+        else:
+            return TransparencyPlan(
+                mode=INSPECT_ALPHA_ROUTE,
+                prompt=context.prompt,
+                llm_assisted=policy.llm_assisted,
+            )
     if route in LOCAL_ROUTES:
         if not context.postprocess_allowed:
             raise TransparencyUnavailableError(
@@ -337,21 +364,24 @@ def resolve_plan(context: TransparencyContext, policy: TransparencyPolicy) -> Tr
             options=options,
             llm_assisted=policy.llm_assisted,
         )
-    normalized_size = context.size.strip().lower()
-    if any(
-        rule.model == context.model and rule.mode == context.mode and rule.size == normalized_size
-        for rule in policy.prompt_only_allow
-    ):
+    if _prompt_only_matches(context, policy):
         return TransparencyPlan(
             mode="prompt-alpha",
             prompt=_alpha_prompt(context.prompt),
             llm_assisted=policy.llm_assisted,
         )
-    raise TransparencyUnavailableError(
-        "transparent delivery is unavailable for "
-        f"model={context.model}, mode={context.mode}, size={context.size}: "
-        "local post-processing is disabled and no exact prompt-only rule matches. "
-        "No image request was sent."
+    return TransparencyPlan(
+        mode=INSPECT_ALPHA_ROUTE,
+        prompt=context.prompt,
+        llm_assisted=policy.llm_assisted,
+    )
+
+
+def _prompt_only_matches(context: TransparencyContext, policy: TransparencyPolicy) -> bool:
+    normalized_size = context.size.strip().lower()
+    return any(
+        rule.model == context.model and rule.mode == context.mode and rule.size == normalized_size
+        for rule in policy.prompt_only_allow
     )
 
 
@@ -396,15 +426,22 @@ def process_file(source: Path, target: Path, plan: TransparencyPlan) -> dict[str
         _copy_exact(source, target)
         return _result(source, target, plan, "pass", source_check, [])
 
-    if plan.mode == "prompt-alpha":
+    if plan.mode in {"prompt-alpha", INSPECT_ALPHA_ROUTE}:
         _copy_exact(source, target)
+        warning = (
+            "alpha_prompt_unmet: the returned image has no usable transparent background; "
+            "returned the original image"
+            if plan.mode == "prompt-alpha"
+            else "source_alpha_unmet: local transparency processing was disabled and the returned image "
+            "has no usable transparent background; returned the original image"
+        )
         return _result(
             source,
             target,
             plan,
             "unmet",
             source_check,
-            ["alpha_prompt_unmet: the returned image has no usable transparent background; returned the original image"],
+            [warning],
         )
 
     if plan.mode == "emissive-alpha":
@@ -426,6 +463,9 @@ def process_file(source: Path, target: Path, plan: TransparencyPlan) -> dict[str
             )
         output_check = _assess(output, image["width"], image["height"])
         output_check.update(route_checks)
+        output_check["alpha_pipeline"]["contrast_review_contract"] = (
+            _contrast_review_contract(output_check["status"], "edge-alpha")
+        )
         if output_check["status"] != "pass":
             _copy_exact(source, target)
             return _result(
@@ -468,6 +508,9 @@ def process_file(source: Path, target: Path, plan: TransparencyPlan) -> dict[str
             )
         output_check = _assess(output, image["width"], image["height"])
         output_check.update(route_checks)
+        output_check["alpha_pipeline"]["contrast_review_contract"] = (
+            _contrast_review_contract(output_check["status"], "edge-alpha")
+        )
         if output_check["status"] != "pass":
             _copy_exact(source, target)
             return _result(
@@ -502,6 +545,16 @@ def process_file(source: Path, target: Path, plan: TransparencyPlan) -> dict[str
         )
         minimum_soft_coverage = float(
             options.get("border_soft_coverage", MIN_BORDER_SOFT_COVERAGE)
+        )
+        expand = int(options.get("expand", 0))
+        feather = int(options.get("feather", 0))
+        minimum_area = int(options.get("min_component_area", 0))
+        background_scope = str(options.get("background_scope", "edge-connected"))
+        defringe_radius = int(
+            options.get(
+                "defringe_radius",
+                max(1, min(8, round(min(image["width"], image["height"]) / 512))),
+            )
         )
         requested_key = _parse_key(plan.key_hex)
         effective_key = _estimate_key(
@@ -539,14 +592,32 @@ def process_file(source: Path, target: Path, plan: TransparencyPlan) -> dict[str
                     "returned the original image"
                 ],
             )
-        keyed = _edge_connected_key(
+        matte, matte_check = edge_connected_color_alpha(
             image["pixels"],
             image["width"],
             image["height"],
             effective_key,
             inner_tolerance,
             outer_tolerance,
-            despill_strength,
+            scope=background_scope,
+        )
+        matte, refinement_check = refine_alpha(
+            matte,
+            image["width"],
+            image["height"],
+            expand=expand,
+            feather=feather,
+            min_component_area=minimum_area,
+        )
+        keyed, cleanup_check = remove_matte_and_defringe(
+            image["pixels"],
+            matte,
+            image["width"],
+            image["height"],
+            effective_key,
+            tolerance=CONTAMINATION_TOLERANCE,
+            defringe_radius=defringe_radius,
+            strength=despill_strength,
         )
         output_check = _assess(
             keyed,
@@ -556,13 +627,34 @@ def process_file(source: Path, target: Path, plan: TransparencyPlan) -> dict[str
             key_tolerance=CONTAMINATION_TOLERANCE,
         )
         output_check["border_key"] = border_check
+        output_check["alpha_pipeline"] = {
+            "background_profile": {
+                "requested_key": _format_key(requested_key),
+                "effective_key": _format_key(effective_key),
+                "hard_coverage": border_check["hard_coverage"],
+                "soft_coverage": border_check["soft_coverage"],
+            },
+            "matte": matte_check,
+            "refinement": refinement_check,
+            "matte_cleanup": cleanup_check,
+            "defringe": cleanup_check["defringe"],
+            "contrast_review_contract": _contrast_review_contract(
+                output_check["status"],
+                "edge-alpha-and-key-contamination",
+            ),
+        }
         output_check["options"] = {
             "inner_tolerance": inner_tolerance,
             "outer_tolerance": outer_tolerance,
+            "background_scope": background_scope,
             "despill_strength": despill_strength,
             "contamination_tolerance": CONTAMINATION_TOLERANCE,
             "border_hard_coverage": minimum_hard_coverage,
             "border_soft_coverage": minimum_soft_coverage,
+            "expand": expand,
+            "feather": feather,
+            "min_component_area": minimum_area,
+            "defringe_radius": defringe_radius,
         }
         if output_check["status"] != "pass":
             _copy_exact(source, target)
@@ -693,12 +785,17 @@ def _assess(
     total = width * height
     transparent = 0
     visible = 0
-    for pixel in pixels:
-        alpha = pixel[3]
+    packed = pixels.packed() if isinstance(pixels, PixelBuffer) else None
+    alpha_values = packed[3::4] if packed is not None else (pixel[3] for pixel in pixels)
+    for alpha in alpha_values:
         transparent += alpha <= 8
         visible += alpha >= 24
     border = _border_indices(width, height)
-    visible_border = sum(1 for index in border if pixels[index][3] >= 24)
+    visible_border = sum(
+        1
+        for index in border
+        if (packed[index * 4 + 3] if packed is not None else pixels[index][3]) >= 24
+    )
     transparent_ratio = transparent / total
     visible_ratio = visible / total
     visible_border_ratio = visible_border / len(border)
@@ -780,9 +877,20 @@ def _key_contamination(
     total = width * height
     tested = 0
     contaminated = 0
+    direct_pixels = 0
+    spill_pixels = 0
     limit = tolerance * tolerance
-    for index, pixel in enumerate(pixels):
-        alpha = pixel[3]
+    packed = pixels.packed() if isinstance(pixels, PixelBuffer) else None
+    key_red, key_green, key_blue = key
+    for index in range(total):
+        offset = index * 4
+        if packed is not None:
+            red = packed[offset]
+            green = packed[offset + 1]
+            blue = packed[offset + 2]
+            alpha = packed[offset + 3]
+        else:
+            red, green, blue, alpha = pixels[index]
         if alpha < 24:
             continue
         partial = alpha < 250
@@ -803,112 +911,45 @@ def _key_contamination(
             ny = y + dy
             if nx < 0 or nx >= width or ny < 0 or ny >= height:
                 continue
-            if pixels[ny * width + nx][3] <= 8:
+            neighbor = ny * width + nx
+            neighbor_alpha = packed[neighbor * 4 + 3] if packed is not None else pixels[neighbor][3]
+            if neighbor_alpha <= 8:
                 adjacent_to_transparent = True
                 break
         if not partial and not adjacent_to_transparent:
             continue
         tested += 1
-        contaminated += _distance_squared(pixel[:3], key) <= limit
+        direct_match = (
+            (red - key_red) ** 2
+            + (green - key_green) ** 2
+            + (blue - key_blue) ** 2
+            <= limit
+        )
+        spill_match = key_spill_score(red, green, blue, key) >= KEY_SPILL_THRESHOLD
+        direct_pixels += direct_match
+        spill_pixels += spill_match
+        contaminated += direct_match or spill_match
     allowed = max(MIN_KEY_CONTAMINATION_PIXELS, round(tested * MAX_KEY_CONTAMINATION_RATIO))
     return {
         "status": "pass" if contaminated <= allowed else "unmet",
         "pixels": contaminated,
+        "direct_pixels": direct_pixels,
+        "spill_pixels": spill_pixels,
         "tested_pixels": tested,
         "ratio": round(contaminated / max(1, tested), 6),
         "allowed_pixels": allowed,
         "tolerance": tolerance,
+        "spill_threshold": KEY_SPILL_THRESHOLD,
     }
 
 
-def _edge_connected_key(
-    pixels: Any,
-    width: int,
-    height: int,
-    key: tuple[int, int, int],
-    inner_tolerance: float = FULL_TOLERANCE,
-    outer_tolerance: float = MATTE_OUTER_TOLERANCE,
-    despill_strength: float = DESPILL_STRENGTH,
-) -> PixelBuffer:
-    total = width * height
-    soft_limit = outer_tolerance * outer_tolerance
-    candidate = bytearray(total)
-    for index, pixel in enumerate(pixels):
-        distance = _distance_squared(pixel[:3], key)
-        if distance <= soft_limit:
-            candidate[index] = 1
-
-    stack: deque[tuple[int, int]] = deque()
-    for index in _border_indices(width, height):
-        if candidate[index] == 1:
-            stack.append((index % width, index // width))
-    while stack:
-        x, y = stack.pop()
-        index = y * width + x
-        if candidate[index] != 1:
-            continue
-        left = x
-        while left > 0 and candidate[y * width + left - 1] == 1:
-            left -= 1
-        right = x
-        while right + 1 < width and candidate[y * width + right + 1] == 1:
-            right += 1
-        row_start = y * width
-        for current_x in range(left, right + 1):
-            candidate[row_start + current_x] = 2
-        for neighbor_y in (y - 1, y + 1):
-            if neighbor_y < 0 or neighbor_y >= height:
-                continue
-            neighbor_start = neighbor_y * width
-            current_x = left
-            while current_x <= right:
-                if candidate[neighbor_start + current_x] == 1:
-                    stack.append((current_x, neighbor_y))
-                    while current_x <= right and candidate[neighbor_start + current_x] == 1:
-                        current_x += 1
-                current_x += 1
-
-    packed = pixels.packed() if isinstance(pixels, PixelBuffer) else bytes(channel for pixel in pixels for channel in pixel)
-    output = bytearray(packed)
-    for index, state in enumerate(candidate):
-        if state != 2:
-            continue
-        offset = index * 4
-        distance = math.sqrt(_distance_squared(tuple(output[offset : offset + 3]), key))
-        if distance <= inner_tolerance:
-            alpha = 0
-        else:
-            position = min(
-                1.0,
-                max(
-                    0.0,
-                    (distance - inner_tolerance)
-                    / (outer_tolerance - inner_tolerance),
-                ),
-            )
-            smooth = position * position * (3.0 - 2.0 * position)
-            alpha = round(255 * smooth)
-        alpha = min(alpha, output[offset + 3])
-        if alpha <= 0:
-            output[offset : offset + 4] = b"\x00\x00\x00\x00"
-            continue
-        output[offset + 3] = alpha
-        if alpha >= 255:
-            continue
-        opacity = alpha / 255.0
-        strength = despill_strength
-        estimated_channels: list[float] = []
-        for channel in range(3):
-            original = output[offset + channel]
-            estimated = (original - (1.0 - opacity) * key[channel]) / max(opacity, 1 / 255)
-            estimated_channels.append(max(0.0, min(255.0, estimated)))
-        corrected = _despill_color(tuple(estimated_channels), key)
-        for channel in range(3):
-            original = output[offset + channel]
-            output[offset + channel] = round(
-                original + (corrected[channel] - original) * strength
-            )
-    return PixelBuffer(output)
+def _contrast_review_contract(status: str, automated_signal: str) -> dict[str, Any]:
+    return {
+        "status": status,
+        "backgrounds": ["black", "white", "gray", "checker"],
+        "automated_signal": automated_signal,
+        "preview_required": True,
+    }
 
 
 def _border_indices(width: int, height: int) -> list[int]:
@@ -937,25 +978,6 @@ def _parse_key(value: str) -> tuple[int, int, int]:
 
 def _format_key(value: tuple[int, int, int]) -> str:
     return "#" + "".join(f"{channel:02X}" for channel in value)
-
-
-def _despill_color(
-    color: tuple[float, float, float],
-    key: tuple[int, int, int],
-) -> tuple[float, float, float]:
-    key_channels = [
-        channel
-        for channel, value in enumerate(key)
-        if value >= 128 and value - min(key) >= 64
-    ]
-    if not key_channels or len(key_channels) == 3:
-        return color
-    foreground_channels = [channel for channel in range(3) if channel not in key_channels]
-    ceiling = max((color[channel] for channel in foreground_channels), default=0.0) + 16.0
-    output = list(color)
-    for channel in key_channels:
-        output[channel] = min(output[channel], ceiling)
-    return output[0], output[1], output[2]
 
 
 def _distance_squared(color: tuple[int, int, int], key: tuple[int, int, int]) -> int:

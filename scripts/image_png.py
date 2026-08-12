@@ -1,4 +1,4 @@
-"""Minimal 8-bit RGB/RGBA PNG codec and pixel helpers."""
+"""Minimal RGB/RGBA PNG codec and pixel helpers."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ Pixel = tuple[int, int, int, int]
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 MAX_PNG_PIXELS = 25_000_000
 MAX_PNG_FILE_BYTES = 256 * 1024 * 1024
+MAX_PNG_IDAT_CHUNKS = 4096
 
 
 class PixelBuffer(Sequence[Pixel]):
@@ -99,6 +100,8 @@ def read_png_rgba_bytes(data: bytes) -> dict[str, Any]:
         elif kind == b"IDAT":
             if not saw_ihdr or saw_iend:
                 raise ValueError("invalid PNG IDAT placement")
+            if len(idat_chunks) >= MAX_PNG_IDAT_CHUNKS:
+                raise ValueError("PNG contains too many IDAT chunks")
             idat_chunks.append(chunk_data)
             saw_idat = True
         elif kind == b"tRNS":
@@ -122,13 +125,15 @@ def read_png_rgba_bytes(data: bytes) -> dict[str, Any]:
         or color_type is None
     ):
         raise ValueError("invalid PNG: missing or trailing required data")
-    if bit_depth != 8 or color_type not in {2, 6}:
-        raise ValueError("only 8-bit RGB/RGBA PNG post-processing is currently supported")
+    if bit_depth not in {8, 16} or color_type not in {2, 6}:
+        raise ValueError("only 8-bit or 16-bit RGB/RGBA PNG post-processing is currently supported")
     if color_type == 2 and saw_trns:
         raise ValueError("RGB PNG with tRNS transparency is not supported")
 
     channels = 4 if color_type == 6 else 3
-    stride = width * channels
+    bytes_per_sample = bit_depth // 8
+    bytes_per_pixel = channels * bytes_per_sample
+    stride = width * bytes_per_pixel
     expected_length = height * (stride + 1)
     try:
         decompressor = zlib.decompressobj()
@@ -150,8 +155,12 @@ def read_png_rgba_bytes(data: bytes) -> dict[str, Any]:
         pos += 1
         scanline = raw[pos : pos + stride]
         pos += stride
-        row = _unfilter_scanline(filter_type, scanline, previous, channels)
-        if channels == 4:
+        row = _unfilter_scanline(filter_type, scanline, previous, bytes_per_pixel)
+        if bit_depth == 16:
+            for offset in range(0, len(row), bytes_per_pixel):
+                alpha = row[offset + 6] if channels == 4 else 255
+                packed.extend((row[offset], row[offset + 2], row[offset + 4], alpha))
+        elif channels == 4:
             packed.extend(row)
         else:
             for offset in range(0, len(row), 3):

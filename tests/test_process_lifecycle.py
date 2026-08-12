@@ -134,7 +134,8 @@ class ScriptProcessLifecycleTests(unittest.TestCase):
             self.assertEqual(result["status"], "unmet")
             self.assertFalse(result["delivery_ready"])
             self.assertIn("returned the original image", result["warnings"][0])
-            self.assertEqual(read_png_rgba(target)["pixels"].packed(), read_png_rgba(source)["pixels"].packed())
+            self.assertEqual(result["file"], source.resolve().as_posix())
+            self.assertFalse(target.exists())
 
 
 if __name__ == "__main__":

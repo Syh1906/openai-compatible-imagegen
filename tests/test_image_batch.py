@@ -160,6 +160,110 @@ class BatchPathTests(unittest.TestCase):
             self.assertEqual(payload["path_contract"]["status"], "fail")
             self.assertEqual(payload["path_contract"]["missing_files"], [str(root / "missing.png")])
 
+    def test_preflight_rejects_paths_that_can_collide_after_format_correction(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            tasks = [
+                {"id": "jpeg", "prompt": "first", "file": str(root / "same.jpeg"), "format": "jpeg"},
+                {"id": "png", "prompt": "second", "file": str(root / "same.png"), "format": "png"},
+            ]
+
+            with self.assertRaisesRegex(ValueError, "batch target path conflict"):
+                prepare_batch_targets(
+                    tasks,
+                    {},
+                    root,
+                    "20260812-120000",
+                    lambda prompt: prompt,
+                    lambda task: str(task["format"]),
+                    lambda task: False,
+                )
+
+    def test_preflight_rejects_path_inside_another_tasks_api_extra_directory(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            tasks = [
+                {"id": "primary", "prompt": "first", "file": str(root / "result.png")},
+                {
+                    "id": "nested",
+                    "prompt": "second",
+                    "file": str(root / "result-api-extra" / "result_2.png"),
+                },
+            ]
+
+            with self.assertRaisesRegex(ValueError, "batch target path conflict"):
+                prepare_batch_targets(
+                    tasks,
+                    {},
+                    root,
+                    "20260812-120000",
+                    lambda prompt: prompt,
+                    lambda task: "png",
+                    lambda task: False,
+                )
+
+    def test_preflight_reserves_derivatives_for_possible_extra_api_images(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            derived = root / "derived"
+            tasks = [
+                {
+                    "id": "primary",
+                    "prompt": "first",
+                    "file": str(root / "a.png"),
+                    "n": 1,
+                    "delivery_size": "1x1",
+                    "postprocess_out_dir": str(derived),
+                },
+                {
+                    "id": "peer",
+                    "prompt": "second",
+                    "file": str(root / "b" / "a_2.png"),
+                    "n": 1,
+                    "delivery_size": "1x1",
+                    "postprocess_out_dir": str(derived),
+                },
+            ]
+
+            with self.assertRaisesRegex(ValueError, "batch target path conflict"):
+                prepare_batch_targets(
+                    tasks,
+                    {},
+                    root,
+                    "20260813-120000",
+                    lambda prompt: prompt,
+                    lambda task: "png",
+                    lambda task: False,
+                )
+
+    def test_manifest_does_not_treat_mask_alpha_source_option_as_a_path(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            output = root / "result.png"
+            output.write_bytes(b"image")
+            results = [
+                {
+                    "id": "mask",
+                    "ok": True,
+                    "files": [str(output)],
+                    "original_files": [str(output)],
+                    "transparency": {
+                        "artifacts": [
+                            {
+                                "file": str(output),
+                                "checks": {"options": {"source": "auto"}},
+                            }
+                        ]
+                    },
+                }
+            ]
+
+            manifest, contract_ok = write_manifest(root, results)
+            payload = json.loads(manifest.read_text(encoding="utf-8"))
+
+            self.assertTrue(contract_ok)
+            self.assertNotIn("auto", payload["path_contract"]["declared_files"])
+
 
 if __name__ == "__main__":
     unittest.main()

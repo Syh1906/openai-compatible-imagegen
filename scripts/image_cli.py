@@ -21,7 +21,7 @@ def build_parser(
         "--postprocess",
         action=argparse.BooleanOptionalAction,
         default=None,
-        help="Allow generated-output post-processing by default",
+        help="Select the default local transparency-route preference",
     )
 
     add_generate_args(sub.add_parser("generate"), supported_aspects, supported_resolutions)
@@ -127,7 +127,7 @@ def add_postprocess_args(parser: argparse.ArgumentParser) -> None:
         "--postprocess",
         action=argparse.BooleanOptionalAction,
         default=None,
-        help="Allow or prohibit optional post-processing for this run",
+        help="Select the local transparency-route preference; explicit delivery transforms and transparent QA still run",
     )
     parser.add_argument("--qa", action="store_true", help="Attach deterministic delivery QA to the result")
     parser.add_argument("--components", action="store_true", help="Include connected-component diagnostics in QA")

@@ -13,6 +13,7 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 from image_png import read_png_rgba, write_png_rgba  # noqa: E402
+import image_alpha  # noqa: E402
 from image_transparency import (  # noqa: E402
     TransparencyContext,
     TransparencyPlan,
@@ -71,6 +72,46 @@ class TransparencyPlanTests(unittest.TestCase):
         self.assertIsNone(plan.key_hex)
         self.assertIn("real alpha channel", plan.prompt)
 
+    def test_large_size_without_prompt_only_rule_inspects_original_only(self) -> None:
+        policy = resolve_policy(
+            {
+                "prompt_only_allow": [
+                    {"model": "gpt-image-2", "mode": "generate", "size": "1024x1024"}
+                ]
+            }
+        )
+
+        plan = resolve_plan(
+            self.context(size="2048x2048", postprocess_allowed=False),
+            policy,
+        )
+
+        self.assertEqual(plan.mode, "inspect-alpha")
+        self.assertIsNone(plan.key_hex)
+        self.assertEqual(plan.prompt, "A red enamel badge")
+
+    def test_4k_size_without_prompt_only_rule_inspects_original_only(self) -> None:
+        plan = resolve_plan(
+            self.context(size="4096x4096", postprocess_allowed=False),
+            resolve_policy(None),
+        )
+
+        self.assertEqual(plan.mode, "inspect-alpha")
+        self.assertEqual(plan.prompt, "A red enamel badge")
+
+    def test_explicit_unverified_prompt_alpha_inspects_original_without_blocking(self) -> None:
+        plan = resolve_plan(
+            self.context(
+                size="2048x2048",
+                postprocess_allowed=False,
+                route="prompt-alpha",
+            ),
+            resolve_policy(None),
+        )
+
+        self.assertEqual(plan.mode, "inspect-alpha")
+        self.assertEqual(plan.prompt, "A red enamel badge")
+
     def test_prompt_only_rule_does_not_match_other_1k_dimensions(self) -> None:
         policy = resolve_policy(
             {
@@ -80,8 +121,16 @@ class TransparencyPlanTests(unittest.TestCase):
             }
         )
 
-        with self.assertRaises(TransparencyUnavailableError):
-            resolve_plan(self.context(size="1536x864"), policy)
+        plan = resolve_plan(self.context(size="1536x864"), policy)
+
+        self.assertEqual(plan.mode, "inspect-alpha")
+
+    def test_local_route_requires_postprocess_permission(self) -> None:
+        with self.assertRaisesRegex(TransparencyUnavailableError, "requires local post-processing"):
+            resolve_plan(
+                self.context(postprocess_allowed=False, route="emissive-alpha"),
+                resolve_policy(None),
+            )
 
     def test_chroma_matting_selection_avoids_prompt_color_conflicts(self) -> None:
         plan = resolve_plan(
@@ -192,6 +241,22 @@ class TransparencyProcessingTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "unmet")
         self.assertTrue(result["warnings"])
+        self.assertEqual(target.read_bytes(), original)
+
+    def test_source_alpha_inspection_returns_opaque_original_without_pixel_changes(self) -> None:
+        source = self.root / "opaque.png"
+        target = self.root / "delivery.png"
+        write_png_rgba(source, 4, 4, [(220, 30, 40, 255)] * 16)
+        original = source.read_bytes()
+
+        result = process_file(
+            source,
+            target,
+            TransparencyPlan(mode="inspect-alpha", prompt="original prompt"),
+        )
+
+        self.assertEqual(result["status"], "unmet")
+        self.assertTrue(result["warnings"][0].startswith("source_alpha_unmet:"))
         self.assertEqual(target.read_bytes(), original)
 
     def test_prompt_alpha_success_preserves_native_alpha_bytes(self) -> None:
@@ -404,7 +469,11 @@ class TransparencyProcessingTests(unittest.TestCase):
                 mode="chroma-matting",
                 prompt="prompt",
                 key_hex="#00FF00",
-                options={"inner_tolerance": 32, "outer_tolerance": 80},
+                options={
+                    "inner_tolerance": 32,
+                    "outer_tolerance": 80,
+                    "defringe_radius": 0,
+                },
             ),
         )
 
@@ -415,6 +484,155 @@ class TransparencyProcessingTests(unittest.TestCase):
             160.0,
         )
         self.assertEqual(target.read_bytes(), original)
+
+    def test_chroma_matting_defringes_opaque_outer_tolerance_pixels(self) -> None:
+        source = self.root / "opaque-fringe.png"
+        target = self.root / "delivery.png"
+        width = height = 24
+        key = (0, 255, 0, 255)
+        subject = (220, 30, 40, 255)
+        opaque_fringe = (0, 95, 0, 255)
+        pixels = [key] * (width * height)
+        for y in range(6, 18):
+            for x in range(6, 18):
+                pixels[y * width + x] = subject
+        for y in range(5, 19):
+            pixels[y * width + 5] = opaque_fringe
+            pixels[y * width + 18] = opaque_fringe
+        for x in range(5, 19):
+            pixels[5 * width + x] = opaque_fringe
+            pixels[18 * width + x] = opaque_fringe
+        write_png_rgba(source, width, height, pixels)
+
+        result = process_file(
+            source,
+            target,
+            TransparencyPlan(mode="chroma-matting", prompt="prompt", key_hex="#00FF00"),
+        )
+        output = read_png_rgba(target)["pixels"]
+
+        self.assertEqual(result["status"], "pass", result)
+        self.assertEqual(result["checks"]["key_contamination"]["pixels"], 0)
+        self.assertGreater(result["checks"]["alpha_pipeline"]["defringe"]["pixels"], 0)
+        self.assertEqual(output[5 * width + 5][:3], subject[:3])
+
+    def test_chroma_matting_removes_pale_spill_beyond_rgb_tolerance(self) -> None:
+        source = self.root / "pale-green-fringe.png"
+        target = self.root / "delivery.png"
+        width = height = 24
+        key = (0, 255, 0, 255)
+        subject = (238, 236, 232, 255)
+        pale_spill = (185, 235, 185, 255)
+        pixels = [key] * (width * height)
+        for y in range(6, 18):
+            for x in range(6, 18):
+                pixels[y * width + x] = subject
+        for y in range(5, 19):
+            pixels[y * width + 5] = pale_spill
+            pixels[y * width + 18] = pale_spill
+        for x in range(5, 19):
+            pixels[5 * width + x] = pale_spill
+            pixels[18 * width + x] = pale_spill
+        write_png_rgba(source, width, height, pixels)
+
+        result = process_file(
+            source,
+            target,
+            TransparencyPlan(mode="chroma-matting", prompt="prompt", key_hex="#00FF00"),
+        )
+        output = read_png_rgba(target)["pixels"]
+
+        self.assertEqual(result["status"], "pass", result)
+        self.assertEqual(result["checks"]["key_contamination"]["spill_pixels"], 0)
+        self.assertGreater(result["checks"]["alpha_pipeline"]["defringe"]["spill_pixels"], 0)
+        self.assertEqual(output[5 * width + 5][:3], subject[:3])
+
+    def test_chroma_matting_records_every_alpha_pipeline_stage(self) -> None:
+        source = self.root / "pipeline-record.png"
+        target = self.root / "delivery.png"
+        width = height = 12
+        key = (255, 234, 0, 255)
+        pixels = [key] * (width * height)
+        for y in range(4, 8):
+            for x in range(4, 8):
+                pixels[y * width + x] = (20, 35, 90, 255)
+        write_png_rgba(source, width, height, pixels)
+
+        result = process_file(
+            source,
+            target,
+            TransparencyPlan(mode="chroma-matting", prompt="prompt", key_hex="#FFEA00"),
+        )
+
+        self.assertEqual(result["status"], "pass", result)
+        pipeline = result["checks"]["alpha_pipeline"]
+        self.assertEqual(pipeline["background_profile"]["requested_key"], "#FFEA00")
+        self.assertEqual(pipeline["background_profile"]["effective_key"], "#FFEA00")
+        self.assertEqual(pipeline["matte"]["method"], "edge-connected-color-range")
+        self.assertEqual(pipeline["refinement"]["alpha_bits"], 8)
+        self.assertEqual(pipeline["matte_cleanup"]["mode"], "background-matte")
+        self.assertEqual(
+            pipeline["contrast_review_contract"]["backgrounds"],
+            ["black", "white", "gray", "checker"],
+        )
+        self.assertTrue(pipeline["contrast_review_contract"]["preview_required"])
+
+    def test_chroma_preview_status_follows_final_output_check(self) -> None:
+        source = self.root / "background-only.png"
+        target = self.root / "delivery.png"
+        write_png_rgba(source, 12, 12, [(0, 255, 0, 255)] * 144)
+
+        result = process_file(
+            source,
+            target,
+            TransparencyPlan(mode="chroma-matting", prompt="prompt", key_hex="#00FF00"),
+        )
+
+        self.assertEqual(result["status"], "unmet", result)
+        self.assertEqual(result["checks"]["key_contamination"]["status"], "pass")
+        self.assertEqual(
+            result["checks"]["alpha_pipeline"]["contrast_review_contract"]["status"],
+            "unmet",
+        )
+
+    def test_chroma_matting_global_color_range_removes_enclosed_background(self) -> None:
+        source = self.root / "ring-on-green.png"
+        edge_target = self.root / "edge-connected.png"
+        global_target = self.root / "global-color-range.png"
+        width = height = 16
+        key = (0, 255, 0, 255)
+        subject = (35, 70, 170, 255)
+        pixels = [key] * (width * height)
+        for y in range(4, 12):
+            for x in range(4, 12):
+                if x in {4, 11} or y in {4, 11}:
+                    pixels[y * width + x] = subject
+        write_png_rgba(source, width, height, pixels)
+
+        edge_result = process_file(
+            source,
+            edge_target,
+            TransparencyPlan(mode="chroma-matting", prompt="prompt", key_hex="#00FF00"),
+        )
+        global_result = process_file(
+            source,
+            global_target,
+            TransparencyPlan(
+                mode="chroma-matting",
+                prompt="prompt",
+                key_hex="#00FF00",
+                options={"background_scope": "global"},
+            ),
+        )
+
+        self.assertEqual(edge_result["status"], "pass", edge_result)
+        self.assertEqual(global_result["status"], "pass", global_result)
+        self.assertEqual(read_png_rgba(edge_target)["pixels"][8 * width + 8][3], 255)
+        self.assertEqual(read_png_rgba(global_target)["pixels"][8 * width + 8][3], 0)
+        self.assertEqual(
+            global_result["checks"]["alpha_pipeline"]["matte"]["scope"],
+            "global",
+        )
 
     def test_emissive_alpha_keeps_multiple_particles_and_soft_alpha(self) -> None:
         source = self.root / "particles.png"
@@ -434,6 +652,11 @@ class TransparencyProcessingTests(unittest.TestCase):
         self.assertEqual(result["status"], "pass", result)
         self.assertEqual(result["checks"]["profile"], "emissive")
         self.assertEqual(result["checks"]["component_gate"], "not_applied")
+        pipeline = result["checks"]["alpha_pipeline"]
+        self.assertEqual(pipeline["matte"]["method"], "emissive-luminance")
+        self.assertEqual(pipeline["refinement"]["component_gate"], "not_applied")
+        self.assertEqual(pipeline["matte_cleanup"]["mode"], "not_applied")
+        self.assertTrue(pipeline["contrast_review_contract"]["preview_required"])
         self.assertEqual(output[0][3], 0)
         self.assertGreater(output[4 * width + 4][3], output[4 * width + 5][3])
         self.assertGreater(output[11 * width + 11][3], output[10 * width + 11][3])
@@ -468,9 +691,40 @@ class TransparencyProcessingTests(unittest.TestCase):
 
         self.assertEqual(result["status"], "pass", result)
         self.assertEqual(result["checks"]["profile"], "mask")
+        pipeline = result["checks"]["alpha_pipeline"]
+        self.assertEqual(pipeline["matte"]["method"], "luminance")
+        self.assertEqual(pipeline["refinement"]["alpha_bits"], 8)
+        self.assertEqual(pipeline["matte_cleanup"]["mode"], "not_applied")
+        self.assertTrue(pipeline["contrast_review_contract"]["preview_required"])
         self.assertEqual(output[0][3], 0)
         self.assertEqual(output[5][3], 255)
         self.assertIn(output[6][3], range(127, 130))
+
+    def test_mask_alpha_can_use_an_explicit_rgb_channel(self) -> None:
+        source = self.root / "channel-source.png"
+        mask = self.root / "channel-mask.png"
+        target = self.root / "channel-delivery.png"
+        write_png_rgba(source, 4, 4, [(220, 30, 40, 255)] * 16)
+        mask_pixels = [(0, 255, 0, 255)] * 16
+        mask_pixels[5] = (255, 0, 0, 255)
+        write_png_rgba(mask, 4, 4, mask_pixels)
+
+        result = process_file(
+            source,
+            target,
+            TransparencyPlan(
+                mode="mask-alpha",
+                prompt="prompt",
+                mask_path=mask,
+                options={"source": "red"},
+            ),
+        )
+        output = read_png_rgba(target)["pixels"]
+
+        self.assertEqual(result["status"], "pass", result)
+        self.assertEqual(output[0][3], 0)
+        self.assertEqual(output[5][3], 255)
+        self.assertEqual(result["checks"]["alpha_pipeline"]["matte"]["method"], "red")
 
     def test_mask_alpha_dimension_mismatch_returns_original(self) -> None:
         source = self.root / "opaque-subject.png"
@@ -543,6 +797,138 @@ class TransparencyProcessingTests(unittest.TestCase):
         self.assertEqual(result["checks"]["options"]["expand"], 1)
         self.assertGreater(output[4 * width + 4][3], output[2 * width + 2][3])
         self.assertTrue(any(0 < pixel[3] < 255 for pixel in output))
+
+    def test_mask_alpha_can_remove_small_foreground_components(self) -> None:
+        source = self.root / "mask-cleanup-source.png"
+        mask = self.root / "mask-cleanup.png"
+        target = self.root / "mask-cleanup-delivery.png"
+        width = height = 12
+        write_png_rgba(source, width, height, [(220, 30, 40, 255)] * (width * height))
+        mask_pixels = [(0, 0, 0, 255)] * (width * height)
+        for y in range(4, 8):
+            for x in range(4, 8):
+                mask_pixels[y * width + x] = (255, 255, 255, 255)
+        mask_pixels[width + 1] = (255, 255, 255, 255)
+        write_png_rgba(mask, width, height, mask_pixels)
+
+        result = process_file(
+            source,
+            target,
+            TransparencyPlan(
+                mode="mask-alpha",
+                prompt="prompt",
+                mask_path=mask,
+                options={"min_component_area": 2},
+            ),
+        )
+        output = read_png_rgba(target)["pixels"]
+
+        self.assertEqual(result["status"], "pass", result)
+        self.assertEqual(output[width + 1][3], 0)
+        self.assertEqual(output[5 * width + 5][3], 255)
+        self.assertEqual(result["checks"]["refinement"]["removed_components"], 1)
+        self.assertEqual(result["checks"]["refinement"]["removed_pixels"], 1)
+
+    def test_mask_alpha_can_remove_a_white_matte_fringe(self) -> None:
+        source = self.root / "white-matte-source.png"
+        mask = self.root / "white-matte-mask.png"
+        target = self.root / "white-matte-delivery.png"
+        width = height = 16
+        subject = (40, 90, 180, 255)
+        white_fringe = (245, 245, 250, 255)
+        source_pixels = [(255, 255, 255, 255)] * (width * height)
+        mask_pixels = [(0, 0, 0, 255)] * (width * height)
+        for y in range(5, 11):
+            for x in range(5, 11):
+                source_pixels[y * width + x] = subject
+                mask_pixels[y * width + x] = (255, 255, 255, 255)
+        for y in range(4, 12):
+            source_pixels[y * width + 4] = white_fringe
+            source_pixels[y * width + 11] = white_fringe
+            mask_pixels[y * width + 4] = (128, 128, 128, 255)
+            mask_pixels[y * width + 11] = (128, 128, 128, 255)
+        for x in range(4, 12):
+            source_pixels[4 * width + x] = white_fringe
+            source_pixels[11 * width + x] = white_fringe
+            mask_pixels[4 * width + x] = (128, 128, 128, 255)
+            mask_pixels[11 * width + x] = (128, 128, 128, 255)
+        write_png_rgba(source, width, height, source_pixels)
+        write_png_rgba(mask, width, height, mask_pixels)
+
+        result = process_file(
+            source,
+            target,
+            TransparencyPlan(
+                mode="mask-alpha",
+                prompt="prompt",
+                mask_path=mask,
+                options={"matte": "white", "defringe_radius": 1},
+            ),
+        )
+        output = read_png_rgba(target)["pixels"]
+
+        self.assertEqual(result["status"], "pass", result)
+        self.assertGreater(result["checks"]["matte_cleanup"]["defringe"]["pixels"], 0)
+        self.assertEqual(output[4 * width + 4][:3], subject[:3])
+
+    def test_mask_alpha_matte_cleanup_preserves_opaque_white_foreground(self) -> None:
+        source = self.root / "trusted-white-source.png"
+        mask = self.root / "trusted-white-mask.png"
+        target = self.root / "trusted-white-delivery.png"
+        width = height = 8
+        source_pixels = [(255, 255, 255, 255)] * (width * height)
+        mask_pixels = [(0, 0, 0, 255)] * (width * height)
+        for y in range(2, 6):
+            for x in range(2, 6):
+                source_pixels[y * width + x] = (40, 90, 180, 255)
+                mask_pixels[y * width + x] = (255, 255, 255, 255)
+        trusted_white = 3 * width + 2
+        source_pixels[trusted_white] = (255, 255, 255, 255)
+        write_png_rgba(source, width, height, source_pixels)
+        write_png_rgba(mask, width, height, mask_pixels)
+
+        result = process_file(
+            source,
+            target,
+            TransparencyPlan(
+                mode="mask-alpha",
+                prompt="prompt",
+                mask_path=mask,
+                options={"matte": "white", "defringe_radius": 2},
+            ),
+        )
+        output = read_png_rgba(target)["pixels"]
+
+        self.assertEqual(result["status"], "pass", result)
+        self.assertEqual(output[trusted_white][:3], (255, 255, 255))
+
+    def test_defringe_skips_neighbor_search_without_reliable_foreground(self) -> None:
+        width = height = 64
+        pixels = [(255, 255, 255, 255)] * (width * height)
+        alpha = bytearray([128]) * (width * height)
+
+        with mock.patch.object(
+            image_alpha,
+            "_nearest_reliable_color_from_rows",
+            side_effect=AssertionError("neighbor search should not run"),
+        ):
+            output, cleanup = image_alpha.remove_matte_and_defringe(
+                pixels,
+                alpha,
+                width,
+                height,
+                (255, 255, 255),
+                tolerance=96.0,
+                defringe_radius=16,
+            )
+
+        self.assertEqual(len(output), width * height)
+        self.assertEqual(cleanup["defringe"]["pixels"], 0)
+        self.assertEqual(cleanup["defringe"]["unresolved_pixels"], width * height)
+        self.assertEqual(
+            cleanup["defringe"]["search_strategy"],
+            "skipped-no-reliable-color",
+        )
 
 
 if __name__ == "__main__":

@@ -74,6 +74,28 @@ def process(
         output[offset + 3] = alpha
         for channel in range(3):
             output[offset + channel] = min(255, round(output[offset + channel] * 255 / alpha))
+    output_alpha = output[3::4]
+    checks["alpha_pipeline"] = {
+        "background_profile": checks["border_dark"],
+        "matte": {
+            "method": "emissive-luminance",
+            "alpha_bits": 8,
+            "transparent_pixels": sum(value <= 8 for value in output_alpha),
+            "partial_alpha_pixels": sum(0 < value < 255 for value in output_alpha),
+        },
+        "refinement": {
+            "alpha_bits": 8,
+            "black_point": black_point,
+            "white_point": white_point,
+            "gamma": gamma,
+            "component_gate": "not_applied",
+            "reason": "soft particles and disconnected glow clusters are intentional",
+        },
+        "matte_cleanup": {
+            "mode": "not_applied",
+            "reason": "emissive colors are unpremultiplied from the luminance matte",
+        },
+    }
     return PixelBuffer(output), checks
 
 

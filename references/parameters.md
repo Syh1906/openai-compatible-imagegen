@@ -28,7 +28,7 @@ This is the runtime order after the agent has interpreted the request and constr
 
 Use `--size` for exact API output pixels. Use `--aspect` plus `--resolution` when the request describes shape and clarity without exact pixels.
 
-Before publication, the returned image dimensions are checked against the resolved API `size`. If the backend returns a different size, the request fails without creating a mismatched source file. `--delivery-size` remains an independent local transform applied after a correctly sized source image exists.
+Returned image dimensions are measured against the resolved API `size`. A mismatch is recorded in `warnings` and `api_delivery`, while the complete API original is still published. `--delivery-size` remains an independent local transform that can publish a separate derivative; if that transform fails, the original remains available and `delivery_ready=false`.
 
 | User intent | Aspect |
 | --- | --- |
@@ -69,15 +69,18 @@ Transparency route selection is deterministic:
 
 | Condition | Route | Input contract | Result when transparency fails |
 | --- | --- | --- | --- |
-| Explicit local route, or local processing with `default_route=chroma-matting` | `chroma-matting` | Uniform edge-connected key-color background | Return the API image unchanged and warn |
-| Explicit local route, or local processing with `default_route=emissive-alpha` | `emissive-alpha` | Emissive content on a dark edge-connected background | Return the API image unchanged and warn |
-| Explicit local route, or local processing with `default_route=mask-alpha` | `mask-alpha` | Explicit mask matching source dimensions | Return the API image unchanged and warn |
-| Post-processing disabled and exact `prompt_only_allow` match | `prompt-alpha` | API PNG requested with a real-alpha prompt contract | Return the API image unchanged and warn |
-| No route declared | None | No image request is sent | Report the missing route |
+| Explicit local route, or selected `default_route=chroma-matting` | `chroma-matting` | Uniform edge-connected key-color background | Return the API image unchanged and warn |
+| Explicit local route, or selected `default_route=emissive-alpha` | `emissive-alpha` | Emissive content on a dark edge-connected background | Return the API image unchanged and warn |
+| Explicit local route, or selected `default_route=mask-alpha` | `mask-alpha` | Explicit mask matching source dimensions | Return the API image unchanged and warn |
+| Exact `prompt_only_allow` match when local processing is not preferred | `prompt-alpha` | API PNG requested with a real-alpha prompt contract | Return the API image unchanged and warn |
+| Any size without an exact prompt-only rule, local processing allowed | `default_route` | Generate normally, then run local transparency QA | Return the API image unchanged and warn |
+| Any size without an exact prompt-only rule, local processing disabled | Source-alpha inspection | Keep the original prompt, call the API, and inspect returned alpha without pixel changes | Return the API image unchanged and warn |
+| Explicit `prompt-alpha` without an exact allow rule | Source-alpha inspection | Keep the original prompt, call the API, and inspect returned alpha without pixel changes | Return the API image unchanged and warn |
+| Incomplete local route contract | None | Request is rejected before sending | Report the missing mask or processing conflict |
 
 The prompt-only allow list matches `model`, `mode`, and exact pixel `size` together. A rule for `1024x1024` does not authorize another 1K aspect preset. A prompt can improve the probability of alpha output, but it cannot guarantee alpha.
 
-Only add a prompt-only rule after verifying that exact backend combination. In particular, do not turn a 2K or 4K request into a 1K request just to use an alpha prompt. If the route is not declared, report the unsupported combination before sending an image request.
+Only add a prompt-only rule after verifying that exact backend combination. In particular, do not turn a 2K or 4K request into a 1K request just to use an alpha prompt. A missing prompt-only rule never prevents the image request: it selects the configured local route when processing is allowed, or preserves and inspects the API original when processing is disabled.
 
 Example configuration:
 
@@ -111,7 +114,7 @@ Example configuration:
 
 The bundled scripts do not install inference runtimes, download weights, or start background model servers. Each command runs in the foreground and exits after its files and JSON result are written.
 
-The old `capabilities.transparent_background` setting and `background=transparent` request value are not supported. Remove them instead of translating them into an API parameter.
+The old `capabilities.transparent_background` setting and `background=transparent` request value are not supported. Remove them instead of translating them into an API parameter. Batch `background` values are trimmed case-insensitively, but only `auto`, `opaque`, or an omitted value are accepted; every other value fails before the API request.
 
 Real alpha pixels depend on the returned image. Use `inspect-image --expect-transparent` or request `--qa` to report technical results.
 
@@ -125,8 +128,8 @@ Real alpha pixels depend on the returned image. Use `inspect-image --expect-tran
 | `--safe-margin` | Fractional edge margin used with `contain` |
 | `--grid` | Explicit rows and columns such as `3x3` |
 | `--expected-count` | Per-source grid count, or QA output count when no grid is used |
-| `--postprocess` / `--no-postprocess` | Per-run transparency route override |
-| `--transparency-route` | Explicit `chroma-matting`, `emissive-alpha`, `mask-alpha`, or allowed `prompt-alpha` route |
+| `--postprocess` / `--no-postprocess` | Allow or disable local transparency pixel processing; disabled requests still call the API and inspect returned source alpha |
+| `--transparency-route` | Explicit `chroma-matting`, `emissive-alpha`, `mask-alpha`, or `prompt-alpha`; an unverified prompt route becomes source-alpha inspection |
 | `--transparency-mask` | Mask file required by `mask-alpha` |
 | `--transparency-param NAME=VALUE` | Repeatable route-specific option for commands |
 | `--qa` | Attach `qa.v1` delivery checks |
@@ -139,13 +142,13 @@ Real alpha pixels depend on the returned image. Use `inspect-image --expect-tran
 
 | Route | Options |
 | --- | --- |
-| `chroma-matting` | `inner_tolerance` 1-200, `outer_tolerance` 2-300, `despill_strength` 0-1, `border_hard_coverage` 0-1, `border_soft_coverage` 0-1 |
+| `chroma-matting` | `background_scope=edge-connected|global`, `inner_tolerance` 1-200, `outer_tolerance` 2-300, `despill_strength` 0-1, `border_hard_coverage` 0-1, `border_soft_coverage` 0-1, `expand` -16 to 16, `feather` 0-16, `min_component_area` 0-65536, `defringe_radius` 0-16 |
 | `emissive-alpha` | `black_point` 0-254, `white_point` 1-255, `gamma` 0.25-4, `border_dark_tolerance` 0-128, `min_border_dark_coverage` 0.5-1 |
-| `mask-alpha` | `source=auto|alpha|luminance`, `invert=true|false`, `gamma` 0.25-4, `threshold` 0-255, `feather` 0-16, `expand` -16 to 16 |
+| `mask-alpha` | `source=auto|alpha|luminance|red|green|blue`, `invert=true|false`, `gamma` 0.25-4, `threshold` 0-255, `feather` 0-16, `expand` -16 to 16, `min_component_area` 0-65536, `matte=none|black|white`, `defringe_radius` 0-16 |
 
-For chroma matting, `outer_tolerance` must be greater than `inner_tolerance`. These values control matte extraction only; residual key-color contamination uses an independent fixed quality threshold. For emissive alpha, `white_point` must be greater than `black_point`. Batch rows can provide the same values in a `transparency_options` object.
+For chroma matting, `outer_tolerance` must be greater than `inner_tolerance`. The default `background_scope=edge-connected` protects matching colors enclosed by the subject. Select `global` only when enclosed key-color background areas must also become transparent. Extraction values never change the independent residual-contamination threshold. For emissive alpha, `white_point` must be greater than `black_point`. For masks, `matte=black|white` enables source-matte removal and defringing only when that matte color is known. Mask matte cleanup modifies partial-alpha edge colors and preserves foreground pixels whose trusted mask value remains fully opaque. Batch rows can provide the same values in a `transparency_options` object.
 
-Returned-PNG validation, local deep inspection, and transforms accept non-interlaced 8-bit RGB/RGBA PNG files up to 25 million pixels and a 256 MiB PNG file limit. RGB PNG files with a `tRNS` transparency chunk and other PNG encodings are rejected because this local codec does not implement them. API generation can still return supported JPEG or WebP files, but local deep QA reports those formats as unsupported.
+One request accepts `n=1..16`. JSON responses are limited to 96 MiB, each decoded or downloaded image to 64 MiB, the cumulative decoded response to 256 MiB, and processing to 64 response items. Items publish sequentially, so later resource failures preserve earlier originals. Original-response publication accepts standard PNG color types, valid bit depths, and Adam7 interlacing after structural, chunk-order, CRC, dimension, encoding, compressed-stream, and 4096-`IDAT`-chunk-limit checks. Full scanline, filter, and Adam7 pass validation runs through 96 MiB of expected decompressed scanlines. A bounded exact-length pass covers 96-512 MiB; larger inputs return `api_response_item_resource_limited`. Corrupt, incomplete, or excessively fragmented IDAT data is rejected. Local deep inspection and transforms support non-interlaced 8-bit or 16-bit RGB/RGBA PNG files up to 25 million pixels and a 256 MiB PNG file limit. API generation can also return JPEG or WebP; complete VP8L entropy streams are validated, while deep local QA still reports JPEG and WebP as unsupported.
 
 ## Batch Concurrency
 
@@ -185,7 +188,7 @@ Relative paths have separate, deterministic bases:
 | `images`, `mask`, `transparency_mask` in a JSONL task | JSONL file directory |
 | `file`, `out`, `postprocess_out_dir` in a task or shared command value | batch `--out` directory |
 
-Absolute paths are preserved. Preflight, API task execution, post-processing, and manifest use the same normalized values. The batch manifest records `output_root` and `path_contract`; a failed file-existence check is reported instead of silently claiming a complete delivery.
+Absolute paths are preserved. Preflight, API task execution, post-processing, and manifest use the same normalized values. The batch manifest records `output_root` and `path_contract`, recursively checks every declared file path, and reports a failed file-existence check instead of silently claiming a complete delivery. API multi-image originals publish independently; staged derivatives remain transactional for global QA contracts.
 
 ## API Errors and References
 
@@ -193,6 +196,6 @@ An HTTP 4xx response is an API rejection (`error_kind=api_rejected`) and is not 
 
 ## Output
 
-Batch mode writes `manifest.json`. When a derived file is published, the API output stays in `original_files` and the deliverable appears in `files`. If transparency is unmet, that row keeps the API path in `files`, records `transparency.status=unmet` and `delivery_ready=false`, and remains `ok=true`; warnings explain why no derived transform was published. Optional QA adds a `qa` object without changing `ok` or retrying the request.
+Batch mode writes `manifest.json`. `original_files` contains every published API source, `files` contains each source followed by successful derivatives, and `derived_files` contains only derived paths. `api_delivery` records requested and actual published count, format, size, item positions, and paths. Count, format, and size deviations are warnings and do not change `ok=true`; an unusable item or target collision is reported per item while successful originals remain visible. Failed transforms or QA set `delivery_ready=false` while preserving the sources. Optional QA retains successful per-image derivatives and removes failed, unsupported, or not-evaluated peers when the result can be assigned to one image. A global derivative count or global QA condition rolls back all staged derivatives. The `qa` object remains as evidence without temporary-file paths, and QA does not retry the request.
 
-Image responses may contain `data[].b64_json` or HTTP(S) `data[].url`. JSON responses are limited to 96 MiB, and each decoded base64 image or streamed URL image is limited to 64 MiB. URL downloads use the configured `user_agent` and never forward the API key. PNG is fully parsed; JPEG and WebP receive bounded container and codec-framing checks before delivery.
+Image responses may contain `data[].b64_json` or HTTP(S) `data[].url`. URL downloads use the configured `user_agent` and never forward the API key. PNG publication uses the 96 MiB full and 512 MiB streaming scanline budgets described above. JPEG receives bounded framing checks; VP8L WebP is entropy-decoded to the declared pixel count without retaining the main pixel image, so truncated lossless streams are rejected.

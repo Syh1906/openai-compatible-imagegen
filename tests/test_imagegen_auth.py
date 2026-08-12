@@ -724,6 +724,10 @@ class RequestHeaderTests(unittest.TestCase):
 
         summary = json.loads(print_mock.call_args.args[0])
         self.assertEqual(summary["user_agent"], "Micu-Compatible-Client/1.0")
+        self.assertEqual(
+            summary["script_path"],
+            self.imagegen.display_path(Path(self.imagegen.__file__).resolve()),
+        )
         self.assertEqual(summary["api_key"], "***REDACTED***")
         self.assertEqual(summary["transparency"]["default_route"], "chroma-matting")
         self.assertFalse(summary["transparency"]["llm_assisted"]["enabled"])
@@ -796,6 +800,15 @@ class ParameterResolutionTests(unittest.TestCase):
         result = self.imagegen.resolve_common_params(args, self.cfg)
 
         self.assertTrue(result["direct_url_download"])
+
+    def test_resolve_common_params_rejects_excessive_image_count(self) -> None:
+        args = self.make_args(n=self.imagegen.MAX_IMAGES_PER_REQUEST + 1)
+
+        with self.assertRaisesRegex(
+            self.imagegen.ImagegenError,
+            rf"n must be <= {self.imagegen.MAX_IMAGES_PER_REQUEST}",
+        ):
+            self.imagegen.resolve_common_params(args, self.cfg)
 
     def test_resolve_common_params_uses_persistent_direct_url_download_config(self) -> None:
         cfg = self.imagegen.Config(
@@ -870,6 +883,31 @@ class ParameterResolutionTests(unittest.TestCase):
         self.assertEqual(result["output_format"], "png")
         self.assertIsNone(result["background"])
 
+    def test_batch_background_values_are_trimmed_and_normalized(self) -> None:
+        for raw, expected in ((" AUTO ", "auto"), ("Opaque", "opaque"), ("   ", None)):
+            with self.subTest(raw=raw):
+                result = self.imagegen.resolve_common_params(
+                    self.make_args(),
+                    self.cfg,
+                    {"background": raw},
+                )
+
+                self.assertEqual(result["background"], expected)
+
+    def test_batch_rejects_removed_or_invalid_background_values(self) -> None:
+        for raw, message in (
+            (" TRANSPARENT ", "background=transparent has been removed"),
+            ("blue", "invalid background"),
+            (True, "invalid background"),
+        ):
+            with self.subTest(raw=raw):
+                with self.assertRaisesRegex(self.imagegen.ImagegenError, message):
+                    self.imagegen.resolve_common_params(
+                        self.make_args(),
+                        self.cfg,
+                        {"background": raw},
+                    )
+
     def test_reference_metadata_reports_shape_without_semantic_gate(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             reference = Path(temp) / "reference.png"
@@ -898,7 +936,11 @@ class ParameterResolutionTests(unittest.TestCase):
             mock.patch.object(
                 self.imagegen,
                 "write_response_images",
-                return_value=[str(ROOT / "unused-transparent-result.png")],
+                return_value={
+                    "files": [str(ROOT / "unused-transparent-result.png")],
+                    "warnings": [],
+                    "api_delivery": {"status": "published", "items": []},
+                },
             ),
         ):
             result = self.imagegen.generate(self.cfg, args)
@@ -925,7 +967,11 @@ class ParameterResolutionTests(unittest.TestCase):
             mock.patch.object(
                 self.imagegen,
                 "write_response_images",
-                return_value=[str(ROOT / "unused-emissive-result.png")],
+                return_value={
+                    "files": [str(ROOT / "unused-emissive-result.png")],
+                    "warnings": [],
+                    "api_delivery": {"status": "published", "items": []},
+                },
             ),
         ):
             result = self.imagegen.generate(self.cfg, args)
@@ -1010,10 +1056,10 @@ class ParameterResolutionTests(unittest.TestCase):
         self.assertIn("invalid transparency parameter", stderr.getvalue())
         self.assertNotIn("unexpected failure", stderr.getvalue())
 
-    def test_generate_rejects_undeclared_transparency_route_before_request(self) -> None:
+    def test_generate_2k_with_explicit_no_postprocess_still_requests_original(self) -> None:
         args = self.make_args(
             transparent=True,
-            size="1024x1024",
+            size="2048x2048",
             postprocess=False,
             prompt="A red enamel badge",
             file=str(ROOT / "unused-transparent-result.png"),
@@ -1021,13 +1067,105 @@ class ParameterResolutionTests(unittest.TestCase):
         )
 
         with mock.patch.object(self.imagegen, "request_json") as request_json:
-            with self.assertRaisesRegex(
-                self.imagegen.ImagegenError,
-                "No image request was sent",
+            with mock.patch.object(
+                self.imagegen,
+                "write_response_images",
+                return_value={
+                    "files": [str(ROOT / "unused-transparent-result.png")],
+                    "warnings": [],
+                    "api_delivery": {"status": "published", "items": []},
+                },
             ):
+                result = self.imagegen.generate(self.cfg, args)
+
+        request_json.assert_called_once()
+        self.assertEqual(result["transparency"]["mode"], "inspect-alpha")
+        self.assertEqual(result["prompt"], "A red enamel badge")
+
+    def test_generate_rejects_no_postprocess_with_explicit_local_route_before_request(self) -> None:
+        args = self.make_args(
+            transparent=True,
+            size="2048x2048",
+            postprocess=False,
+            transparency_route="emissive-alpha",
+            prompt="A blue lightning burst",
+            file=str(ROOT / "unused-lightning-result.png"),
+            out=None,
+        )
+
+        with mock.patch.object(self.imagegen, "request_json") as request_json:
+            with self.assertRaisesRegex(self.imagegen.ImagegenError, "--no-postprocess conflicts"):
                 self.imagegen.generate(self.cfg, args)
 
         request_json.assert_not_called()
+
+    def test_generate_4k_transparency_reaches_api_without_background_parameter(self) -> None:
+        args = self.make_args(
+            transparent=True,
+            aspect="9:16",
+            resolution="4K",
+            postprocess=True,
+            prompt="A tall isolated industrial turbine",
+            file=str(ROOT / "unused-4k-transparent-result.png"),
+            out=None,
+        )
+
+        with (
+            mock.patch.object(self.imagegen, "request_json", return_value={"data": []}) as request_json,
+            mock.patch.object(
+                self.imagegen,
+                "write_response_images",
+                return_value={
+                    "files": [str(ROOT / "unused-4k-transparent-result.png")],
+                    "warnings": [],
+                    "api_delivery": {"status": "published", "items": []},
+                },
+            ),
+        ):
+            result = self.imagegen.generate(self.cfg, args)
+
+        payload = self.imagegen.drop_none(request_json.call_args.args[2])
+        self.assertEqual(payload["size"], "2160x3840")
+        self.assertNotIn("background", payload)
+        self.assertEqual(result["transparency"]["mode"], "chroma-matting")
+
+    def test_transparent_edit_multipart_omits_background_parameter(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            reference = Path(temp) / "reference.png"
+            make_rgba_png(reference, 1, 1, [(220, 30, 40, 255)])
+            args = self.make_args(
+                transparent=True,
+                size="2048x2048",
+                postprocess=True,
+                prompt="Keep the turbine and isolate it",
+                image=[str(reference)],
+                mask=None,
+                file=str(Path(temp) / "edited.png"),
+                out=None,
+            )
+
+            with (
+                mock.patch.object(
+                    self.imagegen,
+                    "request_multipart",
+                    return_value={"data": []},
+                ) as request_multipart,
+                mock.patch.object(
+                    self.imagegen,
+                    "write_response_images",
+                    return_value={
+                        "files": [str(Path(temp) / "edited.png")],
+                        "warnings": [],
+                        "api_delivery": {"status": "published", "items": []},
+                    },
+                ),
+            ):
+                result = self.imagegen.edit(self.cfg, args)
+
+        fields = self.imagegen.drop_none(request_multipart.call_args.args[2])
+        self.assertNotIn("background", fields)
+        self.assertEqual(fields["size"], "2048x2048")
+        self.assertEqual(result["transparency"]["mode"], "chroma-matting")
 
     def test_resolve_common_params_rejects_removed_transparent_background_value(self) -> None:
         args = self.make_args(background="transparent", aspect="1:1", resolution="2K")
@@ -1208,9 +1346,11 @@ class PostprocessImageTests(unittest.TestCase):
 
         result = self.imagegen.apply_postprocess(record, args, cfg)
 
-        self.assertEqual(result["original_files"], [str(source)])
-        self.assertEqual(len(result["files"]), 1)
-        info = self.imagegen.inspect_image_file(Path(result["files"][0]))
+        self.assertEqual(result["original_files"], [source.resolve().as_posix()])
+        self.assertEqual(result["files"][0], source.resolve().as_posix())
+        self.assertEqual(result["derived_files"], [result["files"][1]])
+        self.assertTrue(result["delivery_ready"])
+        info = self.imagegen.inspect_image_file(Path(result["files"][1]))
         self.assertEqual((info["width"], info["height"]), (2, 2))
 
 

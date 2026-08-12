@@ -39,9 +39,9 @@ The configured `base_url` must expose these endpoints:
 | `generate` | `POST /v1/images/generations` | JSON |
 | `edit` | `POST /v1/images/edits` | `multipart/form-data` |
 
-Image responses may contain `data[].b64_json` or `data[].url`. JSON responses are limited to 96 MiB, and each decoded or downloaded image is limited to 64 MiB. Returned PNG files are fully parsed before writing and must be non-interlaced 8-bit RGB/RGBA with no more than 25 million pixels; RGB `tRNS` and other PNG encodings are rejected. JPEG and WebP responses are checked for container and key codec framing before delivery. API credentials are not forwarded to returned image URLs.
+Image responses may contain `data[].b64_json` or `data[].url`. One request accepts `n=1..16`. JSON responses are limited to 96 MiB, each decoded or downloaded image to 64 MiB, the cumulative decoded response to 256 MiB, and processing to 64 response items. Items are decoded, validated, and published one at a time, so a later limit or collision preserves earlier originals. PNG checks accept at most 4096 `IDAT` chunks. Full scanline validation uses a 96 MiB work budget; low-memory exact-length validation covers up to 512 MiB of decompressed scanlines. Larger PNGs receive an explicit resource-limit error. WebP publication checks the RIFF container and declared chunk bounds; VP8 adds keyframe, dimension, and first-partition checks, while VP8L receives full bounded entropy-stream validation. PNG, JPEG, and WebP originals are also published when the backend returns a different count, pixel size, or format than requested; those deviations are recorded after publication. API credentials are not forwarded to returned image URLs.
 
-Supported request controls include exact pixel sizes, aspect and resolution presets, quality, output format, transparent delivery intent, moderation, and compression. Transparent delivery is handled by a declared local route or an exact prompt-only allow rule; it is not sent as an API background parameter.
+Supported request controls include exact pixel sizes, aspect and resolution presets, quality, output format, transparent delivery intent, moderation, and compression. Transparent delivery is handled after the API response by a declared local route or, for an exact verified combination, a prompt-only alpha request; it is not sent as an API background parameter.
 
 ## Installation
 
@@ -97,9 +97,9 @@ $SkillDir = "/path/to/openai-compatible-imagegen"
 python "$SkillDir/scripts/imagegen.py" info
 ```
 
-The old `capabilities.transparent_background` setting and `background=transparent` request value are removed. Do not translate them into an API parameter. To allow local transparency processing by default, set `postprocess.enabled` to `true`; to allow prompt-only alpha generation, add exact `model`/`mode`/`size` entries under `transparency.prompt_only_allow`.
+The old `capabilities.transparent_background` setting and `background=transparent` request value are removed. Do not translate them into an API parameter. `postprocess.enabled` controls whether a local transparency route may change pixels by default. When local processing is disabled, transparent requests still reach the API: an exact prompt-only rule may request alpha, otherwise the original prompt is preserved and returned images are inspected without local pixel changes. Add exact `model`/`mode`/`size` entries under `transparency.prompt_only_allow` only after verifying prompt-only alpha for that backend combination.
 
-When a transparent result is requested, local processing has priority. Choose `chroma-matting` for solid key-color plates, `emissive-alpha` for light effects on black, or `mask-alpha` when an explicit mask exists. If local processing is disabled, an exact prompt-only rule may add a real-alpha prompt contract. None of these routes guarantees a valid cutout.
+When a transparent result is requested and local processing is allowed, the selected route runs after the API image is written. The workflow is not limited to chroma keying: choose color-range matting for controlled solid plates, luminance-to-alpha for black-backed emissive effects, or an explicit alpha/luminance/RGB channel mask for channel-selection and layer-mask workflows. The shared 8-bit Alpha pipeline adds edge expansion or contraction, feathering, component cleanup, known black/white Remove Matte, Defringe, and multi-background checks where each route permits them. A trusted explicit mask protects fully opaque foreground colors while cleanup is limited to its partial-alpha edge. Hair, fur, glass, translucent fabric, and mixed smoke backgrounds need a controlled plate or trusted mask; otherwise the original is returned as unmet. `--no-postprocess` disables pixel changes but never blocks the API request or hides an original. Verified prompt-only rules remain probabilistic, and 2K/4K requests are never downgraded to match them.
 
 If the result does not meet transparency checks, the API image is returned unchanged with `ok=true`, `transparency.status=unmet`, and `delivery_ready=false`. The skill reports that state instead of rejecting or hiding the image.
 
@@ -116,7 +116,7 @@ Describe the subject, visual direction, final size, transparency, quantity, chec
 - "Generate a 3x3 UI concept sheet and split it into nine 256x256 PNG files."
 - "Create a fantasy strategy game frost ability icon, no text, and deliver 64x64 and 128x128 previews."
 
-Generation size and delivery size are separate. A request can generate a larger source image and then produce an exact local deliverable. The returned source image must match the resolved API generation size; a backend response with different dimensions is rejected before publication.
+Generation size and delivery size are separate. A request can generate a larger source image and then produce an exact local deliverable. If the backend returns different source dimensions, the actual original is still published and the mismatch is recorded; an explicit `delivery_size` can then produce a separate derivative.
 
 ## Manual Commands
 
@@ -150,9 +150,9 @@ python "$SkillDir/scripts/imagegen.py" batch `
   --concurrency 3
 ```
 
-Batch rows can set `postprocess`, `transparency_route`, `transparency_mask`, `transparency_options`, `qa`, `components`, `delivery_size`, `grid`, `expected_count`, `resample`, `fit`, and `safe_margin`. The command writes `manifest.json`. When a derived file is published, it appears in `files` and the API source remains in `original_files`. When transparency is unmet, `files` keeps the API source path.
+Batch rows can set `postprocess`, `transparency_route`, `transparency_mask`, `transparency_options`, `qa`, `components`, `delivery_size`, `grid`, `expected_count`, `resample`, `fit`, and `safe_margin`. The command writes `manifest.json`. `original_files` lists every published API source; `files` contains each source followed by any successful derivative, and `derived_files` lists only derived paths. A failed transform or transparency check keeps the source and records `delivery_ready=false`. `api_delivery` preserves requested-versus-actual count, format, size, paths, and warnings.
 
-For batch paths, JSONL `images`, `mask`, and `transparency_mask` values are relative to the JSONL file directory. Task or shared `file`, `out`, and `postprocess_out_dir` values are relative to batch `--out`; absolute paths remain unchanged. The manifest records the resolved `output_root` and a `path_contract` file-existence check.
+For batch paths, JSONL `images`, `mask`, and `transparency_mask` values are relative to the JSONL file directory. Task or shared `file`, `out`, and `postprocess_out_dir` values are relative to batch `--out`; absolute paths remain unchanged. The manifest records the resolved `output_root` and recursively checks every declared file path. Expected outputs, possible format corrections, and per-task directories for unexpected extra API images are reserved before workers start. API originals publish per item. Multi-image derivatives are judged per image: a failed transform returns that original while successful peers remain available; global derivative count and QA conditions still commit or roll back staged derivatives transactionally.
 
 ### Apply transparency locally
 
@@ -164,7 +164,7 @@ python "$SkillDir/scripts/imagegen.py" apply-transparency "effect.png" `
   --transparency-param "gamma=1.2"
 ```
 
-The command runs in the foreground and exits after writing its result. When processing is unmet, it copies the original image to `--out`, returns `delivery_ready=false`, and still exits successfully so the preserved image can be returned with its warning.
+The command runs in the foreground and exits after writing its result. When processing is unmet, it returns the source image path with `delivery_ready=false`, does not create an `--out` duplicate, and still exits successfully so the source image can be returned with its warning.
 
 ### Inspect and validate
 
@@ -177,7 +177,7 @@ python "$SkillDir/scripts/imagegen.py" inspect-image "input.png" `
 
 `--expected-size` checks exact dimensions. `--expect-transparent` requires visible content with real alpha. `--components` adds connected-component diagnostics for isolated subjects such as cutouts, marks, interface elements, and game assets.
 
-QA is deterministic and technical. It does not judge aesthetics, identity, layout, or semantic fidelity. Returned-PNG validation, deep inspection, and local transforms use the same parser: non-interlaced 8-bit RGB/RGBA, up to 25 million pixels and a 256 MiB PNG file limit. RGB PNG files with a `tRNS` transparency chunk are rejected instead of being treated as opaque.
+QA is deterministic and technical. It does not judge aesthetics, identity, layout, or semantic fidelity. Deep inspection and local transforms support non-interlaced 8-bit or 16-bit RGB/RGBA PNG files, up to 25 million pixels, a 256 MiB PNG file limit, and 4096 `IDAT` chunks. The local codec reduces 16-bit channel samples to 8-bit RGBA for processing. RGB PNG files with a `tRNS` transparency chunk are rejected instead of being treated as opaque.
 
 ### Prepare delivery files
 
@@ -199,7 +199,7 @@ python "$SkillDir/scripts/imagegen.py" split-grid "sheet.png" `
 
 `stretch` fills the exact delivery size. `contain` preserves aspect ratio on a transparent canvas. `--safe-margin` reserves a fractional margin on every edge when using `contain`. `bilinear` is the default resampler; use `nearest` for intentional pixel replication.
 
-`generate`, `edit`, and `batch` accept the same delivery controls. Add `--qa` to attach `qa.v1` results without changing generation success or retrying the request. For transparent requests, a failed transparency route skips dependent delivery transforms and returns the API file unchanged.
+`generate`, `edit`, and `batch` accept the same delivery controls. Add `--qa` to attach `qa.v1` results without changing generation success or retrying the request. For transparent requests, a failed transparency route skips dependent delivery transforms and returns the API file unchanged; a successful route returns the API source together with the final derived delivery file(s).
 
 ### Build a preview board
 
@@ -227,7 +227,7 @@ Key `auth.json` fields:
 | `user_agent` | HTTP client signature used for API and image URL requests |
 | `url_download.proxy_mode` | `environment` by default, or explicit `direct` URL downloading |
 | `defaults.*` | Default size, aspect, resolution, quality, format, timeout, and concurrency |
-| `postprocess.enabled` | Allows the local transparency route by default |
+| `postprocess.enabled` | Selects the default local transparency-route preference; it does not block large transparent requests |
 | `transparency.default_route` | Default local transparency route |
 | `transparency.prompt_only_allow` | Exact model/mode/size rules for prompt-only alpha generation |
 | `transparency.llm_assisted.*` | Bounded agent-guided route and parameter adjustment policy |

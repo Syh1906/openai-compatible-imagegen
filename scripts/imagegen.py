@@ -47,7 +47,12 @@ from image_png import (
     write_png_rgba as write_png,
 )
 from image_qa import analyze_pixels, evaluate_delivery as evaluate_delivery_report, sha256_file
-from image_postprocess import PostprocessOperations, run as run_postprocess
+from image_reference import inspect_reference_metadata, normalize_paths
+from image_postprocess import (
+    PostprocessOperations,
+    run as run_postprocess,
+    validate_request as validate_postprocess_request,
+)
 from image_resize import fit_to_canvas as fit_pixels_to_canvas, resize_pixels
 from image_transparency import (
     LOCAL_ROUTES,
@@ -70,10 +75,12 @@ from image_response import (
     decode_base64_image,
     detect_image_format,
     image_dimensions,
+    publish_response_images,
     read_json_response,
     read_limited_bytes,
     safe_error_body,
 )
+from image_transaction import OutputTransaction, remap_transaction_paths
 
 
 SKILL_DIR = Path(__file__).resolve().parents[1]
@@ -86,6 +93,7 @@ DEFAULT_SIZE = "1024x1024"
 DEFAULT_QUALITY = "medium"
 DEFAULT_FORMAT = "png"
 DEFAULT_RESOLUTION = "1K"
+MAX_IMAGES_PER_REQUEST = 16
 DEFAULT_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -389,9 +397,7 @@ def infer_resolution_from_size(size: str) -> str | None:
 def resolve_common_params(args: argparse.Namespace, cfg: Config, task: dict[str, Any] | None = None) -> dict[str, Any]:
     task = task or {}
     asset = bool(get_value("asset", args, task, False))
-    background = get_value("background", args, task, None)
-    if background == "transparent":
-        raise ImagegenError("background=transparent has been removed; use transparent=true for delivery intent")
+    background = normalize_background(get_value("background", args, task, None))
     transparent = transparent_intent(args, task)
     fmt = normalize_format(get_value("format", args, task, None), cfg)
     if asset:
@@ -415,6 +421,8 @@ def resolve_common_params(args: argparse.Namespace, cfg: Config, task: dict[str,
         raise ImagegenError(f"invalid n: {n}") from exc
     if n < 1:
         raise ImagegenError("n must be >= 1")
+    if n > MAX_IMAGES_PER_REQUEST:
+        raise ImagegenError(f"n must be <= {MAX_IMAGES_PER_REQUEST}")
 
     output_compression = get_value("compression", args, task, None)
     if output_compression is not None:
@@ -442,6 +450,21 @@ def resolve_common_params(args: argparse.Namespace, cfg: Config, task: dict[str,
             or getattr(args, "allow_direct_url_download", False)
         ),
     }
+
+
+def normalize_background(value: Any) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise ImagegenError(f"invalid background: {value}")
+    background = value.strip().lower()
+    if not background:
+        return None
+    if background == "transparent":
+        raise ImagegenError("background=transparent has been removed; use transparent=true for delivery intent")
+    if background not in {"auto", "opaque"}:
+        raise ImagegenError(f"invalid background: {value}")
+    return background
 
 
 def get_value(name: str, args: argparse.Namespace, task: dict[str, Any], fallback: Any) -> Any:
@@ -478,6 +501,13 @@ def resolve_request_transparency(
             "remove the API background option or allow local post-processing"
         )
     return plan
+
+
+def validate_postprocess_args(args: argparse.Namespace, task: dict[str, Any]) -> None:
+    try:
+        validate_postprocess_request(args, task)
+    except ValueError as exc:
+        raise ImagegenError(str(exc)) from exc
 
 
 def api_url(cfg: Config, path: str) -> str:
@@ -585,6 +615,7 @@ def generate(cfg: Config, args: argparse.Namespace, task: dict[str, Any] | None 
         raise ImagegenError("prompt is required")
     params = resolve_common_params(args, cfg, task)
     transparency_plan = resolve_request_transparency(prompt, "generate", params, args, cfg, task)
+    validate_postprocess_args(args, task)
     prompt = apply_prompt_directives(prompt, args, task, transparency_plan)
     out_file = resolve_output_file(args, task, params["output_format"], prompt)
     payload = {
@@ -599,7 +630,7 @@ def generate(cfg: Config, args: argparse.Namespace, task: dict[str, Any] | None 
         "output_compression": params["output_compression"],
     }
     response = request_json(cfg, "images/generations", payload, params["timeout"])
-    written = write_response_images(
+    delivery = write_response_images(
         response,
         out_file,
         params["output_format"],
@@ -607,8 +638,9 @@ def generate(cfg: Config, args: argparse.Namespace, task: dict[str, Any] | None 
         params["direct_url_download"],
         expected_count=params["n"],
         expected_size=parse_size(params["size"]),
+        planned_extra_dir=_planned_extra_dir(task),
     )
-    return success_record(task, prompt, "generate", written, params, transparency_plan)
+    return success_record(task, prompt, "generate", delivery, params, transparency_plan)
 
 
 def edit(cfg: Config, args: argparse.Namespace, task: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -635,6 +667,7 @@ def edit(cfg: Config, args: argparse.Namespace, task: dict[str, Any] | None = No
         task,
         image_paths,
     )
+    validate_postprocess_args(args, task)
     prompt = apply_prompt_directives(prompt, args, task, transparency_plan)
     out_file = resolve_output_file(args, task, params["output_format"], prompt)
     fields = {
@@ -655,7 +688,7 @@ def edit(cfg: Config, args: argparse.Namespace, task: dict[str, Any] | None = No
     except ApiRequestError as exc:
         exc.details["references"] = reference_report
         raise
-    written = write_response_images(
+    delivery = write_response_images(
         response,
         out_file,
         params["output_format"],
@@ -663,72 +696,17 @@ def edit(cfg: Config, args: argparse.Namespace, task: dict[str, Any] | None = No
         params["direct_url_download"],
         expected_count=params["n"],
         expected_size=parse_size(params["size"]),
+        planned_extra_dir=_planned_extra_dir(task),
     )
     return success_record(
         task,
         prompt,
         "edit",
-        written,
+        delivery,
         params,
         transparency_plan,
         references=reference_report,
     )
-
-
-def normalize_paths(value: Any) -> list[Path]:
-    if not value:
-        return []
-    values = value if isinstance(value, list) else [value]
-    return [Path(str(item)).expanduser().resolve() for item in values if str(item).strip()]
-
-
-def inspect_reference_metadata(paths: list[Path]) -> dict[str, Any]:
-    items: list[dict[str, Any]] = []
-    warnings: list[str] = []
-    for path_value in paths:
-        path = Path(path_value).expanduser().resolve()
-        item: dict[str, Any] = {
-            "file": display_path(path),
-            "exists": path.is_file(),
-        }
-        if not path.is_file():
-            item["status"] = "unavailable"
-            item["reason"] = "reference file not found"
-            warnings.append("reference_metadata_unavailable")
-            items.append(item)
-            continue
-        try:
-            item["size_bytes"] = path.stat().st_size
-            if path.suffix.lower() == ".png":
-                image = read_png(path)
-                width = image["width"]
-                height = image["height"]
-                item.update(
-                    {
-                        "format": "png",
-                        "width": width,
-                        "height": height,
-                        "has_alpha": any(pixel[3] < 255 for pixel in image["pixels"]),
-                        "aspect_ratio": round(width / height, 6),
-                    }
-                )
-                if width / height > 3 or width / height < 1 / 3:
-                    warnings.append("reference_shape_unusual")
-            else:
-                item["format"] = path.suffix.lower().lstrip(".") or "unknown"
-                item["status"] = "technical_metadata_limited"
-        except (OSError, ValueError) as exc:
-            item["status"] = "unavailable"
-            item["reason"] = str(exc)
-            warnings.append("reference_metadata_unavailable")
-        items.append(item)
-    if paths:
-        warnings.append("reference_semantics_not_evaluated")
-    return {
-        "status": "not_evaluated",
-        "items": items,
-        "warnings": list(dict.fromkeys(warnings)),
-    }
 
 
 def resolve_output_file(args: argparse.Namespace, task: dict[str, Any], fmt: str, prompt: str) -> Path:
@@ -753,45 +731,25 @@ def write_response_images(
     direct_url_download: bool = False,
     expected_count: int | None = None,
     expected_size: tuple[int, int] | None = None,
-) -> list[str]:
-    data = response.get("data")
-    if not isinstance(data, list) or not data:
-        raise ImagegenError("API response did not include data images")
-    if any(not isinstance(item, dict) for item in data):
-        bad_index = next(index for index, item in enumerate(data) if not isinstance(item, dict))
-        raise ImagegenError(f"API response data[{bad_index}] is not an object")
-    if expected_count is not None and len(data) != expected_count:
-        raise ImagegenError(f"API returned {len(data)} image(s), requested {expected_count}")
+    planned_extra_dir: Path | None = None,
+) -> dict[str, Any]:
+    try:
+        return publish_response_images(
+            response,
+            out_file,
+            fmt,
+            lambda item: decode_image_item(item, user_agent, direct_url_download),
+            expected_count=expected_count,
+            expected_size=expected_size,
+            planned_extra_dir=planned_extra_dir,
+        )
+    except ValueError as exc:
+        raise ImagegenError(str(exc)) from exc
 
-    # Decode every item before writing so a later malformed item cannot leave a partial delivery.
-    decoded = [decode_image_item(item, user_agent, direct_url_download) for item in data]
-    for raw in decoded:
-        actual_format = detect_image_format(raw)
-        if actual_format is None:
-            raise ImagegenError("image response did not contain a complete PNG, JPEG, or WebP image")
-        if actual_format != fmt:
-            raise ImagegenError(f"image response actual format {actual_format} does not match requested {fmt}")
-        if expected_size is not None:
-            try:
-                actual_width, actual_height = image_dimensions(raw, actual_format)
-            except ValueError as exc:
-                raise ImagegenError(f"image response dimensions are unavailable: {exc}") from exc
-            if (actual_width, actual_height) != expected_size:
-                expected_width, expected_height = expected_size
-                raise ImagegenError(
-                    f"image response size {actual_width}x{actual_height} does not match "
-                    f"requested size {expected_width}x{expected_height}"
-                )
 
-    out_file.parent.mkdir(parents=True, exist_ok=True)
-    written: list[str] = []
-    for index, raw in enumerate(decoded):
-        target = numbered_path(out_file, index, len(data), fmt)
-        target.write_bytes(raw)
-        written.append(str(target))
-    if not written:
-        raise ImagegenError("API response did not include b64_json or url images")
-    return written
+def _planned_extra_dir(task: dict[str, Any]) -> Path | None:
+    value = task.get("_api_extra_dir")
+    return Path(str(value)).expanduser().resolve() if value else None
 
 
 def decode_image_item(
@@ -1161,13 +1119,6 @@ def strip_data_url_prefix(value: str) -> str:
     return value
 
 
-def numbered_path(out_file: Path, index: int, count: int, fmt: str) -> Path:
-    suffix = out_file.suffix or f".{fmt}"
-    if count == 1:
-        return out_file.with_suffix(suffix)
-    return out_file.with_name(f"{out_file.stem}_{index + 1}{suffix}")
-
-
 def parse_size(value: str) -> tuple[int, int]:
     parts = value.lower().replace("*", "x").split("x", 1)
     if len(parts) != 2:
@@ -1191,7 +1142,7 @@ def success_record(
     task: dict[str, Any],
     prompt: str,
     mode: str,
-    written: list[str],
+    delivery: dict[str, Any],
     params: dict[str, Any],
     transparency_plan: TransparencyPlan | None = None,
     references: dict[str, Any] | None = None,
@@ -1200,8 +1151,12 @@ def success_record(
         "id": task.get("id"),
         "mode": mode,
         "ok": True,
+        "delivery_ready": True,
         "prompt": prompt,
-        "files": written,
+        "files": list(delivery["files"]),
+        "original_files": list(delivery["files"]),
+        "warnings": list(delivery.get("warnings", [])),
+        "api_delivery": dict(delivery["api_delivery"]),
         "params": {key: value for key, value in params.items() if key != "timeout"},
     }
     if transparency_plan and transparency_plan.mode != "none":
@@ -1345,6 +1300,7 @@ def info(cfg: Config) -> int:
             "llm_assisted": cfg.transparency.llm_assisted.to_record(),
         },
         "url_download": cfg.url_download,
+        "script_path": display_path(Path(__file__).resolve()),
         "auth_json": display_path(AUTH_PATH),
         "api_key_source": cfg.api_key_source,
         "api_key": "***REDACTED***",
@@ -1430,17 +1386,21 @@ def apply_transparency_command(args: argparse.Namespace) -> int:
         normalized_options = normalize_route_options(args.route, options)
     except ValueError as exc:
         raise ImagegenError(str(exc)) from exc
-    result = process_transparency_file(
-        source,
-        target,
-        TransparencyPlan(
-            mode=args.route,
-            prompt="",
-            key_hex=key,
-            mask_path=mask_path,
-            options=normalized_options,
-        ),
+    plan = TransparencyPlan(
+        mode=args.route,
+        prompt="",
+        key_hex=key,
+        mask_path=mask_path,
+        options=normalized_options,
     )
+    with OutputTransaction() as transaction:
+        staged = transaction.stage_path(target)
+        result = process_transparency_file(source, staged, plan)
+        if result.get("status") == "pass" and result.get("changed"):
+            mapping = transaction.commit()
+            result = remap_transaction_paths(result, mapping)
+        else:
+            result["file"] = display_path(source)
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0
 
