@@ -2,22 +2,16 @@
 
 This file records user-visible changes for each release of `openai-compatible-imagegen`.
 
-## [Unreleased]
+## [0.3.0] - 2026-08-13
 
 ### Added
 
-- Add a shared 8-bit Alpha matte pipeline with edge-connected or global color range, explicit RGB mask-channel input, matte refinement, known black/white matte removal, defringing, and multi-background review records.
-- Preserve trusted fully opaque mask foreground during Remove Matte/Defringe, and skip color-neighbor search immediately when no reliable replacement color exists.
-- Retain successful per-image derivatives when QA fails only for another image, while keeping global delivery contracts transactional.
-- Validate PNG compressed-stream completion and exact decompressed length through a 512 MiB scanline ceiling so corrupt IDAT data is never published as an original.
-- Limit PNG response and local-decoder IDAT fragmentation to 4096 chunks.
-- Validate complete bounded VP8L WebP entropy streams before original publication without loading a model or retaining a decoded pixel image; validate VP8 container, keyframe, dimensions, and first-partition bounds.
-- Add deterministic `chroma-matting` transparency processing with edge-connected key-color removal, edge despill, and alpha validation.
-- Add `emissive-alpha` and explicit `mask-alpha` local transparency routes with bounded tuning parameters.
-- Add `apply-transparency` for processing existing PNG files without another image API request.
-- Add exact `transparency.prompt_only_allow` rules for explicitly permitted prompt-only alpha generation.
-- Add optional bounded `transparency.llm_assisted` route and parameter adjustment policy without local model runtimes or weights.
-- Add technical reference-image metadata without using semantic heuristics to block edit requests.
+- Add deterministic transparent-background processing for controlled solid-color plates, black-backed emissive effects, and trusted alpha, luminance, or RGB-channel masks.
+- Add matte refinement controls for edge expansion or contraction, feathering, small-component cleanup, known black or white matte removal, and defringing.
+- Add `apply-transparency` for processing an existing PNG without another image API request.
+- Add exact `transparency.prompt_only_allow` rules for backend combinations verified for prompt-guided alpha output.
+- Add optional bounded `transparency.llm_assisted` route and parameter adjustment without local models, downloaded weights, generated processing code, or background workers.
+- Add stricter bounded validation for PNG, JPEG, and WebP originals before publication.
 
 ### Changed
 
@@ -25,32 +19,24 @@ This file records user-visible changes for each release of `openai-compatible-im
 - Return API images unchanged with `transparency.status=unmet` and warnings when prompt alpha or local processing does not meet the transparency checks.
 - Report `delivery_ready` separately from API success, and keep preserved originals available when transparency remains unmet.
 - Continue 2K and 4K transparent requests when no exact prompt-only rule exists; run the configured local route when permitted, or preserve and inspect API originals without local pixel changes when processing is disabled.
-- Return transparent API originals together with successful derived files, expose `derived_files`, and omit unpublished intermediate transparency files.
-- Publish each complete API image independently, keep staged derivatives transactional for global QA contracts, recursively validate manifest file paths, and avoid creating an original-image duplicate when standalone transparency processing is unmet.
-- Evaluate transparency independently for each returned image and skip dependent delivery transforms only for unmet images.
-- Preserve API originals when publishing derived transparent files.
+- Return API originals together with successful transparent derivatives, expose `derived_files`, and omit unpublished intermediate files.
+- Evaluate transparency for each returned image. One unmet image no longer hides successful peer originals or derivatives.
 - Classify HTTP 4xx image requests as `api_rejected`, separate from post-response transparency checks.
 - Publish every complete API image and report count, format, and pixel-size deviations through `warnings` and `api_delivery` instead of withholding originals.
-- Decode, validate, and publish response items sequentially under explicit JSON, item-count, per-image, and cumulative decoded-byte limits so a later resource failure preserves earlier originals.
-- Run full PNG scanline and filter validation through 96 MiB, use bounded exact-length validation through 512 MiB, and return an explicit resource-limit error above that ceiling.
 - Preserve API originals when non-transparent transforms or QA fail, with `delivery_ready=false` and no partial derivative publication.
 - Resolve batch input paths from the JSONL directory and output paths from `--out`, then record `output_root` and `path_contract` in the manifest.
-- Run bundled Python commands in the foreground without child processes or persistent local-model workers.
+- Run bundled Python commands in the foreground without child processes or persistent workers.
 
 ### Fixed
 
-- Catch pale directional key-color spill outside the absolute RGB extraction range.
-- Keep chroma contamination QA independent from matte tuning, preventing reduced tolerances from falsely passing visible key-color edges.
+- Detect directional key-color spill and keep contamination checks independent from matte tuning.
 - Preserve an already-valid native alpha image before any local transparency route can reprocess or reject it.
 - Respect `--no-postprocess` without blocking image generation or hiding API originals.
 - Treat an unverified explicit `prompt-alpha` route as source-alpha inspection instead of blocking the request or adding an unverified prompt contract.
-- Keep successful peer originals and derivatives when another image cannot be published or transformed, and report only warnings for files that were actually published.
-- Reserve batch directories for unexpected extra API images before workers start, preventing cross-task overwrite.
-- Reserve shared derived-output names for possible extra API response items before workers start, preventing cross-task derivative overwrite.
-- Exclude non-path option values such as `mask-alpha` source modes from manifest file-existence checks.
+- Prevent batch output collisions for corrected formats, unexpected extra API images, and derived files.
 - Publish standard grayscale, indexed, 16-bit, and Adam7 PNG API originals independently from local post-processing limits.
-- Decode non-interlaced 16-bit RGB/RGBA API PNG files for local processing by deterministically reducing channel samples to 8-bit RGBA.
-- Reject JPEG scans that reference missing Huffman tables and truncated VP8L WebP entropy streams.
+- Support non-interlaced 16-bit RGB/RGBA PNG files in local processing through deterministic 8-bit conversion.
+- Reject incomplete JPEG and WebP codec streams before publication.
 
 ### Removed
 
@@ -136,6 +122,7 @@ This file records user-visible changes for each release of `openai-compatible-im
 - Publish the initial Agent Skills-compatible image generation workflow.
 - Support OpenAI-compatible image generation, image editing, local authentication, transparent asset intent, and JSONL batches.
 
+[0.3.0]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v0.1.4...v0.2.0
 [0.1.4]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v0.1.2...v0.1.3
