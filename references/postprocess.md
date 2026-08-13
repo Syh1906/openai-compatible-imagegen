@@ -70,7 +70,7 @@ Transparency processing is observational after the API response exists:
 
 The API request remains successful when transparency is unmet. For a batch, each returned image is evaluated independently.
 
-The same preservation rule applies to non-transparent transforms. A resize, grid split, or QA failure sets `delivery_ready=false` and returns the already-published API originals with a factual warning. One image's transform or final publish failure keeps successful peer derivatives. Each source group's derivative set publishes atomically, while different source groups are isolated. Multi-image QA commits passing derivatives and removes only failed, unsupported, or not-evaluated per-image derivatives when the result can be assigned to one image. Global derivative count and QA conditions still roll back staged derivatives before publication. API originals publish independently, so one response item's target collision does not hide successful peers. None of these outcomes changes `ok=true` after at least one original is published.
+The same preservation rule applies to non-transparent transforms. A resize, grid split, or QA failure sets `delivery_ready=false` and returns the already-published API originals with a factual warning. One image's transform or final publication failure keeps successful peer derivatives. Multi-image QA retains passing derivatives and omits failed, unsupported, or not-evaluated per-image derivatives when the result can be assigned to one image. A global derivative count or global QA failure omits the complete derivative set. API originals publish independently, so one response item's target collision does not hide successful peers. None of these outcomes changes `ok=true` after at least one original is published.
 
 An HTTP 4xx response is different: it is an API rejection before an image exists (`error_kind=api_rejected`), so there is no original image to return and no transparency result to attach.
 
@@ -88,15 +88,13 @@ python "$SkillDir/scripts/imagegen.py" apply-transparency "effect.png" `
   --transparency-param "gamma=1.2"
 ```
 
-For `chroma-matting`, also pass `--key "#00FF00"`. For `mask-alpha`, pass `--transparency-mask "mask.png"`. The command always emits a JSON result after processing. A validated output returns `status=pass` and `delivery_ready=true`. An unmet route returns the source image path, does not create an `--out` duplicate, reports `status=unmet` and `delivery_ready=false`, and still exits successfully so the caller can return the source file with its warning.
+For `chroma-matting`, also pass `--key "#00FF00"`. For `mask-alpha`, pass `--transparency-mask "mask.png"`. The command always emits a JSON result after processing. A validated output returns `status=pass` and `delivery_ready=true`. An unmet route returns the source image path, does not create an `--out` duplicate, reports `status=unmet` and `delivery_ready=false`, and exits successfully so the source file remains available with its warning.
 
 ## LLM-Assisted Adjustment
 
 When `transparency.llm_assisted.enabled=true`, the agent can inspect the original image and route checks, then run bounded additional `apply-transparency` attempts. `max_attempts` includes the first local run. Parameter tuning and route changes obey their individual switches and the route input contracts. Each attempt must pass the unchanged deterministic checks and be reviewed on contrasting preview backgrounds; tuning a processing tolerance never relaxes the quality gate. Another image API call requires `allow_api_retry=true`.
 
-This mode uses the current agent's visual reasoning only to select a route and documented parameter values. It does not add a model to the Python process, execute generated algorithms, install inference packages, or download weights. If every permitted attempt remains unmet, the original API image and warnings remain the result.
-
-Every bundled Python command runs in the foreground. The scripts do not spawn child processes or retain background workers; batch threads are joined before process exit. The caller must wait for completion and close the launched process after an interrupt or launcher timeout.
+If every permitted attempt remains unmet, the original API image and warnings remain the result.
 
 Example:
 

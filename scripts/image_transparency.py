@@ -65,7 +65,6 @@ class LlmAssistedPolicy:
     allow_parameter_tuning: bool = True
     allow_route_change: bool = True
     allow_api_retry: bool = False
-    allow_generated_code: bool = False
 
     def to_record(self) -> dict[str, Any]:
         return {
@@ -74,7 +73,6 @@ class LlmAssistedPolicy:
             "allow_parameter_tuning": self.allow_parameter_tuning,
             "allow_route_change": self.allow_route_change,
             "allow_api_retry": self.allow_api_retry,
-            "allow_generated_code": False,
         }
 
 
@@ -182,14 +180,10 @@ def _resolve_llm_assisted(value: Any) -> LlmAssistedPolicy:
         "allow_parameter_tuning",
         "allow_route_change",
         "allow_api_retry",
-        "allow_generated_code",
     }
     unknown = sorted(set(value) - allowed)
     if unknown:
         raise ValueError(f"unsupported transparency.llm_assisted option: {unknown[0]}")
-    generated_code = _bool_option(value, "allow_generated_code", False)
-    if generated_code:
-        raise ValueError("auth.json transparency.llm_assisted.allow_generated_code must remain false")
     attempts = value.get("max_attempts", 2)
     if isinstance(attempts, bool) or not isinstance(attempts, int) or not 1 <= attempts <= 3:
         raise ValueError("auth.json transparency.llm_assisted.max_attempts must be an integer from 1 to 3")

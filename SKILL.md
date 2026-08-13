@@ -113,7 +113,7 @@ For multiple returned images, evaluate and publish each API original independent
 
 ### LLM-assisted adjustment
 
-Read the effective policy from `info`. This policy controls agent decisions; it does not load another model into the Python process.
+Read the effective policy from `info`.
 
 When `llm_assisted.enabled=true` and the first result is `unmet`:
 
@@ -122,7 +122,7 @@ When `llm_assisted.enabled=true` and the first result is `unmet`:
 3. Tune only documented route parameters when `allow_parameter_tuning=true`. Treat them as processing controls, not QA controls: every attempt must pass the unchanged deterministic quality gate and multi-background preview review. Never lower a tolerance merely to make a failed result report `pass`.
 4. Change routes only when `allow_route_change=true` and the candidate route's input contract is satisfied. Never invent a mask.
 5. Send another image API request only when `allow_api_retry=true`; keep the configured model, endpoint, and requested size.
-6. Never generate or execute image-processing code, install a runtime, download weights, or start a local model. `allow_generated_code` must remain `false`.
+6. Never generate or execute image-processing code, install a runtime, download weights, or start a local model.
 
 If every permitted attempt remains unmet, return the original API image and its factual warnings. The skill informs the user; it does not hard-block or hide the image.
 

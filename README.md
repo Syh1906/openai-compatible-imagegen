@@ -83,8 +83,7 @@ For manual setup, copy `examples/auth.example.json` to `auth.json` in the skill 
       "max_attempts": 2,
       "allow_parameter_tuning": true,
       "allow_route_change": true,
-      "allow_api_retry": false,
-      "allow_generated_code": false
+      "allow_api_retry": false
     }
   }
 }
@@ -103,7 +102,7 @@ When a transparent result is requested and local processing is allowed, the sele
 
 If the result does not meet transparency checks, the API image is returned unchanged with `ok=true`, `transparency.status=unmet`, and `delivery_ready=false`. The skill reports that state instead of rejecting or hiding the image.
 
-Optional `transparency.llm_assisted` lets the agent inspect the failed result and make a bounded number of route or parameter adjustments. It uses only the bundled deterministic processors. It does not install a local model, download weights, execute generated image-processing code, or leave a background Python worker running.
+Optional `transparency.llm_assisted` lets the agent inspect an unmet result and make a bounded number of route or parameter adjustments. The configured attempt limit and quality checks still apply, and another API request occurs only when `allow_api_retry=true`.
 
 ## Ask Your Agent
 
@@ -152,7 +151,7 @@ python "$SkillDir/scripts/imagegen.py" batch `
 
 Batch rows can set `postprocess`, `transparency_route`, `transparency_mask`, `transparency_options`, `qa`, `components`, `delivery_size`, `grid`, `expected_count`, `resample`, `fit`, and `safe_margin`. The command writes `manifest.json`. `original_files` lists every published API source; `files` contains each source followed by any successful derivative, and `derived_files` lists only derived paths. A failed transform or transparency check keeps the source and records `delivery_ready=false`. `api_delivery` preserves requested-versus-actual count, format, size, paths, and warnings.
 
-For batch paths, JSONL `images`, `mask`, and `transparency_mask` values are relative to the JSONL file directory. Task or shared `file`, `out`, and `postprocess_out_dir` values are relative to batch `--out`; absolute paths remain unchanged. The manifest records the resolved `output_root` and recursively checks every declared file path. Expected outputs, possible format corrections, and per-task directories for unexpected extra API images are reserved before workers start. API originals publish per item. Multi-image derivatives are judged per image: a failed transform returns that original while successful peers remain available; global derivative count and QA conditions still commit or roll back staged derivatives transactionally.
+For batch paths, JSONL `images`, `mask`, and `transparency_mask` values are relative to the JSONL file directory. Task or shared `file`, `out`, and `postprocess_out_dir` values are relative to batch `--out`; absolute paths remain unchanged. The manifest records the resolved `output_root` and checks every declared file path. Output conflicts are rejected before generation. API originals publish per item. A failed transform returns that original while successful peer derivatives remain available; global file-count and QA requirements still apply to the complete derived set.
 
 ### Apply transparency locally
 
@@ -164,7 +163,7 @@ python "$SkillDir/scripts/imagegen.py" apply-transparency "effect.png" `
   --transparency-param "gamma=1.2"
 ```
 
-The command runs in the foreground and exits after writing its result. When processing is unmet, it returns the source image path with `delivery_ready=false`, does not create an `--out` duplicate, and still exits successfully so the source image can be returned with its warning.
+When processing is unmet, the command returns the source image path with `delivery_ready=false`, does not create an `--out` duplicate, and exits successfully so the source image remains available with its warning.
 
 ### Inspect and validate
 
@@ -227,7 +226,7 @@ Key `auth.json` fields:
 | `user_agent` | HTTP client signature used for API and image URL requests |
 | `url_download.proxy_mode` | `environment` by default, or explicit `direct` URL downloading |
 | `defaults.*` | Default size, aspect, resolution, quality, format, timeout, and concurrency |
-| `postprocess.enabled` | Selects the default local transparency-route preference; it does not block large transparent requests |
+| `postprocess.enabled` | Allows local transparency processing by default; it does not block large transparent requests |
 | `transparency.default_route` | Default local transparency route |
 | `transparency.prompt_only_allow` | Exact model/mode/size rules for prompt-only alpha generation |
 | `transparency.llm_assisted.*` | Bounded agent-guided route and parameter adjustment policy |
@@ -253,15 +252,6 @@ HTTP 4xx responses are API rejections, reported as `error_kind=api_rejected` wit
 | `apply-transparency` | Apply a declared local transparency route to an existing PNG |
 
 Detailed behavior is documented in [references/prompting.md](references/prompting.md), [references/parameters.md](references/parameters.md), [references/postprocess.md](references/postprocess.md), and [references/qa.md](references/qa.md).
-
-## Quality Checks
-
-```powershell
-python -m unittest discover -s tests
-python -m compileall -q scripts
-```
-
-These checks do not call the image API.
 
 See [CHANGELOG.md](CHANGELOG.md) for version history.
 

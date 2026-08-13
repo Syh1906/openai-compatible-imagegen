@@ -255,7 +255,6 @@ class AuthConfigTests(unittest.TestCase):
                             "allow_parameter_tuning": True,
                             "allow_route_change": True,
                             "allow_api_retry": False,
-                            "allow_generated_code": False,
                         },
                     },
                 }
@@ -731,6 +730,7 @@ class RequestHeaderTests(unittest.TestCase):
         self.assertEqual(summary["api_key"], "***REDACTED***")
         self.assertEqual(summary["transparency"]["default_route"], "chroma-matting")
         self.assertFalse(summary["transparency"]["llm_assisted"]["enabled"])
+        self.assertNotIn("allow_generated_code", summary["transparency"]["llm_assisted"])
 
 
 class ParameterResolutionTests(unittest.TestCase):

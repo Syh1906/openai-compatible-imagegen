@@ -83,8 +83,7 @@ python "$SkillDir/scripts/quick-init.py"
       "max_attempts": 2,
       "allow_parameter_tuning": true,
       "allow_route_change": true,
-      "allow_api_retry": false,
-      "allow_generated_code": false
+      "allow_api_retry": false
     }
   }
 }
@@ -103,7 +102,7 @@ python "$SkillDir/scripts/imagegen.py" info
 
 透明检查未通过时，API 原图会原样返回，并记录 `ok=true`、`transparency.status=unmet` 和 `delivery_ready=false`。skill 只告知实际状态，不拒绝或隐藏图片。
 
-可选的 `transparency.llm_assisted` 允许 Agent 查看失败结果，并在限定次数内调整路线或参数。该模式只使用 skill 自带的确定性处理器，不安装本地模型、不下载权重、不执行生成的图片处理代码，也不会留下后台 Python 工作进程。
+可选的 `transparency.llm_assisted` 允许 Agent 查看未达标结果，并在限定次数内调整路线或参数。所有尝试仍需通过原有质量检查；只有设置 `allow_api_retry=true` 时才会再次请求图片 API。
 
 ## 向 Agent 提需求
 
@@ -152,7 +151,7 @@ python "$SkillDir/scripts/imagegen.py" batch `
 
 批处理行可以设置 `postprocess`、`transparency_route`、`transparency_mask`、`transparency_options`、`qa`、`components`、`delivery_size`、`grid`、`expected_count`、`resample`、`fit` 和 `safe_margin`。命令会写出 `manifest.json`。`original_files` 列出全部已发布 API 源图；`files` 按顺序包含源图及其成功派生图，`derived_files` 只列派生图。转换或透明检查失败时仍保留源图，并记录 `delivery_ready=false`。`api_delivery` 会保留请求值与实际数量、格式、尺寸、路径及警告。
 
-批处理路径使用两个明确基准：JSONL 中的 `images`、`mask` 和 `transparency_mask` 相对于 JSONL 文件目录；任务级或共享的 `file`、`out` 和 `postprocess_out_dir` 相对于 batch `--out`。绝对路径保持不变。manifest 会记录解析后的 `output_root`，并递归检查每个已声明的文件路径。worker 启动前会预留预期输出、可能的格式修正路径和每个任务的 API 超量原图目录。API 原图逐项独立发布。多图派生结果逐图验收：某张转换失败时返回该原图，其他成功派生图继续保留；全局派生数量和 QA 条件仍对暂存派生图执行事务提交或回滚。
+批处理路径使用两个明确基准：JSONL 中的 `images`、`mask` 和 `transparency_mask` 相对于 JSONL 文件目录；任务级或共享的 `file`、`out` 和 `postprocess_out_dir` 相对于 batch `--out`。绝对路径保持不变。manifest 会记录解析后的 `output_root`，并检查每个已声明的文件路径。输出冲突会在生成前报错。API 原图逐项独立发布；某张转换失败时返回该原图，其他成功派生图继续保留；全局文件数量和 QA 要求仍作用于完整派生结果集。
 
 ### 对已有图片应用透明处理
 
@@ -164,7 +163,7 @@ python "$SkillDir/scripts/imagegen.py" apply-transparency "effect.png" `
   --transparency-param "gamma=1.2"
 ```
 
-命令以前台方式运行，并在写出结果后退出。处理未达标时，会返回源图路径和 `delivery_ready=false`，不会创建 `--out` 副本，同时保持成功退出，让调用方可以连同 warning 一起返回源图。
+处理未达标时，命令会返回源图路径和 `delivery_ready=false`，不创建 `--out` 副本，并保持成功退出，让源图可以连同 warning 一起返回。
 
 ### 检查与验证
 
@@ -227,7 +226,7 @@ python "$SkillDir/scripts/imagegen.py" preview-board "input.png" `
 | `user_agent` | 图片 API 和图片 URL 请求使用的 HTTP 客户端标识 |
 | `url_download.proxy_mode` | 默认使用 `environment`，也可明确设置为 `direct` 直连下载 |
 | `defaults.*` | 默认尺寸、比例、分辨率、质量、格式、超时和并发数 |
-| `postprocess.enabled` | 默认本地透明路线偏好；不会拦截大尺寸透明请求 |
+| `postprocess.enabled` | 默认允许本地透明处理；不会拦截大尺寸透明请求 |
 | `transparency.default_route` | 默认本地透明路线 |
 | `transparency.prompt_only_allow` | 允许提示词生成 alpha 的精确模型、模式和尺寸规则 |
 | `transparency.llm_assisted.*` | Agent 在限定范围内调整路线和参数的策略 |
@@ -253,15 +252,6 @@ HTTP 4xx 属于 API 拒绝，会记录为 `error_kind=api_rejected` 和 `status_
 | `apply-transparency` | 对已有 PNG 应用指定的本地透明路线 |
 
 详细行为见 [提示词参考](references/prompting.md)、[参数参考](references/parameters.md)、[后处理参考](references/postprocess.md)和 [QA 参考](references/qa.md)。
-
-## 质量检查
-
-```powershell
-python -m unittest discover -s tests
-python -m compileall -q scripts
-```
-
-这些检查不会调用图片 API。
 
 版本历史见 [CHANGELOG.md](CHANGELOG.md)。
 

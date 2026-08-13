@@ -103,16 +103,13 @@ Example configuration:
       "max_attempts": 2,
       "allow_parameter_tuning": true,
       "allow_route_change": true,
-      "allow_api_retry": false,
-      "allow_generated_code": false
+      "allow_api_retry": false
     }
   }
 }
 ```
 
-`llm_assisted` is an agent policy, not a local-model setting. `max_attempts` is the total number of local transparency attempts, including the first run, and must be from 1 to 3. Parameter tuning and route changes use only the documented deterministic processors. API retry remains disabled by default. `allow_generated_code=true` is rejected.
-
-The bundled scripts do not install inference runtimes, download weights, or start background model servers. Each command runs in the foreground and exits after its files and JSON result are written.
+`llm_assisted.max_attempts` is the total number of transparency attempts, including the first run, and must be from 1 to 3. `allow_parameter_tuning` permits documented parameter changes, `allow_route_change` permits compatible route changes, and `allow_api_retry` permits another image API request. API retry remains disabled by default.
 
 The old `capabilities.transparent_background` setting and `background=transparent` request value are not supported. Remove them instead of translating them into an API parameter. Batch `background` values are trimmed case-insensitively, but only `auto`, `opaque`, or an omitted value are accepted; every other value fails before the API request.
 
@@ -188,7 +185,7 @@ Relative paths have separate, deterministic bases:
 | `images`, `mask`, `transparency_mask` in a JSONL task | JSONL file directory |
 | `file`, `out`, `postprocess_out_dir` in a task or shared command value | batch `--out` directory |
 
-Absolute paths are preserved. Preflight, API task execution, post-processing, and manifest use the same normalized values. The batch manifest records `output_root` and `path_contract`, recursively checks every declared file path, and reports a failed file-existence check instead of silently claiming a complete delivery. API multi-image originals publish independently; staged derivatives remain transactional for global QA contracts.
+Absolute paths are preserved. Validation, API requests, post-processing, and the manifest use the same normalized values. The batch manifest records `output_root` and `path_contract`, checks every declared file path, and reports a failed file-existence check instead of claiming a complete delivery. API multi-image originals publish independently; global QA requirements apply to the complete derivative set.
 
 ## API Errors and References
 
@@ -196,6 +193,6 @@ An HTTP 4xx response is an API rejection (`error_kind=api_rejected`) and is not 
 
 ## Output
 
-Batch mode writes `manifest.json`. `original_files` contains every published API source, `files` contains each source followed by successful derivatives, and `derived_files` contains only derived paths. `api_delivery` records requested and actual published count, format, size, item positions, and paths. Count, format, and size deviations are warnings and do not change `ok=true`; an unusable item or target collision is reported per item while successful originals remain visible. Failed transforms or QA set `delivery_ready=false` while preserving the sources. Optional QA retains successful per-image derivatives and removes failed, unsupported, or not-evaluated peers when the result can be assigned to one image. A global derivative count or global QA condition rolls back all staged derivatives. The `qa` object remains as evidence without temporary-file paths, and QA does not retry the request.
+Batch mode writes `manifest.json`. `original_files` contains every published API source, `files` contains each source followed by successful derivatives, and `derived_files` contains only derived paths. `api_delivery` records requested and actual published count, format, size, item positions, and paths. Count, format, and size deviations are warnings and do not change `ok=true`; an unusable item or target collision is reported per item while successful originals remain visible. Failed transforms or QA set `delivery_ready=false` while preserving the sources. Optional QA retains successful per-image derivatives and omits failed, unsupported, or not-evaluated peers when the result can be assigned to one image. A global derivative count or global QA failure omits the complete derivative set. The `qa` object remains available as evidence, and QA does not retry the request.
 
 Image responses may contain `data[].b64_json` or HTTP(S) `data[].url`. URL downloads use the configured `user_agent` and never forward the API key. PNG publication uses the 96 MiB full and 512 MiB streaming scanline budgets described above. JPEG receives bounded framing checks; VP8L WebP is entropy-decoded to the declared pixel count without retaining the main pixel image, so truncated lossless streams are rejected.

@@ -25,8 +25,7 @@
       "max_attempts": 2,
       "allow_parameter_tuning": true,
       "allow_route_change": true,
-      "allow_api_retry": false,
-      "allow_generated_code": false
+      "allow_api_retry": false
     }
   }
 }

@@ -10,7 +10,7 @@ This file records user-visible changes for each release of `openai-compatible-im
 - Add matte refinement controls for edge expansion or contraction, feathering, small-component cleanup, known black or white matte removal, and defringing.
 - Add `apply-transparency` for processing an existing PNG without another image API request.
 - Add exact `transparency.prompt_only_allow` rules for backend combinations verified for prompt-guided alpha output.
-- Add optional bounded `transparency.llm_assisted` route and parameter adjustment without local models, downloaded weights, generated processing code, or background workers.
+- Add optional bounded `transparency.llm_assisted` route and parameter adjustment.
 - Add stricter bounded validation for PNG, JPEG, and WebP originals before publication.
 
 ### Changed
@@ -25,7 +25,6 @@ This file records user-visible changes for each release of `openai-compatible-im
 - Publish every complete API image and report count, format, and pixel-size deviations through `warnings` and `api_delivery` instead of withholding originals.
 - Preserve API originals when non-transparent transforms or QA fail, with `delivery_ready=false` and no partial derivative publication.
 - Resolve batch input paths from the JSONL directory and output paths from `--out`, then record `output_root` and `path_contract` in the manifest.
-- Run bundled Python commands in the foreground without child processes or persistent workers.
 
 ### Fixed
 

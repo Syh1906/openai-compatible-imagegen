@@ -184,7 +184,6 @@ class TransparencyPlanTests(unittest.TestCase):
                     "allow_parameter_tuning": True,
                     "allow_route_change": True,
                     "allow_api_retry": False,
-                    "allow_generated_code": False,
                 },
             }
         )
@@ -193,10 +192,11 @@ class TransparencyPlanTests(unittest.TestCase):
         self.assertTrue(policy.llm_assisted.enabled)
         self.assertEqual(policy.llm_assisted.max_attempts, 2)
         self.assertFalse(policy.llm_assisted.allow_api_retry)
+        self.assertNotIn("allow_generated_code", policy.llm_assisted.to_record())
 
-    def test_llm_assisted_policy_rejects_generated_code_and_excess_attempts(self) -> None:
-        with self.assertRaisesRegex(ValueError, "allow_generated_code"):
-            resolve_policy({"llm_assisted": {"allow_generated_code": True}})
+    def test_llm_assisted_policy_rejects_removed_generated_code_option_and_excess_attempts(self) -> None:
+        with self.assertRaisesRegex(ValueError, "unsupported transparency.llm_assisted option"):
+            resolve_policy({"llm_assisted": {"allow_generated_code": False}})
         with self.assertRaisesRegex(ValueError, "max_attempts"):
             resolve_policy({"llm_assisted": {"max_attempts": 4}})
 
