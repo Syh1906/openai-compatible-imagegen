@@ -1,4 +1,4 @@
-import { access, readFile, readdir, stat } from "node:fs/promises";
+import { access, lstat, readFile, readdir, stat } from "node:fs/promises";
 import { constants } from "node:fs";
 import { createHash } from "node:crypto";
 import path from "node:path";
@@ -7,7 +7,12 @@ import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
+import { extractImageResultEnvelopeIds } from "../mcp/result-envelope.mjs";
 import { containsAbsolutePath, fingerprintPath, pathRelation } from "../mcp/runtime-diagnostics.mjs";
+import {
+  distributionFiles as DISTRIBUTION_FILES,
+  releaseEntriesFor,
+} from "./plugin-file-set.mjs";
 
 const defaultRoot = fileURLToPath(new URL("..", import.meta.url));
 const PLUGIN_ID = "openai-compatible-imagegen-v2";
@@ -15,23 +20,15 @@ const APP_ONLY_TOOLS = [
   "finalize_image_editor_session",
   "get_image_editor_session",
   "open_image_editor",
+  "prepare_image_edit_submission",
   "read_image_artifact_data",
   "report_imagegen_host_observation",
+  "reveal_image_artifact",
   "save_image_annotations",
 ];
 const REMOTE_SMOKE_GENERATE_PROMPT = "A single solid red circle centered on a plain white background, no text.";
 const REMOTE_SMOKE_EDIT_PROMPT = "Change the circle from red to blue. Keep the plain white background and add no text.";
-const CONSISTENCY_PATHS = [
-  ".codex-plugin/plugin.json",
-  ".mcp.json",
-  `skills/${PLUGIN_ID}/SKILL.md`,
-  "dist/server.mjs",
-  "dist/widget/index.html",
-  "dist/scripts/imagegen.py",
-  "dist/scripts/artifact_repository.py",
-  "dist/scripts/image_download.py",
-  "dist/scripts/provider_config.py",
-];
+const RELEASE_ENTRIES = releaseEntriesFor(PLUGIN_ID);
 
 function parseOptions(args) {
   const options = {
@@ -197,7 +194,17 @@ async function compareSource() {
   if (!sourceRoot) {
     return { sourceConsistent: null, sourceMismatches: [] };
   }
-  const comparisons = await Promise.all(CONSISTENCY_PATHS.map(async (relativePath) => {
+  const [installedFiles, sourceFiles] = await Promise.all([
+    listReleaseFiles(pluginRoot),
+    listReleaseFiles(sourceRoot),
+  ]);
+  const installedFileSet = new Set(installedFiles);
+  const sourceFileSet = new Set(sourceFiles);
+  const releaseFiles = [...new Set([...installedFiles, ...sourceFiles])].sort();
+  const comparisons = await Promise.all(releaseFiles.map(async (relativePath) => {
+    if (!installedFileSet.has(relativePath) || !sourceFileSet.has(relativePath)) {
+      return relativePath;
+    }
     try {
       const [installedHash, sourceHash] = await Promise.all([
         hashFile(pluginRoot, relativePath),
@@ -212,12 +219,47 @@ async function compareSource() {
   return { sourceConsistent: sourceMismatches.length === 0, sourceMismatches };
 }
 
+async function listReleaseFiles(root) {
+  const files = [];
+  for (const relativePath of RELEASE_ENTRIES) {
+    await collectReleaseFiles(root, relativePath, files);
+  }
+  return files.sort();
+}
+
+async function collectReleaseFiles(root, relativePath, files) {
+  const absolutePath = path.resolve(root, relativePath);
+  const metadata = await lstat(absolutePath);
+  requireValue(!metadata.isSymbolicLink(), `release path is a symbolic link: ${relativePath}`);
+  if (metadata.isFile()) {
+    files.push(relativePath.replaceAll("\\", "/"));
+    return;
+  }
+  requireValue(metadata.isDirectory(), `release path has unsupported type: ${relativePath}`);
+  const entries = await readdir(absolutePath, { withFileTypes: true });
+  for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+    await collectReleaseFiles(root, path.join(relativePath, entry.name), files);
+  }
+}
+
 async function requireCleanDistribution() {
-  const entries = await readdir(resolvePath("dist/scripts"), { recursive: true, withFileTypes: true });
-  const forbidden = entries
-    .filter((entry) => entry.name === "__pycache__" || entry.name.endsWith(".pyc"))
-    .map((entry) => entry.name);
-  requireValue(forbidden.length === 0, `distribution contains Python bytecode cache: ${forbidden.join(", ")}`);
+  const files = await listFiles(resolvePath("dist"));
+  requireValue(
+    JSON.stringify(files) === JSON.stringify(DISTRIBUTION_FILES),
+    `distribution file set differs: ${files.join(", ")}`,
+  );
+}
+
+async function listFiles(root, relativeDirectory = "") {
+  const files = [];
+  const entries = await readdir(path.join(root, relativeDirectory), { withFileTypes: true });
+  for (const entry of entries) {
+    const relativePath = path.join(relativeDirectory, entry.name);
+    requireValue(entry.isDirectory() || entry.isFile(), `distribution contains unsupported entry: ${relativePath}`);
+    if (entry.isDirectory()) files.push(...await listFiles(root, relativePath));
+    else files.push(relativePath.replaceAll("\\", "/"));
+  }
+  return files.sort();
 }
 
 async function main() {
@@ -251,6 +293,7 @@ async function main() {
 
   requireValue(manifest.skills === "./skills/", "manifest skills path is invalid");
   requireValue(manifest.mcpServers === "./.mcp.json", "manifest MCP path is invalid");
+  requireValue(server?.cwd === ".", "MCP server cwd must be the plugin root");
   requireValue(server?.command === "node", "MCP server command must be node");
   requireValue(server?.args?.[0] === "dist/server.mjs", "MCP server must use the prebuilt entry");
 
@@ -302,6 +345,7 @@ async function main() {
     requireValue(tools.includes("destroy_image_editor"), "MCP server does not expose destroy_image_editor");
     requireValue(tools.includes("get_image_editor_session"), "MCP server does not expose get_image_editor_session");
     requireValue(tools.includes("finalize_image_editor_session"), "MCP server does not expose finalize_image_editor_session");
+    requireValue(tools.includes("prepare_image_edit_submission"), "MCP server does not expose prepare_image_edit_submission");
     requireValue(tools.includes("save_image_annotations"), "MCP server does not expose save_image_annotations");
     requireValue(tools.includes("list_image_models"), "MCP server does not expose list_image_models");
     requireValue(tools.includes("bind_imagegen_project"), "MCP server does not expose bind_imagegen_project");
@@ -390,7 +434,7 @@ async function main() {
     let remoteSmokeResult = null;
     let annotationSmokeResult = null;
     let editorLifecycle = null;
-    if (imageIds.length || remoteSmoke) {
+    if (remoteSmoke) {
       const modelResult = await client.callTool({ name: "list_image_models", arguments: {} });
       const modelIds = (modelResult.structuredContent?.models ?? []).map((model) => model.id);
       requireValue(modelResult.isError !== true, "list_image_models failed");
@@ -420,24 +464,19 @@ async function main() {
         name: "render_image_results",
         arguments: { imageIds },
       });
-      const renderedImages = renderResult.content.filter((item) => item.type === "image");
+      requireResultEnvelope(renderResult, imageIds);
       const renderedArtifacts = renderResult.structuredContent?.artifacts ?? [];
       requireValue(renderResult.isError !== true, `render_image_results failed for ${imageIds.join(", ")}`);
-      requireValue(
-        renderedImages.length === imageIds.length,
-        `render_image_results returned ${renderedImages.length} images for ${imageIds.length} IDs`,
-      );
       requireValue(
         JSON.stringify(renderResult.structuredContent?.imageIds) === JSON.stringify(imageIds)
           && JSON.stringify(renderedArtifacts.map((artifact) => artifact.id)) === JSON.stringify(imageIds),
         "render_image_results did not preserve the requested image order",
       );
-      const renderedResources = await readArtifactData(client, renderedArtifacts, renderedImages);
+      const renderedResources = await readArtifactData(client, renderedArtifacts);
       resultRender = {
         imageIds: renderResult.structuredContent.imageIds,
-        imageCount: renderedImages.length,
         artifactCount: renderedArtifacts.length,
-        resourceCount: renderedResources.length,
+        imageDataCount: renderedResources.length,
       };
 
       if (annotationSmoke) {
@@ -503,25 +542,20 @@ async function main() {
       });
       const generated = generateResult.structuredContent?.artifacts?.[0];
       requireValue(generateResult.isError !== true && generated?.id, "remote smoke generation failed");
-      requireValue(
-        generateResult.content.filter((item) => item.type === "image").length === 1,
-        "remote smoke generation returned no image content",
-      );
 
       const generatedRender = await client.callTool({
         name: "render_image_results",
         arguments: { imageIds: [generated.id] },
       });
-      const generatedImages = generatedRender.content.filter((item) => item.type === "image");
+      requireResultEnvelope(generatedRender, [generated.id]);
       requireValue(
         generatedRender.isError !== true
-          && generatedImages.length === 1,
+          && generatedRender.structuredContent?.artifacts?.length === 1,
         "remote smoke generated result did not render",
       );
       const generatedResources = await readArtifactData(
         client,
         generatedRender.structuredContent?.artifacts ?? [],
-        generatedImages,
       );
 
       const editResult = await client.callTool({
@@ -537,10 +571,6 @@ async function main() {
       const edited = editResult.structuredContent?.artifacts?.[0];
       requireValue(editResult.isError !== true && edited?.id, "remote smoke edit failed");
       requireValue(
-        editResult.content.filter((item) => item.type === "image").length === 1,
-        "remote smoke edit returned no image content",
-      );
-      requireValue(
         JSON.stringify(edited.parentIds) === JSON.stringify([generated.id]),
         "remote smoke edit did not preserve the parent image ID",
       );
@@ -549,26 +579,23 @@ async function main() {
         name: "render_image_results",
         arguments: { imageIds: [edited.id] },
       });
-      const editedImages = editedRender.content.filter((item) => item.type === "image");
+      requireResultEnvelope(editedRender, [edited.id]);
       requireValue(
         editedRender.isError !== true
-          && editedImages.length === 1,
+          && editedRender.structuredContent?.artifacts?.length === 1,
         "remote smoke edited result did not render",
       );
       const editedResources = await readArtifactData(
         client,
         editedRender.structuredContent?.artifacts ?? [],
-        editedImages,
       );
       requireSafeToolResults([generateResult, generatedRender, editResult, editedRender], projectRoot);
       remoteSmokeResult = {
         generatedImageId: generated.id,
         editedImageId: edited.id,
         editedParentIds: edited.parentIds,
-        generatedRenderImageCount: generatedImages.length,
-        editedRenderImageCount: editedImages.length,
-        generatedResourceCount: generatedResources.length,
-        editedResourceCount: editedResources.length,
+        generatedImageDataCount: generatedResources.length,
+        editedImageDataCount: editedResources.length,
       };
     }
 
@@ -608,9 +635,8 @@ async function main() {
   }
 }
 
-async function readArtifactData(client, artifacts, imageContents) {
-  requireValue(artifacts.length === imageContents.length, "image metadata and content counts differ");
-  return await Promise.all(artifacts.map(async (artifact, index) => {
+async function readArtifactData(client, artifacts) {
+  return await Promise.all(artifacts.map(async (artifact) => {
     const result = await client.callTool({
       name: "read_image_artifact_data",
       arguments: { imageId: artifact.id },
@@ -620,14 +646,22 @@ async function readArtifactData(client, artifacts, imageContents) {
     requireValue(result.isError !== true && widgetData?.dataBase64, `image data tool returned no bytes for ${artifact.id}`);
     requireValue(
       payload.id === artifact.id
-        && payload.mimeType === imageContents[index].mimeType
+        && payload.mimeType === artifact.mimeType
         && widgetData.id === artifact.id
-        && widgetData.mimeType === imageContents[index].mimeType
-        && widgetData.dataBase64 === imageContents[index].data,
+        && widgetData.mimeType === artifact.mimeType
+        && Buffer.from(widgetData.dataBase64, "base64").byteLength > 0,
       `image data tool content differs for ${artifact.id}`,
     );
     return { imageId: artifact.id, mimeType: payload.mimeType };
   }));
+}
+
+function requireResultEnvelope(result, expectedImageIds) {
+  const envelopeImageIds = extractImageResultEnvelopeIds(result);
+  requireValue(
+    JSON.stringify(envelopeImageIds) === JSON.stringify(expectedImageIds),
+    "render_image_results returned an invalid or mismatched result envelope",
+  );
 }
 
 main().catch((error) => {

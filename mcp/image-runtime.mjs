@@ -8,15 +8,37 @@ const runtimeRelativePath = import.meta.url.replaceAll("\\", "/").includes("/dis
   : "../scripts/imagegen.py";
 const runtimePath = fileURLToPath(new URL(runtimeRelativePath, import.meta.url));
 
-export async function runImageTask(task, { projectRoot, configPath } = {}) {
+export async function runImageTask(task, {
+  projectRoot,
+  configPath,
+  configSha256,
+  artifactRoot,
+} = {}) {
   if (typeof projectRoot !== "string" || !path.isAbsolute(projectRoot)) {
     throw new Error("project root is required");
   }
+  if (typeof configPath !== "string" || !path.isAbsolute(configPath)) {
+    throw new Error("config path is required");
+  }
+  if (typeof configSha256 !== "string" || !/^[a-f0-9]{64}$/.test(configSha256)) {
+    throw new Error("config SHA-256 is required");
+  }
+  if (typeof artifactRoot !== "string" || !path.isAbsolute(artifactRoot)) {
+    throw new Error("artifact root is required");
+  }
   return await new Promise((resolve, reject) => {
-    const args = [runtimePath, "machine", "--project-root", projectRoot];
-    if (configPath) {
-      args.push("--config", configPath);
-    }
+    const args = [
+      runtimePath,
+      "machine",
+      "--project-root",
+      projectRoot,
+      "--artifact-root",
+      artifactRoot,
+      "--config",
+      configPath,
+      "--config-sha256",
+      configSha256,
+    ];
     const child = spawn(
       "python",
       args,

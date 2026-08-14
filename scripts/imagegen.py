@@ -6,14 +6,15 @@ from __future__ import annotations
 import argparse
 import base64
 import concurrent.futures
+import hashlib
 import json
 import mimetypes
+import re
 import sys
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
-import zlib
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -25,6 +26,17 @@ if str(SKILL_DIR) not in sys.path:
 
 from scripts.artifact_repository import ArtifactRepository
 from scripts.image_download import ImageDownloadError, download_image_url
+from scripts.imagegen_cli import build_parser as build_cli_parser
+from scripts.mask_policy import (
+    MASK_GUARD_V2_BY_STRATEGY,
+    PNG_SIGNATURE,
+    decode_png_rgba,
+    encode_png_rgba,
+    finalize_masked_images,
+    has_strict_capability,
+    masked_edit_audit,
+    prepare_masked_edit,
+)
 from scripts.provider_config import (
     Config,
     DEFAULT_MODEL,
@@ -34,12 +46,17 @@ from scripts.provider_config import (
     ProviderConfigError,
     auth_setup_message,
     is_placeholder_api_key,
+    normalize_model_capabilities,
     parse_config,
     resolve_api_key,
     resolve_postprocess_config,
     resolve_url_download_config,
     resolve_user_agent,
 )
+from scripts.windows_repository_fs import SubmissionLock
+
+
+SUBMISSION_ID_PATTERN = re.compile(r"^sub_[0-9a-f]{32}$")
 
 
 AUTH_PATH = SKILL_DIR / "auth.json"
@@ -69,9 +86,6 @@ SIZE_PRESETS = {
     ("3:4", "4K"): "3072x4096",
     ("9:16", "4K"): "2160x3840",
 }
-PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
-
-
 class ImagegenError(Exception):
     """User-facing script error."""
 
@@ -86,17 +100,19 @@ def load_config(
     require_api_key: bool = True,
     config_path: Path | None = None,
     model_profile_id: str = "primary/gpt-image-2",
+    config_snapshot: bytes | None = None,
 ) -> Config:
     auth_path = Path(config_path) if config_path is not None else AUTH_PATH
-    if not auth_path.is_file():
+    if config_snapshot is None and not auth_path.is_file():
         raise ImagegenError(
             f"missing auth.json: {display_path(auth_path)}\n"
             f"Run: python {display_path(Path(__file__).resolve().with_name('quick-init.py'))}\n"
             "Then run info to confirm the redacted configuration summary."
         )
     try:
-        raw = json.loads(auth_path.read_text(encoding="utf-8-sig"))
-    except json.JSONDecodeError as exc:
+        snapshot = config_snapshot if config_snapshot is not None else auth_path.read_bytes()
+        raw = json.loads(snapshot.decode("utf-8-sig"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise ImagegenError(f"auth.json is not valid JSON: {exc}") from exc
 
     try:
@@ -104,6 +120,7 @@ def load_config(
             raw,
             require_api_key=require_api_key,
             model_profile_id=model_profile_id,
+            require_v2=config_path is not None,
         )
     except ProviderConfigError as exc:
         raise ImagegenError(str(exc)) from exc
@@ -352,7 +369,7 @@ def request_multipart(
     cfg: Config,
     path: str,
     fields: dict[str, Any],
-    files: list[tuple[str, Path]],
+    files: list[tuple[str, Path] | tuple[str, Path, bytes]],
     timeout: int,
 ) -> dict[str, Any]:
     boundary = f"----codex-imagegen-{int(time.time() * 1000)}"
@@ -382,7 +399,11 @@ def request_headers(cfg: Config, content_type: str) -> dict[str, str]:
     }
 
 
-def build_multipart_body(boundary: str, fields: dict[str, Any], files: list[tuple[str, Path]]) -> bytes:
+def build_multipart_body(
+    boundary: str,
+    fields: dict[str, Any],
+    files: list[tuple[str, Path] | tuple[str, Path, bytes]],
+) -> bytes:
     chunks: list[bytes] = []
     for name, value in drop_none(fields).items():
         chunks.extend(
@@ -393,9 +414,13 @@ def build_multipart_body(boundary: str, fields: dict[str, Any], files: list[tupl
                 b"\r\n",
             ]
         )
-    for field_name, path in files:
+    for upload in files:
+        field_name, path = upload[:2]
         if not path.is_file():
             raise ImagegenError(f"input file not found: {path}")
+        snapshot = upload[2] if len(upload) == 3 else path.read_bytes()
+        if not isinstance(snapshot, bytes):
+            raise ImagegenError("multipart file snapshot must be bytes")
         mime = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
         chunks.extend(
             [
@@ -405,7 +430,7 @@ def build_multipart_body(boundary: str, fields: dict[str, Any], files: list[tupl
                     f'filename="{path.name}"\r\n'
                 ).encode(),
                 f"Content-Type: {mime}\r\n\r\n".encode(),
-                path.read_bytes(),
+                snapshot,
                 b"\r\n",
             ]
         )
@@ -685,115 +710,25 @@ def inspect_image_payload(path: Path, image: dict[str, Any]) -> dict[str, Any]:
 
 
 def read_png_rgba(path: Path) -> dict[str, Any]:
-    data = path.read_bytes()
-    if not data.startswith(PNG_SIGNATURE):
-        raise ImagegenError("only PNG post-processing is currently supported")
-
-    offset = len(PNG_SIGNATURE)
-    width = height = None
-    bit_depth = color_type = None
-    idat_chunks: list[bytes] = []
-    while offset < len(data):
-        if offset + 8 > len(data):
-            raise ImagegenError("invalid PNG chunk header")
-        length = int.from_bytes(data[offset : offset + 4], "big")
-        kind = data[offset + 4 : offset + 8]
-        chunk_data = data[offset + 8 : offset + 8 + length]
-        offset += 12 + length
-        if kind == b"IHDR":
-            width = int.from_bytes(chunk_data[0:4], "big")
-            height = int.from_bytes(chunk_data[4:8], "big")
-            bit_depth = chunk_data[8]
-            color_type = chunk_data[9]
-        elif kind == b"IDAT":
-            idat_chunks.append(chunk_data)
-        elif kind == b"IEND":
-            break
-
-    if width is None or height is None or bit_depth is None or color_type is None:
-        raise ImagegenError("invalid PNG: missing IHDR")
-    if bit_depth != 8 or color_type not in {2, 6}:
-        raise ImagegenError("only 8-bit RGB/RGBA PNG post-processing is currently supported")
-
-    channels = 4 if color_type == 6 else 3
-    stride = width * channels
-    raw = zlib.decompress(b"".join(idat_chunks))
-    rows: list[bytes] = []
-    previous = bytes(stride)
-    pos = 0
-    for _ in range(height):
-        filter_type = raw[pos]
-        pos += 1
-        scanline = raw[pos : pos + stride]
-        pos += stride
-        row = unfilter_png_scanline(filter_type, scanline, previous, channels)
-        rows.append(row)
-        previous = row
-
-    pixels: list[tuple[int, int, int, int]] = []
-    for row in rows:
-        for x in range(width):
-            start = x * channels
-            if channels == 4:
-                pixels.append((row[start], row[start + 1], row[start + 2], row[start + 3]))
-            else:
-                pixels.append((row[start], row[start + 1], row[start + 2], 255))
-    return {"width": width, "height": height, "pixels": pixels}
-
-
-def unfilter_png_scanline(filter_type: int, scanline: bytes, previous: bytes, bpp: int) -> bytes:
-    row = bytearray(scanline)
-    for index in range(len(row)):
-        left = row[index - bpp] if index >= bpp else 0
-        up = previous[index] if previous else 0
-        up_left = previous[index - bpp] if previous and index >= bpp else 0
-        if filter_type == 0:
-            continue
-        if filter_type == 1:
-            row[index] = (row[index] + left) & 0xFF
-        elif filter_type == 2:
-            row[index] = (row[index] + up) & 0xFF
-        elif filter_type == 3:
-            row[index] = (row[index] + ((left + up) // 2)) & 0xFF
-        elif filter_type == 4:
-            row[index] = (row[index] + paeth_predictor(left, up, up_left)) & 0xFF
-        else:
-            raise ImagegenError(f"unsupported PNG filter type: {filter_type}")
-    return bytes(row)
-
-
-def paeth_predictor(left: int, up: int, up_left: int) -> int:
-    p = left + up - up_left
-    pa = abs(p - left)
-    pb = abs(p - up)
-    pc = abs(p - up_left)
-    if pa <= pb and pa <= pc:
-        return left
-    if pb <= pc:
-        return up
-    return up_left
+    try:
+        decoded = decode_png_rgba(path.read_bytes())
+    except ValueError as exc:
+        raise ImagegenError(str(exc)) from exc
+    pixels = [
+        tuple(decoded.pixels[index : index + 4])
+        for index in range(0, len(decoded.pixels), 4)
+    ]
+    return {"width": decoded.width, "height": decoded.height, "pixels": pixels}
 
 
 def write_png_rgba(path: Path, width: int, height: int, pixels: list[tuple[int, int, int, int]]) -> None:
     if len(pixels) != width * height:
         raise ImagegenError("pixel count does not match image dimensions")
-    raw = bytearray()
-    for y in range(height):
-        raw.append(0)
-        for x in range(width):
-            raw.extend(pixels[y * width + x])
-    chunks = [
-        png_chunk(b"IHDR", width.to_bytes(4, "big") + height.to_bytes(4, "big") + b"\x08\x06\x00\x00\x00"),
-        png_chunk(b"IDAT", zlib.compress(bytes(raw))),
-        png_chunk(b"IEND", b""),
-    ]
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(PNG_SIGNATURE + b"".join(chunks))
-
-
-def png_chunk(kind: bytes, data: bytes) -> bytes:
-    crc = zlib.crc32(kind + data) & 0xFFFFFFFF
-    return len(data).to_bytes(4, "big") + kind + data + crc.to_bytes(4, "big")
+    try:
+        path.write_bytes(encode_png_rgba(width, height, bytes(channel for pixel in pixels for channel in pixel)))
+    except ValueError as exc:
+        raise ImagegenError(str(exc)) from exc
 
 
 def alpha_bbox(
@@ -1118,10 +1053,13 @@ def split_grid_command(args: argparse.Namespace) -> int:
 def run_machine_task(
     task: dict[str, Any],
     project_root: Path,
+    artifact_root: Path,
     cfg: Config | None = None,
     config_path: Path | None = None,
+    config_sha256: str | None = None,
 ) -> dict[str, Any]:
     effective_cfg = cfg
+    submission_lock: SubmissionLock | None = None
     try:
         if not isinstance(task, dict):
             raise MachineTaskError("invalid_task", "machine task must be a JSON object")
@@ -1134,10 +1072,22 @@ def run_machine_task(
         operation = str(task.get("operation") or "").strip().lower()
         if operation not in {"generate", "edit", "list_models"}:
             raise MachineTaskError("invalid_task", f"unsupported operation: {operation or '(missing)'}")
+        config_snapshot: bytes | None = None
+        if config_path is not None:
+            if not isinstance(config_sha256, str) or not re.fullmatch(r"[a-f0-9]{64}", config_sha256):
+                raise MachineTaskError("v2_config_changed", "V2 configuration snapshot is unavailable")
+            try:
+                config_snapshot = Path(config_path).read_bytes()
+                current_sha256 = hashlib.sha256(config_snapshot).hexdigest()
+            except OSError as exc:
+                raise MachineTaskError("v2_config_changed", "V2 configuration snapshot is unavailable") from exc
+            if current_sha256 != config_sha256:
+                raise MachineTaskError("v2_config_changed", "V2 configuration changed after project binding")
         effective_cfg = effective_cfg or load_config(
             require_api_key=operation != "list_models",
             config_path=config_path,
             model_profile_id=profile_id,
+            config_snapshot=config_snapshot,
         )
         if effective_cfg.model != "gpt-image-2":
             raise MachineTaskError(
@@ -1152,7 +1102,7 @@ def run_machine_task(
                         "id": profile_id,
                         "provider": profile_id.split("/", 1)[0],
                         "model": effective_cfg.model,
-                        "capabilities": effective_cfg.capabilities,
+                        "capabilities": normalize_model_capabilities(effective_cfg.capabilities),
                     }
                 ],
             }
@@ -1165,42 +1115,106 @@ def run_machine_task(
             raise MachineTaskError("invalid_task", "inputArtifactIds must be an array of artifact IDs")
         if operation == "edit" and not input_ids:
             raise MachineTaskError("invalid_task", "edit requires a parent artifact ID")
-        mask_path: Path | None = None
-        mask_value = task.get("mask")
-        if mask_value:
+        if not has_strict_capability(effective_cfg.capabilities, operation):
+            raise MachineTaskError(
+                "unsupported_capability",
+                f"configured model profile does not support {operation}",
+            )
+        if len(input_ids) > 1 and not has_strict_capability(
+            effective_cfg.capabilities,
+            "multi_reference",
+        ):
+            raise MachineTaskError(
+                "unsupported_capability",
+                "configured model profile does not support multiple reference images",
+            )
+        submission_id = task.get("submissionId")
+        if submission_id is not None:
+            if operation != "edit" or not isinstance(submission_id, str) or not SUBMISSION_ID_PATTERN.fullmatch(submission_id):
+                raise MachineTaskError("invalid_task", "submissionId must be a valid edit submission ID")
+        has_mask_contract = task.get("mask") is not None or task.get("maskPolicy") is not None
+        if has_mask_contract:
             if operation != "edit":
                 raise MachineTaskError("invalid_task", "mask is only valid for edit tasks")
-            if not effective_cfg.capabilities.get("mask"):
+            if not has_strict_capability(effective_cfg.capabilities, "mask"):
                 raise MachineTaskError(
                     "unsupported_capability",
                     "configured model profile does not support mask editing",
                 )
-            mask_path = Path(str(mask_value)).expanduser().resolve()
-            if mask_path.suffix.lower() != ".png" or not mask_path.is_file():
-                raise MachineTaskError("invalid_task", "mask must be an available PNG file")
 
         output = task.get("output") or {}
         if not isinstance(output, dict):
             raise MachineTaskError("invalid_task", "output must be a JSON object")
         params = resolve_machine_output(output, effective_cfg)
-        repository = ArtifactRepository(Path(project_root))
+        repository = ArtifactRepository(Path(project_root), Path(artifact_root))
+        if submission_id:
+            request_fingerprint = edit_submission_fingerprint(task, params)
+            submission_lock = SubmissionLock(
+                repository.data_root,
+                submission_id,
+                timeout=float(params["timeout"]) + 10.0,
+            ).acquire()
+            try:
+                committed = repository.find_edits_by_submission_id(
+                    submission_id,
+                    parent_id=input_ids[0],
+                    annotation_id=task.get("annotationId"),
+                    request_fingerprint=request_fingerprint,
+                )
+            except ValueError as exc:
+                raise MachineTaskError("edit_submission_mismatch", str(exc)) from exc
+            if committed:
+                return {"ok": True, "artifacts": committed}
+        parent_uploads = [repository.get_image_snapshot(artifact_id) for artifact_id in input_ids]
+        parent_paths = [path for path, _ in parent_uploads]
+        try:
+            masked_context = prepare_masked_edit(
+                task,
+                params,
+                Path(artifact_root),
+                parent_paths[0] if parent_paths else Path(),
+                parent_uploads[0][1] if parent_uploads else b"",
+                prompt,
+            )
+        except ValueError as exc:
+            raise MachineTaskError("invalid_task", str(exc)) from exc
+        request_prompt = masked_context.effective_prompt if masked_context else prompt
         payload = {
             "model": "gpt-image-2",
-            "prompt": prompt,
+            "prompt": request_prompt,
             "size": params["size"],
             "quality": params["quality"],
-            "n": params["count"],
+            "n": 1 if operation == "generate" else params["count"],
             "background": params["background"],
             "output_format": params["format"],
             "output_compression": params["compression"],
         }
         if operation == "generate":
-            response = request_json(effective_cfg, "images/generations", payload, params["timeout"])
+            images: list[bytes] = []
+            for candidate_index in range(params["count"]):
+                response = request_json(effective_cfg, "images/generations", payload, params["timeout"])
+                candidate_images = decode_response_images(
+                    response,
+                    effective_cfg.user_agent,
+                    effective_cfg.url_download.get("proxy_mode") == "direct",
+                )
+                if len(candidate_images) != 1:
+                    raise MachineTaskError(
+                        "image_task_failed",
+                        f"provider returned {len(candidate_images)} image(s) for candidate "
+                        f"{candidate_index + 1} of {params['count']}",
+                    )
+                images.extend(candidate_images)
             parent_ids: list[str] = []
         else:
-            files = [("image[]", repository.get_image_path(artifact_id)) for artifact_id in input_ids]
-            if mask_path is not None:
-                files.append(("mask", mask_path))
+            files: list[tuple[str, Path] | tuple[str, Path, bytes]] = []
+            for index, (parent_path, parent_snapshot) in enumerate(parent_uploads):
+                if masked_context and index == 0:
+                    files.append(("image[]", parent_path, masked_context.parent_snapshot))
+                else:
+                    files.append(("image[]", parent_path, parent_snapshot))
+            if masked_context:
+                files.append(("mask", masked_context.mask_path, masked_context.mask_snapshot))
             response = request_multipart(
                 effective_cfg,
                 "images/edits",
@@ -1209,12 +1223,28 @@ def run_machine_task(
                 params["timeout"],
             )
             parent_ids = [input_ids[0]]
-        images = decode_response_images(
-            response,
-            effective_cfg.user_agent,
-            effective_cfg.url_download.get("proxy_mode") == "direct",
-        )
+            images = decode_response_images(
+                response,
+                effective_cfg.user_agent,
+                effective_cfg.url_download.get("proxy_mode") == "direct",
+            )
+            if len(images) != params["count"]:
+                raise MachineTaskError(
+                    "image_task_failed",
+                    f"provider returned {len(images)} image(s) for a request of {params['count']}",
+                )
+            if masked_context:
+                try:
+                    images = finalize_masked_images(masked_context, images)
+                except ValueError as exc:
+                    raise MachineTaskError("image_task_failed", str(exc)) from exc
         mime_type = machine_mime_type(params["format"])
+        stored_parameters = {key: value for key, value in params.items() if key != "timeout"}
+        if masked_context:
+            stored_parameters.update(masked_edit_audit(masked_context))
+        if submission_id:
+            stored_parameters["submissionId"] = submission_id
+            stored_parameters["submissionRequestFingerprint"] = request_fingerprint
         records = repository.store_images(
             images=images,
             mime_type=mime_type,
@@ -1222,7 +1252,7 @@ def run_machine_task(
             model="gpt-image-2",
             operation=operation,
             prompt=prompt,
-            parameters={key: value for key, value in params.items() if key != "timeout"},
+            parameters=stored_parameters,
             parent_ids=parent_ids,
             annotation_id=task.get("annotationId"),
         )
@@ -1241,7 +1271,25 @@ def run_machine_task(
                 ),
             },
         }
+    finally:
+        if submission_lock is not None:
+            submission_lock.release()
 
+
+def edit_submission_fingerprint(task: dict[str, Any], params: dict[str, Any]) -> str:
+    semantics = {
+        "version": 1,
+        "operation": "edit",
+        "modelProfileId": task.get("modelProfileId"),
+        "prompt": str(task.get("prompt") or "").strip(),
+        "inputArtifactIds": task.get("inputArtifactIds") or [],
+        "annotationId": task.get("annotationId"),
+        "output": {key: value for key, value in params.items() if key != "timeout"},
+        "hasMask": task.get("mask") is not None,
+        "maskPolicy": task.get("maskPolicy"),
+    }
+    canonical = json.dumps(semantics, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 def resolve_machine_output(output: dict[str, Any], cfg: Config) -> dict[str, Any]:
     output_format = str(output.get("format") or cfg.defaults.get("output_format") or DEFAULT_FORMAT).lower()
@@ -1264,7 +1312,7 @@ def resolve_machine_output(output: dict[str, Any], cfg: Config) -> dict[str, Any
     background = str(output.get("background") or "opaque")
     if background not in {"auto", "opaque", "transparent"}:
         raise MachineTaskError("invalid_task", f"unsupported background: {background}")
-    if background == "transparent" and not cfg.capabilities.get("transparent_background"):
+    if background == "transparent" and cfg.capabilities.get("transparent_background") is not True:
         raise MachineTaskError(
             "unsupported_capability",
             "configured model profile does not support transparent background",
@@ -1324,7 +1372,9 @@ def machine_command(args: argparse.Namespace) -> int:
         result = run_machine_task(
             task,
             Path(args.project_root),
+            Path(args.artifact_root),
             config_path=Path(args.config) if args.config else None,
+            config_sha256=args.config_sha256,
         )
     print(json.dumps(result, ensure_ascii=False, separators=(",", ":")))
     if not result.get("ok"):
@@ -1334,92 +1384,7 @@ def machine_command(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="imagegen")
-    sub = parser.add_subparsers(dest="command", required=True)
-
-    init_parser = sub.add_parser("init")
-    init_parser.add_argument("--force", action="store_true", help="Recreate auth.json from the example template")
-    init_parser.add_argument("--base-url", default=None, help="OpenAI-compatible API base URL, usually ending in /v1")
-    init_parser.add_argument("--model", default=None, help="Default image model")
-    init_parser.add_argument("--api-key-env", default=None, help="Environment variable name to read the API key from")
-    init_parser.add_argument(
-        "--transparent-background",
-        action=argparse.BooleanOptionalAction,
-        default=None,
-        help="Whether the API supports background=transparent",
-    )
-
-    add_generate_args(sub.add_parser("generate"))
-    add_generate_args(sub.add_parser("edit"), edit=True)
-
-    batch_parser = sub.add_parser("batch")
-    add_common_args(batch_parser)
-    batch_parser.add_argument("--input", required=True, help="JSONL task file")
-    batch_parser.add_argument("--out", required=True, help="Output directory")
-    batch_parser.add_argument("--concurrency", type=int, default=None, help="Limited batch concurrency")
-    add_postprocess_args(batch_parser)
-
-    inspect_parser = sub.add_parser("inspect-image")
-    inspect_parser.add_argument("file")
-
-    normalize_parser = sub.add_parser("normalize")
-    normalize_parser.add_argument("file")
-    normalize_parser.add_argument("--delivery-size", required=True)
-    normalize_parser.add_argument("--out", required=True)
-
-    grid_parser = sub.add_parser("split-grid")
-    grid_parser.add_argument("file")
-    grid_parser.add_argument("--grid", required=True, help="Grid rows and columns, for example 3x3")
-    grid_parser.add_argument("--delivery-size", required=True)
-    grid_parser.add_argument("--out-dir", required=True)
-    grid_parser.add_argument("--expected-count", type=int, default=None)
-
-    machine_parser = sub.add_parser("machine")
-    machine_parser.add_argument("--project-root", required=True)
-    machine_parser.add_argument("--config", default=None)
-
-    sub.add_parser("info")
-    return parser
-
-
-def add_generate_args(parser: argparse.ArgumentParser, edit: bool = False) -> None:
-    add_common_args(parser)
-    parser.add_argument("-p", "--prompt", required=True)
-    parser.add_argument("-f", "--file", default=None)
-    parser.add_argument("--out", default=None)
-    if edit:
-        parser.add_argument("-i", "--image", action="append", default=None)
-        parser.add_argument("-m", "--mask", default=None)
-    add_postprocess_args(parser)
-
-
-def add_common_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--model", default=None)
-    parser.add_argument("--size", default=None)
-    parser.add_argument("--aspect", default=None, choices=sorted(SUPPORTED_ASPECTS))
-    parser.add_argument("--resolution", default=None, choices=sorted(SUPPORTED_RESOLUTIONS))
-    parser.add_argument("--quality", default=None, choices=["auto", "low", "medium", "high"])
-    parser.add_argument("--n", type=int, default=None)
-    parser.add_argument("--format", default=None, choices=["png", "jpeg", "jpg", "webp"])
-    parser.add_argument("--background", default=None, choices=["auto", "opaque", "transparent"])
-    parser.add_argument("--transparent", action="store_true")
-    parser.add_argument("--asset", action="store_true")
-    parser.add_argument("--moderation", default=None, choices=["auto", "low"])
-    parser.add_argument("--compression", type=int, default=None)
-    parser.add_argument("--timeout", type=int, default=None)
-    parser.add_argument(
-        "--allow-direct-url-download",
-        action="store_true",
-        help="Download returned image URLs directly without the configured proxy for this run",
-    )
-
-
-def add_postprocess_args(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--postprocess", action="store_true", help="Enable optional post-processing for this run")
-    parser.add_argument("--delivery-size", default=None, help="Final delivery size, for example 128x128")
-    parser.add_argument("--grid", default=None, help="Split generated output as rows x cols, for example 3x3")
-    parser.add_argument("--expected-count", type=int, default=None)
-    parser.add_argument("--postprocess-out-dir", default=None)
+    return build_cli_parser(SUPPORTED_ASPECTS, SUPPORTED_RESOLUTIONS)
 
 
 def main() -> int:

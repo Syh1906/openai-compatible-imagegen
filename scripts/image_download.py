@@ -46,11 +46,13 @@ def download_image_url(
         except urllib.error.URLError as exc:
             if attempt == 0 and is_tls_eof_error(exc.reason):
                 continue
-            raise ImageDownloadError(f"image URL download failed: {network_error_reason(exc.reason)}") from exc
+            reason = network_error_reason(exc.reason, direct_url_download)
+            raise ImageDownloadError(f"image URL download failed: {reason}") from exc
         except ssl.SSLError as exc:
             if attempt == 0 and is_tls_eof_error(exc):
                 continue
-            raise ImageDownloadError(f"image URL download failed: {network_error_reason(exc)}") from exc
+            reason = network_error_reason(exc, direct_url_download)
+            raise ImageDownloadError(f"image URL download failed: {reason}") from exc
 
     raise ImageDownloadError("image URL download failed")
 
@@ -61,9 +63,14 @@ def is_tls_eof_error(error: Any) -> bool:
     )
 
 
-def network_error_reason(error: Any) -> str:
+def network_error_reason(error: Any, direct_url_download: bool) -> str:
     if is_tls_eof_error(error):
-        return "TLS connection closed unexpectedly"
+        if direct_url_download:
+            return "TLS connection closed unexpectedly"
+        return (
+            "TLS connection closed unexpectedly; ask the user to approve setting "
+            "the provider's url_download.proxy_mode=direct"
+        )
     return "TLS error" if isinstance(error, ssl.SSLError) else "network error"
 
 

@@ -3,12 +3,15 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
+import { createEditSubmissionRegistry } from "./edit-submission-registry.mjs";
 import {
   createRuntimeObservation,
   MAX_RUNTIME_ROOT_ENTRIES,
   MAX_RUNTIME_ROOT_SCHEME_LENGTH,
 } from "./runtime-diagnostics.mjs";
 import { createProjectContext } from "./project-context.mjs";
+import { createImageResultEnvelope } from "./result-envelope.mjs";
+import { isStableToolErrorCode, stableToolErrorMessages } from "./tool-errors.mjs";
 const imageIdSchema = z.string().regex(/^img_[0-9A-HJKMNP-TV-Z]{26}$/).describe("项目产物仓库中的稳定图片 ID");
 const editorSessionIdSchema = z.string().regex(/^eds_[0-9a-f]{32}$/).describe("已打开画布的会话 ID");
 const normalizedCoordinate = z.number().min(0).max(1);
@@ -18,13 +21,23 @@ const annotationStyleSchema = {
   strokeWidth: z.number().min(1).max(12).optional(),
 };
 const annotationItemSchema = z.discriminatedUnion("type", [
-  z.object({ id: z.string().min(1), type: z.literal("pen"), points: z.array(normalizedPoint).min(2), text: z.string().max(600).optional(), ...annotationStyleSchema }),
+  z.object({ id: z.string().min(1), type: z.literal("pen"), points: z.array(normalizedPoint).min(2).max(4096), text: z.string().max(600).optional(), ...annotationStyleSchema }),
   z.object({ id: z.string().min(1), type: z.literal("arrow"), from: normalizedPoint, to: normalizedPoint, text: z.string().max(600).optional(), ...annotationStyleSchema }),
   z.object({ id: z.string().min(1), type: z.literal("rectangle"), x: normalizedCoordinate, y: normalizedCoordinate, width: normalizedCoordinate, height: normalizedCoordinate, text: z.string().max(600).optional(), ...annotationStyleSchema }),
   z.object({ id: z.string().min(1), type: z.literal("text"), x: normalizedCoordinate, y: normalizedCoordinate, text: z.string().min(1).max(600), ...annotationStyleSchema }),
-  z.object({ id: z.string().min(1), type: z.literal("mask"), points: z.array(normalizedPoint).min(2), text: z.string().max(600).optional(), ...annotationStyleSchema }),
+  z.object({
+    id: z.string().min(1),
+    type: z.literal("mask"),
+    mode: z.enum(["edit", "protect"]),
+    operation: z.enum(["paint", "erase"]).default("paint"),
+    brushRadius: z.number().min(0.001).max(0.5),
+    points: z.array(normalizedPoint).min(2).max(4096),
+    text: z.string().max(600).optional(),
+    color: annotationStyleSchema.color,
+  }),
 ]);
 const annotationIdSchema = z.string().regex(/^ann_[0-9A-HJKMNP-TV-Z]{26}$/);
+const submissionIdSchema = z.string().regex(/^sub_[0-9a-f]{32}$/);
 const outputSchema = {
   size: z.string().optional(),
   quality: z.enum(["auto", "low", "medium", "high"]).optional(),
@@ -51,16 +64,65 @@ const imageArtifactsOutputSchema = z.object({
   artifacts: z.array(imageArtifactOutputSchema).min(1).max(10),
   artifact: imageArtifactOutputSchema.optional(),
 }).strict();
+const imageModelCapabilitiesOutputSchema = z.object({
+  generate: z.boolean().optional(),
+  edit: z.boolean().optional(),
+  mask: z.boolean().optional(),
+  multi_reference: z.boolean().optional(),
+  transparent_background: z.boolean().optional(),
+}).strict();
 const imageModelOutputSchema = z.object({
   id: z.string().min(1),
   provider: z.string().min(1),
   model: z.string().min(1),
-  capabilities: z.record(z.unknown()),
+  capabilities: imageModelCapabilitiesOutputSchema,
 }).strict();
 const editorSessionOutputSchema = z.object({
   id: editorSessionIdSchema,
   imageId: imageIdSchema.optional(),
   status: z.enum(["active", "destroyed", "released"]),
+}).strict();
+const maskPolicyOutputSchema = z.object({
+  policyVersion: z.literal("mask-policy-v2"),
+  modelProfileId: z.literal("primary/gpt-image-2"),
+  requiredCapabilities: z.object({ mask: z.literal(true) }).strict(),
+  strategy: z.enum(["edit-only", "protect-only", "mixed"]),
+  parentImageId: imageIdSchema,
+  annotationId: annotationIdSchema,
+  width: z.number().int().positive(),
+  height: z.number().int().positive(),
+  masks: z.array(z.object({
+    id: z.string().min(1),
+    mode: z.enum(["edit", "protect"]),
+    operation: z.enum(["paint", "erase"]),
+    radiusPx: z.number().positive(),
+  }).strict()).min(1),
+  hardBoundary: z.object({
+    source: z.enum(["none", "edit-strokes"]),
+    postprocess: z.enum(["none", "parent-blend"]),
+  }).strict(),
+  semanticProtection: z.object({
+    enabled: z.boolean(),
+    source: z.literal("protect-strokes"),
+    preserve: z.tuple([
+      z.literal("identity"),
+      z.literal("geometry"),
+      z.literal("text"),
+      z.literal("texture"),
+    ]),
+    allowAdaptation: z.tuple([
+      z.literal("lighting"),
+      z.literal("shadow"),
+      z.literal("tone"),
+    ]),
+  }).strict(),
+  transitionBand: z.object({
+    kind: z.literal("outer-feather"),
+    featherRatio: z.literal(0.35),
+    minimumWidthPx: z.literal(1),
+  }).strict(),
+  maskSha256: z.string().regex(/^[a-f0-9]{64}$/),
+  policySha256: z.string().regex(/^[a-f0-9]{64}$/),
 }).strict();
 const openEditorSessionOutputSchema = z.object({
   id: editorSessionIdSchema,
@@ -74,6 +136,13 @@ const annotationOutputSchema = z.object({
   previewMimeType: z.literal("image/svg+xml"),
   hasMask: z.boolean(),
   maskMimeType: z.literal("image/png").nullable(),
+  maskPolicy: maskPolicyOutputSchema.nullable(),
+}).strict();
+const editSubmissionOutputSchema = z.object({
+  id: submissionIdSchema,
+  parentImageId: imageIdSchema,
+  annotationId: annotationIdSchema.nullable(),
+  revisionSha256: z.string().regex(/^[a-f0-9]{64}$/),
 }).strict();
 const fingerprintSchema = z.string().regex(/^[a-f0-9]{20}$/);
 const digestSchema = z.string().regex(/^[a-f0-9]{64}$/);
@@ -132,25 +201,6 @@ const hostFieldSchema = z.union([
     length: z.null(),
   }).strict(),
 ]);
-const stableToolErrorMessages = new Map([
-  ["annotation_image_mismatch", "标注与父图片不匹配。"],
-  ["annotation_not_found", "未找到指定标注。"],
-  ["annotation_save_failed", "保存图片标注失败。"],
-  ["artifact_not_found", "未找到指定图片产物。"],
-  ["artifact_read_failed", "读取图片产物失败。"],
-  ["editor_session_not_found", "画布会话不存在或已经释放。"],
-  ["image_canvas_destroyed", "当前图片的画布已经销毁。"],
-  ["image_task_failed", "图片任务执行失败。"],
-  ["invalid_json", "图片运行时输入不是有效 JSON。"],
-  ["invalid_task", "图片任务参数无效。"],
-  ["project_binding_conflict", "当前 MCP 进程已经绑定到另一个图片项目。"],
-  ["project_binding_required", "当前 MCP 进程尚未绑定图片项目。"],
-  ["project_root_invalid", "图片项目根目录无效。"],
-  ["project_root_is_plugin_root", "插件安装目录不能作为图片项目根目录。"],
-  ["unsupported_capability", "当前图片模型不支持请求的能力。"],
-  ["unsupported_model_profile", "当前图片模型配置不受支持。"],
-  ["v2_config_missing", "V2 配置缺失。请创建用户配置或项目配置。"],
-]);
 const retainedHostFieldKeys = new Set([
   "_meta", "accepted", "artifact", "artifacts", "blob", "canvasStatus", "capabilities",
   "childIds", "code", "content", "data", "dataBase64", "editorSession", "error", "errorCode",
@@ -199,21 +249,34 @@ export function createImagegenServer({
   readWidgetHtml,
   runTask,
   readArtifact,
+  revealArtifact,
   readAnnotation,
   saveAnnotations,
+  deleteAnnotation,
 }) {
   requireReleaseIdentity(releaseIdentity);
   requireLaunchContext(launchContext);
   const projectContext = providedProjectContext ?? createProjectContext({ pluginRoot: launchContext.pluginRoot });
   requireProjectContext(projectContext);
   const { result: resultWidgetUri, editor: editorWidgetUri } = releaseIdentity.resourceUris;
-  const server = new McpServer({
-    name: releaseIdentity.pluginId,
-    version: releaseIdentity.pluginVersion,
-  });
+  const server = new McpServer(
+    {
+      name: releaseIdentity.pluginId,
+      version: releaseIdentity.pluginVersion,
+    },
+    {
+      capabilities: {
+        experimental: {
+          // Development-only: release-bound widget URIs require a fresh tools/list during V2 validation.
+          "codex/tool-catalog-cache": { cacheable: false },
+        },
+      },
+    },
+  );
   const editorSessions = new Map();
   const destroyedCanvasImageIdsByBinding = new Map();
   const hostObservationReports = new Map();
+  const editSubmissions = createEditSubmissionRegistry();
 
   registerWidgetResource(server, {
     name: "image-result",
@@ -376,9 +439,10 @@ export function createImagegenServer({
           context,
         );
         if (!result?.ok) return toolError(new Error(result?.error?.message || "model catalog unavailable"), result?.error?.code);
+        const models = z.array(imageModelOutputSchema).parse(result.models);
         return {
           content: [{ type: "text", text: `已读取 ${result.models.length} 个图片模型。` }],
-          structuredContent: { models: result.models },
+          structuredContent: { models },
         };
       } catch (error) {
         return toolError(error);
@@ -390,7 +454,7 @@ export function createImagegenServer({
     "generate_image",
     {
       title: "生成图片",
-      description: "使用已配置的 gpt-image-2 生成一张或多张独立候选图片。",
+      description: "使用已配置的 gpt-image-2 生成一张或多张独立候选图片。多候选由运行时按顺序执行等量单图请求，全部成功后才返回整组。",
       inputSchema: {
         prompt: z.string().min(1),
         modelProfileId: z.literal("primary/gpt-image-2").optional(),
@@ -417,40 +481,134 @@ export function createImagegenServer({
         parentImageId: imageIdSchema,
         prompt: z.string().min(1),
         referenceImageIds: z.array(imageIdSchema).optional(),
-        annotationId: z.string().min(1).optional(),
+        annotationId: annotationIdSchema.optional(),
+        submissionId: submissionIdSchema.optional(),
         modelProfileId: z.literal("primary/gpt-image-2").optional(),
         ...outputSchema,
       },
       outputSchema: imageArtifactsOutputSchema,
       annotations: writeAnnotations(),
     },
-    async ({ parentImageId, referenceImageIds = [], annotationId = null, prompt, modelProfileId = "primary/gpt-image-2", ...output }, extra) =>
+    async (arguments_, extra) =>
       await withBoundProject(projectContext, extra, async (context) => {
-      let annotation = null;
-      if (annotationId) {
-        try {
-          annotation = await readAnnotation(annotationId, context);
-        } catch (error) {
-          return toolError(error, "annotation_not_found");
+      const {
+        parentImageId,
+        referenceImageIds = [],
+        prompt,
+        modelProfileId = "primary/gpt-image-2",
+        ...output
+      } = arguments_;
+      const annotationId = arguments_.annotationId ?? null;
+      delete output.annotationId;
+      delete output.submissionId;
+      let claimedSubmission;
+      try {
+        claimedSubmission = editSubmissions.claimForEdit({
+          bindingKey: context.bindingKey,
+          parentImageId,
+          ...(Object.hasOwn(arguments_, "submissionId") ? { submissionId: arguments_.submissionId } : {}),
+          ...(Object.hasOwn(arguments_, "annotationId") ? { annotationId: arguments_.annotationId } : {}),
+        });
+      } catch (error) {
+        return toolError(error);
+      }
+      let submissionCommitted = false;
+      try {
+        if (claimedSubmission?.completedArtifactIds) {
+          submissionCommitted = true;
+          return await readImageTaskResult(
+            claimedSubmission.completedArtifactIds,
+            context,
+            readArtifact,
+            { recovered: true },
+          );
         }
-        if (annotation.imageId !== parentImageId) {
-          return toolError(new Error("标注不属于当前父图片"), "annotation_image_mismatch");
+        let annotation = null;
+        if (annotationId) {
+          try {
+            annotation = await readAnnotation(annotationId, context);
+          } catch (error) {
+            return toolError(error, "annotation_not_found");
+          }
+          if (annotation.imageId !== parentImageId) {
+            return toolError(new Error("标注不属于当前父图片"), "annotation_image_mismatch");
+          }
+        }
+        let taskOutput = output;
+        if (annotation?.maskPath) {
+          if (!annotation.maskPolicy) {
+            return toolError(new Error("legacy mask has no signed policy"), "mask_policy_missing");
+          }
+          if (annotation.maskPolicy.policyVersion !== "mask-policy-v2") {
+            return toolError(
+              new Error("legacy mask policy is read-only; reopen the canvas and submit the annotations again"),
+              "mask_policy_unsupported",
+            );
+          }
+          if (!claimedSubmission) {
+            return toolError(new Error("masked edits require a pending canvas submission"), "missing_edit_submission");
+          }
+          if (
+            claimedSubmission.maskSha256 !== annotation.maskPolicy.maskSha256
+            || claimedSubmission.maskPolicySha256 !== annotation.maskPolicy.policySha256
+            || annotation.maskPolicy.parentImageId !== parentImageId
+            || annotation.maskPolicy.annotationId !== annotationId
+          ) {
+            return toolError(new Error("submission mask policy mismatch"), "edit_submission_mismatch");
+          }
+          if (annotation.maskPolicy.modelProfileId !== modelProfileId) {
+            return toolError(new Error("mask policy model profile mismatch"), "invalid_task");
+          }
+          try {
+            taskOutput = deriveMaskedEditOutput(output, annotation.maskPolicy);
+          } catch (error) {
+            return toolError(error, "invalid_task");
+          }
+        } else if (
+          annotation?.maskPolicy
+          || claimedSubmission?.maskSha256
+          || claimedSubmission?.maskPolicySha256
+        ) {
+          return toolError(new Error("submission mask metadata mismatch"), "edit_submission_mismatch");
+        }
+
+        return await executeImageTask(
+          {
+            operation: "edit",
+            modelProfileId,
+            prompt,
+            inputArtifactIds: [parentImageId, ...referenceImageIds],
+            annotationId,
+            ...(claimedSubmission ? { submissionId: claimedSubmission.receipt.id } : {}),
+            ...(annotation?.maskPath ? { mask: annotation.maskPath } : {}),
+            ...(annotation?.maskPolicy ? { maskPolicy: annotation.maskPolicy } : {}),
+            output: taskOutput,
+          },
+          context,
+          runTask,
+          readArtifact,
+          {
+            onTaskCommitted: (artifacts) => {
+              if (!claimedSubmission) return;
+              editSubmissions.complete({
+                bindingKey: context.bindingKey,
+                parentImageId,
+                submissionId: claimedSubmission.receipt.id,
+                artifactIds: artifacts.map((artifact) => artifact.id),
+              });
+              submissionCommitted = true;
+            },
+          },
+        );
+      } finally {
+        if (claimedSubmission && !submissionCommitted) {
+          editSubmissions.releaseForEdit({
+            bindingKey: context.bindingKey,
+            parentImageId,
+            submissionId: claimedSubmission.receipt.id,
+          });
         }
       }
-      return await executeImageTask(
-        {
-          operation: "edit",
-          modelProfileId,
-          prompt,
-          inputArtifactIds: [parentImageId, ...referenceImageIds],
-          annotationId,
-          ...(annotation?.maskPath ? { mask: annotation.maskPath } : {}),
-          output,
-        },
-        context,
-        runTask,
-        readArtifact,
-      );
     }),
   );
 
@@ -527,6 +685,43 @@ export function createImagegenServer({
   );
 
   server.registerTool(
+    "reveal_image_artifact",
+    {
+      title: "在文件夹中显示图片",
+      description: "按稳定图片 ID 在系统文件管理器中显示并选中对应的本机图片文件。该工具只对图片工作台可见，不返回本机路径。",
+      inputSchema: { imageId: imageIdSchema },
+      outputSchema: z.object({
+        status: z.literal("revealed"),
+        imageId: imageIdSchema,
+      }).strict(),
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: false,
+      },
+      _meta: {
+        ui: { visibility: ["app"] },
+        "openai/widgetAccessible": true,
+      },
+    },
+    async ({ imageId }, extra) => await withBoundProject(projectContext, extra, async (context) => {
+      try {
+        const revealResult = await revealArtifact(imageId, context);
+        if (revealResult?.status !== "revealed" || revealResult.imageId !== imageId) {
+          throw new Error("artifact reveal confirmation is invalid");
+        }
+        return {
+          content: [{ type: "text", text: `已在文件夹中显示图片 ${imageId}。` }],
+          structuredContent: { status: "revealed", imageId },
+        };
+      } catch (error) {
+        return toolError(error, "artifact_reveal_failed");
+      }
+    }),
+  );
+
+  server.registerTool(
     "render_image_results",
     {
       title: "显示图片结果",
@@ -546,6 +741,9 @@ export function createImagegenServer({
     },
     async ({ imageIds }, extra) => await withBoundProject(projectContext, extra, async (context) => {
       try {
+        if (new Set(imageIds).size !== imageIds.length) {
+          return toolError(new Error("图片 ID 不得重复"), "invalid_task");
+        }
         const records = await Promise.all(imageIds.map((imageId) => readArtifact(imageId, context)));
         const artifacts = records.map(({ metadata }) => ({
           ...imageArtifactMetadata(metadata),
@@ -557,8 +755,8 @@ export function createImagegenServer({
         }));
         return {
           content: [
-            ...records.map((record) => imageContent(record)),
-            { type: "text", text: `正在显示 ${imageIds.length} 张图片。` },
+            { type: "text", text: createImageResultEnvelope(imageIds) },
+            ...records.map(imageContent),
           ],
           structuredContent: { imageIds, artifacts },
           _meta: {
@@ -654,6 +852,88 @@ export function createImagegenServer({
   );
 
   server.registerTool(
+    "prepare_image_edit_submission",
+    {
+      title: "准备图片修改提交",
+      description: "保存当前画布修订并签发一次服务端提交 ID，使后续 edit_image 只能使用同一父图、标注和 mask 策略。",
+      inputSchema: {
+        parentImageId: imageIdSchema,
+        items: z.array(annotationItemSchema).max(100),
+        sourcePrompt: z.string().max(600),
+      },
+      outputSchema: z.object({
+        annotation: annotationOutputSchema.nullable(),
+        submission: editSubmissionOutputSchema,
+      }).strict(),
+      annotations: writeAnnotations(),
+      _meta: { ui: { visibility: ["app"] } },
+    },
+    async ({ parentImageId, items, sourcePrompt }, extra) => await withBoundProject(
+      projectContext,
+      extra,
+      async (context) => {
+        try {
+          await readArtifact(parentImageId, context);
+        } catch (error) {
+          return toolError(error, "artifact_not_found");
+        }
+
+        let annotation = null;
+        if (items.length) {
+          try {
+            annotation = await saveAnnotations({ imageId: parentImageId, items }, context);
+          } catch (error) {
+            return toolError(error, "annotation_save_failed");
+          }
+          const containsMask = items.some((item) => item.type === "mask");
+          if (containsMask && (!annotation.hasMask || !annotation.maskPolicy)) {
+            return await rollbackPreparedAnnotation(
+              annotation,
+              deleteAnnotation,
+              context,
+              new Error("masked annotation has no signed mask policy"),
+              "mask_policy_missing",
+            );
+          }
+          if (containsMask !== annotation.hasMask || Boolean(annotation.maskPolicy) !== annotation.hasMask) {
+            return await rollbackPreparedAnnotation(
+              annotation,
+              deleteAnnotation,
+              context,
+              new Error("annotation mask metadata is inconsistent"),
+              "invalid_task",
+            );
+          }
+        }
+
+        try {
+          const submission = editSubmissions.issue({
+            bindingKey: context.bindingKey,
+            parentImageId,
+            annotationId: annotation?.id ?? null,
+            maskSha256: annotation?.maskPolicy?.maskSha256 ?? null,
+            maskPolicySha256: annotation?.maskPolicy?.policySha256 ?? null,
+            sourcePrompt,
+            items,
+          });
+          return {
+            content: [{ type: "text", text: `已准备图片 ${parentImageId} 的待发送修改。` }],
+            structuredContent: { annotation, submission },
+          };
+        } catch (error) {
+          return await rollbackPreparedAnnotation(
+            annotation,
+            deleteAnnotation,
+            context,
+            error,
+            error?.code ?? "invalid_task",
+          );
+        }
+      },
+    ),
+  );
+
+  server.registerTool(
     "get_image_editor_session",
     {
       title: "读取画布会话状态",
@@ -739,6 +1019,16 @@ export function createImagegenServer({
   return server;
 }
 
+async function rollbackPreparedAnnotation(annotation, deleteAnnotation, context, error, code) {
+  if (!annotation) return toolError(error, code);
+  try {
+    await deleteAnnotation(annotation.id, context);
+  } catch {
+    return toolError(new Error("failed to remove rejected annotation"), "annotation_save_failed");
+  }
+  return toolError(error, code);
+}
+
 function editorSessionResult(editorSession, status = editorSession?.status) {
   if (!editorSession) return toolError(new Error("画布会话不存在或已经释放"), "editor_session_not_found");
   const result = editorSessionOutput(editorSession, status);
@@ -774,22 +1064,39 @@ function markCanvasDestroyed(destroyedCanvasImageIdsByBinding, bindingKey, image
   imageIds.add(imageId);
 }
 
-async function executeImageTask(task, context, runTask, readArtifact) {
+async function executeImageTask(task, context, runTask, readArtifact, { onTaskCommitted } = {}) {
   try {
     const result = await runTask(task, context);
     if (!result?.ok) {
       return toolError(new Error(result?.error?.message || "image task failed"), result?.error?.code);
     }
-    const artifacts = await Promise.all(result.artifacts.map((item) => readArtifact(item.id, context)));
+    onTaskCommitted?.(result.artifacts);
+    return await readImageTaskResult(
+      result.artifacts.map((item) => item.id),
+      context,
+      readArtifact,
+    );
+  } catch (error) {
+    return toolError(error);
+  }
+}
+
+
+async function readImageTaskResult(artifactIds, context, readArtifact, { recovered = false } = {}) {
+  try {
+    const artifacts = await Promise.all(artifactIds.map((id) => readArtifact(id, context)));
     const artifactMetadata = artifacts.map(({ metadata: item }) => imageArtifactMetadata(item));
     const structuredContent = { artifacts: artifactMetadata };
     const metadata = artifactMetadata.length === 1 ? artifactMetadata[0] : null;
     if (metadata) structuredContent.artifact = metadata;
     return {
-      content: [{ type: "text", text: `已创建 ${artifacts.length} 张图片。` }],
+      content: [{
+        type: "text",
+        text: recovered ? `已恢复 ${artifacts.length} 张既有图片。` : `已创建 ${artifacts.length} 张图片。`,
+      }],
       structuredContent,
       _meta: {
-        imageIds: result.artifacts.map((item) => item.id),
+        imageIds: artifactIds,
         artifacts: artifactMetadata,
         ...(metadata ? { imageId: metadata.id } : {}),
       },
@@ -797,6 +1104,21 @@ async function executeImageTask(task, context, runTask, readArtifact) {
   } catch (error) {
     return toolError(error);
   }
+}
+
+
+function deriveMaskedEditOutput(output, maskPolicy) {
+  const required = {
+    size: `${maskPolicy.width}x${maskPolicy.height}`,
+    format: "png",
+    count: 1,
+  };
+  for (const [key, value] of Object.entries(required)) {
+    if (Object.hasOwn(output, key) && output[key] !== value) {
+      throw new Error(`masked edit ${key} conflicts with the signed mask policy`);
+    }
+  }
+  return { ...output, ...required };
 }
 
 
@@ -939,7 +1261,7 @@ function stableToolError(code, extraStructuredContent = {}) {
 }
 
 function toolError(error, code = error?.code) {
-  const stableCode = stableToolErrorMessages.has(code) ? code : "image_task_failed";
+  const stableCode = isStableToolErrorCode(code) ? code : "image_task_failed";
   const message = stableToolErrorMessages.get(stableCode);
   return {
     isError: true,

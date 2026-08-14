@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 import os
 from typing import Any
+import urllib.parse
 
 
 DEFAULT_MODEL = "gpt-image-2"
@@ -13,6 +14,13 @@ DEFAULT_USER_AGENT = (
 )
 DEFAULT_POSTPROCESS = {"enabled": False}
 DEFAULT_URL_DOWNLOAD = {"proxy_mode": "environment"}
+MODEL_CAPABILITY_KEYS = (
+    "generate",
+    "edit",
+    "mask",
+    "multi_reference",
+    "transparent_background",
+)
 PLACEHOLDER_API_KEYS = {
     "",
     "replace-with-temporary-local-key",
@@ -44,8 +52,9 @@ def parse_config(
     *,
     require_api_key: bool,
     model_profile_id: str,
+    require_v2: bool = False,
 ) -> Config:
-    if "providers" in raw or "models" in raw:
+    if require_v2 or "providers" in raw or "models" in raw:
         return parse_v2_config(raw, require_api_key=require_api_key, model_profile_id=model_profile_id)
     return parse_legacy_config(raw, require_api_key=require_api_key)
 
@@ -63,7 +72,10 @@ def parse_v2_config(
     profile = models.get(model_profile_id)
     if not isinstance(profile, dict):
         raise ProviderConfigError(f"V2 config missing model profile: {model_profile_id}")
-    provider_id = str(profile.get("provider") or model_profile_id.split("/", 1)[0]).strip()
+    provider_value = profile.get("provider")
+    if not isinstance(provider_value, str) or not provider_value.strip():
+        raise ProviderConfigError(f"V2 model profile {model_profile_id} missing provider")
+    provider_id = provider_value.strip()
     provider = providers.get(provider_id)
     if not isinstance(provider, dict):
         raise ProviderConfigError(f"V2 config missing provider: {provider_id}")
@@ -75,8 +87,8 @@ def parse_v2_config(
     api_key_env = str(provider.get("api_key_env") or "").strip()
     api_key, api_key_source = resolve_api_key(file_api_key, api_key_env)
     model = str(profile.get("model") or "").strip()
-    if not base_url:
-        raise ProviderConfigError(f"V2 provider {provider_id} missing base_url")
+    if not is_valid_base_url(base_url):
+        raise ProviderConfigError(f"V2 provider {provider_id} has invalid base_url")
     if require_api_key and not api_key:
         raise ProviderConfigError(auth_setup_message(file_api_key, api_key_env))
     if not model:
@@ -87,7 +99,7 @@ def parse_v2_config(
         api_key_source=api_key_source,
         model=model,
         defaults=raw.get("defaults") if isinstance(raw.get("defaults"), dict) else {},
-        capabilities=profile.get("capabilities") if isinstance(profile.get("capabilities"), dict) else {},
+        capabilities=normalize_model_capabilities(profile.get("capabilities")),
         postprocess=resolve_postprocess_config(raw.get("postprocess")),
         user_agent=resolve_user_agent(provider.get("user_agent")),
         url_download=resolve_url_download_config(provider.get("url_download")),
@@ -112,11 +124,33 @@ def parse_legacy_config(raw: dict[str, Any], *, require_api_key: bool) -> Config
         api_key_source=api_key_source,
         model=model,
         defaults=raw.get("defaults") if isinstance(raw.get("defaults"), dict) else {},
-        capabilities=raw.get("capabilities") if isinstance(raw.get("capabilities"), dict) else {},
+        capabilities=normalize_model_capabilities(raw.get("capabilities")),
         postprocess=resolve_postprocess_config(raw.get("postprocess")),
         user_agent=resolve_user_agent(raw.get("user_agent")),
         url_download=resolve_url_download_config(raw.get("url_download")),
     )
+
+
+def is_valid_base_url(value: str) -> bool:
+    try:
+        parsed = urllib.parse.urlsplit(value)
+        return parsed.scheme in {"http", "https"} and bool(parsed.hostname)
+    except ValueError:
+        return False
+
+
+def normalize_model_capabilities(value: Any) -> dict[str, bool]:
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ProviderConfigError("model capabilities must be an object")
+    unknown = sorted(set(value) - set(MODEL_CAPABILITY_KEYS))
+    if unknown:
+        raise ProviderConfigError(f"unsupported model capability: {unknown[0]}")
+    for key, declared in value.items():
+        if not isinstance(declared, bool):
+            raise ProviderConfigError(f"model capability {key} must be boolean")
+    return {key: value[key] for key in MODEL_CAPABILITY_KEYS if key in value}
 
 
 def resolve_postprocess_config(value: Any) -> dict[str, Any]:

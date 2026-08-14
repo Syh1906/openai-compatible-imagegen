@@ -12,6 +12,9 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = ROOT / ".codex-plugin" / "plugin.json"
 MCP_PATH = ROOT / ".mcp.json"
+README_PATH = ROOT / "README.md"
+README_ZH_PATH = ROOT / "README.zh-CN.md"
+AUTH_EXAMPLE_PATH = ROOT / "examples" / "auth.example.json"
 PACKAGE_PATH = ROOT / "package.json"
 PACKAGE_LOCK_PATH = ROOT / "package-lock.json"
 PLUGIN_ID = "openai-compatible-imagegen-v2"
@@ -24,12 +27,29 @@ CHECK_PATH = ROOT / "scripts" / "check-plugin.mjs"
 RUNTIME_BRIDGE_PATH = ROOT / "mcp" / "image-runtime.mjs"
 DIST_RUNTIME_PATHS = [
     ROOT / "dist" / "scripts" / "imagegen.py",
+    ROOT / "dist" / "scripts" / "imagegen_cli.py",
     ROOT / "dist" / "scripts" / "artifact_repository.py",
+    ROOT / "dist" / "scripts" / "image_download.py",
+    ROOT / "dist" / "scripts" / "mask_policy.py",
     ROOT / "dist" / "scripts" / "provider_config.py",
+    ROOT / "dist" / "scripts" / "repository_fs_helper.py",
+    ROOT / "dist" / "scripts" / "reveal_in_explorer.py",
+    ROOT / "dist" / "scripts" / "windows_repository_fs.py",
 ]
 
 
 class PluginSkeletonTests(unittest.TestCase):
+    def test_url_download_contract_is_documented_in_both_public_languages(self) -> None:
+        for path in (README_PATH, README_ZH_PATH):
+            text = path.read_text(encoding="utf-8")
+            self.assertIn("url_download.proxy_mode", text)
+            self.assertIn("TLS EOF", text)
+            self.assertIn("allow-direct-url-download", text)
+            self.assertIn("API key", text)
+
+        config = json.loads(AUTH_EXAMPLE_PATH.read_text(encoding="utf-8"))
+        self.assertEqual(config["url_download"], {"proxy_mode": "environment"})
+
     def test_manifest_points_to_bundled_components(self) -> None:
         self.assertTrue(MANIFEST_PATH.is_file())
         manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
@@ -79,6 +99,7 @@ class PluginSkeletonTests(unittest.TestCase):
         server = config["mcpServers"][PLUGIN_ID]
 
         self.assertEqual(server["command"], "node")
+        self.assertEqual(server["cwd"], ".")
         self.assertEqual(server["args"], ["dist/server.mjs"])
         self.assertTrue(SERVER_PATH.is_file())
         server_text = SERVER_PATH.read_text(encoding="utf-8")
@@ -134,7 +155,10 @@ class PluginSkeletonTests(unittest.TestCase):
     def test_skill_routes_canvas_submissions_back_to_edit_image(self) -> None:
         text = SKILL_PATH.read_text(encoding="utf-8")
         self.assertIn("画布提交消息", text)
+        self.assertIn("prepare_image_edit_submission", text)
+        self.assertIn("edit_image.submissionId", text)
         self.assertIn("annotationId", text)
+        self.assertIn("MASK_GUARD_V2_BY_STRATEGY", text)
         self.assertIn("完整目标图片", text)
 
     def test_static_widget_is_packaged(self) -> None:
@@ -172,9 +196,11 @@ class PluginSkeletonTests(unittest.TestCase):
                 "inspect_imagegen_runtime",
                 "list_image_models",
                 "open_image_editor",
+                "prepare_image_edit_submission",
                 "read_image_artifact_data",
                 "render_image_results",
                 "report_imagegen_host_observation",
+                "reveal_image_artifact",
                 "save_image_annotations",
             ],
         )
@@ -199,8 +225,10 @@ class PluginSkeletonTests(unittest.TestCase):
                 "finalize_image_editor_session",
                 "get_image_editor_session",
                 "open_image_editor",
+                "prepare_image_edit_submission",
                 "read_image_artifact_data",
                 "report_imagegen_host_observation",
+                "reveal_image_artifact",
                 "save_image_annotations",
             ],
         )
@@ -231,9 +259,75 @@ class PluginSkeletonTests(unittest.TestCase):
             result.stderr,
         )
 
+    def test_plugin_probe_rejects_a_missing_runtime_without_source_comparison(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            fixture_root = Path(directory) / "plugin"
+            self._copy_probe_plugin(fixture_root)
+            (fixture_root / "dist" / "scripts" / "mask_policy.py").unlink()
+            result = self._run_probe(fixture_root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("distribution file set differs", result.stderr)
+
+    def test_plugin_probe_rejects_an_extra_dist_file_without_source_comparison(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            fixture_root = Path(directory) / "plugin"
+            self._copy_probe_plugin(fixture_root)
+            (fixture_root / "dist" / "obsolete.secret").write_text("secret", encoding="utf-8")
+            result = self._run_probe(fixture_root)
+
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("distribution file set differs", result.stderr)
+
+    def test_plugin_probe_compares_every_release_file_with_the_source(self) -> None:
+        relative_paths = (
+            Path("LICENSE"),
+            Path("skills") / PLUGIN_ID / "references" / "config.example.json",
+        )
+        for relative_path in relative_paths:
+            with self.subTest(relative_path=relative_path), tempfile.TemporaryDirectory() as directory:
+                fixture_root = Path(directory) / "plugin"
+                self._copy_probe_plugin(fixture_root)
+                target = fixture_root / relative_path
+                target.write_bytes(target.read_bytes() + b"\nprobe mismatch\n")
+                result = self._run_probe(fixture_root, source_root=ROOT)
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("installed plugin differs from source", result.stderr)
+            self.assertIn(relative_path.as_posix(), result.stderr.replace("\\", "/"))
+
     def test_plugin_probe_omits_host_conversation_metadata(self) -> None:
         probe_text = PROBE_PATH.read_text(encoding="utf-8")
         self.assertNotIn('"openai/session"', probe_text)
+
+    def _copy_probe_plugin(self, destination: Path) -> None:
+        for name in [".codex-plugin", "dist", "skills"]:
+            shutil.copytree(ROOT / name, destination / name)
+        for name in [".mcp.json", "LICENSE", "package.json", "package-lock.json"]:
+            shutil.copy2(ROOT / name, destination / name)
+
+    def _run_probe(
+        self,
+        plugin_root: Path,
+        source_root: Path | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        command = [
+            "node",
+            str(PROBE_PATH),
+            "--plugin-root",
+            str(plugin_root),
+            "--project-root",
+            str(ROOT),
+        ]
+        if source_root is not None:
+            command.extend(["--source-root", str(source_root)])
+        return subprocess.run(
+            command,
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
 
     def test_project_check_binds_the_explicit_project_root(self) -> None:
         result = subprocess.run(
@@ -269,6 +363,20 @@ class PluginSkeletonTests(unittest.TestCase):
 
         self.assertNotEqual(result.returncode, 0)
         self.assertIn(".local/smoke", result.stderr)
+
+    def test_remote_smoke_presents_images_only_through_the_render_tool(self) -> None:
+        probe_text = PROBE_PATH.read_text(encoding="utf-8")
+
+        self.assertNotIn(
+            "remote smoke generation returned no image content",
+            probe_text,
+        )
+        self.assertNotIn(
+            "remote smoke edit returned no image content",
+            probe_text,
+        )
+        self.assertIn("remote smoke generated result did not render", probe_text)
+        self.assertIn("remote smoke edited result did not render", probe_text)
 
     def test_plugin_probe_reads_the_explicit_plugin_root(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

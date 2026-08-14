@@ -1,3 +1,5 @@
+import { stableToolErrorMessages } from "../mcp/tool-errors.mjs";
+
 const SOURCES = ["ui/notifications/tool-result", "tools/call"];
 const RELEASE_FINGERPRINT_PATTERN = /^[a-f0-9]{20}$/;
 const STABLE_ERROR_CODE_PATTERN = /^[a-z][a-z0-9_]{0,63}$/;
@@ -53,27 +55,15 @@ const PROBED_SENSITIVE_KEYS = [
 ];
 const PROBED_OBJECT_KEYS = [...RETAINED_KEY_NAMES, ...PROBED_SENSITIVE_KEYS];
 const RETAINED_ERROR_CODES = new Set([
-  "annotation_image_mismatch",
-  "annotation_not_found",
-  "annotation_save_failed",
+  ...stableToolErrorMessages.keys(),
   "artifact_bridge_unavailable",
-  "artifact_not_found",
   "artifact_payload_invalid",
-  "artifact_read_failed",
   "artifact_result_invalid",
   "artifact_server_error",
   "artifact_tool_call_failed",
-  "editor_session_not_found",
-  "image_canvas_destroyed",
-  "image_task_failed",
-  "invalid_json",
-  "invalid_task",
   "release_identity_mismatch",
   "roots_list_failed",
   "tools_call_rejected",
-  "unsupported_capability",
-  "unsupported_model_profile",
-  "v2_config_missing",
 ]);
 const MAX_DEPTH = 8;
 const MAX_FIELDS = 256;

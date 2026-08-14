@@ -1,15 +1,17 @@
 {
   "name": "openai-compatible-imagegen-v2",
-  "version": "0.1.0+codex.20260806140437",
+  "version": "0.1.0+codex.20260813235620",
   "private": true,
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs",
     "check": "node scripts/check-plugin.mjs",
+    "prepare:personal": "node scripts/prepare-personal-plugin.mjs",
     "probe": "node scripts/probe-plugin.mjs",
+    "stage:personal": "node scripts/stage-personal-plugin.mjs",
     "test": "npm run test:python && npm run test:node",
     "test:python": "python -m unittest discover -s tests",
-    "test:node": "node --test tests/*.mjs"
+    "test:node": "node --test --test-concurrency=1 tests/*.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/ext-apps": "^1.7.5",
@@ -19,6 +21,7 @@
   },
   "devDependencies": {
     "esbuild": "^0.28.1",
-    "jsdom": "^26.1.0"
+    "jsdom": "^26.1.0",
+    "proper-lockfile": "^4.1.2"
   }
 }

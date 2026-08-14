@@ -45,6 +45,7 @@
 {
   "base_url": "https://example.com/v1",
   "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+  "url_download": { "proxy_mode": "environment" },
   "model": "gpt-image-2"
 }
 ```
@@ -52,6 +53,12 @@
 `examples/auth.example.json` 里的默认模型只是模板值。你可以把 `model` 改成后端支持的任意图片模型，例如你的网关或供应商暴露的 OpenAI 兼容图片生成模型。
 
 请求默认使用浏览器兼容的 Windows Chrome `User-Agent`。如果供应商要求其他值，请修改 `user_agent`。JSON 生成请求、multipart 编辑请求和返回图片 URL 的下载请求使用同一个值；下载返回图片时不会转发 API key。
+
+图片响应可以使用 `data[].b64_json` 或 `data[].url`。返回的 URL 必须是 HTTP(S)，下载的 PNG、JPEG 或 WebP 会先通过完整性检查，再写入产物。
+
+在 Codex App V2 的 MCP 流程中，一次 `generate_image` 调用传入 `count > 1` 时，运行时会按顺序执行等量的单图供应商请求。所有请求成功后才保存并返回完整候选组；任一请求失败时返回错误，不保存部分候选。
+
+返回图片 URL 默认使用环境代理。如果同一路线连续遇到 TLS EOF，命令只在该路线重试一次，随后停止并给出需要授权的提示。单次 standalone CLI 运行可使用 `--allow-direct-url-download`，已确认的供应商也可以把 `url_download.proxy_mode` 设为 `direct`。直连模式只影响返回图片 URL 的下载；图片 API 请求仍使用已配置的 endpoint、模型、协议和代理路线，API key 不会转发给图片主机。
 
 脚本层支持的参数包括：
 
@@ -256,6 +263,7 @@ API 请求尺寸和最终交付尺寸是两件事。例如后端可能返回 `10
 
 - `base_url`：OpenAI 兼容 API 基础地址，通常以 `/v1` 结尾。
 - `user_agent`：发送给图片 API 和返回图片 URL 的 HTTP `User-Agent`，默认使用上方示例中的浏览器兼容值。
+- `url_download.proxy_mode`：`environment` 使用当前代理环境；`direct` 不经过代理下载返回图片 URL，默认值是 `environment`。
 - `api_key`：直接写在本地配置里的 API key。不要提交真实值。
 - `api_key_env`：当 `api_key` 为空或仍是占位值时读取的环境变量名。
 - `model`：`generate`、`edit`、`batch` 默认使用的图片模型。

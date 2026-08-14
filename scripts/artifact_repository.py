@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from contextlib import contextmanager
 import json
 import os
 from pathlib import Path
@@ -11,6 +10,12 @@ import secrets
 import struct
 import time
 from typing import Any, Callable
+
+from scripts.windows_repository_fs import (
+    DirectoryLease,
+    RepositoryMutation,
+    ensure_directory_tree_safely,
+)
 
 
 ARTIFACT_ID_PATTERN = re.compile(r"^img_[0-9A-HJKMNP-TV-Z]{26}$")
@@ -32,11 +37,12 @@ class ArtifactRepository:
     def __init__(
         self,
         project_root: Path,
+        artifact_root: Path,
         *,
         id_factory: Callable[[], str] | None = None,
     ) -> None:
         self.project_root = Path(project_root).absolute()
-        self.data_root = self.project_root / "output" / "imagegen"
+        self.data_root = validate_artifact_root(self.project_root, artifact_root)
         self.artifacts_root = self.data_root / "artifacts"
         self.index_path = self.data_root / "index.json"
         self.id_factory = id_factory or new_artifact_id
@@ -73,26 +79,28 @@ class ArtifactRepository:
         if len(set(artifact_ids)) != len(artifact_ids):
             raise ValueError("artifact ID factory returned a duplicate ID")
 
-        self.artifacts_root.mkdir(parents=True, exist_ok=True)
-        reject_reparse_points(self.data_root)
-        with self._index_lock():
-            return self._store_images_locked(
-                images=images,
-                mime_type=mime_type,
-                provider=provider,
-                model=model,
-                operation=operation,
-                prompt=prompt,
-                parameters=parameters,
-                parent_ids=parent_ids,
-                annotation_id=annotation_id,
-                inspected=inspected,
-                artifact_ids=artifact_ids,
-            )
+        with ensure_directory_tree_safely(self.project_root, self.data_root):
+            with RepositoryMutation(self.data_root) as mutation:
+                mutation.create_directory("artifacts")
+                return self._store_images_locked(
+                    mutation=mutation,
+                    images=images,
+                    mime_type=mime_type,
+                    provider=provider,
+                    model=model,
+                    operation=operation,
+                    prompt=prompt,
+                    parameters=parameters,
+                    parent_ids=parent_ids,
+                    annotation_id=annotation_id,
+                    inspected=inspected,
+                    artifact_ids=artifact_ids,
+                )
 
     def _store_images_locked(
         self,
         *,
+        mutation: RepositoryMutation,
         images: list[bytes],
         mime_type: str,
         provider: str,
@@ -116,105 +124,199 @@ class ArtifactRepository:
         created_at = datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
         records: list[ArtifactRecord] = []
         index_entries: dict[str, dict[str, Any]] = {}
-        for artifact_id, image_bytes, dimensions in zip(artifact_ids, images, inspected, strict=True):
-            extension = MIME_EXTENSIONS[mime_type]
-            artifact_dir = self.artifacts_root / artifact_id
-            artifact_dir.mkdir()
-            image_name = f"image.{extension}"
-            image_path = artifact_dir / image_name
-            image_path.write_bytes(image_bytes)
-
-            metadata = {
-                "id": artifact_id,
-                "parentIds": parent_ids,
-                "mimeType": mime_type,
-                "width": dimensions[0],
-                "height": dimensions[1],
-                "provider": provider,
-                "model": model,
-                "operation": operation,
-                "prompt": prompt,
-                "parameters": dict(parameters),
-                "annotationId": annotation_id,
-                "createdAt": created_at,
-            }
-            stored_metadata = {**metadata, "imageFile": image_name}
-            write_json_atomic(artifact_dir / "meta.json", stored_metadata)
-            index_entries[artifact_id] = stored_metadata
-            records.append(ArtifactRecord(metadata=metadata, image_bytes=image_bytes))
-
-        index["artifacts"].update(index_entries)
-        write_json_atomic(self.index_path, index)
-        return records
-
-    @contextmanager
-    def _index_lock(self):
-        lock_path = self.data_root / ".index.lock"
-        deadline = time.monotonic() + 10
-        while True:
-            try:
-                descriptor = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-                os.close(descriptor)
-                break
-            except FileExistsError:
-                if time.monotonic() >= deadline:
-                    raise TimeoutError("artifact index is locked by another image task")
-                time.sleep(0.01)
+        created_dirs: list[Path] = []
         try:
-            yield
-        finally:
-            lock_path.unlink(missing_ok=True)
+            for result_index, (artifact_id, image_bytes, dimensions) in enumerate(
+                zip(artifact_ids, images, inspected, strict=True)
+            ):
+                extension = MIME_EXTENSIONS[mime_type]
+                artifact_dir = Path("artifacts") / artifact_id
+                mutation.create_new_directory(artifact_dir)
+                created_dirs.append(artifact_dir)
+                image_name = f"image.{extension}"
+                image_path = artifact_dir / image_name
+                mutation.publish_new_file(image_path, image_bytes)
+
+                artifact_parameters = dict(parameters)
+                if isinstance(artifact_parameters.get("submissionId"), str):
+                    artifact_parameters["submissionResultIndex"] = result_index
+                metadata = {
+                    "id": artifact_id,
+                    "parentIds": parent_ids,
+                    "mimeType": mime_type,
+                    "width": dimensions[0],
+                    "height": dimensions[1],
+                    "provider": provider,
+                    "model": model,
+                    "operation": operation,
+                    "prompt": prompt,
+                    "parameters": artifact_parameters,
+                    "annotationId": annotation_id,
+                    "createdAt": created_at,
+                }
+                stored_metadata = {**metadata, "imageFile": image_name}
+                metadata_path = artifact_dir / "meta.json"
+                mutation.publish_new_file(metadata_path, encode_json(stored_metadata))
+                index_entries[artifact_id] = stored_metadata
+                records.append(ArtifactRecord(metadata=metadata, image_bytes=image_bytes))
+
+            index["artifacts"].update(index_entries)
+            mutation.publish_replace_file("index.json", encode_json(index))
+            return records
+        except Exception:
+            self._rollback_created_artifacts(mutation, created_dirs, extension=MIME_EXTENSIONS[mime_type])
+            raise
+
+    def _rollback_created_artifacts(
+        self,
+        mutation: RepositoryMutation,
+        created_dirs: list[Path],
+        *,
+        extension: str,
+    ) -> None:
+        for artifact_dir in reversed(created_dirs):
+            mutation.remove_directory_if_known(
+                artifact_dir,
+                {f"image.{extension}", "meta.json"},
+            )
 
     def get_artifact(self, artifact_id: str) -> ArtifactRecord:
         validate_artifact_id(artifact_id)
-        index = self._read_index()
-        entry = index["artifacts"].get(artifact_id)
-        if not isinstance(entry, dict):
-            raise KeyError(f"artifact not found: {artifact_id}")
-
-        artifact_dir = self.artifacts_root / artifact_id
-        reject_reparse_points(artifact_dir)
-        image_name = entry.get("imageFile")
-        if not isinstance(image_name, str) or Path(image_name).name != image_name:
-            raise ValueError(f"artifact has invalid image file: {artifact_id}")
-        image_path = artifact_dir / image_name
-        if not image_path.is_file():
-            raise FileNotFoundError(f"artifact image is missing: {artifact_id}")
-
-        metadata = {key: value for key, value in entry.items() if key != "imageFile"}
-        metadata["childIds"] = sorted(
-            candidate_id
-            for candidate_id, candidate in index["artifacts"].items()
-            if artifact_id in candidate.get("parentIds", [])
-        )
-        return ArtifactRecord(metadata=metadata, image_bytes=image_path.read_bytes())
+        self._reject_unsafe_repository_paths()
+        with DirectoryLease(self.data_root) as lease:
+            return self._read_artifact_with_lease(lease, artifact_id)
 
     def get_image_path(self, artifact_id: str) -> Path:
-        validate_artifact_id(artifact_id)
-        index = self._read_index()
-        entry = index["artifacts"].get(artifact_id)
-        if not isinstance(entry, dict):
-            raise KeyError(f"artifact not found: {artifact_id}")
-        image_name = entry.get("imageFile")
-        if not isinstance(image_name, str) or Path(image_name).name != image_name:
-            raise ValueError(f"artifact has invalid image file: {artifact_id}")
-        image_path = self.artifacts_root / artifact_id / image_name
-        reject_reparse_points(image_path)
-        if not image_path.is_file():
-            raise FileNotFoundError(f"artifact image is missing: {artifact_id}")
+        image_path, _ = self.get_image_snapshot(artifact_id)
         return image_path
 
-    def _read_index(self) -> dict[str, Any]:
-        if not self.index_path.exists():
-            return {"version": 1, "artifacts": {}}
-        reject_reparse_points(self.index_path)
+    def get_image_snapshot(self, artifact_id: str) -> tuple[Path, bytes]:
+        validate_artifact_id(artifact_id)
+        self._reject_unsafe_repository_paths()
+        with DirectoryLease(self.data_root) as lease:
+            index = self._read_index(lease=lease)
+            entry = self._require_artifact_entry(index, artifact_id)
+            image_name = self._require_image_name(entry, artifact_id)
+            relative_path = Path("artifacts") / artifact_id / image_name
+            try:
+                with lease.open_file(relative_path) as verified_file:
+                    image_bytes = verified_file.read_bytes()
+            except FileNotFoundError as exc:
+                raise FileNotFoundError(f"artifact image is missing: {artifact_id}") from exc
+            return self.data_root / relative_path, image_bytes
+
+    def find_edits_by_submission_id(
+        self,
+        submission_id: str,
+        *,
+        parent_id: str,
+        annotation_id: str | None,
+        request_fingerprint: str,
+    ) -> list[dict[str, Any]] | None:
+        validate_artifact_id(parent_id)
+        self._reject_unsafe_repository_paths()
+        with DirectoryLease(self.data_root) as lease:
+            index = self._read_index(lease=lease)
+            matches = [
+                artifact_id
+                for artifact_id, entry in index["artifacts"].items()
+                if entry.get("operation") == "edit"
+                and isinstance(entry.get("parameters"), dict)
+                and entry["parameters"].get("submissionId") == submission_id
+            ]
+            if not matches:
+                return None
+            indexed_matches: list[tuple[int, str]] = []
+            for artifact_id in matches:
+                entry = index["artifacts"][artifact_id]
+                parameters = entry["parameters"]
+                if (
+                    entry.get("parentIds") != [parent_id]
+                    or entry.get("annotationId") != annotation_id
+                    or parameters.get("submissionRequestFingerprint") != request_fingerprint
+                ):
+                    raise ValueError("edit submission does not match the requested edit")
+                result_index = parameters.get("submissionResultIndex")
+                if result_index is None and len(matches) == 1:
+                    result_index = 0
+                if type(result_index) is not int or result_index < 0:
+                    raise ValueError("edit submission result order is missing or invalid")
+                indexed_matches.append((result_index, artifact_id))
+
+            indexed_matches.sort()
+            if [result_index for result_index, _ in indexed_matches] != list(range(len(matches))):
+                raise ValueError("edit submission result order is incomplete or duplicated")
+            return [
+                self._artifact_metadata(index, artifact_id, index["artifacts"][artifact_id])
+                for _, artifact_id in indexed_matches
+            ]
+
+    def _read_index(self, *, lease: DirectoryLease | None = None) -> dict[str, Any]:
+        self._reject_unsafe_repository_paths()
         try:
-            index = json.loads(self.index_path.read_text(encoding="utf-8"))
+            if lease is None:
+                with DirectoryLease(self.data_root) as owned_lease:
+                    with owned_lease.open_file("index.json") as verified_file:
+                        payload = verified_file.read_bytes()
+            else:
+                with lease.open_file("index.json") as verified_file:
+                    payload = verified_file.read_bytes()
+            index = json.loads(payload.decode("utf-8"))
+        except FileNotFoundError:
+            return {"version": 1, "artifacts": {}}
         except json.JSONDecodeError as exc:
             raise ValueError("artifact index is not valid JSON") from exc
         if index.get("version") != 1 or not isinstance(index.get("artifacts"), dict):
             raise ValueError("artifact index has an unsupported schema")
         return index
+
+    def _read_artifact_with_lease(self, lease: DirectoryLease, artifact_id: str) -> ArtifactRecord:
+        index = self._read_index(lease=lease)
+        entry = self._require_artifact_entry(index, artifact_id)
+        image_name = self._require_image_name(entry, artifact_id)
+        relative_path = Path("artifacts") / artifact_id / image_name
+        try:
+            with lease.open_file(relative_path) as verified_file:
+                image_bytes = verified_file.read_bytes()
+        except FileNotFoundError as exc:
+            raise FileNotFoundError(f"artifact image is missing: {artifact_id}") from exc
+        return ArtifactRecord(
+            metadata=self._artifact_metadata(index, artifact_id, entry),
+            image_bytes=image_bytes,
+        )
+
+    @staticmethod
+    def _require_artifact_entry(index: dict[str, Any], artifact_id: str) -> dict[str, Any]:
+        entry = index["artifacts"].get(artifact_id)
+        if not isinstance(entry, dict):
+            raise KeyError(f"artifact not found: {artifact_id}")
+        return entry
+
+    @staticmethod
+    def _require_image_name(entry: dict[str, Any], artifact_id: str) -> str:
+        extension = MIME_EXTENSIONS.get(entry.get("mimeType"))
+        image_name = entry.get("imageFile")
+        if extension is None or image_name != f"image.{extension}":
+            raise ValueError(f"artifact has invalid image file: {artifact_id}")
+        return image_name
+
+    @staticmethod
+    def _artifact_metadata(
+        index: dict[str, Any],
+        artifact_id: str,
+        entry: dict[str, Any],
+    ) -> dict[str, Any]:
+        metadata = {key: value for key, value in entry.items() if key != "imageFile"}
+        metadata["childIds"] = sorted(
+            candidate_id
+            for candidate_id, candidate in index["artifacts"].items()
+            if isinstance(candidate, dict) and artifact_id in candidate.get("parentIds", [])
+        )
+        return metadata
+
+    def _reject_unsafe_repository_paths(self, *paths: Path) -> None:
+        for path in (self.data_root, self.artifacts_root, self.index_path, *paths):
+            reject_reparse_points(path)
 
 
 def validate_artifact_id(artifact_id: str) -> None:
@@ -229,15 +331,8 @@ def new_artifact_id() -> str:
     return f"img_{encoded}"
 
 
-def write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temp_path = path.with_name(f"{path.name}.tmp")
-    with temp_path.open("x", encoding="utf-8", newline="\n") as stream:
-        json.dump(payload, stream, ensure_ascii=False, indent=2)
-        stream.write("\n")
-        stream.flush()
-        os.fsync(stream.fileno())
-    os.replace(temp_path, path)
+def encode_json(payload: dict[str, Any]) -> bytes:
+    return (json.dumps(payload, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
 
 
 def reject_reparse_points(path: Path) -> None:
@@ -253,6 +348,27 @@ def reject_reparse_points(path: Path) -> None:
         is_junction = getattr(os.path, "isjunction", lambda _: False)
         if item.is_symlink() or is_junction(item):
             raise ValueError(f"artifact path contains a reparse point: {item.name}")
+
+
+def validate_artifact_root(project_root: Path, artifact_root: Path) -> Path:
+    raw_project_root = Path(project_root).absolute()
+    candidate = Path(artifact_root)
+    if not candidate.is_absolute():
+        raise ValueError("artifact root must be absolute")
+    raw_artifact_root = candidate.absolute()
+    reject_reparse_points(raw_project_root)
+    reject_reparse_points(raw_artifact_root)
+    resolved_project_root = raw_project_root.resolve(strict=False)
+    resolved_artifact_root = raw_artifact_root.resolve(strict=False)
+    try:
+        relative = resolved_artifact_root.relative_to(resolved_project_root)
+    except ValueError as exc:
+        raise ValueError("artifact root must be inside the project root") from exc
+    if not relative.parts:
+        raise ValueError("artifact root must be a strict descendant of the project root")
+    if resolved_artifact_root.exists() and not resolved_artifact_root.is_dir():
+        raise ValueError("artifact root must be a directory")
+    return resolved_artifact_root
 
 
 def inspect_image(data: bytes, mime_type: str) -> tuple[int, int]:

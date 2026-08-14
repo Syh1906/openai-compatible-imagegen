@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -9,7 +9,15 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import {
+  ResourceListChangedNotificationSchema,
+  ToolListChangedNotificationSchema,
+} from "@modelcontextprotocol/sdk/types.js";
+
+import { createImagegenServer } from "../mcp/create-server.mjs";
+import { createReleaseBundle } from "../mcp/release-identity.mjs";
 
 
 const execFileAsync = promisify(execFile);
@@ -17,6 +25,7 @@ const projectRoot = fileURLToPath(new URL("..", import.meta.url));
 const manifestPath = fileURLToPath(new URL("../.codex-plugin/plugin.json", import.meta.url));
 const widgetOutput = fileURLToPath(new URL("../dist/widget/index.html", import.meta.url));
 const serverOutput = fileURLToPath(new URL("../dist/server.mjs", import.meta.url));
+const runtimeOutput = fileURLToPath(new URL("../dist/scripts/imagegen.py", import.meta.url));
 const resultStateSource = fileURLToPath(new URL("../web/result-state.mjs", import.meta.url));
 const IMAGE_ID = "img_01J00000000000000000000000";
 const RELEASE_IDENTITY_PLACEHOLDER = "    <!-- RELEASE_IDENTITY -->";
@@ -27,11 +36,39 @@ const PNG_BYTES = Buffer.from(
 const CALL_META = {};
 
 
+test("release-bound widget URIs declare the Codex development cache opt-out", async () => {
+  const previousRelease = createReleaseBundle({
+    pluginId: "openai-compatible-imagegen-v2",
+    pluginVersion: "0.1.0-test",
+    serverBuildInputs: [{ path: "mcp/server.mjs", content: "previous server" }],
+    widgetHtml: `<html><head>${RELEASE_IDENTITY_PLACEHOLDER}</head><body>previous widget</body></html>`,
+  }).releaseIdentity;
+  const currentRelease = createReleaseBundle({
+    pluginId: "openai-compatible-imagegen-v2",
+    pluginVersion: "0.1.0-test",
+    serverBuildInputs: [{ path: "mcp/server.mjs", content: "current server" }],
+    widgetHtml: `<html><head>${RELEASE_IDENTITY_PLACEHOLDER}</head><body>current widget</body></html>`,
+  }).releaseIdentity;
+
+  assert.notEqual(previousRelease.resourceUris.result, currentRelease.resourceUris.result);
+
+  await withReleaseClient(currentRelease, async (client) => {
+    const cachePolicy = client.getServerCapabilities()?.experimental?.["codex/tool-catalog-cache"];
+    const { tools } = await client.listTools();
+    const resourceUri = tools.find((tool) => tool.name === "render_image_results")._meta.ui.resourceUri;
+    const resource = await client.readResource({ uri: resourceUri });
+    assert.equal(resource.contents[0].uri, currentRelease.resourceUris.result);
+    assert.deepEqual(cachePolicy, { cacheable: false });
+    await assert.rejects(
+      client.readResource({ uri: previousRelease.resourceUris.result }),
+      /not found/i,
+    );
+  });
+});
+
+
 test("the built plugin exposes one content-bound release identity", async () => {
-  const {
-    createReleaseBundle,
-    RELEASE_IDENTITY_META_NAME,
-  } = await import("../mcp/release-identity.mjs");
+  const { RELEASE_IDENTITY_META_NAME } = await import("../mcp/release-identity.mjs");
   const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
   const baseInput = {
     pluginId: manifest.name,
@@ -54,6 +91,9 @@ test("the built plugin exposes one content-bound release identity", async () => 
   assert.match(first.releaseIdentity.serverBuildDigest, /^[a-f0-9]{64}$/);
   assert.match(first.releaseIdentity.widgetAssetDigest, /^[a-f0-9]{64}$/);
 
+  await writeFile(path.join(projectRoot, "dist", "obsolete.txt"), "obsolete", "utf8");
+  await mkdir(path.join(projectRoot, "dist", "scripts", "stale"), { recursive: true });
+  await writeFile(path.join(projectRoot, "dist", "scripts", "stale", "secret.txt"), "secret", "utf8");
   const { stdout } = await execFileAsync(process.execPath, ["scripts/build.mjs"], {
     cwd: projectRoot,
   });
@@ -65,10 +105,34 @@ test("the built plugin exposes one content-bound release identity", async () => 
     "dist/server.mjs",
     "dist/widget/index.html",
     "dist/scripts/imagegen.py",
+    "dist/scripts/imagegen_cli.py",
     "dist/scripts/artifact_repository.py",
     "dist/scripts/image_download.py",
+    "dist/scripts/mask_policy.py",
     "dist/scripts/provider_config.py",
+    "dist/scripts/repository_fs_helper.py",
+    "dist/scripts/reveal_in_explorer.py",
+    "dist/scripts/windows_repository_fs.py",
   ]);
+  assert.deepEqual(await listFiles(path.join(projectRoot, "dist")), [
+    "scripts/artifact_repository.py",
+    "scripts/image_download.py",
+    "scripts/imagegen.py",
+    "scripts/imagegen_cli.py",
+    "scripts/mask_policy.py",
+    "scripts/provider_config.py",
+    "scripts/repository_fs_helper.py",
+    "scripts/reveal_in_explorer.py",
+    "scripts/windows_repository_fs.py",
+    "server.mjs",
+    "widget/index.html",
+  ]);
+
+  const { stdout: runtimeHelp } = await execFileAsync("python", [runtimeOutput, "--help"], {
+    cwd: projectRoot,
+    env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" },
+  });
+  assert.match(runtimeHelp, /usage: imagegen /);
 
   const widgetHtml = await readFile(widgetOutput, "utf8");
   assert.equal(count(widgetHtml, "<!doctype html>"), 1);
@@ -89,6 +153,14 @@ test("the built plugin exposes one content-bound release identity", async () => 
   const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), "imagegen-release-identity-"));
   await writeArtifactFixture(fixtureRoot);
   const client = new Client({ name: "release-identity-test", version: "0.1.0" });
+  let toolListChangedCount = 0;
+  let resourceListChangedCount = 0;
+  client.setNotificationHandler(ToolListChangedNotificationSchema, () => {
+    toolListChangedCount += 1;
+  });
+  client.setNotificationHandler(ResourceListChangedNotificationSchema, () => {
+    resourceListChangedCount += 1;
+  });
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: [serverOutput],
@@ -98,10 +170,20 @@ test("the built plugin exposes one content-bound release identity", async () => 
 
   try {
     await client.connect(transport);
+    await waitFor(
+      () => toolListChangedCount > 0 && resourceListChangedCount > 0,
+      "MCP startup did not refresh the host tool and resource catalogs",
+    );
     assert.deepEqual(client.getServerVersion(), {
       name: manifest.name,
       version: manifest.version,
     });
+    assert.deepEqual(
+      client.getServerCapabilities()?.experimental?.["codex/tool-catalog-cache"],
+      { cacheable: false },
+    );
+    assert.equal(client.getServerCapabilities()?.tools?.listChanged, true);
+    assert.equal(client.getServerCapabilities()?.resources?.listChanged, true);
 
     const { resources } = await client.listResources();
     assert.deepEqual(
@@ -163,6 +245,8 @@ test("the built plugin exposes one content-bound release identity", async () => 
       projectRoot,
       "--project-root",
       fixtureRoot,
+      "--image-id",
+      IMAGE_ID,
     ], { cwd: projectRoot });
     const probeResult = JSON.parse(probeStdout.trim());
     assert.equal(probeResult.pluginRoot, undefined);
@@ -182,11 +266,47 @@ test("the built plugin exposes one content-bound release identity", async () => 
       probeResult.projectRootFingerprint,
     );
     assert.equal(probeResult.runtimeDiagnostic.roots.status, "unsupported");
+    assert.deepEqual(probeResult.artifactReads, [IMAGE_ID]);
+    assert.deepEqual(probeResult.resultRender, {
+      imageIds: [IMAGE_ID],
+      artifactCount: 1,
+      imageDataCount: 1,
+    });
   } finally {
     await client.close();
     await rm(fixtureRoot, { recursive: true, force: true });
   }
 });
+
+
+async function withReleaseClient(releaseIdentity, callback) {
+  const server = createImagegenServer({
+    releaseIdentity,
+    launchContext: { cwd: projectRoot, pluginRoot: projectRoot },
+    readWidgetHtml: async () => "<html>current widget</html>",
+    runTask: async () => {
+      throw new Error("not used");
+    },
+    readArtifact: async () => {
+      throw new Error("not used");
+    },
+    readAnnotation: async () => {
+      throw new Error("not used");
+    },
+    saveAnnotations: async () => {
+      throw new Error("not used");
+    },
+  });
+  const client = new Client({ name: "release-upgrade-test", version: "0.1.0" });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+  try {
+    return await callback(client);
+  } finally {
+    await client.close();
+    await server.close();
+  }
+}
 
 
 function assertReleaseIdentity(releaseIdentity, manifest) {
@@ -203,6 +323,16 @@ function assertReleaseIdentity(releaseIdentity, manifest) {
 
 
 async function writeArtifactFixture(root) {
+  const configDirectory = path.join(root, ".codex", "openai-compatible-imagegen-v2");
+  await mkdir(configDirectory, { recursive: true });
+  await writeFile(path.join(configDirectory, "config.json"), `${JSON.stringify({
+    base_url: "https://example.test/v1",
+    api_key: "test-only-key",
+    model: "gpt-image-2",
+    capabilities: { mask: true },
+    defaults: { size: "1024x1024", quality: "low", output_format: "png" },
+    postprocess: { enabled: false },
+  })}\n`);
   const artifactDirectory = path.join(root, "output", "imagegen", "artifacts", IMAGE_ID);
   await mkdir(artifactDirectory, { recursive: true });
   await writeFile(path.join(artifactDirectory, "image.png"), PNG_BYTES);
@@ -235,4 +365,26 @@ function sha256(value) {
 
 function count(value, needle) {
   return value.split(needle).length - 1;
+}
+
+
+async function listFiles(root, relativeDirectory = "") {
+  const files = [];
+  const entries = await readdir(path.join(root, relativeDirectory), { withFileTypes: true });
+  for (const entry of entries) {
+    const relativePath = path.join(relativeDirectory, entry.name);
+    if (entry.isDirectory()) files.push(...await listFiles(root, relativePath));
+    else files.push(relativePath.replaceAll("\\", "/"));
+  }
+  return files.sort();
+}
+
+
+async function waitFor(predicate, message, timeoutMs = 1000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error(message);
 }

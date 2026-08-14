@@ -2,10 +2,18 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { JSDOM } from "jsdom";
-
-const IMAGE_ID = "img_01J00000000000000000000000";
-const EDITOR_SESSION_ID = "eds_01J00000000000000000000000";
-const PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFgAI/ScL1WQAAAABJRU5ErkJggg==";
+import {
+  CODEX_COMPOSER_HOST_CAPABILITIES,
+  EDITOR_SESSION_ID,
+  FULL_MESSAGE_HOST_CAPABILITIES,
+  IMAGE_ID,
+  PNG_BASE64,
+  installDomGlobals,
+  installHost,
+  pointerEvent,
+  restoreDomGlobals,
+  waitFor,
+} from "./support/widget-runtime-host.mjs";
 
 test("widget reports the initial notification and tools call response as safe shapes", async () => {
   const releaseFingerprint = "0123456789abcdefabcd";
@@ -34,6 +42,7 @@ test("widget reports the initial notification and tools call response as safe sh
     const serialized = JSON.stringify(report.arguments.observations);
     assert.equal(serialized.includes(IMAGE_ID), false);
     assert.equal(serialized.includes(PNG_BASE64), false);
+    await waitFor(() => document.querySelector("[data-image]")?.getAttribute("src") === `data:image/png;base64,${PNG_BASE64}`);
   } finally {
     host.dispose();
     restoreDomGlobals(previous);
@@ -68,7 +77,12 @@ test("widget does not synthesize a tools call envelope when the host rejects it"
   }
 });
 
-test("the render result opens the selected candidate after app-only artifact reads", async () => {
+
+
+
+
+
+test("the render result opens the selected candidate after server-backed artifact reads", async () => {
   const secondId = "img_01J00000000000000000000001";
   const dom = new JSDOM(
     '<!doctype html><html><body><main><p>正在加载图片...</p></main></body></html>',
@@ -94,7 +108,10 @@ test("the render result opens the selected candidate after app-only artifact rea
       host.toolCalls.filter(({ name }) => name === "read_image_artifact_data").map(({ arguments: args }) => args.imageId),
       [IMAGE_ID, secondId],
     );
-    assert.equal(host.toolCalls.some(({ name }) => name === "get_image_artifact"), false);
+    assert.deepEqual(
+      host.toolCalls.filter(({ name }) => name === "get_image_artifact").map(({ arguments: args }) => args.imageId),
+      [IMAGE_ID, secondId],
+    );
     document.querySelector(`[data-result-image-id="${secondId}"] [data-action=open-editor]`).click();
     await waitFor(() => host.toolCalls.some(({ name, arguments: args }) => name === "open_image_editor" && args.imageId === secondId));
     await waitFor(() => document.querySelector(".editor-app") !== null);
@@ -107,7 +124,7 @@ test("the render result opens the selected candidate after app-only artifact rea
     await waitFor(() => document.querySelectorAll("[data-action=open-editor]").length === 2);
     assert.equal(host.modelContexts[0].structuredContent.imageId, secondId);
     assert.match(host.messages[0].content[0].text, new RegExp(secondId));
-    assert.equal(host.toolCalls.some(({ name }) => name === "save_image_annotations"), false);
+    assert.deepEqual(host.toolCalls.filter(({ name }) => name === "prepare_image_edit_submission").map(({ arguments: args }) => [args.parentImageId, args.items.length]), [[secondId, 0]]);
   } finally {
     document.querySelector("[data-action=back]")?.click();
     await waitFor(() => document.querySelector(".inline-results") !== null).catch(() => {});
@@ -117,7 +134,7 @@ test("the render result opens the selected candidate after app-only artifact rea
   }
 });
 
-test("result widget loads images through app-only tools when the host only forwards structured content", async () => {
+test("result widget loads images when the host only forwards the result content envelope", async () => {
   const secondId = "img_01J00000000000000000000001";
   const initialArtifacts = [
     { id: IMAGE_ID, mimeType: "image/png", width: 1, height: 1, operation: "generate", parentIds: [], childIds: [] },
@@ -132,6 +149,7 @@ test("result widget loads images through app-only tools when the host only forwa
     toolName: "render_image_results",
     initialArtifacts,
     initialResultIncludesImages: false,
+    initialResultIncludesStructuredContent: false,
   });
 
   try {
@@ -149,12 +167,129 @@ test("result widget loads images through app-only tools when the host only forwa
       [IMAGE_ID, secondId],
     );
     assert.deepEqual(host.resourceReads, []);
-    assert.equal(host.toolCalls.some(({ name }) => name === "get_image_artifact"), false);
+    assert.deepEqual(
+      host.toolCalls.filter(({ name }) => name === "get_image_artifact").map(({ arguments: args }) => args.imageId),
+      [IMAGE_ID, secondId],
+    );
     assert.equal([...document.querySelectorAll("[data-action=open-editor]")].every((button) => !button.disabled), true);
   } finally {
     host.dispose();
     restoreDomGlobals(previous);
     dom.window.close();
+  }
+});
+
+test("one failed candidate does not block a successful candidate", async () => {
+  const failedId = "img_01J00000000000000000000001";
+  const dom = new JSDOM(
+    '<!doctype html><html><body><main><p>正在加载图片...</p></main></body></html>',
+    { pretendToBeVisual: true, url: "https://widget.local/" },
+  );
+  const previous = installDomGlobals(dom.window);
+  const host = installHost(dom.window, {
+    toolName: "render_image_results",
+    initialArtifacts: [
+      { id: IMAGE_ID, mimeType: "image/png", width: 1, height: 1 },
+      { id: failedId, mimeType: "image/png", width: 1, height: 1 },
+    ],
+    failArtifactDataImageId: failedId,
+  });
+
+  try {
+    await import(`../web/editor-runtime.mjs?partial-artifact-load=${Date.now()}`);
+    await waitFor(() => document.querySelector(`[data-result-image-id="${IMAGE_ID}"] [data-image]`) !== null);
+    await waitFor(() => document.querySelector(`[data-result-image-id="${failedId}"] [data-inline-status]`)?.textContent === "图片读取失败 · IMG-SERVER");
+    assert.equal(document.querySelector(`[data-result-image-id="${IMAGE_ID}"] [data-action=open-editor]`)?.disabled, false);
+    assert.equal(document.querySelector(`[data-result-image-id="${failedId}"] [data-action=open-editor]`)?.disabled, true);
+    assert.equal(document.querySelectorAll(".inline-loading").length, 0);
+    assert.equal(document.querySelectorAll(".inline-error").length, 1);
+  } finally {
+    host.dispose();
+    restoreDomGlobals(previous);
+    dom.window.close();
+  }
+});
+
+test("all failed candidates finish with per-card errors", async () => {
+  const failedId = "img_01J00000000000000000000001";
+  const dom = new JSDOM(
+    '<!doctype html><html><body><main><p>正在加载图片...</p></main></body></html>',
+    { pretendToBeVisual: true, url: "https://widget.local/" },
+  );
+  const previous = installDomGlobals(dom.window);
+  const host = installHost(dom.window, {
+    toolName: "render_image_results",
+    initialArtifacts: [
+      { id: IMAGE_ID, mimeType: "image/png", width: 1, height: 1 },
+      { id: failedId, mimeType: "image/png", width: 1, height: 1 },
+    ],
+    failArtifactDataImageIds: [IMAGE_ID, failedId],
+  });
+
+  try {
+    await import(`../web/editor-runtime.mjs?all-artifact-loads-fail=${Date.now()}`);
+    await waitFor(() => [...document.querySelectorAll("[data-inline-status]")]
+      .every((element) => element.textContent === "图片读取失败 · IMG-SERVER"));
+    assert.equal(document.querySelectorAll(".inline-loading").length, 0);
+    assert.equal([...document.querySelectorAll("[data-action=open-editor]")].every((button) => button.disabled), true);
+  } finally {
+    host.dispose();
+    restoreDomGlobals(previous);
+    dom.window.close();
+  }
+});
+
+test("result widget distinguishes schema, projection, server, and payload failures", async (t) => {
+  const cases = [
+    { name: "missing result schema", options: { initialResultIncludesEnvelope: false }, code: "IMG-SCHEMA", noReads: true },
+    { name: "invalid result projection", options: { initialResultEnvelopeText: "IMAGEGEN_RESULT_V1:not-json" }, code: "IMG-RESULT", noReads: true },
+    { name: "initial server error", options: { initialResultIsError: true }, code: "IMG-SERVER", noReads: true },
+    {
+      name: "projected server error without isError",
+      options: { initialResultEnvelopeText: "artifact_read_failed: 读取图片产物失败。", initialResultIncludesImages: false, initialResultIncludesStructuredContent: false },
+      code: "IMG-SERVER",
+      noReads: true,
+    },
+    { name: "projected binding error without isError", options: { initialResultEnvelopeText: "project_binding_required: 当前 MCP 进程尚未绑定图片项目。", initialResultIncludesImages: false, initialResultIncludesStructuredContent: false }, code: "IMG-SERVER", noReads: true },
+    { name: "unknown projected error prefix", options: { initialResultEnvelopeText: "artifact_unknown: unknown projection", initialResultIncludesImages: false, initialResultIncludesStructuredContent: false }, code: "IMG-SCHEMA", noReads: true },
+    { name: "artifact metadata server error", options: { getArtifactIsError: true }, code: "IMG-SERVER" },
+    { name: "artifact data server error", options: { artifactDataIsError: true }, code: "IMG-SERVER" },
+    { name: "artifact data payload invalid", options: { artifactDataPayloadInvalid: true }, code: "IMG-PAYLOAD" },
+  ];
+
+  for (const [index, testCase] of cases.entries()) {
+    await t.test(testCase.name, async () => {
+      const dom = new JSDOM(
+        '<!doctype html><html><body><main><p>正在加载图片...</p></main></body></html>',
+        { pretendToBeVisual: true, url: "https://widget.local/" },
+      );
+      const previous = installDomGlobals(dom.window);
+      const host = installHost(dom.window, {
+        toolName: "render_image_results",
+        initialArtifacts: [{ id: IMAGE_ID, mimeType: "image/png", width: 1, height: 1 }],
+        ...testCase.options,
+      });
+
+      try {
+        await import(`../web/editor-runtime.mjs?artifact-load-error=${index}-${Date.now()}`);
+        await waitFor(() => document.body.textContent.includes(testCase.code));
+        const status = document.querySelector("[data-inline-status]");
+        assert.equal(status?.textContent, `图片读取失败 · ${testCase.code}`);
+        assert.equal(status?.dataset.statusTone, "error");
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        const metadataReads = host.toolCalls.filter(({ name }) => name === "get_image_artifact").length;
+        const dataReads = host.toolCalls.filter(({ name }) => name === "read_image_artifact_data").length;
+        if (testCase.noReads) {
+          assert.deepEqual([metadataReads, dataReads], [0, 0]);
+        } else {
+          assert.deepEqual([metadataReads, dataReads], testCase.options.getArtifactIsError ? [1, 0] : [1, 1]);
+        }
+      } finally {
+        host.dispose();
+        restoreDomGlobals(previous);
+        dom.window.close();
+      }
+    });
   }
 });
 
@@ -191,7 +326,10 @@ test("result widget ignores legacy widget-only bytes and uses the app-only image
       [IMAGE_ID, secondId],
     );
     assert.deepEqual(host.resourceReads, []);
-    assert.equal(host.toolCalls.some(({ name }) => name === "get_image_artifact"), false);
+    assert.deepEqual(
+      host.toolCalls.filter(({ name }) => name === "get_image_artifact").map(({ arguments: args }) => args.imageId),
+      [IMAGE_ID, secondId],
+    );
   } finally {
     host.dispose();
     restoreDomGlobals(previous);
@@ -311,13 +449,16 @@ test("result widget expands into the editor and returns to a reusable conversati
     await waitFor(() => document.querySelector(".editor-app") !== null);
     await waitFor(() => host.displayModeRequests.length === 1);
     assert.equal(document.querySelector(".editor-app")?.getAttribute("aria-label"), "聚焦图片编辑器");
-    assert.match(document.querySelector("[data-close-guidance]")?.textContent || "", /直接关闭可能移除入口/);
+    assert.match(document.querySelector("[data-close-guidance]")?.textContent || "", /返回会话可保留画布/);
+    assert.equal(document.querySelector("[data-close-guidance]")?.getAttribute("aria-describedby"), "close-guidance-description");
+    assert.match(document.querySelector("#close-guidance-description")?.textContent || "", /直接关闭 Codex 画布可能移除入口/);
     assert.equal(document.querySelector("[data-action=back]")?.getAttribute("aria-label"), "返回会话");
     assert.deepEqual(host.displayModeRequests, ["fullscreen"]);
     assert.deepEqual(host.messages, []);
     assert.deepEqual(
-      host.toolCalls.filter(({ name }) => name !== "list_image_models").slice(0, 2).map(({ name, arguments: toolArguments }) => ({ name, arguments: toolArguments })),
+      host.toolCalls.filter(({ name }) => name !== "list_image_models").slice(0, 3).map(({ name, arguments: toolArguments }) => ({ name, arguments: toolArguments })),
       [
+        { name: "get_image_artifact", arguments: { imageId: IMAGE_ID } },
         { name: "read_image_artifact_data", arguments: { imageId: IMAGE_ID } },
         { name: "open_image_editor", arguments: { imageId: IMAGE_ID } },
       ],
@@ -343,6 +484,211 @@ test("result widget expands into the editor and returns to a reusable conversati
     await waitFor(() => document.querySelector(".editor-app") !== null).catch(() => {});
     document.querySelector("[data-action=back]")?.click();
     await waitFor(() => document.querySelector(".inline-result") !== null).catch(() => {});
+    host.dispose();
+    restoreDomGlobals(previous);
+    dom.window.close();
+  }
+});
+
+test("result image opens an independent fullscreen preview with local zoom and returns to the same card", async () => {
+  const dom = new JSDOM(
+    '<!doctype html><html><body><main><p>正在加载图片...</p></main></body></html>',
+    { pretendToBeVisual: true, url: "https://widget.local/" },
+  );
+  const previous = installDomGlobals(dom.window);
+  const host = installHost(dom.window, {
+    toolName: "render_image_results",
+    initialArtifacts: [{ id: IMAGE_ID, mimeType: "image/png", width: 1024, height: 768, operation: "generate", parentIds: [], childIds: [] }],
+  });
+
+  try {
+    await import(`../web/editor-runtime.mjs?result-preview=${Date.now()}`);
+    await waitFor(() => document.querySelector(`[data-result-image-id="${IMAGE_ID}"] [data-image]`) !== null);
+
+    const trigger = document.querySelector(`[data-result-image-id="${IMAGE_ID}"] [data-action=preview-image]`);
+    assert.ok(trigger, "结果图片必须提供独立预览入口");
+    assert.equal(trigger.tagName, "BUTTON");
+    trigger.click();
+
+    await waitFor(() => document.querySelector("[data-result-preview]")?.hidden === false);
+    await waitFor(() => host.displayModeRequests.length === 1);
+    assert.deepEqual(host.displayModeRequests, ["fullscreen"]);
+    assert.equal(host.toolCalls.some(({ name }) => name === "open_image_editor"), false);
+    const preview = document.querySelector("[data-result-preview]");
+    assert.equal(preview.dataset.imageId, IMAGE_ID);
+    assert.equal(preview.dataset.previewScale, "1");
+
+    document.querySelector("[data-preview-action=zoom-in]").click();
+    assert.equal(preview.dataset.previewScale, "1.25");
+    const wheel = new dom.window.WheelEvent("wheel", { deltaY: -100, bubbles: true, cancelable: true });
+    document.querySelector("[data-preview-viewport]").dispatchEvent(wheel);
+    assert.equal(preview.dataset.previewScale, "1.5");
+    document.querySelector("[data-preview-action=reset]").click();
+    assert.equal(preview.dataset.previewScale, "1");
+    assert.equal(host.toolCalls.some(({ name }) => name === "open_image_editor"), false);
+
+    document.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    await waitFor(() => host.displayModeRequests.length === 2);
+    await waitFor(() => document.querySelector("[data-result-preview]") === null);
+    assert.deepEqual(host.displayModeRequests, ["fullscreen", "inline"]);
+    const returnedTrigger = document.querySelector(`[data-result-image-id="${IMAGE_ID}"] [data-action=preview-image]`);
+    await waitFor(() => document.activeElement === returnedTrigger);
+    assert.equal(document.querySelector(`[data-result-image-id="${IMAGE_ID}"] [data-action=open-editor]`)?.textContent.trim(), "打开画布");
+  } finally {
+    host.dispose();
+    restoreDomGlobals(previous);
+    dom.window.close();
+  }
+});
+
+test("result card menu and fullscreen toolbar reveal the matching artifact through one app-only tool", async () => {
+  const secondImageId = "img_01J00000000000000000000001";
+  const artifacts = [IMAGE_ID, secondImageId].map((id) => ({
+    id,
+    mimeType: "image/png",
+    width: 1024,
+    height: 768,
+    operation: "generate",
+    parentIds: [],
+    childIds: [],
+  }));
+  const dom = new JSDOM(
+    '<!doctype html><html><body><main><p>正在加载图片...</p></main></body></html>',
+    { pretendToBeVisual: true, url: "https://widget.local/" },
+  );
+  const previous = installDomGlobals(dom.window);
+  const host = installHost(dom.window, { toolName: "render_image_results", initialArtifacts: artifacts });
+
+  try {
+    await import(`../web/editor-runtime.mjs?result-reveal=${Date.now()}`);
+    await waitFor(() => document.querySelector(`[data-result-image-id="${secondImageId}"] [data-image]`) !== null);
+    const card = document.querySelector(`[data-result-image-id="${secondImageId}"]`);
+    const previewTrigger = card.querySelector("[data-action=preview-image]");
+    const menuEvent = new dom.window.MouseEvent("contextmenu", {
+      bubbles: true,
+      cancelable: true,
+      button: 2,
+      clientX: 320,
+      clientY: 180,
+    });
+    card.dispatchEvent(menuEvent);
+
+    assert.equal(menuEvent.defaultPrevented, true);
+    assert.equal(host.toolCalls.some(({ name }) => name === "reveal_image_artifact"), false);
+    const menu = document.querySelector("[data-result-context-menu]");
+    assert.equal(menu?.getAttribute("role"), "menu");
+    const menuItem = menu.querySelector("[data-action=reveal-result-image]");
+    assert.equal(menuItem.getAttribute("role"), "menuitem");
+    assert.match(menuItem.textContent, /在文件夹中显示/);
+    menuItem.click();
+
+    await waitFor(() => host.toolCalls.filter(({ name }) => name === "reveal_image_artifact").length === 1);
+    await waitFor(() => card.querySelector("[data-inline-status]")?.textContent === "");
+    assert.deepEqual(
+      host.toolCalls.find(({ name }) => name === "reveal_image_artifact").arguments,
+      { imageId: secondImageId },
+    );
+    assert.equal(document.querySelector("[data-result-context-menu]"), null);
+    assert.equal(document.activeElement, previewTrigger);
+
+    card.dispatchEvent(new dom.window.MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 }));
+    assert.notEqual(document.querySelector("[data-result-context-menu]"), null);
+    document.dispatchEvent(new dom.window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    assert.equal(document.querySelector("[data-result-context-menu]"), null);
+    assert.equal(host.toolCalls.filter(({ name }) => name === "reveal_image_artifact").length, 1);
+
+    card.querySelector("[data-action=preview-image]").click();
+    await waitFor(() => document.querySelector("[data-result-preview]")?.dataset.imageId === secondImageId);
+    const revealButton = document.querySelector("[data-preview-action=reveal]");
+    assert.equal(revealButton?.getAttribute("aria-label"), "在文件夹中显示");
+    revealButton.click();
+    await waitFor(() => host.toolCalls.filter(({ name }) => name === "reveal_image_artifact").length === 2);
+    await waitFor(() => revealButton.disabled === false);
+    assert.deepEqual(
+      host.toolCalls.filter(({ name }) => name === "reveal_image_artifact")[1].arguments,
+      { imageId: secondImageId },
+    );
+    assert.equal(document.querySelector("[data-preview-status]")?.textContent, "");
+
+    document.querySelector("[data-preview-action=close]").click();
+    await waitFor(() => document.querySelector("[data-result-preview]") === null);
+  } finally {
+    host.dispose();
+    restoreDomGlobals(previous);
+    dom.window.close();
+  }
+});
+
+test("result preview clamps zoom and closes only through explicit preview affordances", async () => {
+  const dom = new JSDOM(
+    '<!doctype html><html><body><main><p>正在加载图片...</p></main></body></html>',
+    { pretendToBeVisual: true, url: "https://widget.local/" },
+  );
+  const previous = installDomGlobals(dom.window);
+  const host = installHost(dom.window, {
+    toolName: "render_image_results",
+    initialArtifacts: [{ id: IMAGE_ID, mimeType: "image/png", width: 1024, height: 768, operation: "generate", parentIds: [], childIds: [] }],
+  });
+
+  try {
+    await import(`../web/editor-runtime.mjs?result-preview-bounds=${Date.now()}`);
+    await waitFor(() => document.querySelector(`[data-result-image-id="${IMAGE_ID}"] [data-action=preview-image]`) !== null);
+    document.querySelector("[data-action=preview-image]").click();
+    await waitFor(() => document.querySelector("[data-result-preview]") !== null);
+
+    const preview = document.querySelector("[data-result-preview]");
+    const zoomIn = preview.querySelector("[data-preview-action=zoom-in]");
+    const zoomOut = preview.querySelector("[data-preview-action=zoom-out]");
+    for (let index = 0; index < 20; index += 1) zoomIn.click();
+    assert.equal(preview.dataset.previewScale, "4");
+    assert.equal(zoomIn.disabled, true);
+    for (let index = 0; index < 20; index += 1) zoomOut.click();
+    assert.equal(preview.dataset.previewScale, "0.5");
+    assert.equal(zoomOut.disabled, true);
+
+    preview.querySelector("[data-preview-image]").click();
+    assert.notEqual(document.querySelector("[data-result-preview]"), null, "单击图片本身不能关闭预览");
+    preview.querySelector("[data-preview-stage]").click();
+    await waitFor(() => document.querySelector("[data-result-preview]") === null);
+    assert.deepEqual(host.displayModeRequests, ["fullscreen", "inline"]);
+
+    document.querySelector("[data-action=preview-image]").click();
+    await waitFor(() => host.displayModeRequests.length === 3);
+    document.querySelector("[data-preview-action=close]").click();
+    await waitFor(() => document.querySelector("[data-result-preview]") === null);
+    assert.deepEqual(host.displayModeRequests, ["fullscreen", "inline", "fullscreen", "inline"]);
+    assert.equal(host.toolCalls.some(({ name }) => name === "open_image_editor"), false);
+  } finally {
+    host.dispose();
+    restoreDomGlobals(previous);
+    dom.window.close();
+  }
+});
+
+test("result preview reports a fullscreen refusal without creating an editor session", async () => {
+  const dom = new JSDOM(
+    '<!doctype html><html><body><main><p>正在加载图片...</p></main></body></html>',
+    { pretendToBeVisual: true, url: "https://widget.local/" },
+  );
+  const previous = installDomGlobals(dom.window);
+  const host = installHost(dom.window, {
+    toolName: "render_image_results",
+    rejectDisplayMode: "fullscreen",
+    initialArtifacts: [{ id: IMAGE_ID, mimeType: "image/png", width: 1024, height: 768, operation: "generate", parentIds: [], childIds: [] }],
+  });
+
+  try {
+    await import(`../web/editor-runtime.mjs?result-preview-refusal=${Date.now()}`);
+    await waitFor(() => document.querySelector(`[data-result-image-id="${IMAGE_ID}"] [data-action=preview-image]`) !== null);
+    const trigger = document.querySelector("[data-action=preview-image]");
+    trigger.click();
+
+    await waitFor(() => document.querySelector("[data-inline-status]")?.textContent === "Codex 未能打开图片预览");
+    assert.equal(document.querySelector("[data-result-preview]"), null);
+    assert.deepEqual(host.displayModeRequests, ["fullscreen"]);
+    assert.equal(host.toolCalls.some(({ name }) => name === "open_image_editor"), false);
+    await waitFor(() => document.activeElement === document.querySelector("[data-action=preview-image]"));
+  } finally {
     host.dispose();
     restoreDomGlobals(previous);
     dom.window.close();
@@ -408,6 +754,9 @@ test("destroying the editor session returns to the conversation entry", async ()
     );
 
     document.querySelector("[data-action=destroy]").click();
+    assert.equal(document.querySelector("[data-destroy-confirm]").hidden, false); assert.equal(host.toolCalls.some(({ name }) => name === "destroy_image_editor"), false);
+    document.querySelector("[data-action=cancel-destroy]").click(); assert.equal(document.querySelector("[data-destroy-confirm]").hidden, true);
+    document.querySelector("[data-action=destroy]").click(); document.querySelector("[data-action=confirm-destroy]").click();
     await waitFor(() => host.toolCalls.some(({ name }) => name === "destroy_image_editor"));
     await waitFor(() => document.querySelector(".inline-result") !== null);
     assert.equal(host.teardownRequests, 0);
@@ -489,77 +838,72 @@ test("an accidental click does not create an invisible drawing annotation", asyn
   }
 });
 
-test("annotations submit once and return to the conversation after explicit save", async () => {
+test("an acknowledged composer draft can atomically update the task input after editing", async () => {
   const dom = new JSDOM(
     '<!doctype html><html><body><main><p>正在加载图片...</p></main></body></html>',
     { pretendToBeVisual: true, url: "https://widget.local/" },
   );
   const previous = installDomGlobals(dom.window);
-  const host = installHost(dom.window, { toolName: "open_image_editor" });
+  const host = installHost(dom.window, {
+    toolName: "open_image_editor",
+    hostCapabilities: CODEX_COMPOSER_HOST_CAPABILITIES,
+  });
 
   try {
-    await import(`../web/editor-runtime.mjs?annotations=${Date.now()}`);
+    await import(`../web/editor-runtime.mjs?acknowledged-reentry=${Date.now()}`);
     await waitFor(() => document.querySelector(".editor-app") !== null);
-    await waitFor(() => document.querySelector("[data-image-id]")?.textContent === IMAGE_ID);
     await waitFor(() => document.querySelector("[data-image]")?.hidden === false);
-    const canvas = document.querySelector("[data-canvas]");
-    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 1000, height: 1000 });
 
-    document.querySelector("[data-tool=arrow]").click();
-    canvas.dispatchEvent(pointerEvent(dom.window, "pointerdown", { clientX: 100, clientY: 100, pointerId: 1 }));
-    canvas.dispatchEvent(pointerEvent(dom.window, "pointerup", { clientX: 300, clientY: 300, pointerId: 1 }));
-    document.querySelector("[data-tool=pen]").click();
-    canvas.dispatchEvent(pointerEvent(dom.window, "pointerdown", { clientX: 400, clientY: 400, pointerId: 2 }));
-    canvas.dispatchEvent(pointerEvent(dom.window, "pointerup", { clientX: 500, clientY: 500, pointerId: 2 }));
-
-    assert.equal(document.querySelectorAll("[data-annotation-id]").length, 2);
-    assert.equal(host.modelContexts.length, 0);
-    assert.equal(host.messages.length, 0);
-
-    const firstAnnotation = document.querySelector("[data-annotation-id]");
-    const secondAnnotation = document.querySelectorAll("[data-annotation-id]")[1];
-    const firstDescription = firstAnnotation?.querySelector("textarea");
-    assert.ok(firstDescription);
-    assert.equal(firstDescription.maxLength, 600);
-    assert.equal(firstAnnotation.querySelector("[data-annotation-count]")?.textContent, "0/600");
-    firstDescription.focus();
-    assert.equal(firstAnnotation.classList.contains("selected"), true);
-    assert.equal(secondAnnotation?.classList.contains("selected"), false);
-    firstDescription.value = "只修改箭头区域";
-    firstDescription.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
-    assert.equal(firstAnnotation.querySelector("[data-annotation-count]")?.textContent, "7/600");
-    assert.equal(secondAnnotation?.querySelector("textarea")?.value, "");
-
+    const initialPrompt = document.querySelector("[data-prompt]");
+    initialPrompt.value = "先提交这一版修改";
+    initialPrompt.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
     document.querySelector("[data-action=submit]").click();
-    assert.match(document.querySelector("[data-submit-status]")?.textContent || "", /^正在/);
     document.querySelector("[data-action=submit]").click();
-    await waitFor(() => host.toolCalls.some(({ name }) => name === "save_image_annotations"));
-    await waitFor(() => host.messages.length === 1);
+    await waitFor(() => host.modelContexts.length === 1);
     await waitFor(() => document.querySelector(".inline-result") !== null);
     assert.equal(host.modelContexts.length, 1);
-    assert.equal(host.modelContexts[0].structuredContent.annotationCount, 2);
-    assert.equal(host.modelContexts[0].structuredContent.intents[0], "1. 箭头指引：只修改箭头区域");
-    assert.match(host.messages[0].content[0].text, /1\. 箭头指引：只修改箭头区域/);
-    assert.match(host.messages[0].content[0].text, /2\. 画笔标注：请参考笔触范围/);
-    assert.equal(host.messages[0].content.length, 1);
-    assert.equal(host.modelContexts[0].content[1].mimeType, "image/png");
-    assert.equal(host.modelContexts[0].content[1].data, "cG5nLXByZXZpZXc=");
-    const saveCalls = host.toolCalls.filter(({ name }) => name === "save_image_annotations");
-    assert.equal(saveCalls.length, 1);
-    const saveCall = saveCalls[0];
-    assert.equal(saveCall.arguments.imageId, IMAGE_ID);
-    assert.equal(saveCall.arguments.items.length, 2);
-    assert.equal(saveCall.arguments.items[0].text, "只修改箭头区域");
-    assert.equal(host.displayModeRequests.at(-1), "inline");
+    assert.equal(host.toolCalls.filter(({ name }) => name === "edit_image").length, 0);
 
     document.querySelector("[data-action=open-editor]").click();
     await waitFor(() => document.querySelector(".editor-app") !== null);
-    assert.equal(document.querySelectorAll("[data-annotation-id]").length, 0);
-    assert.equal(document.querySelector("[data-prompt]").value, "");
+    const updatedPrompt = document.querySelector("[data-prompt]");
+    assert.equal(updatedPrompt.value, "先提交这一版修改");
+    updatedPrompt.value = "返回后继续修改这一版";
+    updatedPrompt.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+
+    document.querySelector("[data-action=back]").click();
+    await waitFor(() => document.querySelector(".inline-result") !== null);
+    assert.equal(document.querySelector("[data-draft-state]")?.textContent, "有更新");
+    assert.equal(document.querySelector("[data-action=open-editor]")?.textContent.trim(), "继续编辑");
+    assert.equal(host.modelContexts.length, 1);
+    assert.equal(host.toolCalls.filter(({ name }) => name === "edit_image").length, 0);
+
+    document.querySelector("[data-action=open-editor]").click();
+    await waitFor(() => document.querySelector(".editor-app") !== null);
+    assert.equal(document.querySelector("[data-prompt]")?.value, "返回后继续修改这一版");
+    assert.equal(host.modelContexts.length, 1);
+    assert.equal(host.toolCalls.filter(({ name }) => name === "edit_image").length, 0);
+
+    const update = document.querySelector("[data-action=submit]");
+    assert.equal(update.disabled, false);
+    assert.equal(update.textContent, "更新任务输入框");
+    update.click();
+    await waitFor(() => host.modelContexts.length === 2);
+    await waitFor(() => document.querySelector(".inline-result") !== null);
+    assert.match(host.modelContexts[1].content[0].text, /返回后继续修改这一版/);
+    assert.deepEqual(host.modelContexts[1].content.map((item) => item.type), ["text", "image"]);
+    assert.equal(host.modelContexts[1].structuredContent.prompt, "返回后继续修改这一版");
+    assert.notEqual(
+      host.modelContexts[1].structuredContent.submissionId,
+      host.modelContexts[0].structuredContent.submissionId,
+    );
+    assert.equal(host.toolCalls.filter(({ name }) => name === "prepare_image_edit_submission").length, 2);
+    assert.equal(document.querySelector("[data-draft-state]")?.textContent, "待发送");
+    assert.equal(document.querySelector("[data-inline-status]")?.textContent, "任务输入框已更新，请确认后发送");
+    assert.equal(host.toolCalls.filter(({ name }) => name === "edit_image").length, 0);
   } finally {
     document.querySelector("[data-action=back]")?.click();
     await waitFor(() => document.querySelector(".inline-result") !== null).catch(() => {});
-    await new Promise((resolve) => setTimeout(resolve, 0));
     host.dispose();
     restoreDomGlobals(previous);
     dom.window.close();
@@ -585,12 +929,12 @@ test("a failed conversation message can be retried without saving annotations tw
 
     document.querySelector("[data-action=submit]").click();
     await waitFor(() => document.querySelector("[data-submit-status]")?.textContent.includes("发送失败"));
-    assert.equal(host.toolCalls.filter(({ name }) => name === "save_image_annotations").length, 1);
+    assert.equal(host.toolCalls.filter(({ name }) => name === "prepare_image_edit_submission").length, 1);
     assert.equal(host.messages.length, 1);
 
     document.querySelector("[data-action=submit]").click();
     await waitFor(() => document.querySelector(".inline-result") !== null);
-    assert.equal(host.toolCalls.filter(({ name }) => name === "save_image_annotations").length, 1);
+    assert.equal(host.toolCalls.filter(({ name }) => name === "prepare_image_edit_submission").length, 1);
     assert.equal(host.modelContexts.length, 1);
     assert.equal(host.messages.length, 2);
     assert.equal(host.messages[0].content[0].text, host.messages[1].content[0].text);
@@ -623,6 +967,7 @@ test("clearing the current change resets annotations and the prompt as one undoa
     prompt.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
 
     document.querySelector("[data-action=clear]").click();
+    document.querySelector("[data-action=confirm-clear]").click();
     assert.equal(document.querySelectorAll("[data-annotation-id]").length, 0);
     assert.equal(document.querySelector("[data-prompt]").value, "");
     assert.equal(document.querySelector("[data-action=submit]").disabled, true);
@@ -666,7 +1011,7 @@ test("prompt-only edits submit without creating an empty annotation record", asy
     await waitFor(() => host.messages.length === 1);
     await waitFor(() => document.querySelector(".inline-result") !== null);
 
-    assert.equal(host.toolCalls.some(({ name }) => name === "save_image_annotations"), false);
+    assert.deepEqual(host.toolCalls.filter(({ name }) => name === "prepare_image_edit_submission").map(({ arguments: args }) => args.items.length), [0]);
     assert.equal(host.modelContexts.length, 1);
     const modelContext = host.modelContexts[0].structuredContent;
     assert.equal(modelContext.imageId, IMAGE_ID);
@@ -674,8 +1019,9 @@ test("prompt-only edits submit without creating an empty annotation record", asy
     assert.equal(modelContext.annotationCount, 0);
     assert.equal(modelContext.prompt, "保持构图不变，把整体色调调整得更温暖");
     assert.match(host.messages[0].content[0].text, /基于图片 .* 进行图改图/);
-    assert.equal(host.messages[0].content.length, 1);
-    assert.equal(host.modelContexts[0].content[1].type, "image");
+    assert.equal(host.messages[0].content.length, 2);
+    assert.equal(host.messages[0].content[1].type, "image");
+    assert.equal(host.modelContexts[0].content, undefined);
     assert.equal(host.displayModeRequests.at(-1), "inline");
   } finally {
     document.querySelector("[data-action=back]")?.click();
@@ -722,13 +1068,17 @@ test("submission waits for model context before sending the conversation message
   }
 });
 
-test("submission continues after Codex applies model context without acknowledging the request", async () => {
+test("an unacknowledged Codex composer update keeps one request and preserves the draft until acknowledgement", async () => {
   const dom = new JSDOM(
     '<!doctype html><html><body><main><p>正在加载图片...</p></main></body></html>',
     { pretendToBeVisual: true, url: "https://widget.local/" },
   );
   const previous = installDomGlobals(dom.window);
-  const host = installHost(dom.window, { toolName: "open_image_editor", deferModelContext: true });
+  const host = installHost(dom.window, {
+    toolName: "open_image_editor",
+    deferModelContext: true,
+    hostCapabilities: CODEX_COMPOSER_HOST_CAPABILITIES,
+  });
 
   try {
     await import(`../web/editor-runtime.mjs?unacknowledged-context=${Date.now()}`);
@@ -739,13 +1089,31 @@ test("submission continues after Codex applies model context without acknowledgi
 
     document.querySelector("[data-action=submit]").click();
     await waitFor(() => host.modelContexts.length === 1);
-    await waitFor(() => host.messages.length === 1, 2000);
-    await waitFor(() => document.querySelector(".inline-result") !== null);
-    assert.match(host.messages[0].content[0].text, /提交 ID：sub_/);
-    assert.match(host.messages[0].content[0].text, /图片 ID：img_01J00000000000000000000000/);
-    assert.doesNotMatch(document.body.textContent, /模型上下文更新失败/);
+    await waitFor(() => document.querySelector(".inline-result") !== null, 2000);
+    assert.equal(host.messages.length, 0);
+    assert.deepEqual([document.querySelector("[data-inline-status]")?.textContent.includes("任务输入框更新未获确认"), document.querySelector("[data-draft-state]")?.textContent], [true, "写入中"]);
+
+    document.querySelector("[data-action=open-editor]").click();
+    await waitFor(() => document.querySelector(".editor-app") !== null);
+    assert.equal(document.querySelector("[data-prompt]").value, "保持构图并调整颜色");
+
+    document.querySelector("[data-action=submit]").click();
+    await waitFor(() => document.querySelector(".inline-result") !== null, 2000);
+    assert.equal(host.modelContexts.length, 1);
+
+    host.releaseModelContext();
+    await waitFor(() => document.querySelector("[data-draft-state]")?.textContent === "待发送");
+    document.querySelector("[data-action=open-editor]").click();
+    await waitFor(() => document.querySelector(".editor-app") !== null);
+    const submit = document.querySelector("[data-action=submit]");
+    assert.equal(submit.disabled, true);
+    assert.equal(submit.textContent, "已放入输入框");
+    assert.equal(host.modelContexts.length, 1);
+
+    assert.equal(document.querySelector("[data-prompt]").value, "保持构图并调整颜色");
   } finally {
     host.releaseModelContext();
+    await new Promise((resolve) => setTimeout(resolve, 0));
     host.dispose();
     restoreDomGlobals(previous);
     dom.window.close();
@@ -800,25 +1168,50 @@ test("mask is shown only when the configured model declares mask support", async
   }
 });
 
-test("selecting a version loads its artifact before replacing the visible image", async () => {
-  const childId = "img_01J00000000000000000000001";
+test("mask size controls start a new stroke without moving the selected mask", async () => {
   const dom = new JSDOM(
     '<!doctype html><html><body><main><p>正在加载图片...</p></main></body></html>',
     { pretendToBeVisual: true, url: "https://widget.local/" },
   );
   const previous = installDomGlobals(dom.window);
-  const host = installHost(dom.window, {
-    toolName: "open_image_editor",
-    children: [{ id: childId, mimeType: "image/png", width: 1, height: 1, operation: "edit", parentIds: [IMAGE_ID] }],
-  });
+  const host = installHost(dom.window, { toolName: "open_image_editor" });
 
   try {
-    await import(`../web/editor-runtime.mjs?version-load=${Date.now()}`);
+    await import(`../web/editor-runtime.mjs?mask-next-stroke=${Date.now()}`);
     await waitFor(() => document.querySelector("[data-image]")?.hidden === false);
-    document.querySelector(`[data-version-id="${childId}"]`).click();
-    await waitFor(() => host.toolCalls.some(({ name, arguments: args }) => name === "get_image_artifact" && args.imageId === childId));
-    await waitFor(() => document.querySelector("[data-image-id]")?.textContent === childId);
-    assert.equal(document.querySelector("[data-image]").hidden, false);
+    await waitFor(() => document.querySelector("[data-tool=mask]")?.hidden === false);
+    const canvas = document.querySelector("[data-canvas]");
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 1000, height: 1000 });
+
+    document.querySelector("[data-tool=mask]").click();
+    canvas.dispatchEvent(pointerEvent(dom.window, "pointerdown", { clientX: 100, clientY: 100, pointerId: 1 }));
+    canvas.dispatchEvent(pointerEvent(dom.window, "pointermove", { clientX: 300, clientY: 300, pointerId: 1 }));
+    canvas.dispatchEvent(pointerEvent(dom.window, "pointerup", { clientX: 300, clientY: 300, pointerId: 1 }));
+    const originalPoints = document.querySelector("[data-layer] polyline")?.getAttribute("points");
+
+    document.querySelector("[data-tool=select]").click();
+    canvas.dispatchEvent(pointerEvent(dom.window, "pointerdown", { clientX: 200, clientY: 200, pointerId: 2 }));
+    canvas.dispatchEvent(pointerEvent(dom.window, "pointerup", { clientX: 200, clientY: 200, pointerId: 2 }));
+    document.querySelector('[data-mask-radius="0.06"]').click();
+    canvas.dispatchEvent(pointerEvent(dom.window, "pointerdown", { clientX: 200, clientY: 200, pointerId: 3 }));
+    canvas.dispatchEvent(pointerEvent(dom.window, "pointermove", { clientX: 500, clientY: 250, pointerId: 3 }));
+    canvas.dispatchEvent(pointerEvent(dom.window, "pointerup", { clientX: 500, clientY: 250, pointerId: 3 }));
+
+    const masks = [...document.querySelectorAll("[data-layer] polyline")];
+    assert.deepEqual(
+      {
+        activeTool: document.querySelector("[data-tool=mask]").getAttribute("aria-pressed"),
+        maskCount: masks.length,
+        originalPoints: masks[0]?.getAttribute("points"),
+        newBrushWidth: masks[1]?.getAttribute("stroke-width"),
+      },
+      {
+        activeTool: "true",
+        maskCount: 2,
+        originalPoints,
+        newBrushWidth: "120",
+      },
+    );
   } finally {
     document.querySelector("[data-action=back]")?.click();
     await waitFor(() => document.querySelector(".inline-result") !== null).catch(() => {});
@@ -893,22 +1286,28 @@ test("annotation style controls and text labels update the visible overlay", asy
     document.querySelector("[data-tool=text]").click();
     canvas.dispatchEvent(pointerEvent(dom.window, "pointerdown", { clientX: 200, clientY: 300, pointerId: 1 }));
     canvas.dispatchEvent(pointerEvent(dom.window, "pointerup", { clientX: 260, clientY: 340, pointerId: 1 }));
-    assert.equal(document.activeElement, document.querySelector("[data-annotation-text]"));
-    assert.equal(document.querySelector("[data-layer] text")?.getAttribute("fill"), "#2563eb");
+    const inlineEditor = document.querySelector("[data-canvas-text-editor]");
+    assert.equal(document.activeElement, inlineEditor);
+    assert.match(inlineEditor?.getAttribute("style") || "", /--canvas-text-color:#2563eb/);
     assert.equal(document.querySelector("[data-layer] .annotation-index text")?.textContent, "1");
 
-    const description = document.querySelector("[data-annotation-text]");
-    description.value = "移除这里的文字";
-    description.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
-    assert.equal(document.querySelector("[data-layer] text")?.textContent, "移除这里的文字");
+    inlineEditor.value = "移除这里的文字";
+    inlineEditor.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+    inlineEditor.dispatchEvent(new dom.window.KeyboardEvent("keydown", { bubbles: true, key: "Enter" }));
+    assert.equal(document.querySelector("[data-layer] .annotation-mark text")?.textContent, "移除这里的文字");
+    assert.equal(document.querySelector("[data-layer] .annotation-mark text")?.getAttribute("fill"), "#2563eb");
+    assert.equal(document.querySelector("[data-annotation-text]")?.value, "移除这里的文字");
 
     document.querySelector('[data-color="#111827"]').click();
+    assert.equal(document.querySelector("[data-layer] .annotation-mark text")?.getAttribute("fill"), "#2563eb");
+    document.querySelector("[data-action=apply-foreground-color]").click();
+    assert.equal(document.querySelector("[data-layer] .annotation-mark text")?.getAttribute("fill"), "#111827");
     document.querySelector('[data-stroke="5"]').click();
-    assert.equal(document.querySelector("[data-layer] text")?.getAttribute("fill"), "#111827");
+    assert.equal(document.querySelector("[data-layer] .annotation-mark text")?.getAttribute("fill"), "#111827");
     document.querySelector("[data-action=undo]").click();
     assert.equal(document.querySelector('[data-stroke="3"]').classList.contains("active"), true);
     document.querySelector("[data-action=undo]").click();
-    assert.equal(document.querySelector("[data-layer] text")?.getAttribute("fill"), "#2563eb");
+    assert.equal(document.querySelector("[data-layer] .annotation-mark text")?.getAttribute("fill"), "#2563eb");
   } finally {
     document.querySelector("[data-action=back]")?.click();
     await waitFor(() => document.querySelector(".inline-result") !== null).catch(() => {});
@@ -999,7 +1398,7 @@ test("eraser removes freeform marks only when the pointer is near the visible st
   }
 });
 
-test("zoom transforms the image and annotation viewport together", async () => {
+test("zoom scales the fitted image and annotation coordinate space together", async () => {
   const dom = new JSDOM(
     '<!doctype html><html><body><main><p>正在加载图片...</p></main></body></html>',
     { pretendToBeVisual: true, url: "https://widget.local/" },
@@ -1013,13 +1412,13 @@ test("zoom transforms the image and annotation viewport together", async () => {
     await waitFor(() => document.querySelector("[data-image-id]")?.textContent === IMAGE_ID);
     await waitFor(() => document.querySelector("[data-image]")?.hidden === false);
     const viewport = document.querySelector("[data-canvas]");
-    assert.equal(viewport?.classList.contains("canvas-content"), true);
+    assert.equal(viewport?.classList.contains("canvas-content"), true); document.querySelector(".canvas-frame").getBoundingClientRect = () => ({ width: 1000, height: 600 });
     const zoom = document.querySelector("[data-zoom-select]");
     zoom.value = "1.5";
     zoom.dispatchEvent(new dom.window.Event("change", { bubbles: true }));
-    assert.equal(document.querySelector("[data-canvas]")?.style.transform, "scale(1.5)");
+    assert.equal(document.querySelector("[data-canvas]")?.style.width, "900px");
     document.querySelector("[data-action=fit]").click();
-    assert.equal(document.querySelector("[data-canvas]")?.style.transform, "scale(1)");
+    assert.equal(document.querySelector("[data-canvas]")?.style.width, "600px");
   } finally {
     document.querySelector("[data-action=back]")?.click();
     await waitFor(() => document.querySelector(".inline-result") !== null).catch(() => {});
@@ -1052,311 +1451,3 @@ test("editor widget returns to the conversation when the LLM destroys its sessio
     dom.window.close();
   }
 });
-
-function installHost(window, { toolName, editorSessionStatus = "active", canvasStatus = "available", deferModelContext = false, children = [], maskCapability = true, failMessageOnce = false, failOpenImageId = null, artifactOverride = null, initialArtifacts = null, initialResultIncludesImages = true, initialResultIncludesWidgetImages = false, rejectModelCatalog = false }) {
-  const toolCalls = [];
-  const resourceReads = [];
-  const displayModeRequests = [];
-  const messages = [];
-  const modelContexts = [];
-  let teardownRequests = 0;
-  let pendingModelContextId = null;
-  let shouldFailMessage = failMessageOnce;
-  let editorSessionImageId = IMAGE_ID;
-  const initialArtifactRecords = initialArtifacts?.map((item) => ({ ...item })) || null;
-  const defaultArtifact = (id = IMAGE_ID) => ({
-    id,
-    mimeType: "image/png",
-    width: 1,
-    height: 1,
-    operation: id === IMAGE_ID ? "generate" : "edit",
-    parentIds: id === IMAGE_ID ? [] : [IMAGE_ID],
-    childIds: id === IMAGE_ID ? children.map((item) => item.id) : [],
-  });
-  const onMessage = (event) => {
-    const message = event.data;
-    if (message?.method === "ui/initialize") {
-      sendToApp(window, {
-        jsonrpc: "2.0",
-        id: message.id,
-        result: {
-          protocolVersion: "2026-01-26",
-          hostInfo: { name: "widget-test-host", version: "0.1.0" },
-          hostCapabilities: {},
-          hostContext: {
-            toolInfo: {
-              tool: {
-                name: toolName,
-                inputSchema: { type: "object" },
-              },
-            },
-            displayMode: "inline",
-            availableDisplayModes: ["inline", "fullscreen"],
-          },
-        },
-      });
-    } else if (message?.method === "ui/notifications/initialized") {
-      sendToApp(window, {
-        jsonrpc: "2.0",
-        method: "ui/notifications/tool-input",
-        params: { arguments: initialArtifactRecords ? { imageIds: initialArtifactRecords.map((item) => item.id) } : { imageId: IMAGE_ID } },
-      });
-      if (initialArtifactRecords) {
-        sendToApp(window, {
-          jsonrpc: "2.0",
-          method: "ui/notifications/tool-result",
-          params: {
-            content: initialResultIncludesImages
-              ? initialArtifactRecords.map(() => ({ type: "image", mimeType: "image/png", data: PNG_BASE64 }))
-              : [],
-            structuredContent: { artifacts: initialArtifactRecords },
-            _meta: {
-              imageIds: initialArtifactRecords.map((item) => item.id),
-              ...(initialResultIncludesWidgetImages
-                ? { imageArtifacts: initialArtifactRecords.map((item) => ({ ...item, data: PNG_BASE64 })) }
-                : {}),
-            },
-          },
-        });
-      } else if (toolName === "open_image_editor") {
-        sendToApp(window, {
-          jsonrpc: "2.0",
-          method: "ui/notifications/tool-result",
-          params: {
-            content: [],
-            structuredContent: {
-              editorSession: { id: EDITOR_SESSION_ID, imageId: IMAGE_ID, status: "active" },
-              artifact: defaultArtifact(),
-            },
-          },
-        });
-      }
-    } else if (message?.method === "resources/read") {
-      resourceReads.push(message.params.uri);
-      sendToApp(window, {
-        jsonrpc: "2.0",
-        id: message.id,
-        result: {
-          contents: [{ uri: message.params.uri, mimeType: "image/png", blob: PNG_BASE64 }],
-        },
-      });
-    } else if (message?.method === "tools/call") {
-      toolCalls.push(message.params);
-      const toolName = message.params.name;
-      if (toolName === "list_image_models" && rejectModelCatalog) {
-        sendToApp(window, {
-          jsonrpc: "2.0",
-          id: message.id,
-          error: { code: -32603, message: "model catalog unavailable" },
-        });
-        return;
-      }
-      if (toolName === "open_image_editor") editorSessionImageId = message.params.arguments.imageId;
-      const result = toolName === "read_image_artifact_data"
-        ? {
-            content: [],
-            structuredContent: {
-              id: message.params.arguments.imageId,
-              mimeType: "image/png",
-            },
-            _meta: {
-              widgetData: {
-                id: message.params.arguments.imageId,
-                mimeType: "image/png",
-                dataBase64: PNG_BASE64,
-              },
-            },
-          }
-        : toolName === "list_image_models"
-        ? {
-            content: [],
-            structuredContent: {
-              models: [{ id: "primary/gpt-image-2", provider: "primary", model: "gpt-image-2", capabilities: { mask: maskCapability } }],
-            },
-          }
-        : toolName === "report_imagegen_host_observation"
-          ? {
-              content: [],
-              structuredContent: { accepted: message.params.arguments.observations.length },
-            }
-        : toolName === "get_image_editor_session"
-        ? {
-            content: [],
-            structuredContent: {
-              editorSession: { id: EDITOR_SESSION_ID, imageId: editorSessionImageId, status: editorSessionStatus },
-            },
-          }
-        : toolName === "destroy_image_editor"
-          ? {
-              content: [],
-              structuredContent: {
-                editorSession: { id: EDITOR_SESSION_ID, imageId: IMAGE_ID, status: "destroyed" },
-              },
-            }
-          : toolName === "finalize_image_editor_session"
-            ? {
-                content: [],
-                structuredContent: {
-                  editorSession: { id: EDITOR_SESSION_ID, imageId: IMAGE_ID, status: "released" },
-                },
-              }
-          : toolName === "open_image_editor" && message.params.arguments.imageId === failOpenImageId
-            ? {
-                isError: true,
-                content: [{ type: "text", text: "editor_session_open_failed" }],
-              }
-          : toolName === "open_image_editor"
-            ? {
-                content: [],
-                structuredContent: {
-                  editorSession: { id: EDITOR_SESSION_ID, imageId: editorSessionImageId, status: "active" },
-                  artifact: defaultArtifact(editorSessionImageId),
-                },
-                _meta: { imageId: editorSessionImageId, editorSessionId: EDITOR_SESSION_ID },
-              }
-          : toolName === "save_image_annotations"
-            ? {
-                content: [],
-                structuredContent: {
-                  annotation: { id: "ann_01J00000000000000000000000", imageId: IMAGE_ID, itemCount: message.params.arguments.items.length },
-                },
-              }
-          : {
-                content: [{ type: "image", mimeType: "image/png", data: PNG_BASE64 }],
-                structuredContent: {
-                  artifact: artifactOverride || initialArtifactRecords?.find((item) => item.id === message.params.arguments.imageId) || defaultArtifact(message.params.arguments.imageId || IMAGE_ID),
-                  canvasStatus,
-                },
-              };
-      sendToApp(window, {
-        jsonrpc: "2.0",
-        id: message.id,
-        result,
-      });
-    } else if (message?.method === "ui/request-display-mode") {
-      displayModeRequests.push(message.params.mode);
-      sendToApp(window, {
-        jsonrpc: "2.0",
-        id: message.id,
-        result: { mode: message.params.mode },
-      });
-      sendToApp(window, {
-        jsonrpc: "2.0",
-        method: "ui/notifications/host-context-changed",
-        params: { displayMode: message.params.mode },
-      });
-    } else if (message?.method === "ui/message") {
-      messages.push(message.params);
-      sendToApp(window, {
-        jsonrpc: "2.0",
-        id: message.id,
-        result: shouldFailMessage ? { isError: true } : {},
-      });
-      shouldFailMessage = false;
-    } else if (message?.method === "ui/update-model-context") {
-      modelContexts.push(message.params);
-      if (deferModelContext) {
-        pendingModelContextId = message.id;
-      } else {
-        sendToApp(window, {
-          jsonrpc: "2.0",
-          id: message.id,
-          result: {},
-        });
-      }
-    } else if (message?.method === "ui/notifications/request-teardown") {
-      teardownRequests += 1;
-    }
-  };
-  window.addEventListener("message", onMessage);
-  return {
-    displayModeRequests,
-    messages,
-    modelContexts,
-    resourceReads,
-    toolCalls,
-    get teardownRequests() {
-      return teardownRequests;
-    },
-    notifyHostContext: (displayMode) => sendToApp(window, {
-      jsonrpc: "2.0",
-      method: "ui/notifications/host-context-changed",
-      params: { displayMode },
-    }),
-    notifyHostContextChanged: (params) => sendToApp(window, {
-      jsonrpc: "2.0",
-      method: "ui/notifications/host-context-changed",
-      params,
-    }),
-    releaseModelContext: () => {
-      if (pendingModelContextId === null) return;
-      sendToApp(window, { jsonrpc: "2.0", id: pendingModelContextId, result: {} });
-      pendingModelContextId = null;
-    },
-    dispose: () => window.removeEventListener("message", onMessage),
-  };
-}
-
-function sendToApp(window, data) {
-  window.dispatchEvent(new window.MessageEvent("message", {
-    data,
-    origin: window.location.origin,
-    source: window,
-  }));
-}
-
-function pointerEvent(window, type, init) {
-  const event = new window.MouseEvent(type, { bubbles: true, clientX: init.clientX, clientY: init.clientY });
-  Object.defineProperty(event, "pointerId", { value: init.pointerId });
-  return event;
-}
-
-async function waitFor(predicate, timeoutMs = 1000) {
-  const deadline = Date.now() + timeoutMs;
-  while (!predicate()) {
-    if (Date.now() >= deadline) throw new Error("widget runtime did not reach the expected state");
-    await new Promise((resolve) => setTimeout(resolve, 10));
-  }
-}
-
-function installDomGlobals(window) {
-  window.HTMLCanvasElement.prototype.getContext = () => ({ drawImage() {} });
-  window.HTMLCanvasElement.prototype.toDataURL = () => "data:image/png;base64,cG5nLXByZXZpZXc=";
-  class LoadedImage {
-    set src(value) {
-      this._src = value;
-      queueMicrotask(() => this.onload?.());
-    }
-    get src() {
-      return this._src;
-    }
-  }
-  const values = {
-    window,
-    document: window.document,
-    navigator: window.navigator,
-    HTMLElement: window.HTMLElement,
-    SVGElement: window.SVGElement,
-    MutationObserver: window.MutationObserver,
-    Image: LoadedImage,
-    requestAnimationFrame: window.requestAnimationFrame.bind(window),
-    cancelAnimationFrame: window.cancelAnimationFrame.bind(window),
-    ResizeObserver: class {
-      observe() {}
-      disconnect() {}
-    },
-  };
-  const previous = new Map();
-  for (const [name, value] of Object.entries(values)) {
-    previous.set(name, Object.getOwnPropertyDescriptor(globalThis, name));
-    Object.defineProperty(globalThis, name, { configurable: true, writable: true, value });
-  }
-  return previous;
-}
-
-function restoreDomGlobals(previous) {
-  for (const [name, descriptor] of previous) {
-    if (descriptor) Object.defineProperty(globalThis, name, descriptor);
-    else delete globalThis[name];
-  }
-}

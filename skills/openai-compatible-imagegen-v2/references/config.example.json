@@ -27,5 +27,8 @@
     "size": "1536x1024",
     "quality": "auto",
     "output_format": "png"
+  },
+  "storage": {
+    "output_directory": "output/imagegen"
   }
 }

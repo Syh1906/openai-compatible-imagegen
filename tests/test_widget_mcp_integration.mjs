@@ -18,7 +18,7 @@ const PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4
 const WIDGET_SOURCE_PATH = fileURLToPath(new URL("../web/index.html", import.meta.url));
 
 
-test("widget consumes real MCP declarations and tool results through one integration seam", async () => {
+test("widget consumes the real MCP result without a duplicated tool-input notification", async () => {
   const pluginRoot = path.resolve(fileURLToPath(new URL("../", import.meta.url)));
   const projectRoot = path.dirname(pluginRoot);
   const widgetSource = await readFile(WIDGET_SOURCE_PATH, "utf8");
@@ -91,6 +91,9 @@ test("widget consumes real MCP declarations and tool results through one integra
     assert.equal(resourceUri, releaseIdentity.resourceUris.result);
     assert.equal(initialToolResult._meta?.ui?.resourceUri, resourceUri);
     assert.equal(initialToolResult._meta?.releaseIdentity?.resourceUris?.result, resourceUri);
+    const projectedToolResult = { content: [initialToolResult.content[0]] };
+    assert.equal(projectedToolResult.structuredContent, undefined);
+    assert.equal(projectedToolResult._meta, undefined);
     const widgetResource = await client.readResource({ uri: resourceUri });
     const widgetResourceContent = widgetResource.contents.find((content) => content.uri === resourceUri);
     assert.equal(widgetResourceContent?._meta?.releaseIdentity?.resourceUris?.result, resourceUri);
@@ -115,8 +118,7 @@ test("widget consumes real MCP declarations and tool results through one integra
     previousGlobals = installDomGlobals(widgetWindow);
     host = installHost(hostWindow, widgetWindow, {
       tool: resultTool,
-      initialToolArguments,
-      initialToolResult,
+      initialToolResult: projectedToolResult,
       toolCaller: async ({ name, arguments: toolArguments }) => await client.callTool({
         name,
         arguments: toolArguments,
@@ -127,6 +129,7 @@ test("widget consumes real MCP declarations and tool results through one integra
     await waitFor(() => document.querySelector("[data-image]")?.hidden === false);
     const requiredToolNames = new Set([
       "list_image_models",
+      "get_image_artifact",
       "read_image_artifact_data",
       "report_imagegen_host_observation",
     ]);
@@ -140,9 +143,9 @@ test("widget consumes real MCP declarations and tool results through one integra
     assert.equal(host.pendingToolCallCount, 0);
     assert.equal(host.failedToolCalls.length, 0);
     assert.equal(host.unexpectedSourceMessages.length, 0);
-    assert.equal(host.attemptedToolCalls.length, 3);
+    assert.equal(host.attemptedToolCalls.length, 4);
     const completedToolNames = host.completedToolCalls.map(({ name }) => name);
-    assert.equal(completedToolNames.length, 3);
+    assert.equal(completedToolNames.length, 4);
     assert.deepEqual(new Set(completedToolNames), requiredToolNames);
     const diagnostic = await client.callTool({ name: "inspect_imagegen_runtime", arguments: {} });
     assert.deepEqual(
@@ -179,7 +182,7 @@ test("widget consumes real MCP declarations and tool results through one integra
 });
 
 
-function installHost(hostWindow, widgetWindow, { tool, initialToolArguments, initialToolResult, toolCaller }) {
+function installHost(hostWindow, widgetWindow, { tool, initialToolResult, toolCaller }) {
   const attemptedToolCalls = [];
   const completedToolCalls = [];
   const failedToolCalls = [];
@@ -215,11 +218,6 @@ function installHost(hostWindow, widgetWindow, { tool, initialToolArguments, ini
       return;
     }
     if (message?.method === "ui/notifications/initialized") {
-      sendToApp(hostWindow, widgetWindow, {
-        jsonrpc: "2.0",
-        method: "ui/notifications/tool-input",
-        params: { arguments: initialToolArguments },
-      });
       sendToApp(hostWindow, widgetWindow, {
         jsonrpc: "2.0",
         method: "ui/notifications/tool-result",

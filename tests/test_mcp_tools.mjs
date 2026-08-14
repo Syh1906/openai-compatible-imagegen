@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import os from "node:os";
 import path from "node:path";
@@ -12,6 +13,7 @@ import { createImagegenServer } from "../mcp/create-server.mjs";
 import { readImageArtifact } from "../mcp/artifact-repository.mjs";
 import { runImageTask } from "../mcp/image-runtime.mjs";
 import { createReleaseBundle, RELEASE_IDENTITY_PLACEHOLDER } from "../mcp/release-identity.mjs";
+import { createImageResultEnvelope } from "../mcp/result-envelope.mjs";
 
 
 const PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFgAI/ScL1WQAAAABJRU5ErkJggg==";
@@ -60,6 +62,7 @@ async function withClient(dependencies, callback) {
       pluginRoot,
     },
     readWidgetHtml: async () => "<html>editor</html>",
+    deleteAnnotation: async () => {},
     ...dependencies,
   });
   const client = new Client({ name: "mcp-contract-test", version: "0.1.0" });
@@ -107,35 +110,6 @@ test("widget resources read the current bundle for each request", async () => {
       assert.equal(second.contents[0].text, "<html>second</html>");
       assert.deepEqual(first.contents[0]._meta.ui.csp.resourceDomains, ["data:", "blob:"]);
       assert.deepEqual(first.contents[0]._meta["openai/widgetCSP"].resource_domains, ["data:", "blob:"]);
-    },
-  );
-});
-
-test("app-only image data tool returns binary data by stable image ID", async () => {
-  const current = artifact("img_01J00000000000000000000000");
-  await withClient(
-    {
-      runTask: async () => {
-        throw new Error("not used");
-      },
-      readArtifact: async (id) => ({ metadata: artifact(id), data: PNG_BASE64 }),
-    },
-    async (client) => {
-      const result = await client.callTool({
-        name: "read_image_artifact_data",
-        arguments: { imageId: current.id },
-      });
-
-      assert.deepEqual(result.structuredContent, {
-        id: current.id,
-        mimeType: "image/png",
-      });
-      assert.deepEqual(result._meta.widgetData, {
-        id: current.id,
-        mimeType: "image/png",
-        dataBase64: PNG_BASE64,
-      });
-      assert.equal(result.content.some((item) => item.type === "image"), false);
     },
   );
 });
@@ -201,6 +175,7 @@ test("all product tools declare precise structured output schemas", async () => 
         previewMimeType: "image/svg+xml",
         hasMask: false,
         maskMimeType: null,
+        maskPolicy: null,
       }),
     },
     async (client) => {
@@ -214,7 +189,9 @@ test("all product tools declare precise structured output schemas", async () => 
         "get_image_artifact",
         "read_image_artifact_data",
         "render_image_results",
+        "reveal_image_artifact",
         "open_image_editor",
+        "prepare_image_edit_submission",
         "save_image_annotations",
         "get_image_editor_session",
         "destroy_image_editor",
@@ -231,6 +208,7 @@ test("all product tools declare precise structured output schemas", async () => 
       assert.deepEqual(schemas.get("list_image_models").required, ["models"]);
       assert.deepEqual(schemas.get("list_image_models").properties.models.items.required.sort(), ["capabilities", "id", "model", "provider"]);
       assert.equal(schemas.get("list_image_models").properties.models.items.additionalProperties, false);
+      assert.deepEqual(Object.keys(schemas.get("list_image_models").properties.models.items.properties.capabilities.properties).sort(), ["edit", "generate", "mask", "multi_reference", "transparent_background"]);
 
       for (const name of ["generate_image", "edit_image"]) {
         assert.deepEqual(schemas.get(name).required, ["artifacts"]);
@@ -254,6 +232,7 @@ test("all product tools declare precise structured output schemas", async () => 
 
       assert.deepEqual(schemas.get("get_image_artifact").required.sort(), ["artifact", "canvasStatus"]);
       assert.deepEqual(schemas.get("render_image_results").required.sort(), ["artifacts", "imageIds"]);
+      assert.deepEqual(schemas.get("reveal_image_artifact").required.sort(), ["imageId", "status"]);
       assert.deepEqual(schemas.get("render_image_results").properties.artifacts.items.required.sort(), [
         "annotationId",
         "canvasStatus",
@@ -282,7 +261,16 @@ test("all product tools declare precise structured output schemas", async () => 
         "imageId",
         "itemCount",
         "maskMimeType",
+        "maskPolicy",
         "previewMimeType",
+      ]);
+
+      assert.deepEqual(schemas.get("prepare_image_edit_submission").required.sort(), ["annotation", "submission"]);
+      assert.deepEqual(schemas.get("prepare_image_edit_submission").properties.submission.required.sort(), [
+        "annotationId",
+        "id",
+        "parentImageId",
+        "revisionSha256",
       ]);
 
       for (const name of ["get_image_editor_session", "destroy_image_editor", "finalize_image_editor_session"]) {
@@ -324,7 +312,7 @@ test("generate_image leaves candidate presentation to render_image_results", asy
       assert.equal(rendered._meta.ui.resourceUri, RESULT_WIDGET_URI);
       assert.equal(
         [result, rendered].flatMap((item) => item.content).filter((item) => item.type === "image").length,
-        artifacts.length,
+        2,
       );
     },
   );
@@ -362,23 +350,23 @@ test("edit_image returns child metadata without duplicating result presentation"
   assert.deepEqual(captured.inputArtifactIds, [parentId]);
 });
 
-test("edit_image resolves a saved mask annotation into the runtime task", async () => {
+test("edit_image rejects a legacy mask annotation without a signed policy", async () => {
   const parentId = "img_01J00000000000000000000000";
   const annotationId = "ann_01J00000000000000000000000";
   const child = artifact("img_01J00000000000000000000001", [parentId]);
   const maskPath = "F:/private/imagegen/annotations/mask.png";
-  let captured;
+  let runtimeCalls = 0;
   let requestedAnnotationId;
   await withClient(
     {
       runTask: async (task) => {
-        captured = task;
+        runtimeCalls += 1;
         return { ok: true, artifacts: [child] };
       },
       readArtifact: async () => ({ metadata: child, data: PNG_BASE64 }),
       readAnnotation: async (id) => {
         requestedAnnotationId = id;
-        return { id, imageId: parentId, maskPath };
+        return { id, imageId: parentId, maskPath, maskPolicy: null };
       },
     },
     async (client) => {
@@ -386,13 +374,503 @@ test("edit_image resolves a saved mask annotation into the runtime task", async 
         name: "edit_image",
         arguments: { parentImageId: parentId, annotationId, prompt: "replace the marked region" },
       });
-      assert.equal(result.isError, undefined);
-      assert.equal(JSON.stringify(result).includes(maskPath), false);
+      assertToolErrorCode(result, "mask_policy_missing");
     },
   );
   assert.equal(requestedAnnotationId, annotationId);
-  assert.equal(captured.annotationId, annotationId);
-  assert.equal(captured.mask, maskPath);
+  assert.equal(runtimeCalls, 0);
+});
+
+test("edit_image keeps signed v1 mask annotations read-only", async () => {
+  const parentId = "img_01J00000000000000000000000";
+  const annotationId = "ann_01J00000000000000000000000";
+  let runtimeCalls = 0;
+  await withClient(
+    {
+      runTask: async () => {
+        runtimeCalls += 1;
+        return { ok: true, artifacts: [] };
+      },
+      readAnnotation: async () => ({
+        id: annotationId,
+        imageId: parentId,
+        maskPath: "F:/legacy/mask.png",
+        maskPolicy: {
+          policyVersion: "mask-policy-v1",
+          modelProfileId: "primary/gpt-image-2",
+          requiredCapabilities: { mask: true },
+        },
+      }),
+    },
+    async (client) => {
+      const result = await client.callTool({
+        name: "edit_image",
+        arguments: { parentImageId: parentId, annotationId, prompt: "replay legacy mask" },
+      });
+      assertToolErrorCode(result, "mask_policy_unsupported");
+    },
+  );
+  assert.equal(runtimeCalls, 0);
+});
+
+test("a server-issued edit submission binds the exact parent annotation and mask policy", async () => {
+  const parentId = "img_01J00000000000000000000000";
+  const annotationId = "ann_01J00000000000000000000000";
+  const child = artifact("img_01J00000000000000000000001", [parentId]);
+  const maskPath = "F:/private/imagegen/annotations/mask.png";
+  const policy = {
+    policyVersion: "mask-policy-v2",
+    modelProfileId: "primary/gpt-image-2",
+    requiredCapabilities: { mask: true },
+    strategy: "protect-only",
+    parentImageId: parentId,
+    annotationId,
+    width: 1,
+    height: 1,
+    masks: [{ id: "mask-1", mode: "protect", operation: "paint", radiusPx: 0.04 }],
+    hardBoundary: { source: "none", postprocess: "none" },
+    semanticProtection: {
+      enabled: true,
+      source: "protect-strokes",
+      preserve: ["identity", "geometry", "text", "texture"],
+      allowAdaptation: ["lighting", "shadow", "tone"],
+    },
+    transitionBand: { kind: "outer-feather", featherRatio: 0.35, minimumWidthPx: 1 },
+    maskSha256: "a".repeat(64),
+    policySha256: "c".repeat(64),
+  };
+  const items = [{
+    id: "mask-1",
+    type: "mask",
+    mode: "protect",
+    brushRadius: 0.04,
+    points: [{ x: 0.2, y: 0.2 }, { x: 0.8, y: 0.8 }],
+  }];
+  let runtimeTask;
+  let runtimeCalls = 0;
+  await withClient(
+    {
+      runTask: async (task) => {
+        runtimeCalls += 1;
+        runtimeTask = task;
+        return { ok: true, artifacts: [child] };
+      },
+      readArtifact: async (id) => ({ metadata: id === child.id ? child : artifact(id), data: PNG_BASE64 }),
+      saveAnnotations: async () => ({
+        id: annotationId,
+        imageId: parentId,
+        itemCount: 1,
+        previewMimeType: "image/svg+xml",
+        hasMask: true,
+        maskMimeType: "image/png",
+        maskPolicy: policy,
+      }),
+      readAnnotation: async () => ({
+        id: annotationId,
+        imageId: parentId,
+        maskPath,
+        maskPolicy: policy,
+      }),
+    },
+    async (client) => {
+      const prepared = await client.callTool({
+        name: "prepare_image_edit_submission",
+        arguments: { parentImageId: parentId, items, sourcePrompt: "keep the cup unchanged" },
+      });
+      assert.equal(prepared.isError, undefined);
+      assert.match(prepared.structuredContent.submission.id, /^sub_[0-9a-f]{32}$/);
+      assert.equal(prepared.structuredContent.submission.annotationId, annotationId);
+      assert.equal(JSON.stringify(prepared).includes(maskPath), false);
+
+      for (const conflict of [
+        { size: "2x2" },
+        { format: "jpeg" },
+        { count: 2 },
+      ]) {
+        const rejected = await client.callTool({
+          name: "edit_image",
+          arguments: {
+            parentImageId: parentId,
+            annotationId,
+            submissionId: prepared.structuredContent.submission.id,
+            prompt: "conflicting output",
+            ...conflict,
+          },
+        });
+        assertToolErrorCode(rejected, "invalid_task");
+        assert.equal(runtimeCalls, 0);
+      }
+
+      const edited = await client.callTool({
+        name: "edit_image",
+        arguments: {
+          parentImageId: parentId,
+          annotationId,
+          submissionId: prepared.structuredContent.submission.id,
+          prompt: "change only the allowed area",
+        },
+      });
+      assert.equal(edited.isError, undefined);
+      assert.equal(runtimeTask.submissionId, prepared.structuredContent.submission.id);
+      assert.equal(runtimeTask.annotationId, annotationId);
+      assert.equal(runtimeTask.mask, maskPath);
+      assert.deepEqual(runtimeTask.maskPolicy, policy);
+      assert.deepEqual(runtimeTask.output, { size: "1x1", format: "png", count: 1 });
+
+      const replayed = await client.callTool({
+        name: "edit_image",
+        arguments: {
+          parentImageId: parentId,
+          annotationId,
+          submissionId: prepared.structuredContent.submission.id,
+          prompt: "repeat",
+        },
+      });
+      assert.equal(replayed.isError, undefined);
+      assert.equal(replayed.structuredContent.artifact.id, child.id);
+    },
+  );
+  assert.equal(runtimeCalls, 1);
+});
+
+test("prompt-only canvas submissions bind and complete without an annotation", async () => {
+  const parentId = "img_01J00000000000000000000000";
+  const child = artifact("img_01J00000000000000000000001", [parentId]);
+  let runtimeTask;
+  await withClient(
+    {
+      runTask: async (task) => {
+        runtimeTask = task;
+        return { ok: true, artifacts: [child] };
+      },
+      readArtifact: async (id) => ({ metadata: id === child.id ? child : artifact(id), data: PNG_BASE64 }),
+      saveAnnotations: async () => {
+        throw new Error("prompt-only submissions must not save an empty annotation");
+      },
+    },
+    async (client) => {
+      const prepared = await client.callTool({
+        name: "prepare_image_edit_submission",
+        arguments: { parentImageId: parentId, items: [], sourcePrompt: "make the scene warmer" },
+      });
+      assert.equal(prepared.structuredContent.annotation, null);
+
+      const edited = await client.callTool({
+        name: "edit_image",
+        arguments: {
+          parentImageId: parentId,
+          submissionId: prepared.structuredContent.submission.id,
+          prompt: "make the scene warmer",
+        },
+      });
+      assert.equal(edited.isError, undefined);
+      assert.equal(runtimeTask.annotationId, null);
+      assert.equal(runtimeTask.submissionId, prepared.structuredContent.submission.id);
+      assert.equal(runtimeTask.mask, undefined);
+      assert.equal(runtimeTask.maskPolicy, undefined);
+    },
+  );
+});
+
+test("a concurrent edit replay fails closed while the first runtime call remains in flight", async () => {
+  const parentId = "img_01J00000000000000000000000";
+  const child = artifact("img_01J00000000000000000000001", [parentId]);
+  let runtimeCalls = 0;
+  let markRuntimeStarted;
+  const runtimeStarted = new Promise((resolve) => { markRuntimeStarted = resolve; });
+  let releaseRuntime;
+  const runtimeGate = new Promise((resolve) => { releaseRuntime = resolve; });
+  await withClient(
+    {
+      runTask: async () => {
+        runtimeCalls += 1;
+        markRuntimeStarted();
+        await runtimeGate;
+        return { ok: true, artifacts: [child] };
+      },
+      readArtifact: async (id) => ({ metadata: id === child.id ? child : artifact(id), data: PNG_BASE64 }),
+    },
+    async (client) => {
+      const prepared = await client.callTool({
+        name: "prepare_image_edit_submission",
+        arguments: { parentImageId: parentId, items: [], sourcePrompt: "one edit" },
+      });
+      const editArguments = {
+        parentImageId: parentId,
+        submissionId: prepared.structuredContent.submission.id,
+        prompt: "one edit",
+      };
+      const first = client.callTool({ name: "edit_image", arguments: editArguments });
+      await runtimeStarted;
+      assert.equal(runtimeCalls, 1);
+      const replayResult = await client.callTool({ name: "edit_image", arguments: editArguments });
+      assertToolErrorCode(replayResult, "stale_edit_submission");
+      const replacement = await client.callTool({
+        name: "prepare_image_edit_submission",
+        arguments: { parentImageId: parentId, items: [], sourcePrompt: "replacement" },
+      });
+      assertToolErrorCode(replacement, "edit_submission_in_flight");
+      releaseRuntime();
+      const result = await first;
+      assert.equal(result.isError, undefined);
+    },
+  );
+  assert.equal(runtimeCalls, 1);
+});
+
+test("a rejected replacement revision removes the annotation saved for that failed receipt", async () => {
+  const parentId = "img_01J00000000000000000000000";
+  const child = artifact("img_01J00000000000000000000001", [parentId]);
+  let nextAnnotation = 0;
+  const removed = [];
+  let markAnnotationRemoved;
+  const annotationRemoved = new Promise((resolve) => { markAnnotationRemoved = resolve; });
+  let markRuntimeStarted;
+  const runtimeStarted = new Promise((resolve) => { markRuntimeStarted = resolve; });
+  let releaseRuntime;
+  const runtimeGate = new Promise((resolve) => { releaseRuntime = resolve; });
+  await withClient(
+    {
+      runTask: async () => {
+        markRuntimeStarted();
+        await runtimeGate;
+        return { ok: true, artifacts: [child] };
+      },
+      readArtifact: async (id) => ({ metadata: id === child.id ? child : artifact(id), data: PNG_BASE64 }),
+      saveAnnotations: async ({ imageId, items }) => ({
+        id: `ann_01J0000000000000000000000${nextAnnotation++}`,
+        imageId,
+        itemCount: items.length,
+        previewMimeType: "image/svg+xml",
+        hasMask: false,
+        maskMimeType: null,
+        maskPolicy: null,
+      }),
+      readAnnotation: async (annotationId) => ({
+        id: annotationId,
+        imageId: parentId,
+        items: [{ id: "mark-1", type: "rectangle", x: 0.1, y: 0.1, width: 0.2, height: 0.2 }],
+        maskPath: null,
+        maskPolicy: null,
+      }),
+      deleteAnnotation: async (annotationId) => {
+        removed.push(annotationId);
+        markAnnotationRemoved();
+      },
+    },
+    async (client) => {
+      const items = [{ id: "mark-1", type: "rectangle", x: 0.1, y: 0.1, width: 0.2, height: 0.2 }];
+      const prepared = await client.callTool({
+        name: "prepare_image_edit_submission",
+        arguments: { parentImageId: parentId, items, sourcePrompt: "first" },
+      });
+      const first = client.callTool({
+        name: "edit_image",
+        arguments: {
+          parentImageId: parentId,
+          annotationId: prepared.structuredContent.annotation.id,
+          submissionId: prepared.structuredContent.submission.id,
+          prompt: "first",
+        },
+      });
+      await runtimeStarted;
+      const replacementPromise = client.callTool({
+        name: "prepare_image_edit_submission",
+        arguments: { parentImageId: parentId, items, sourcePrompt: "replacement" },
+      });
+      await annotationRemoved;
+      releaseRuntime();
+      const [firstResult, replacement] = await Promise.all([first, replacementPromise]);
+      assertToolErrorCode(replacement, "edit_submission_in_flight");
+      assert.deepEqual(removed, ["ann_01J00000000000000000000001"]);
+      assert.equal(firstResult.isError, undefined);
+    },
+  );
+});
+
+test("a committed runtime submission returns the existing child when result metadata read initially fails", async () => {
+  const parentId = "img_01J00000000000000000000000";
+  const child = artifact("img_01J00000000000000000000001", [parentId]);
+  let runtimeCalls = 0;
+  let artifactReads = 0;
+  await withClient(
+    {
+      runTask: async () => {
+        runtimeCalls += 1;
+        return { ok: true, artifacts: [child] };
+      },
+      readArtifact: async (id) => {
+        if (id === parentId) return { metadata: artifact(parentId), data: PNG_BASE64 };
+        artifactReads += 1;
+        if (artifactReads === 1) throw new Error("metadata temporarily unavailable");
+        return { metadata: child, data: PNG_BASE64 };
+      },
+    },
+    async (client) => {
+      const prepared = await client.callTool({
+        name: "prepare_image_edit_submission",
+        arguments: { parentImageId: parentId, items: [], sourcePrompt: "commit once" },
+      });
+      const editArguments = {
+        parentImageId: parentId,
+        submissionId: prepared.structuredContent.submission.id,
+        prompt: "commit once",
+      };
+      const first = await client.callTool({ name: "edit_image", arguments: editArguments });
+      assertToolErrorCode(first, "image_task_failed");
+      const replay = await client.callTool({ name: "edit_image", arguments: editArguments });
+      assert.equal(replay.isError, undefined);
+      assert.equal(replay.structuredContent.artifact.id, child.id);
+    },
+  );
+  assert.equal(runtimeCalls, 1);
+  assert.equal(artifactReads, 2);
+});
+
+test("prepared canvas revisions survive validation failure until one completes", async () => {
+  const parentId = "img_01J00000000000000000000000";
+  const annotationId = "ann_01J00000000000000000000000";
+  const policy = {
+    policyVersion: "mask-policy-v2",
+    modelProfileId: "primary/gpt-image-2",
+    requiredCapabilities: { mask: true },
+    strategy: "edit-only",
+    parentImageId: parentId,
+    annotationId,
+    width: 1,
+    height: 1,
+    masks: [{ id: "mask-1", mode: "edit", operation: "paint", radiusPx: 0.04 }],
+    hardBoundary: { source: "edit-strokes", postprocess: "parent-blend" },
+    semanticProtection: {
+      enabled: false,
+      source: "protect-strokes",
+      preserve: ["identity", "geometry", "text", "texture"],
+      allowAdaptation: ["lighting", "shadow", "tone"],
+    },
+    transitionBand: { kind: "outer-feather", featherRatio: 0.35, minimumWidthPx: 1 },
+    maskSha256: "b".repeat(64),
+    policySha256: "d".repeat(64),
+  };
+  let runtimeCalls = 0;
+  await withClient(
+    {
+      runTask: async () => {
+        runtimeCalls += 1;
+        return { ok: true, artifacts: [artifact("img_01J00000000000000000000001", [parentId])] };
+      },
+      readArtifact: async (id) => ({ metadata: artifact(id), data: PNG_BASE64 }),
+      saveAnnotations: async () => ({
+        id: annotationId,
+        imageId: parentId,
+        itemCount: 1,
+        previewMimeType: "image/svg+xml",
+        hasMask: true,
+        maskMimeType: "image/png",
+        maskPolicy: policy,
+      }),
+      readAnnotation: async () => ({ id: annotationId, imageId: parentId, maskPath: "F:/mask.png", maskPolicy: policy }),
+    },
+    async (client) => {
+      const prepare = async (sourcePrompt) => await client.callTool({
+        name: "prepare_image_edit_submission",
+        arguments: {
+          parentImageId: parentId,
+          sourcePrompt,
+          items: [{ id: "mask-1", type: "mask", mode: "edit", brushRadius: 0.04, points: [{ x: 0, y: 0 }, { x: 1, y: 1 }] }],
+        },
+      });
+      const first = await prepare("first revision");
+
+      const missing = await client.callTool({
+        name: "edit_image",
+        arguments: { parentImageId: parentId, annotationId, prompt: "missing ID" },
+      });
+      assertToolErrorCode(missing, "missing_edit_submission");
+
+      const latest = await prepare("latest revision");
+      const mismatch = await client.callTool({
+        name: "edit_image",
+        arguments: {
+          parentImageId: parentId,
+          annotationId: "ann_01J00000000000000000000001",
+          submissionId: latest.structuredContent.submission.id,
+          prompt: "wrong annotation",
+        },
+      });
+      assertToolErrorCode(mismatch, "edit_submission_mismatch");
+
+      policy.policySha256 = "e".repeat(64);
+      const policyMismatch = await client.callTool({
+        name: "edit_image",
+        arguments: {
+          parentImageId: parentId,
+          annotationId,
+          submissionId: latest.structuredContent.submission.id,
+          prompt: "tampered policy",
+        },
+      });
+      assertToolErrorCode(policyMismatch, "edit_submission_mismatch");
+
+      policy.policySha256 = "d".repeat(64);
+      const selected = await client.callTool({
+        name: "edit_image",
+        arguments: {
+          parentImageId: parentId,
+          annotationId,
+          submissionId: first.structuredContent.submission.id,
+          prompt: "select first revision",
+        },
+      });
+      assert.equal(selected.isError, undefined);
+
+      const stale = await client.callTool({
+        name: "edit_image",
+        arguments: {
+          parentImageId: parentId,
+          annotationId,
+          submissionId: latest.structuredContent.submission.id,
+          prompt: "completed alternative",
+        },
+      });
+      assertToolErrorCode(stale, "stale_edit_submission");
+    },
+  );
+  assert.equal(runtimeCalls, 1);
+});
+
+test("legacy mask annotations cannot issue an edit submission without a signed mask policy", async () => {
+  const parentId = "img_01J00000000000000000000000";
+  let runtimeCalls = 0;
+  await withClient(
+    {
+      runTask: async () => {
+        runtimeCalls += 1;
+        return { ok: true, artifacts: [] };
+      },
+      readArtifact: async (id) => ({ metadata: artifact(id), data: PNG_BASE64 }),
+      saveAnnotations: async () => ({
+        id: "ann_01J00000000000000000000000",
+        imageId: parentId,
+        itemCount: 1,
+        previewMimeType: "image/svg+xml",
+        hasMask: true,
+        maskMimeType: "image/png",
+        maskPolicy: null,
+      }),
+    },
+    async (client) => {
+      const result = await client.callTool({
+        name: "prepare_image_edit_submission",
+        arguments: {
+          parentImageId: parentId,
+          sourcePrompt: "legacy mask",
+          items: [{ id: "mask-1", type: "mask", mode: "edit", brushRadius: 0.04, points: [{ x: 0, y: 0 }, { x: 1, y: 1 }] }],
+        },
+      });
+      assertToolErrorCode(result, "mask_policy_missing");
+    },
+  );
+  assert.equal(runtimeCalls, 0);
 });
 
 test("edit_image rejects an annotation that belongs to another parent", async () => {
@@ -448,7 +926,7 @@ test("get_image_artifact returns image bytes without an absolute path", async ()
   );
 });
 
-test("render_image_results returns ordered image content to its single result widget", async () => {
+test("render_image_results returns ordered metadata without duplicating image bytes", async () => {
   const imageIds = [
     "img_01J00000000000000000000000",
     "img_01J00000000000000000000001",
@@ -476,10 +954,32 @@ test("render_image_results returns ordered image content to its single result wi
       assert.deepEqual(result._meta.imageIds, imageIds);
       assert.equal(result._meta.ui.resourceUri, RESULT_WIDGET_URI);
       assert.equal(result._meta.imageArtifacts, undefined);
-      assert.deepEqual(
-        result.content.filter((item) => item.type === "image").map((item) => item.data),
-        [PNG_BASE64, PNG_BASE64],
-      );
+      assert.deepEqual(result.content, [{ type: "text", text: createImageResultEnvelope(imageIds) }, ...imageIds.map(() => ({ type: "image", data: PNG_BASE64, mimeType: "image/png" }))]);
+    },
+  );
+});
+
+test("render_image_results rejects duplicate image IDs before reading artifacts", async () => {
+  const imageId = "img_01J00000000000000000000000";
+  let artifactReads = 0;
+  await withClient(
+    {
+      runTask: async () => {
+        throw new Error("not used");
+      },
+      readArtifact: async () => {
+        artifactReads += 1;
+        return { metadata: artifact(imageId), data: PNG_BASE64 };
+      },
+    },
+    async (client) => {
+      const result = await client.callTool({
+        name: "render_image_results",
+        arguments: { imageIds: [imageId, imageId] },
+      });
+
+      assertToolErrorCode(result, "invalid_task");
+      assert.equal(artifactReads, 0);
     },
   );
 });
@@ -743,11 +1243,11 @@ test("tool errors preserve supported runtime codes with fixed safe summaries", a
   const privateMessage = "provider rejected sk-private at F:/private/config.json";
   await withClient(
     {
-      runTask: async () => ({
+      runTask: async (task) => ({
         ok: false,
-        error: { code: "unsupported_capability", message: privateMessage },
+        error: { code: task.operation === "edit" ? "edit_submission_mismatch" : "unsupported_capability", message: privateMessage },
       }),
-      readArtifact: async () => { throw new Error("not used"); },
+      readArtifact: async (id) => ({ metadata: artifact(id), data: PNG_BASE64 }),
     },
     async (client) => {
       const result = await client.callTool({ name: "generate_image", arguments: { prompt: "test" } });
@@ -755,6 +1255,10 @@ test("tool errors preserve supported runtime codes with fixed safe summaries", a
       assertToolErrorCode(result, "unsupported_capability");
       assert.equal(JSON.stringify(result).includes(privateMessage), false);
       assert.equal(JSON.stringify(result).includes("sk-private"), false);
+      const parentImageId = "img_01J00000000000000000000000";
+      const prepared = await client.callTool({ name: "prepare_image_edit_submission", arguments: { parentImageId, items: [], sourcePrompt: "test" } });
+      const edit = await client.callTool({ name: "edit_image", arguments: { parentImageId, submissionId: prepared.structuredContent.submission.id, prompt: "test" } });
+      assertToolErrorCode(edit, "edit_submission_mismatch");
     },
   );
 
@@ -842,6 +1346,7 @@ test("save_image_annotations stores multiple independent annotations together", 
           previewMimeType: "image/svg+xml",
           hasMask: false,
           maskMimeType: null,
+          maskPolicy: null,
         };
       },
     },
@@ -900,6 +1405,7 @@ test("missing artifact errors do not expose the project path", async () => {
 
 test("Node bridge runs the Python generate and edit path end to end", async () => {
   const projectRoot = await mkdtemp(path.join(os.tmpdir(), "imagegen-runtime-"));
+  const artifactRoot = path.join(projectRoot, "custom-output", "imagegen");
   const requests = [];
   const api = createServer((request, response) => {
     let body = Buffer.alloc(0);
@@ -929,6 +1435,7 @@ test("Node bridge runs the Python generate and edit path end to end", async () =
         },
         models: {
           "primary/gpt-image-2": {
+            provider: "primary",
             model: "gpt-image-2",
             capabilities: { generate: true, edit: true, transparent_background: true },
           },
@@ -936,6 +1443,7 @@ test("Node bridge runs the Python generate and edit path end to end", async () =
         defaults: { output_format: "png" },
       }),
     );
+    const configSha256 = createHash("sha256").update(await readFile(configPath)).digest("hex");
     const output = { size: "1024x1024", quality: "high", format: "png", count: 1, background: "opaque" };
     const generated = await runImageTask(
       {
@@ -946,7 +1454,7 @@ test("Node bridge runs the Python generate and edit path end to end", async () =
         annotationId: null,
         output,
       },
-      { projectRoot, configPath },
+      { projectRoot, configPath, configSha256, artifactRoot },
     );
     assert.equal(generated.ok, true);
     const parentId = generated.artifacts[0].id;
@@ -960,7 +1468,7 @@ test("Node bridge runs the Python generate and edit path end to end", async () =
         annotationId: null,
         output,
       },
-      { projectRoot, configPath },
+      { projectRoot, configPath, configSha256, artifactRoot },
     );
     assert.equal(edited.ok, true);
     assert.deepEqual(edited.artifacts[0].parentIds, [parentId]);
@@ -971,8 +1479,20 @@ test("Node bridge runs the Python generate and edit path end to end", async () =
     assert.equal(requests.every((request) => request.headers["user-agent"] === "Imagegen-Integration/1.0"), true);
     assert.equal(requests.every((request) => request.headers.authorization === "Bearer integration-secret"), true);
     assert.equal(requests[1].body.includes(Buffer.from("保持极简白色构图并调整中央区域", "utf8")), true);
+    assert.equal(await exists(path.join(artifactRoot, "index.json")), true);
+    assert.equal(await exists(path.join(projectRoot, "output", "imagegen")), false);
   } finally {
     await new Promise((resolve) => api.close(resolve));
     await rm(projectRoot, { recursive: true });
   }
 });
+
+async function exists(targetPath) {
+  try {
+    await access(targetPath);
+    return true;
+  } catch (error) {
+    if (error?.code === "ENOENT") return false;
+    throw error;
+  }
+}

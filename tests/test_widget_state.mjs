@@ -136,13 +136,15 @@ test("arrow direction and visual styling survive normalization and preview rende
   assert.equal(arrow.strokeWidth, 3);
 
   const preview = buildAnnotationPreview(withArrow);
+  assert.match(preview, /viewBox="0 0 1500 1000"/);
   assert.match(preview, /stroke="#2563eb"/);
   assert.match(preview, /stroke-width="3"/);
-  assert.match(preview, /M 800 600 L 200 200/);
+  assert.match(preview, /<line x1="1200" y1="600" x2="300" y2="200"/);
+  assert.match(preview, /marker-end="url\(#arrowhead-reverse-arrow\)"/);
   assert.match(preview, /class="annotation-index"/);
 });
 
-test("mask preview follows the same freehand path sent to MCP", () => {
+test("landscape mask preview preserves the source aspect ratio and a circular brush", () => {
   let state = createEditorState({ image });
   const mask = normalizeAnnotation(
     {
@@ -152,6 +154,8 @@ test("mask preview follows the same freehand path sent to MCP", () => {
       width: 200,
       height: 200,
       points: [{ x: 100, y: 100 }, { x: 180, y: 220 }, { x: 300, y: 300 }],
+      mode: "edit",
+      brushRadius: 0.035,
     },
     { viewportWidth: 1000, viewportHeight: 1000 },
   );
@@ -162,6 +166,42 @@ test("mask preview follows the same freehand path sent to MCP", () => {
 
   assert.equal(item.type, "mask");
   assert.deepEqual(item.points, mask.points);
-  assert.match(preview, /<polyline[^>]+stroke-opacity="0\.35"/);
+  assert.match(preview, /viewBox="0 0 1500 1000"/);
+  assert.match(preview, /<polyline[^>]+points="150,100 270,220 450,300"[^>]+stroke-width="70"/);
+  assert.match(preview, /data-mask-layer="edit"[^>]+fill-opacity="0\.35"/);
   assert.doesNotMatch(preview, /<rect[^>]+stroke-dasharray/);
+});
+
+test("portrait mask erase preview preserves the source aspect ratio and a circular brush", () => {
+  const portraitImage = { ...image, width: 800, height: 1200 };
+  let state = createEditorState({ image: portraitImage });
+  const paint = normalizeAnnotation(
+    {
+      id: "portrait-mask-paint",
+      type: "mask",
+      points: [{ x: 80, y: 120 }, { x: 400, y: 600 }],
+      mode: "protect",
+      operation: "paint",
+      brushRadius: 0.04,
+    },
+    { viewportWidth: 800, viewportHeight: 1200 },
+  );
+  const erase = normalizeAnnotation(
+    {
+      id: "portrait-mask-erase",
+      type: "mask",
+      points: [{ x: 240, y: 360 }, { x: 560, y: 840 }],
+      mode: "protect",
+      operation: "erase",
+      brushRadius: 0.04,
+    },
+    { viewportWidth: 800, viewportHeight: 1200 },
+  );
+  state = addAnnotation(addAnnotation(state, paint), erase);
+
+  const preview = buildAnnotationPreview(state);
+
+  assert.match(preview, /viewBox="0 0 1000 1500"/);
+  assert.match(preview, /data-mask-operation="paint"[^>]+points="100,150 500,750"[^>]+stroke-width="80"/);
+  assert.match(preview, /data-mask-operation="erase"[^>]+points="300,450 700,1050"[^>]+stroke-width="80"/);
 });

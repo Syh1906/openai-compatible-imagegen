@@ -1,4 +1,9 @@
+import { normalizeHexColor } from "./editor-color.mjs";
+import { annotationLayerMarkup, annotationViewBox } from "./editor-annotation-view.mjs";
+import { constrainTextAnnotation, textAnnotationBounds } from "./editor-text-geometry.mjs";
+
 const ANNOTATION_TYPES = new Set(["select", "pen", "arrow", "rectangle", "text", "eraser", "mask"]);
+export const DEFAULT_ANNOTATION_COLOR_SLOTS = Object.freeze(["#ef4444", "#2563eb", "#16a34a", "#111827"]);
 
 export function createEditorState({ image, parent = null, children = [] } = {}) {
   if (!image) throw new Error("image is required");
@@ -14,12 +19,63 @@ export function createEditorState({ image, parent = null, children = [] } = {}) 
     annotations: [],
     activeTool: "select",
     selectedAnnotationId: null,
-    color: "#ef4444",
+    editingTextAnnotationId: null,
+    color: DEFAULT_ANNOTATION_COLOR_SLOTS[0],
+    colorSlots: [...DEFAULT_ANNOTATION_COLOR_SLOTS],
+    activeColorSlot: 0,
     strokeWidth: 5,
+    maskMode: "edit",
+    maskOperation: "paint",
+    maskBrushRadius: 0.035,
     annotationVisible: true,
     zoom: 1,
     prompt: "",
   };
+}
+
+export function normalizeEditorColorState(state) {
+  const {
+    color: inputColor,
+    colorSlots: inputSlots,
+    activeColorSlot: inputActiveColorSlot,
+    customColor: legacyCustomColor,
+    colorSource: _legacyColorSource,
+    ...rest
+  } = state || {};
+  const colorSlots = normalizeColorSlots(inputSlots, legacyCustomColor);
+  const requestedColor = normalizeHexColor(inputColor);
+  let activeColorSlot = normalizeColorSlotIndex(inputActiveColorSlot);
+  if (requestedColor && colorSlots[activeColorSlot] !== requestedColor) {
+    const matchingSlot = colorSlots.indexOf(requestedColor);
+    if (matchingSlot >= 0) activeColorSlot = matchingSlot;
+    else {
+      const targetSlot = activeColorSlot ?? 3;
+      colorSlots[targetSlot] = requestedColor;
+      activeColorSlot = targetSlot;
+    }
+  }
+  if (activeColorSlot === null) activeColorSlot = 0;
+  return {
+    ...rest,
+    color: colorSlots[activeColorSlot],
+    colorSlots,
+    activeColorSlot,
+  };
+}
+
+function normalizeColorSlots(value, legacyCustomColor) {
+  if (Array.isArray(value)) {
+    return DEFAULT_ANNOTATION_COLOR_SLOTS.map((fallback, index) => normalizeHexColor(value[index]) || fallback);
+  }
+  const slots = [...DEFAULT_ANNOTATION_COLOR_SLOTS];
+  const customColor = normalizeHexColor(legacyCustomColor);
+  if (customColor) slots[3] = customColor;
+  return slots;
+}
+
+function normalizeColorSlotIndex(value) {
+  const index = Number(value);
+  return Number.isInteger(index) && index >= 0 && index < DEFAULT_ANNOTATION_COLOR_SLOTS.length ? index : null;
 }
 
 export function normalizeAnnotation(annotation, viewport) {
@@ -40,35 +96,83 @@ export function normalizeAnnotation(annotation, viewport) {
     color: normalizeColor(annotation?.color),
     strokeWidth: normalizeStrokeWidth(annotation?.strokeWidth),
   };
+  if (type === "mask") {
+    normalized.mode = normalizeMaskMode(annotation?.mode);
+    normalized.operation = normalizeMaskOperation(annotation?.operation);
+    normalized.brushRadius = normalizeMaskBrushRadius(annotation?.brushRadius);
+    normalized.color = normalizeColor(annotation?.color, normalized.mode === "protect" ? "#2563eb" : "#ef4444");
+  }
   if (type === "arrow") {
     normalized.from = normalizePoint(annotation?.from || { x: annotation?.x || 0, y: annotation?.y || 0 }, width, height);
     normalized.to = normalizePoint(annotation?.to || { x: (annotation?.x || 0) + (annotation?.width || 0), y: (annotation?.y || 0) + (annotation?.height || 0) }, width, height);
   }
-  return normalized;
+  return type === "text" ? constrainTextAnnotation(normalized, { width, height }) : normalized;
 }
 
 export function addAnnotation(state, annotation) {
-  return { ...state, annotations: [...state.annotations, annotation], selectedAnnotationId: annotation.id };
+  const internalMaskStroke = annotation.type === "mask" && annotation.operation === "erase";
+  return { ...state, annotations: [...state.annotations, annotation], selectedAnnotationId: internalMaskStroke ? null : annotation.id };
 }
 
 export function updateAnnotation(state, id, patch) {
   return {
     ...state,
-    annotations: state.annotations.map((item) => item.id === id ? { ...item, ...patch } : item),
+    annotations: state.annotations.map((item) => {
+      if (item.id !== id) return item;
+      const updated = { ...item, ...patch };
+      return updated.type === "text"
+        ? constrainTextAnnotation(updated, { width: state.image?.width, height: state.image?.height })
+        : updated;
+    }),
     selectedAnnotationId: id,
   };
 }
 
-export function removeAnnotation(state, id) {
+export function hasMaskPaintStroke(annotations, mode) {
+  return annotations.some((item) => item.type === "mask"
+    && item.mode === mode
+    && (item.operation || "paint") === "paint");
+}
+
+export function resolveMaskOperation(annotations, mode, operation) {
+  return operation === "erase" && !hasMaskPaintStroke(annotations, mode) ? "paint" : operation;
+}
+
+export function normalizeMaskOperationState(state) {
+  const source = Array.isArray(state.annotations) ? state.annotations : [];
+  const paintedModes = new Set();
+  const annotations = source.filter((item) => {
+    if (item.type !== "mask") return true;
+    if ((item.operation || "paint") === "paint") {
+      paintedModes.add(item.mode);
+      return true;
+    }
+    return paintedModes.has(item.mode);
+  });
+  const annotationsChanged = annotations.length !== source.length;
+  const operation = resolveMaskOperation(annotations, state.maskMode, state.maskOperation);
+  if (!annotationsChanged && operation === state.maskOperation) return state;
+  const retainedIds = annotationsChanged ? new Set(annotations.map((item) => item.id)) : null;
   return {
     ...state,
-    annotations: state.annotations.filter((item) => item.id !== id),
-    selectedAnnotationId: state.selectedAnnotationId === id ? null : state.selectedAnnotationId,
+    annotations,
+    maskOperation: operation,
+    ...(retainedIds && state.selectedAnnotationId && !retainedIds.has(state.selectedAnnotationId) ? { selectedAnnotationId: null } : {}),
+    ...(retainedIds && state.editingTextAnnotationId && !retainedIds.has(state.editingTextAnnotationId) ? { editingTextAnnotationId: null } : {}),
   };
 }
 
-export function translateAnnotation(annotation, deltaX, deltaY) {
-  const points = annotationBoundsPoints(annotation);
+export function removeAnnotation(state, id) {
+  return normalizeMaskOperationState({
+    ...state,
+    annotations: state.annotations.filter((item) => item.id !== id),
+    selectedAnnotationId: state.selectedAnnotationId === id ? null : state.selectedAnnotationId,
+    editingTextAnnotationId: state.editingTextAnnotationId === id ? null : state.editingTextAnnotationId,
+  });
+}
+
+export function translateAnnotation(annotation, deltaX, deltaY, viewport = {}) {
+  const points = annotationBoundsPoints(annotation, viewport);
   const xs = points.map((point) => point.x);
   const ys = points.map((point) => point.y);
   const dx = Math.max(-Math.min(...xs), Math.min(1 - Math.max(...xs), Number(deltaX) || 0));
@@ -122,9 +226,12 @@ export function toMcpAnnotationItems(state) {
       return {
         id: item.id,
         type: "mask",
+        mode: normalizeMaskMode(item.mode),
+        operation: normalizeMaskOperation(item.operation),
+        brushRadius: normalizeMaskBrushRadius(item.brushRadius),
         points: item.points.length > 1 ? item.points : rectanglePoints(item),
         ...(item.text ? { text: item.text } : {}),
-        ...style,
+        color: style.color,
       };
     }
     return {
@@ -163,12 +270,16 @@ function rectanglePoints(item) {
   ];
 }
 
-function annotationBoundsPoints(item) {
+function annotationBoundsPoints(item, viewport) {
   const points = [
     { x: item.x, y: item.y },
     { x: clamp(item.x + item.width), y: clamp(item.y + item.height) },
     ...(item.points || []),
   ];
+  if (item.type === "text") {
+    const bounds = textAnnotationBounds(item, { width: viewport.viewportWidth, height: viewport.viewportHeight });
+    points.push({ x: bounds.left, y: bounds.top }, { x: bounds.right, y: bounds.bottom });
+  }
   if (item.from) points.push(item.from);
   if (item.to) points.push(item.to);
   return points;
@@ -177,46 +288,9 @@ function annotationBoundsPoints(item) {
 export function buildAnnotationPreview(state) {
   const imageHref = state.image.data ? `data:${state.image.mimeType || "image/png"};base64,${state.image.data}` : "";
   const imageNode = imageHref ? `<image href="${escapeXml(imageHref)}" width="100%" height="100%" preserveAspectRatio="none"/>` : "";
-  const annotations = state.annotations.map((item, index) => annotationSvg(item, index)).join("");
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000" preserveAspectRatio="none" role="img">${imageNode}${annotations}</svg>`;
-}
-
-function annotationSvg(item, index) {
-  const x = item.x * 1000;
-  const y = item.y * 1000;
-  const width = item.width * 1000;
-  const height = item.height * 1000;
-  const color = escapeXml(item.color || "#ef4444");
-  const strokeWidth = item.strokeWidth || 5;
-  let shape = "";
-  if (item.type === "rectangle") shape = `<rect x="${x}" y="${y}" width="${width}" height="${height}" fill="none" stroke="${color}" stroke-width="${strokeWidth}"/>`;
-  if (item.type === "arrow") {
-    const from = item.from || { x: item.x, y: item.y };
-    const to = item.to || { x: item.x + item.width, y: item.y + item.height };
-    const markerId = `arrowhead-${String(item.id || "annotation").replace(/[^a-zA-Z0-9_-]/g, "-")}`;
-    shape = `<path d="M ${from.x * 1000} ${from.y * 1000} L ${to.x * 1000} ${to.y * 1000}" stroke="${color}" stroke-width="${strokeWidth}" fill="none" marker-end="url(#${markerId})"/><defs><marker id="${markerId}" markerWidth="12" markerHeight="12" refX="9" refY="4" orient="auto"><path d="M 0 0 L 10 4 L 0 8 z" fill="${color}"/></marker></defs>`;
-  }
-  if (item.type === "text") shape = `<text x="${x}" y="${y}" fill="${color}" font-size="28" font-family="sans-serif" font-weight="700">${escapeXml(item.text || "标注")}</text>`;
-  if (!shape && item.points.length > 1) {
-    const effectiveStrokeWidth = item.type === "mask" ? Math.max(24, strokeWidth * 5) : strokeWidth;
-    const opacity = item.type === "mask" ? "0.35" : "1";
-    shape = `<polyline points="${item.points.map((point) => `${point.x * 1000},${point.y * 1000}`).join(" ")}" fill="none" stroke="${color}" stroke-opacity="${opacity}" stroke-width="${effectiveStrokeWidth}" stroke-linecap="round" stroke-linejoin="round"/>`;
-  }
-  return shape ? `${shape}${annotationIndex(item, index)}` : "";
-}
-
-function annotationIndex(item, index) {
-  const anchor = annotationAnchor(item);
-  const x = Math.max(18, Math.min(982, anchor.x * 1000));
-  const y = Math.max(18, Math.min(982, anchor.y * 1000));
-  return `<g class="annotation-index"><circle cx="${x}" cy="${y}" r="14" fill="#ffffff" stroke="#17191d" stroke-width="2"/><text x="${x}" y="${y + 6}" fill="#17191d" font-size="18" font-family="sans-serif" font-weight="700" text-anchor="middle">${index + 1}</text></g>`;
-}
-
-function annotationAnchor(item) {
-  if (item.type === "arrow" && item.from) return item.from;
-  if ((item.type === "pen" || item.type === "mask") && item.points.length) return item.points[0];
-  if (item.type === "text") return { x: item.x - 0.02, y: item.y - 0.03 };
-  return { x: item.x, y: item.y };
+  const viewBox = annotationViewBox(state.image);
+  const annotations = annotationLayerMarkup(state.annotations, null, state.image);
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${viewBox.width} ${viewBox.height}" preserveAspectRatio="none" role="img">${imageNode}${annotations}</svg>`;
 }
 
 function clamp(value) {
@@ -234,13 +308,31 @@ function normalizePoint(point, width, height) {
   };
 }
 
-function normalizeColor(value) {
-  return typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value) ? value : "#ef4444";
+function normalizeColor(value, fallback = "#ef4444") {
+  return typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value) ? value : fallback;
 }
 
 function normalizeStrokeWidth(value) {
   const width = Number(value);
   return Math.max(1, Math.min(12, Number.isFinite(width) ? width : 5));
+}
+
+function normalizeMaskMode(value) {
+  if (value !== "edit" && value !== "protect") throw new Error("mask mode must be edit or protect");
+  return value;
+}
+
+function normalizeMaskOperation(value = "paint") {
+  if (value !== "paint" && value !== "erase") throw new Error("mask operation must be paint or erase");
+  return value;
+}
+
+function normalizeMaskBrushRadius(value) {
+  const radius = Number(value);
+  if (!Number.isFinite(radius) || radius <= 0 || radius > 0.5) {
+    throw new Error("mask brushRadius must be greater than 0 and at most 0.5");
+  }
+  return radius;
 }
 
 function escapeXml(value) {

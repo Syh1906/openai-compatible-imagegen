@@ -1,11 +1,34 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { artifactLineage, extractResultArtifacts, hydrateResultArtifacts } from "../web/result-state.mjs";
+import { extractImageResultEnvelopeIds } from "../mcp/result-envelope.mjs";
+import { artifactLineage, extractResultArtifacts, extractResultImageIds, hydrateResultArtifacts, mergeLineageRecords } from "../web/result-state.mjs";
 
 
 const firstId = "img_01J00000000000000000000000";
 const secondId = "img_01J00000000000000000000001";
+
+test("result envelopes provide ordered image IDs through the standard text content channel", () => {
+  const result = {
+    content: [{ type: "text", text: `IMAGEGEN_RESULT_V1:${JSON.stringify({ imageIds: [firstId, secondId] })}` }],
+  };
+  assert.deepEqual(extractImageResultEnvelopeIds(result), [firstId, secondId]);
+  assert.deepEqual(extractResultImageIds(result), [firstId, secondId]);
+});
+
+test("result envelope parsing rejects missing, unknown, malformed, and duplicate IDs", () => {
+  const cases = [
+    {},
+    { content: [{ type: "text", text: "IMAGEGEN_RESULT_V2:{\"imageIds\":[]}" }] },
+    { content: [{ type: "text", text: "IMAGEGEN_RESULT_V1:not-json" }] },
+    { content: [{ type: "text", text: `IMAGEGEN_RESULT_V1:${JSON.stringify({ imageIds: ["not-an-image-id"] })}` }] },
+    { content: [{ type: "text", text: `IMAGEGEN_RESULT_V1:${JSON.stringify({ imageIds: [firstId, firstId] })}` }] },
+  ];
+  for (const result of cases) {
+    assert.deepEqual(extractImageResultEnvelopeIds(result), []);
+    assert.deepEqual(extractResultImageIds(result), []);
+  }
+});
 
 test("tool results expose artifact metadata without payload bytes", () => {
   const artifacts = extractResultArtifacts({
@@ -124,4 +147,41 @@ test("artifact lineage uses the real repository parentIds and childIds contract"
       children: [{ id: secondId }],
     },
   );
+});
+
+test("lineage merging preserves established version order while the current version changes", () => {
+  const root = { id: "root-image", role: "parent", data: "root-data" };
+  const green = { id: "green-image", role: "current", data: "green-data" };
+  const childA = { id: "child-a", role: "child", data: "child-a-data" };
+  const childB = { id: "child-b", role: "child", data: "child-b-data" };
+  const expectedOrder = [root.id, green.id, childA.id, childB.id];
+  let lineage = mergeLineageRecords([], [root, green, childA, childB], green.id);
+
+  for (const [currentId, localLineage] of [
+    [childA.id, [green, childA]],
+    [childB.id, [green, childB]],
+    [green.id, [root, green]],
+    [childA.id, [green, childA]],
+    [root.id, [root]],
+  ]) {
+    lineage = mergeLineageRecords(lineage, localLineage, currentId);
+    assert.deepEqual(lineage.map((item) => item.id), expectedOrder);
+    assert.deepEqual(lineage.filter((item) => item.role === "current").map((item) => item.id), [currentId]);
+  }
+});
+
+test("the first complete lineage replaces a current-image-only placeholder order", () => {
+  const currentId = "green-image";
+  const merged = mergeLineageRecords(
+    [{ id: currentId, role: "current", loadState: "loading" }],
+    [
+      { id: "root-image", role: "parent", data: "root-data" },
+      { id: currentId, role: "current", data: "green-data" },
+      { id: "child-a", role: "child", data: "child-a-data" },
+      { id: "child-b", role: "child", data: "child-b-data" },
+    ],
+    currentId,
+  );
+
+  assert.deepEqual(merged.map((item) => item.id), ["root-image", currentId, "child-a", "child-b"]);
 });
