@@ -20,13 +20,13 @@ import zlib
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / "scripts" / "plugin_runtime.py"
+SCRIPT = ROOT / "scripts" / "image_runtime.py"
 
 
 def load_imagegen():
     spec = importlib.util.spec_from_file_location("imagegen_runtime_under_test", SCRIPT)
     if spec is None or spec.loader is None:
-        raise RuntimeError("cannot load plugin_runtime.py")
+        raise RuntimeError("cannot load image_runtime.py")
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)
@@ -55,6 +55,14 @@ def make_png(width: int, height: int, alpha: int = 255) -> bytes:
             chunk(b"IEND", b""),
         ]
     )
+
+
+class ImageRuntimeStructureTests(unittest.TestCase):
+    def test_machine_adapter_does_not_expose_standalone_commands(self) -> None:
+        runtime = load_imagegen()
+        for name in ("generate", "edit", "batch", "init_auth", "apply_postprocess"):
+            with self.subTest(name=name):
+                self.assertFalse(hasattr(runtime, name))
 
 
 class CountingEditProvider:
@@ -534,7 +542,7 @@ class ImageRuntimeMachineModeTests(unittest.TestCase):
                 "import json",
                 "from pathlib import Path",
                 "import sys",
-                "from scripts.plugin_runtime import Config, run_machine_task",
+                "from scripts.image_runtime import Config, run_machine_task",
                 "cfg = Config(base_url=sys.argv[4], api_key='test-key', api_key_source='test', model='gpt-image-2', defaults={}, capabilities={'generate': True, 'edit': True, 'multi_reference': True}, postprocess={'enabled': False}, user_agent='Process-Test/1.0')",
                 "result = run_machine_task(json.loads(sys.argv[1]), Path(sys.argv[2]), Path(sys.argv[3]), cfg)",
                 "print(json.dumps(result, separators=(',', ':')), flush=True)",

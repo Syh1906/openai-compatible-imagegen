@@ -14,13 +14,13 @@ import zlib
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / "scripts" / "plugin_runtime.py"
+SCRIPT = ROOT / "scripts" / "image_runtime.py"
 
 
 def load_imagegen():
     spec = importlib.util.spec_from_file_location("masked_imagegen_runtime_under_test", SCRIPT)
     if spec is None or spec.loader is None:
-        raise RuntimeError("cannot load plugin_runtime.py")
+        raise RuntimeError("cannot load image_runtime.py")
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)

@@ -7,11 +7,9 @@ import argparse
 import concurrent.futures
 import http.client
 import json
-import mimetypes
 import os
 import ssl
 import sys
-import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -25,6 +23,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
+import image_transport
 from image_preview import preview_board_image as build_preview_board
 from image_cli import build_parser as build_cli_parser
 from image_batch import (
@@ -511,28 +510,28 @@ def validate_postprocess_args(args: argparse.Namespace, task: dict[str, Any]) ->
 
 
 def api_url(cfg: Config, path: str) -> str:
-    parsed = urllib.parse.urlparse(cfg.base_url)
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+    try:
+        return image_transport.api_url(cfg.base_url, path)
+    except ValueError as exc:
         raise ImagegenError("auth.json base_url must be an http(s) URL ending in /v1")
-    return f"{cfg.base_url}/{path.lstrip('/')}"
+
 
 
 def request_json(cfg: Config, path: str, payload: dict[str, Any], timeout: int) -> dict[str, Any]:
-    body = json.dumps(drop_none(payload)).encode("utf-8")
-    req = urllib.request.Request(
-        api_url(cfg, path),
-        data=body,
-        method="POST",
-        headers=request_headers(cfg, "application/json"),
-    )
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return read_json_response(resp, MAX_JSON_RESPONSE_BYTES)
-    except urllib.error.HTTPError as exc:
-        detail = safe_error_body(exc)
-        raise ApiRequestError(f"API HTTP {exc.code}: {detail}", exc.code, path) from exc
-    except urllib.error.URLError as exc:
-        raise ImagegenError(f"API request failed: {exc.reason}") from exc
+        return image_transport.request_json(
+            base_url=cfg.base_url,
+            api_key=cfg.api_key,
+            user_agent=cfg.user_agent,
+            path=path,
+            payload=payload,
+            timeout=timeout,
+            response_limit=MAX_JSON_RESPONSE_BYTES,
+        )
+    except image_transport.TransportError as exc:
+        if exc.status_code is not None:
+            raise ApiRequestError(str(exc), exc.status_code, exc.operation or path) from exc
+        raise ImagegenError(str(exc)) from exc
     except ValueError as exc:
         raise ImagegenError(str(exc)) from exc
 
@@ -541,71 +540,45 @@ def request_multipart(
     cfg: Config,
     path: str,
     fields: dict[str, Any],
-    files: list[tuple[str, Path]],
+    files: list[image_transport.MultipartUpload],
     timeout: int,
 ) -> dict[str, Any]:
-    boundary = f"----codex-imagegen-{int(time.time() * 1000)}"
-    body = build_multipart_body(boundary, fields, files)
-    req = urllib.request.Request(
-        api_url(cfg, path),
-        data=body,
-        method="POST",
-        headers=request_headers(cfg, f"multipart/form-data; boundary={boundary}"),
-    )
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return read_json_response(resp, MAX_JSON_RESPONSE_BYTES)
-    except urllib.error.HTTPError as exc:
-        detail = safe_error_body(exc)
-        raise ApiRequestError(f"API HTTP {exc.code}: {detail}", exc.code, path) from exc
-    except urllib.error.URLError as exc:
-        raise ImagegenError(f"API request failed: {exc.reason}") from exc
+        return image_transport.request_multipart(
+            base_url=cfg.base_url,
+            api_key=cfg.api_key,
+            user_agent=cfg.user_agent,
+            path=path,
+            fields=fields,
+            files=files,
+            timeout=timeout,
+            response_limit=MAX_JSON_RESPONSE_BYTES,
+        )
+    except image_transport.TransportError as exc:
+        if exc.status_code is not None:
+            raise ApiRequestError(str(exc), exc.status_code, exc.operation or path) from exc
+        raise ImagegenError(str(exc)) from exc
     except ValueError as exc:
         raise ImagegenError(str(exc)) from exc
 
 
 def request_headers(cfg: Config, content_type: str) -> dict[str, str]:
-    return {
-        "Authorization": f"Bearer {cfg.api_key}",
-        "Content-Type": content_type,
-        "Accept": "application/json",
-        "User-Agent": cfg.user_agent,
-    }
+    return image_transport.request_headers(cfg.api_key, cfg.user_agent, content_type)
 
 
-def build_multipart_body(boundary: str, fields: dict[str, Any], files: list[tuple[str, Path]]) -> bytes:
-    chunks: list[bytes] = []
-    for name, value in drop_none(fields).items():
-        chunks.extend(
-            [
-                f"--{boundary}\r\n".encode(),
-                f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode(),
-                str(value).encode("utf-8"),
-                b"\r\n",
-            ]
-        )
-    for field_name, path in files:
-        if not path.is_file():
-            raise ImagegenError(f"input file not found: {path}")
-        mime = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
-        chunks.extend(
-            [
-                f"--{boundary}\r\n".encode(),
-                (
-                    f'Content-Disposition: form-data; name="{field_name}"; '
-                    f'filename="{path.name}"\r\n'
-                ).encode(),
-                f"Content-Type: {mime}\r\n\r\n".encode(),
-                path.read_bytes(),
-                b"\r\n",
-            ]
-        )
-    chunks.append(f"--{boundary}--\r\n".encode())
-    return b"".join(chunks)
+def build_multipart_body(
+    boundary: str,
+    fields: dict[str, Any],
+    files: list[image_transport.MultipartUpload],
+) -> bytes:
+    try:
+        return image_transport.build_multipart_body(boundary, fields, files)
+    except ValueError as exc:
+        raise ImagegenError(str(exc)) from exc
 
 
 def drop_none(values: dict[str, Any]) -> dict[str, Any]:
-    return {key: value for key, value in values.items() if value is not None}
+    return image_transport.drop_none(values)
 
 
 def generate(cfg: Config, args: argparse.Namespace, task: dict[str, Any] | None = None) -> dict[str, Any]:

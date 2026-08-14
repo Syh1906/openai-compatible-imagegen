@@ -4,8 +4,8 @@ import { fileURLToPath } from "node:url";
 
 
 const runtimeRelativePath = import.meta.url.replaceAll("\\", "/").includes("/dist/server.mjs")
-  ? "./scripts/plugin_runtime.py"
-  : "../scripts/plugin_runtime.py";
+  ? "./scripts/image_runtime.py"
+  : "../scripts/image_runtime.py";
 const runtimePath = fileURLToPath(new URL(runtimeRelativePath, import.meta.url));
 
 export async function runImageTask(task, {

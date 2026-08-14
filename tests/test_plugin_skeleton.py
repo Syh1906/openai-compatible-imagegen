@@ -45,11 +45,12 @@ DIST_RUNTIME_PATHS = [
         "image_transaction.py",
         "image_transparency.py",
         "image_transparency_runtime.py",
+        "image_transport.py",
         "image_webp.py",
         "imagegen.py",
         "imagegen_cli.py",
         "mask_policy.py",
-        "plugin_runtime.py",
+        "image_runtime.py",
         "provider_config.py",
         "repository_fs_helper.py",
         "reveal_in_explorer.py",
@@ -133,7 +134,7 @@ class PluginSkeletonTests(unittest.TestCase):
         for runtime_path in DIST_RUNTIME_PATHS:
             self.assertTrue(runtime_path.is_file(), runtime_path)
         server_text = SERVER_PATH.read_text(encoding="utf-8")
-        self.assertIn('./scripts/plugin_runtime.py', server_text)
+        self.assertIn('./scripts/image_runtime.py', server_text)
 
     def test_runtime_disables_python_bytecode_writes(self) -> None:
         runtime_text = RUNTIME_BRIDGE_PATH.read_text(encoding="utf-8")
