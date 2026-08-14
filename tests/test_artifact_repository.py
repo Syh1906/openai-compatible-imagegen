@@ -83,6 +83,35 @@ class ArtifactRepositoryTests(unittest.TestCase):
         self.assertTrue((artifact_root / "index.json").is_file())
         self.assertFalse((self.project_root / "output" / "imagegen").exists())
 
+    def test_derived_artifacts_do_not_enter_edit_version_lineage(self) -> None:
+        source = self.repository.store_images(
+            images=[make_png(2, 2)],
+            mime_type="image/png",
+            provider="primary",
+            model="gpt-image-2",
+            operation="generate",
+            prompt="source image",
+            parameters={},
+        )[0]
+
+        derived = self.repository.store_derived_images(
+            images=[make_png(4, 4)],
+            mime_type="image/png",
+            derived_from=source.metadata["id"],
+            delivery_kinds=["exact-size"],
+            parameters=[{"deliverySize": "4x4"}],
+        )[0]
+
+        loaded_source = self.repository.get_artifact(source.metadata["id"])
+        loaded_derived = self.repository.get_artifact(derived.metadata["id"])
+        self.assertEqual(loaded_source.metadata["childIds"], [])
+        self.assertEqual(loaded_derived.metadata["parentIds"], [])
+        self.assertEqual(loaded_derived.metadata["childIds"], [])
+        self.assertEqual(loaded_derived.metadata["operation"], "derive")
+        self.assertEqual(loaded_derived.metadata["derivedFrom"], source.metadata["id"])
+        self.assertEqual(loaded_derived.metadata["deliveryKind"], "exact-size")
+        self.assertEqual(loaded_derived.metadata["parameters"], {"deliverySize": "4x4"})
+
     def test_rejects_artifact_roots_that_are_not_safe_project_descendants(self) -> None:
         from scripts.artifact_repository import ArtifactRepository
 

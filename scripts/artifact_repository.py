@@ -19,6 +19,7 @@ from scripts.windows_repository_fs import (
 
 
 ARTIFACT_ID_PATTERN = re.compile(r"^img_[0-9A-HJKMNP-TV-Z]{26}$")
+DELIVERY_KIND_PATTERN = re.compile(r"^[a-z][a-z0-9-]{0,63}$")
 CROCKFORD_BASE32 = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 MIME_EXTENSIONS = {
     "image/jpeg": "jpg",
@@ -95,6 +96,60 @@ class ArtifactRepository:
                     annotation_id=annotation_id,
                     inspected=inspected,
                     artifact_ids=artifact_ids,
+                    derived_from=None,
+                    delivery_kinds=None,
+                    parameters_by_image=None,
+                )
+
+    def store_derived_images(
+        self,
+        *,
+        images: list[bytes],
+        mime_type: str,
+        derived_from: str,
+        delivery_kinds: list[str],
+        parameters: list[dict[str, Any]],
+    ) -> list[ArtifactRecord]:
+        if not images:
+            raise ValueError("at least one derived image is required")
+        if mime_type not in MIME_EXTENSIONS:
+            raise ValueError(f"unsupported image MIME type: {mime_type}")
+        validate_artifact_id(derived_from)
+        if len(delivery_kinds) != len(images):
+            raise ValueError("delivery kinds must match derived images")
+        if len(parameters) != len(images):
+            raise ValueError("derived parameters must match derived images")
+        if any(not DELIVERY_KIND_PATTERN.fullmatch(str(kind)) for kind in delivery_kinds):
+            raise ValueError("invalid delivery kind")
+        if any(not isinstance(item, dict) for item in parameters):
+            raise ValueError("derived parameters must be JSON objects")
+
+        inspected = [inspect_image(image, mime_type) for image in images]
+        artifact_ids = [self.id_factory() for _ in images]
+        for artifact_id in artifact_ids:
+            validate_artifact_id(artifact_id)
+        if len(set(artifact_ids)) != len(artifact_ids):
+            raise ValueError("artifact ID factory returned a duplicate ID")
+
+        with ensure_directory_tree_safely(self.project_root, self.data_root):
+            with RepositoryMutation(self.data_root) as mutation:
+                mutation.create_directory("artifacts")
+                return self._store_images_locked(
+                    mutation=mutation,
+                    images=images,
+                    mime_type=mime_type,
+                    provider="",
+                    model="",
+                    operation="derive",
+                    prompt="",
+                    parameters={},
+                    parent_ids=[],
+                    annotation_id=None,
+                    inspected=inspected,
+                    artifact_ids=artifact_ids,
+                    derived_from=derived_from,
+                    delivery_kinds=list(delivery_kinds),
+                    parameters_by_image=[dict(item) for item in parameters],
                 )
 
     def _store_images_locked(
@@ -112,6 +167,9 @@ class ArtifactRepository:
         annotation_id: str | None,
         inspected: list[tuple[int, int]],
         artifact_ids: list[str],
+        derived_from: str | None,
+        delivery_kinds: list[str] | None,
+        parameters_by_image: list[dict[str, Any]] | None,
     ) -> list[ArtifactRecord]:
         index = self._read_index()
         for parent_id in parent_ids:
@@ -120,6 +178,13 @@ class ArtifactRepository:
         for artifact_id in artifact_ids:
             if artifact_id in index["artifacts"] or (self.artifacts_root / artifact_id).exists():
                 raise FileExistsError(f"artifact already exists: {artifact_id}")
+        if derived_from is not None:
+            source = index["artifacts"].get(derived_from)
+            if not isinstance(source, dict):
+                raise KeyError(f"artifact not found: {derived_from}")
+            provider = str(source.get("provider") or "")
+            model = str(source.get("model") or "")
+            prompt = str(source.get("prompt") or "")
 
         created_at = datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
         records: list[ArtifactRecord] = []
@@ -137,7 +202,11 @@ class ArtifactRepository:
                 image_path = artifact_dir / image_name
                 mutation.publish_new_file(image_path, image_bytes)
 
-                artifact_parameters = dict(parameters)
+                artifact_parameters = dict(
+                    parameters_by_image[result_index]
+                    if parameters_by_image is not None
+                    else parameters
+                )
                 if isinstance(artifact_parameters.get("submissionId"), str):
                     artifact_parameters["submissionResultIndex"] = result_index
                 metadata = {
@@ -154,6 +223,9 @@ class ArtifactRepository:
                     "annotationId": annotation_id,
                     "createdAt": created_at,
                 }
+                if derived_from is not None and delivery_kinds is not None:
+                    metadata["derivedFrom"] = derived_from
+                    metadata["deliveryKind"] = delivery_kinds[result_index]
                 stored_metadata = {**metadata, "imageFile": image_name}
                 metadata_path = artifact_dir / "meta.json"
                 mutation.publish_new_file(metadata_path, encode_json(stored_metadata))

@@ -94,7 +94,7 @@ test("reveal tool returns a stable error without leaking launcher details", asyn
   );
 });
 
-test("tool catalog exposes exactly eight model tools and eight app-only tools", async () => {
+test("tool catalog exposes exactly ten model tools and eight app-only tools", async () => {
   await withClient({}, async (client) => {
     const { tools } = await client.listTools();
     const appOnlyTools = tools
@@ -107,7 +107,9 @@ test("tool catalog exposes exactly eight model tools and eight app-only tools", 
       .sort();
 
     assert.deepEqual(modelTools, [
+      "batch_images",
       "bind_imagegen_project",
+      "deliver_image",
       "destroy_image_editor",
       "edit_image",
       "generate_image",
@@ -126,7 +128,7 @@ test("tool catalog exposes exactly eight model tools and eight app-only tools", 
       "reveal_image_artifact",
       "save_image_annotations",
     ]);
-    assert.equal(tools.length, 16);
+    assert.equal(tools.length, 18);
   });
 });
 

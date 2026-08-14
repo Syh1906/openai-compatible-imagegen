@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
 import { createEditSubmissionRegistry } from "./edit-submission-registry.mjs";
+import { executeImageBatch } from "./batch-images.mjs";
 import {
   createRuntimeObservation,
   MAX_RUNTIME_ROOT_ENTRIES,
@@ -45,6 +46,39 @@ const outputSchema = {
   count: z.number().int().min(1).max(10).optional(),
   background: z.enum(["auto", "opaque", "transparent"]).optional(),
 };
+const batchRequestIdSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/);
+const batchGenerateItemSchema = z.object({
+  requestId: batchRequestIdSchema,
+  operation: z.literal("generate"),
+  prompt: z.string().min(1),
+  modelProfileId: z.literal("primary/gpt-image-2").optional(),
+  ...outputSchema,
+}).strict();
+const batchEditItemSchema = z.object({
+  requestId: batchRequestIdSchema,
+  operation: z.literal("edit"),
+  parentImageId: imageIdSchema,
+  referenceImageIds: z.array(imageIdSchema).max(10).optional(),
+  prompt: z.string().min(1),
+  modelProfileId: z.literal("primary/gpt-image-2").optional(),
+  ...outputSchema,
+}).strict();
+const batchItemsSchema = z.array(z.discriminatedUnion("operation", [
+  batchGenerateItemSchema,
+  batchEditItemSchema,
+])).min(1).max(10).superRefine((items, context) => {
+  const seen = new Set();
+  for (const [index, item] of items.entries()) {
+    if (seen.has(item.requestId)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "requestId must be unique within a batch",
+        path: [index, "requestId"],
+      });
+    }
+    seen.add(item.requestId);
+  }
+});
 const imageArtifactOutputSchema = z.object({
   id: imageIdSchema,
   parentIds: z.array(imageIdSchema),
@@ -54,15 +88,70 @@ const imageArtifactOutputSchema = z.object({
   height: z.number().int().positive(),
   provider: z.string().min(1),
   model: z.string().min(1),
-  operation: z.enum(["generate", "edit"]),
+  operation: z.enum(["generate", "edit", "derive"]),
   prompt: z.string(),
   parameters: z.record(z.unknown()),
   annotationId: annotationIdSchema.nullable(),
   createdAt: z.string().datetime(),
+  derivedFrom: imageIdSchema.optional(),
+  deliveryKind: z.string().regex(/^[a-z][a-z0-9-]{0,63}$/).optional(),
 }).strict();
 const imageArtifactsOutputSchema = z.object({
   artifacts: z.array(imageArtifactOutputSchema).min(1).max(10),
   artifact: imageArtifactOutputSchema.optional(),
+}).strict();
+const imageBatchResultOutputSchema = z.discriminatedUnion("ok", [
+  z.object({
+    requestId: batchRequestIdSchema,
+    operation: z.enum(["generate", "edit"]),
+    ok: z.literal(true),
+    artifacts: z.array(imageArtifactOutputSchema).min(1).max(10),
+  }).strict(),
+  z.object({
+    requestId: batchRequestIdSchema,
+    operation: z.enum(["generate", "edit"]),
+    ok: z.literal(false),
+    error: z.object({
+      code: z.string().regex(/^[a-z][a-z0-9_]{0,63}$/),
+      message: z.string().min(1),
+    }).strict(),
+  }).strict(),
+]);
+const imageBatchOutputSchema = z.object({
+  results: z.array(imageBatchResultOutputSchema).min(1).max(10),
+  summary: z.object({
+    total: z.number().int().min(1).max(10),
+    succeeded: z.number().int().min(0).max(10),
+    failed: z.number().int().min(0).max(10),
+    artifactCount: z.number().int().min(0).max(100),
+  }).strict(),
+  artifactIds: z.array(imageIdSchema).max(100),
+}).strict();
+const deliveryInputSchema = z.object({
+  deliverySize: z.string().regex(/^\d+[x*]\d+$/).optional(),
+  fit: z.enum(["stretch", "contain"]).optional(),
+  resample: z.enum(["nearest", "bilinear"]).optional(),
+  safeMargin: z.number().min(0).lt(0.5).optional(),
+  qa: z.boolean().optional(),
+  components: z.boolean().optional(),
+  grid: z.union([
+    z.string().regex(/^\d+[x*]\d+$/),
+    z.object({ rows: z.number().int().positive(), cols: z.number().int().positive() }).strict(),
+  ]).optional(),
+  expectedCount: z.number().int().min(1).max(10).optional(),
+  preview: z.object({
+    sizes: z.array(z.string().regex(/^\d+[x*]\d+$/)).min(1).max(10),
+    backgrounds: z.array(z.enum(["transparent", "white", "black", "gray", "checker"])).min(1).max(5).optional(),
+    resample: z.enum(["nearest", "bilinear"]).optional(),
+  }).strict().optional(),
+}).strict();
+const imageDeliveryOutputSchema = z.object({
+  sourceArtifactId: imageIdSchema,
+  deliveryReady: z.boolean(),
+  artifacts: z.array(imageArtifactOutputSchema).max(10),
+  qa: z.record(z.unknown()).nullable().optional(),
+  warnings: z.array(z.string()).max(20).optional(),
+  summary: z.record(z.unknown()).optional(),
 }).strict();
 const imageModelCapabilitiesOutputSchema = z.object({
   generate: z.boolean().optional(),
@@ -610,6 +699,111 @@ export function createImagegenServer({
         }
       }
     }),
+  );
+
+  server.registerTool(
+    "batch_images",
+    {
+      title: "批量处理图片",
+      description: "执行一组相互独立的生成和普通编辑任务；结果按输入顺序逐项返回，允许部分成功，不自动展示图片。",
+      inputSchema: {
+        items: batchItemsSchema,
+        concurrency: z.number().int().min(1).max(3).optional(),
+      },
+      outputSchema: imageBatchOutputSchema,
+      annotations: writeAnnotations(),
+    },
+    async ({ items, concurrency = 3 }, extra) =>
+      await withBoundProject(projectContext, extra, async (context) => {
+        const batch = await executeImageBatch({
+          items,
+          concurrency,
+          context,
+          runTask,
+          readArtifact,
+          validateEdit: async (item) => {
+            editSubmissions.resolveForEdit({
+              bindingKey: context.bindingKey,
+              parentImageId: item.parentImageId,
+            });
+          },
+        });
+        const artifacts = batch.results.flatMap((item) => (item.ok ? item.artifacts : []));
+        return {
+          content: [{
+            type: "text",
+            text: `批量图片任务完成：成功 ${batch.summary.succeeded} 项，失败 ${batch.summary.failed} 项。`,
+          }],
+          structuredContent: batch,
+          _meta: {
+            imageIds: batch.artifactIds,
+            artifacts,
+          },
+        };
+      }),
+  );
+
+  server.registerTool(
+    "deliver_image",
+    {
+      title: "交付图片",
+      description: "基于稳定图片 ID 执行本地精确尺寸、网格、预览板和 QA 交付；原图保持不变，派生图单独存储，结果不会自动挂载图片画布。",
+      inputSchema: {
+        imageId: imageIdSchema,
+        modelProfileId: z.literal("primary/gpt-image-2").optional(),
+        delivery: deliveryInputSchema,
+      },
+      outputSchema: imageDeliveryOutputSchema,
+      annotations: writeAnnotations(),
+    },
+    async ({ imageId, modelProfileId = "primary/gpt-image-2", delivery }, extra) =>
+      await withBoundProject(projectContext, extra, async (context) => {
+        try {
+          const result = await runTask(
+            {
+              operation: "deliver",
+              modelProfileId,
+              inputArtifactIds: [imageId],
+              delivery,
+            },
+            context,
+          );
+          if (!result?.ok) {
+            return toolError(
+              new Error(result?.error?.message || "image delivery failed"),
+              result?.error?.code,
+            );
+          }
+          const artifactIds = (result.artifacts || []).map((item) => item.id);
+          const records = await Promise.all(artifactIds.map((id) => readArtifact(id, context)));
+          const artifacts = records.map(({ metadata }) => imageArtifactMetadata(metadata));
+          return {
+            content: [{
+              type: "text",
+              text: result.deliveryReady
+                ? `已完成图片 ${imageId} 的本地交付。`
+                : `图片 ${imageId} 已保留原图，交付条件尚未满足。`,
+            }],
+            structuredContent: {
+              sourceArtifactId: imageId,
+              deliveryReady: Boolean(result.deliveryReady),
+              artifacts,
+              ...(result.qa !== undefined ? { qa: result.qa } : {}),
+              ...(Array.isArray(result.warnings) && result.warnings.length
+                ? { warnings: result.warnings }
+                : {}),
+              ...(result.summary ? { summary: result.summary } : {}),
+            },
+            _meta: {
+              imageIds: artifactIds,
+              artifacts,
+              sourceArtifactId: imageId,
+            },
+          };
+        } catch (error) {
+          return toolError(error);
+        }
+      }),
   );
 
   server.registerTool(

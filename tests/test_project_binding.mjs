@@ -377,8 +377,12 @@ test("all business and app-only tools fail closed before project binding", async
     const extra = { sessionId: "unbound-transport", _meta: {} };
     const calls = [
       ["list_image_models", {}],
+      ["batch_images", {
+        items: [{ requestId: "generate-a", operation: "generate", prompt: "test" }],
+      }],
       ["generate_image", { prompt: "test" }],
       ["edit_image", { parentImageId: IMAGE_ID, prompt: "test" }],
+      ["deliver_image", { imageId: IMAGE_ID, delivery: { qa: true } }],
       ["get_image_artifact", { imageId: IMAGE_ID }],
       ["read_image_artifact_data", { imageId: IMAGE_ID }],
       ["render_image_results", { imageIds: [IMAGE_ID] }],

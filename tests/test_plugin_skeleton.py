@@ -32,6 +32,8 @@ DIST_RUNTIME_PATHS = [
         "image_alpha.py",
         "image_batch.py",
         "image_cli.py",
+        "image_delivery.py",
+        "image_delivery_ops.py",
         "image_download.py",
         "image_emissive_alpha.py",
         "image_mask_alpha.py",
@@ -182,6 +184,25 @@ class PluginSkeletonTests(unittest.TestCase):
         self.assertIn("MASK_GUARD_V2_BY_STRATEGY", text)
         self.assertIn("完整目标图片", text)
 
+    def test_skill_routes_local_delivery_and_presents_only_published_derivatives(self) -> None:
+        text = SKILL_PATH.read_text(encoding="utf-8")
+
+        self.assertIn("deliver_image", text)
+        self.assertIn("deliveryReady", text)
+        self.assertIn("preview", text)
+        self.assertIn("grid", text)
+        self.assertIn("render_image_results", text)
+
+    def test_skill_routes_heterogeneous_batches_once_without_retrying_failures(self) -> None:
+        text = SKILL_PATH.read_text(encoding="utf-8")
+
+        self.assertIn("batch_images", text)
+        self.assertIn("一次 `batch_images`", text)
+        self.assertIn("只调用一次 `render_image_results`", text)
+        self.assertIn("不重试失败项", text)
+        self.assertIn("mask 或画布提交", text)
+        self.assertIn("单独一次 `edit_image`", text)
+
     def test_static_widget_is_packaged(self) -> None:
         self.assertTrue(WIDGET_PATH.is_file())
         html = WIDGET_PATH.read_text(encoding="utf-8")
@@ -207,7 +228,9 @@ class PluginSkeletonTests(unittest.TestCase):
         self.assertEqual(
             payload["tools"],
             [
+                "batch_images",
                 "bind_imagegen_project",
+                "deliver_image",
                 "destroy_image_editor",
                 "edit_image",
                 "finalize_image_editor_session",

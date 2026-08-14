@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import base64
 import hashlib
 import json
 import re
@@ -20,8 +19,17 @@ for import_root in (SCRIPT_DIR, SKILL_DIR):
     if str(import_root) not in sys.path:
         sys.path.insert(0, str(import_root))
 
+import image_delivery
 import image_transport
+from image_response import (
+    MAX_IMAGE_RESPONSE_BYTES,
+    MAX_IMAGE_RESPONSE_ITEMS,
+    MAX_JSON_RESPONSE_BYTES,
+    MAX_TOTAL_IMAGE_RESPONSE_BYTES,
+    decode_base64_image,
+)
 from scripts.artifact_repository import ArtifactRepository
+from scripts.image_delivery import DeliveryError
 from scripts.image_download import ImageDownloadError, download_image_url
 from scripts.mask_policy import (
     MASK_GUARD_V2_BY_STRATEGY,
@@ -107,7 +115,7 @@ def request_json(cfg: Config, path: str, payload: dict[str, Any], timeout: int) 
             path=path,
             payload=payload,
             timeout=timeout,
-            response_limit=None,
+            response_limit=MAX_JSON_RESPONSE_BYTES,
         )
     except (image_transport.TransportError, ValueError) as exc:
         raise ImagegenError(str(exc)) from exc
@@ -129,7 +137,7 @@ def request_multipart(
             fields=fields,
             files=files,
             timeout=timeout,
-            response_limit=None,
+            response_limit=MAX_JSON_RESPONSE_BYTES,
         )
     except (image_transport.TransportError, ValueError) as exc:
         raise ImagegenError(str(exc)) from exc
@@ -150,11 +158,36 @@ def decode_response_images(
     response: dict[str, Any],
     user_agent: str,
     direct_url_download: bool = False,
+    *,
+    max_items: int = MAX_IMAGE_RESPONSE_ITEMS,
+    total_limit: int = MAX_TOTAL_IMAGE_RESPONSE_BYTES,
 ) -> list[bytes]:
     data = response.get("data")
     if not isinstance(data, list) or not data:
         raise ImagegenError("API response did not include data images")
-    images = [decode_image_item(item, user_agent, direct_url_download) for item in data if isinstance(item, dict)]
+
+    if max_items < 1:
+        raise ImagegenError("image response item limit must be positive")
+    if len(data) > max_items:
+        raise ImagegenError(
+            f"API response contains too many image items: {len(data)} exceeds the {max_items}-item limit"
+        )
+    if total_limit < 1:
+        raise ImagegenError("total image response limit must be positive")
+
+    images: list[bytes] = []
+    total_bytes = 0
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        raw = decode_image_item(item, user_agent, direct_url_download)
+        total_bytes += len(raw)
+        if total_bytes > total_limit:
+            raise ImagegenError(
+                "total image response exceeds the "
+                f"{total_limit}-byte cumulative limit"
+            )
+        images.append(raw)
     if not images:
         raise ImagegenError("API response did not include b64_json or url images")
     return images
@@ -167,7 +200,13 @@ def decode_image_item(
 ) -> bytes:
     b64_value = item.get("b64_json")
     if isinstance(b64_value, str) and b64_value.strip():
-        return base64.b64decode(strip_data_url_prefix(b64_value))
+        try:
+            return decode_base64_image(
+                strip_data_url_prefix(b64_value),
+                MAX_IMAGE_RESPONSE_BYTES,
+            )
+        except ValueError as exc:
+            raise ImagegenError(str(exc)) from exc
     url = item.get("url")
     if isinstance(url, str) and url.strip():
         try:
@@ -242,7 +281,7 @@ def run_machine_task(
                 f"unsupported model profile: {profile_id or '(missing)'}",
             )
         operation = str(task.get("operation") or "").strip().lower()
-        if operation not in {"generate", "edit", "list_models"}:
+        if operation not in {"generate", "edit", "deliver", "list_models"}:
             raise MachineTaskError("invalid_task", f"unsupported operation: {operation or '(missing)'}")
         config_snapshot: bytes | None = None
         if config_path is not None:
@@ -256,7 +295,7 @@ def run_machine_task(
             if current_sha256 != config_sha256:
                 raise MachineTaskError("v2_config_changed", "V2 configuration changed after project binding")
         effective_cfg = effective_cfg or load_config(
-            require_api_key=operation != "list_models",
+            require_api_key=operation not in {"list_models", "deliver"},
             config_path=config_path,
             model_profile_id=profile_id,
             config_snapshot=config_snapshot,
@@ -278,6 +317,13 @@ def run_machine_task(
                     }
                 ],
             }
+
+        if operation == "deliver":
+            return run_delivery_task(
+                task,
+                Path(project_root),
+                Path(artifact_root),
+            )
 
         prompt = str(task.get("prompt") or "").strip()
         if not prompt:
@@ -369,6 +415,8 @@ def run_machine_task(
                     response,
                     effective_cfg.user_agent,
                     effective_cfg.url_download.get("proxy_mode") == "direct",
+                    max_items=1,
+                    total_limit=MAX_TOTAL_IMAGE_RESPONSE_BYTES,
                 )
                 if len(candidate_images) != 1:
                     raise MachineTaskError(
@@ -399,6 +447,8 @@ def run_machine_task(
                 response,
                 effective_cfg.user_agent,
                 effective_cfg.url_download.get("proxy_mode") == "direct",
+                max_items=params["count"],
+                total_limit=MAX_TOTAL_IMAGE_RESPONSE_BYTES,
             )
             if len(images) != params["count"]:
                 raise MachineTaskError(
@@ -446,6 +496,67 @@ def run_machine_task(
     finally:
         if submission_lock is not None:
             submission_lock.release()
+
+
+def run_delivery_task(
+    task: dict[str, Any],
+    project_root: Path,
+    artifact_root: Path,
+) -> dict[str, Any]:
+    input_ids = task.get("inputArtifactIds") or []
+    if not isinstance(input_ids, list) or len(input_ids) != 1 or not isinstance(input_ids[0], str):
+        raise MachineTaskError("invalid_task", "deliver requires exactly one source artifact ID")
+    repository = ArtifactRepository(project_root, artifact_root)
+    source_id = input_ids[0]
+    try:
+        source = repository.get_artifact(source_id)
+    except (KeyError, ValueError, FileNotFoundError) as exc:
+        raise MachineTaskError("artifact_not_found", f"source artifact is unavailable: {source_id}") from exc
+    try:
+        delivery = image_delivery.deliver_artifact(
+            source_artifact_id=source_id,
+            source_bytes=source.image_bytes,
+            source_mime_type=str(source.metadata.get("mimeType") or ""),
+            delivery=task.get("delivery"),
+        )
+    except DeliveryError as exc:
+        raise MachineTaskError(exc.code, str(exc)) from exc
+
+    records: list[dict[str, Any]] = []
+    derived_images = delivery.get("artifacts") or []
+    delivery_kinds = delivery.get("deliveryKinds") or []
+    parameters = delivery.get("parameters") or []
+    if delivery.get("deliveryReady") and derived_images:
+        try:
+            stored = repository.store_derived_images(
+                images=derived_images,
+                mime_type="image/png",
+                derived_from=source_id,
+                delivery_kinds=delivery_kinds,
+                parameters=parameters,
+            )
+            records = [repository.get_artifact(record.metadata["id"]).metadata for record in stored]
+        except (KeyError, OSError, ValueError) as exc:
+            # The source remains valid; no partial derived result is reported.
+            return {
+                "ok": True,
+                "sourceArtifactId": source_id,
+                "deliveryReady": False,
+                "artifacts": [],
+                "qa": delivery.get("qa"),
+                "warnings": ["derived artifact publication failed; source artifact was preserved"],
+            }
+
+    return {
+        "ok": True,
+        "sourceArtifactId": source_id,
+        "deliveryReady": bool(delivery.get("deliveryReady")),
+        "artifacts": records,
+        "qa": delivery.get("qa"),
+        "warnings": list(delivery.get("warnings") or []),
+        "summary": delivery.get("summary"),
+        "source": delivery.get("source"),
+    }
 
 
 def edit_submission_fingerprint(task: dict[str, Any], params: dict[str, Any]) -> str:

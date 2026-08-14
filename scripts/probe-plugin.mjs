@@ -339,6 +339,8 @@ async function main() {
     requireValue(tools.includes("open_image_editor"), "MCP server does not expose open_image_editor");
     requireValue(tools.includes("generate_image"), "MCP server does not expose generate_image");
     requireValue(tools.includes("edit_image"), "MCP server does not expose edit_image");
+    requireValue(tools.includes("batch_images"), "MCP server does not expose batch_images");
+    requireValue(tools.includes("deliver_image"), "MCP server does not expose deliver_image");
     requireValue(tools.includes("get_image_artifact"), "MCP server does not expose get_image_artifact");
     requireValue(tools.includes("inspect_imagegen_runtime"), "MCP server does not expose inspect_imagegen_runtime");
     requireValue(tools.includes("read_image_artifact_data"), "MCP server does not expose read_image_artifact_data");

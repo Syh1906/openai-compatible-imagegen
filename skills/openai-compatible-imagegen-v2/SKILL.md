@@ -1,6 +1,6 @@
 ---
 name: openai-compatible-imagegen-v2
-description: 在 Codex App 会话中生成、编辑和标注 OpenAI-compatible 图片，并从具体图片结果打开聚焦画布。用于图片生成、参考图编辑、mask 编辑、版本查看和继续处理历史图片；首期使用当前项目已支持的 gpt-image-2。不得切换到内置 image_gen 或其他图片路线。
+description: 在 Codex App 会话中生成、编辑、标注和交付 OpenAI-compatible 图片，并从具体图片结果打开聚焦画布。用于图片生成、参考图编辑、mask 编辑、版本查看、精确尺寸、网格拆分、预览板、确定性 QA 和继续处理历史图片；首期使用当前项目已支持的 gpt-image-2。不得切换到内置 image_gen 或其他图片路线。
 ---
 
 # OpenAI-Compatible Image Generation V2
@@ -18,9 +18,21 @@ description: 在 Codex App 会话中生成、编辑和标注 OpenAI-compatible �
 1. 生成图片时只调用一次 `generate_image`；需要多张候选时在同一次工具调用中传入 `count`。运行时会按顺序执行等量的独立单图请求，全部成功后才返回有序候选组；任一请求失败时整组失败且不保存部分候选，不要自行重试或改成多次 `generate_image` 调用。成功后只从返回的 `artifacts` 读取稳定图片 ID 和元数据，再按原顺序只调用一次 `render_image_results` 在当前会话显示候选图。生成工具不承担图片字节呈现，不要为了展示再次调用 `get_image_artifact`。
 2. 用户要查看或标注某张图片时，直接使用图片结果卡上的“打开画布”入口；不要在已经展示具体图片结果后再次主动调用 `open_image_editor`。该工具仅供结果 widget 内部打开聚焦画布。
 3. 编辑已有图片时调用 `edit_image`，并保留父图片 ID；成功后只从返回结果读取稳定 ID 和版本元数据，再只调用一次 `render_image_results` 展示新版本。不要为了展示再次调用 `get_image_artifact`。
-4. 读取产物时调用 `get_image_artifact`。该工具只返回数据，不创建结果卡；只有用户需要查看历史图片且没有现成结果入口时，才读取后调用一次 `render_image_results`。
-5. 需要查看模型能力时调用 `list_image_models`。
-6. 画布明确提交时，由 widget 一次调用 `prepare_image_edit_submission` 保存标注并取得服务端签发的 `submissionId`；未提交标注不得调用该工具。`save_image_annotations` 不参与这条原子提交路径。
+4. 用户一次要求执行多个相互独立、参数不同的生成或普通编辑任务时，只调用一次 `batch_images`。成功后按返回顺序汇总所有成功项的稳定图片 ID，只调用一次 `render_image_results`；逐项报告失败，不重试失败项。mask 或画布提交继续单独一次 `edit_image`，不得放入批量任务。
+5. 已有稳定图片 ID 后，用户要求精确尺寸、`contain`/安全边距、网格拆分、预览板或确定性 QA 时，只调用一次 `deliver_image`。派生图发布成功后，从返回的 `artifacts` 读取稳定 ID，并按原顺序只调用一次 `render_image_results`；只有 QA、没有派生图时直接报告 QA，不重复展示原图。
+6. 读取产物时调用 `get_image_artifact`。该工具只返回数据，不创建结果卡；只有用户需要查看历史图片且没有现成结果入口时，才读取后调用一次 `render_image_results`。
+7. 需要查看模型能力时调用 `list_image_models`。
+8. 画布明确提交时，由 widget 一次调用 `prepare_image_edit_submission` 保存标注并取得服务端签发的 `submissionId`；未提交标注不得调用该工具。`save_image_annotations` 不参与这条原子提交路径。
+
+## 批量任务
+
+`batch_images` 接受 1 到 10 个具有唯一 `requestId` 的独立任务，并以 1 到 3 的并发度执行。每项只能是普通 `generate` 或 `edit`；同提示的多候选仍使用一次 `generate_image(count=N)`。批量结果保持输入顺序并允许部分成功，但失败项不会触发改参、换模型、换端点、换协议或自动重试。
+
+## 本地交付
+
+把 `deliverySize` 用于精确尺寸；`fit=contain` 与 `safeMargin` 用于保留比例和边距；已知图集布局时同时传 `grid`、`expectedCount` 和每格 `deliverySize`；需要多尺寸、多背景检查时传 `preview.sizes` 与 `preview.backgrounds`；需要技术检查时传 `qa=true`，需要连通区域指标时再传 `components=true`。
+
+`deliver_image` 只读取一个稳定源图。原图保持不变；成功的尺寸图、网格单元和预览板以 `operation=derive`、独立稳定 ID 和 `derivedFrom` 关系保存，不进入编辑版本父子树。`deliveryReady=true` 才把返回的派生 ID 交给 `render_image_results`。`deliveryReady=false` 时报告 `qa` 和 `warnings`，不伪造派生图，也不自动转码、切换格式、改变模型或重试。当前本地变换只处理 PNG 源；其他完整格式保留原图并明确报告未就绪。
 
 ## 画布提交
 

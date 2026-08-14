@@ -39,6 +39,8 @@ const EXPECTED_RUNTIME_FILES = [
   "image_alpha.py",
   "image_batch.py",
   "image_cli.py",
+  "image_delivery.py",
+  "image_delivery_ops.py",
   "image_download.py",
   "image_emissive_alpha.py",
   "image_mask_alpha.py",

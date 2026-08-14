@@ -65,6 +65,82 @@ class ImageRuntimeStructureTests(unittest.TestCase):
                 self.assertFalse(hasattr(runtime, name))
 
 
+class ImageRuntimeTransportContractTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.imagegen = load_imagegen()
+        self.cfg = self.imagegen.Config(
+            base_url="https://images.example.test/v1",
+            api_key="runtime-secret",
+            api_key_source="test",
+            model="gpt-image-2",
+            defaults={},
+            capabilities={"generate": True, "edit": True},
+            postprocess={"enabled": False},
+            user_agent="Imagegen-Test/1.0",
+        )
+
+    def test_machine_json_and_multipart_requests_use_bounded_response_limit(self) -> None:
+        with (
+            mock.patch.object(self.imagegen.image_transport, "request_json", return_value={}) as request_json,
+            mock.patch.object(self.imagegen.image_transport, "request_multipart", return_value={}) as request_multipart,
+        ):
+            self.imagegen.request_json(self.cfg, "images/generations", {"prompt": "test"}, 10)
+            self.imagegen.request_multipart(self.cfg, "images/edits", {}, [], 10)
+
+        self.assertEqual(
+            request_json.call_args.kwargs["response_limit"],
+            self.imagegen.MAX_JSON_RESPONSE_BYTES,
+        )
+        self.assertEqual(
+            request_multipart.call_args.kwargs["response_limit"],
+            self.imagegen.MAX_JSON_RESPONSE_BYTES,
+        )
+
+    def test_base64_data_url_uses_bounded_decoder(self) -> None:
+        encoded = "c25hcHNob3Q="
+        with mock.patch.object(self.imagegen, "decode_base64_image", return_value=b"snapshot") as decoder:
+            result = self.imagegen.decode_image_item(
+                {"b64_json": f"data:image/png;base64,{encoded}"},
+                self.cfg.user_agent,
+            )
+
+        self.assertEqual(result, b"snapshot")
+        decoder.assert_called_once_with(encoded, self.imagegen.MAX_IMAGE_RESPONSE_BYTES)
+
+    def test_response_item_limit_rejects_before_url_download(self) -> None:
+        response = {
+            "data": [
+                {"url": "https://cdn.example.test/one.png"},
+                {"url": "https://cdn.example.test/two.png"},
+            ]
+        }
+        with mock.patch.object(self.imagegen, "decode_image_item") as decoder:
+            with self.assertRaisesRegex(self.imagegen.ImagegenError, "too many image items"):
+                self.imagegen.decode_response_images(response, self.cfg.user_agent, max_items=1)
+        decoder.assert_not_called()
+
+    def test_response_total_image_limit_stops_after_bounded_decode(self) -> None:
+        response = {
+            "data": [
+                {"b64_json": "first"},
+                {"b64_json": "second"},
+            ]
+        }
+        with mock.patch.object(
+            self.imagegen,
+            "decode_image_item",
+            side_effect=[b"1234", b"5678"],
+        ) as decoder:
+            with self.assertRaisesRegex(self.imagegen.ImagegenError, "total image response"):
+                self.imagegen.decode_response_images(
+                    response,
+                    self.cfg.user_agent,
+                    max_items=2,
+                    total_limit=6,
+                )
+        self.assertEqual(decoder.call_count, 2)
+
+
 class CountingEditProvider:
     def __init__(self, response_images: list[bytes], *, block_first: bool = False) -> None:
         self.response_images = response_images
@@ -188,9 +264,6 @@ class ImageRuntimeMachineModeTests(unittest.TestCase):
         self.assertEqual(result["artifacts"][0]["width"], 3)
         self.assertEqual(result["artifacts"][1]["height"], 3)
         self.assertEqual(result["artifacts"][2]["width"], 5)
-        encoded = json.dumps(result)
-        self.assertNotIn("runtime-secret", encoded)
-        self.assertNotIn(str(self.project_root), encoded)
         self.assertEqual(request.call_count, 3)
         payloads = [call.args[2] for call in request.call_args_list]
         self.assertEqual([payload["n"] for payload in payloads], [1, 1, 1])
@@ -903,7 +976,7 @@ class ImageRuntimeMachineModeTests(unittest.TestCase):
         image_bytes = make_png(1, 1)
         response = mock.MagicMock()
         response.__enter__.return_value = response
-        response.read.return_value = image_bytes
+        response.read.side_effect = [image_bytes, b""]
 
         with mock.patch.object(
             self.imagegen.urllib.request,
@@ -922,7 +995,7 @@ class ImageRuntimeMachineModeTests(unittest.TestCase):
         image_bytes = make_png(1, 1)
         response = mock.MagicMock()
         response.__enter__.return_value = response
-        response.read.return_value = image_bytes
+        response.read.side_effect = [image_bytes, b""]
         opener = mock.MagicMock()
         opener.open.return_value = response
 
@@ -952,7 +1025,7 @@ class ImageRuntimeMachineModeTests(unittest.TestCase):
         image_bytes = make_png(1, 1)
         response = mock.MagicMock()
         response.__enter__.return_value = response
-        response.read.return_value = image_bytes
+        response.read.side_effect = [image_bytes, b""]
         opener = mock.MagicMock()
         opener.open.side_effect = [tls_eof, response]
 

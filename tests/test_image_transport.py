@@ -93,6 +93,21 @@ class ImageTransportTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "input file not found"):
             image_transport.build_multipart_body("test-boundary", {}, [("image[]", missing)])
 
+    def test_multipart_body_uses_snapshot_after_source_path_is_removed(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "parent.png"
+            path.write_bytes(b"path-content")
+            snapshot = b"snapshot-content"
+            path.unlink()
+
+            body = image_transport.build_multipart_body(
+                "test-boundary",
+                {},
+                [("image[]", path, snapshot)],
+            )
+
+            self.assertIn(snapshot, body)
+
 
 if __name__ == "__main__":
     unittest.main()

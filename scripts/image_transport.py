@@ -117,9 +117,10 @@ def build_multipart_body(
         )
     for upload in files:
         field_name, path = upload[:2]
-        if not path.is_file():
+        has_snapshot = len(upload) == 3
+        if not has_snapshot and not path.is_file():
             raise ValueError(f"input file not found: {path}")
-        snapshot = upload[2] if len(upload) == 3 else path.read_bytes()
+        snapshot = upload[2] if has_snapshot else path.read_bytes()
         if not isinstance(snapshot, bytes):
             raise ValueError("multipart file snapshot must be bytes")
         mime_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"

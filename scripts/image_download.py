@@ -7,6 +7,8 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
+from scripts.image_response import MAX_IMAGE_RESPONSE_BYTES, read_limited_bytes
+
 
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
@@ -76,9 +78,13 @@ def network_error_reason(error: Any, direct_url_download: bool) -> str:
 
 def read_downloaded_image(response: Any) -> bytes:
     try:
-        data = response.read()
+        data = read_limited_bytes(response, MAX_IMAGE_RESPONSE_BYTES, "image response")
     except http.client.IncompleteRead as exc:
         raise ImageDownloadError("image URL download was incomplete") from exc
+    except ValueError as exc:
+        if "incomplete" in str(exc):
+            raise ImageDownloadError("image URL download was incomplete") from exc
+        raise ImageDownloadError(str(exc)) from exc
 
     headers = getattr(response, "headers", None)
     content_length = headers.get("Content-Length") if headers is not None else None
