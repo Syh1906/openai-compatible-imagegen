@@ -17,7 +17,7 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
-from image_response import read_json_response, safe_error_body
+from image_response import MAX_JSON_RESPONSE_BYTES, read_json_response, safe_error_body
 
 
 MultipartUpload = tuple[str, Path] | tuple[str, Path, bytes]
@@ -46,7 +46,7 @@ def request_json(
     path: str,
     payload: dict[str, Any],
     timeout: int,
-    response_limit: int | None,
+    response_limit: int | None = MAX_JSON_RESPONSE_BYTES,
 ) -> dict[str, Any]:
     body = json.dumps(drop_none(payload)).encode("utf-8")
     request = urllib.request.Request(
@@ -67,7 +67,7 @@ def request_multipart(
     fields: dict[str, Any],
     files: list[MultipartUpload],
     timeout: int,
-    response_limit: int | None,
+    response_limit: int | None = MAX_JSON_RESPONSE_BYTES,
 ) -> dict[str, Any]:
     boundary = f"----codex-imagegen-{int(time.time() * 1000)}"
     body = build_multipart_body(boundary, fields, files)
