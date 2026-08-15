@@ -2,6 +2,30 @@
 
 This file records user-visible changes for each release of `openai-compatible-imagegen`.
 
+## [Unreleased]
+
+### Added
+
+- Add the `OpenAI-Compatible Images` Codex App Plugin with conversation image results, focused canvas editing, annotations, immutable artifacts, edit versions, advanced batch delivery, and deterministic QA.
+- Add a versioned Plugin configuration with a trusted user baseline and allowlisted project overrides for default size, quality, format, and project-local output directory.
+- Add an explicit, redacted migration workflow for Standalone and development Plugin configuration. Migration never overwrites an existing target or deletes the source.
+- Publish separate Standalone Skill and Codex Plugin archives from the same shared image core.
+
+### Changed
+
+- Present the repository as the `OpenAI-Compatible Images` product family. Users choose either the portable `OpenAI-Compatible Images Skill` or the complete Codex Plugin; the Plugin includes the Standalone generation and delivery capabilities.
+- Use `openai-compatible-imagegen` as the stable technical identity and remove the development `V2` suffix from the Plugin, configuration directory, bundled Skill, and release artifacts.
+
+### Fixed
+
+- Fix result cards that could remain blank or show `IMG-SCHEMA` after Codex projected a large image result. Cards now bind their ordered image IDs from the standard tool input and load each image once through the App-only data tool.
+- Reject artifact reads whose returned stable image ID differs from the requested ID before exposing image content or widget data.
+
+### Security
+
+- Reject project configuration that attempts to change the active profile, model, provider, endpoint, authentication source, credential environment variable, timeout, concurrency, or route permissions.
+- Require project output directories and migration targets to pass path, reparse-point, non-overwrite, and source-integrity checks before writing.
+
 ## [0.3.0] - 2026-08-13
 
 ### Added

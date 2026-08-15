@@ -8,6 +8,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 
 import { createImagegenServer } from "../mcp/create-server.mjs";
 import { createReleaseBundle, RELEASE_IDENTITY_PLACEHOLDER } from "../mcp/release-identity.mjs";
+import { createFixtureProjectContext } from "./fixture-project-context.js";
 import {
   EDITOR_SESSION_SETTLED_TOMBSTONE_LIMIT,
   createEditorSessionController,
@@ -1338,7 +1339,7 @@ test("session controller rebuilds released sessions from real MCP error results"
     createdAt: "2026-08-07T00:00:00.000Z",
   };
   const releaseIdentity = createReleaseBundle({
-    pluginId: "openai-compatible-imagegen-v2",
+    pluginId: "openai-compatible-imagegen",
     pluginVersion: "0.1.0-session-test",
     serverBuildInputs: [{ path: "test-server.mjs", content: "test server" }],
     widgetHtml: `<html><head>${RELEASE_IDENTITY_PLACEHOLDER}</head></html>`,
@@ -1346,6 +1347,7 @@ test("session controller rebuilds released sessions from real MCP error results"
   const server = createImagegenServer({
     releaseIdentity,
     launchContext: { cwd: pluginRoot, pluginRoot },
+    projectContext: createFixtureProjectContext({ projectRoot }),
     readWidgetHtml: async () => "<html></html>",
     runTask: async () => ({ ok: false, error: { code: "image_task_failed", message: "not used" } }),
     readArtifact: async () => ({ metadata, data: "" }),

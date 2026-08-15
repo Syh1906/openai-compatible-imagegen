@@ -11,6 +11,8 @@ const RESULT_IDS = [
   "img_01J00000000000000000000003",
   "img_01J00000000000000000000004",
 ];
+const BATCH_ID = "batch_01J00000000000000000000000";
+const MANIFEST_CREATED_AT = "2026-08-14T00:00:00.000Z";
 
 
 test("batch execution preserves input order and bounds heterogeneous task concurrency", async () => {
@@ -18,6 +20,7 @@ test("batch execution preserves input order and bounds heterogeneous task concur
   let active = 0;
   let maximumActive = 0;
   let nextResult = 0;
+  let recordedManifest;
   const result = await executeImageBatch({
     items: [
       { requestId: "generate-a", operation: "generate", prompt: "first", count: 1 },
@@ -34,6 +37,13 @@ test("batch execution preserves input order and bounds heterogeneous task concur
     concurrency: 2,
     context: { bindingKey: "project" },
     validateEdit: async () => {},
+    recordManifest: async (manifest) => {
+      recordedManifest = manifest;
+      return {
+        ok: true,
+        manifest: { batchId: BATCH_ID, createdAt: MANIFEST_CREATED_AT },
+      };
+    },
     runTask: async (task) => {
       const resultId = RESULT_IDS[nextResult];
       nextResult += 1;
@@ -42,7 +52,7 @@ test("batch execution preserves input order and bounds heterogeneous task concur
       maximumActive = Math.max(maximumActive, active);
       await new Promise((resolve) => setTimeout(resolve, 10));
       active -= 1;
-      return { ok: true, artifacts: [{ id: resultId }] };
+      return { ok: true, artifacts: [{ id: resultId }], apiDelivery: apiDelivery(resultId) };
     },
     readArtifact: async (id) => ({ metadata: artifact(id) }),
   });
@@ -51,8 +61,14 @@ test("batch execution preserves input order and bounds heterogeneous task concur
   assert.deepEqual(result.results.map((item) => item.requestId), ["generate-a", "edit-b", "generate-c"]);
   assert.deepEqual(result.artifactIds, RESULT_IDS);
   assert.deepEqual(result.summary, { total: 3, succeeded: 3, failed: 0, artifactCount: 3 });
+  assert.equal(result.manifestReady, true);
+  assert.equal(result.batchId, BATCH_ID);
+  assert.deepEqual(result.results[0].apiDelivery, apiDelivery(RESULT_IDS[0]));
+  assert.equal(recordedManifest.schemaVersion, "batch-manifest.v1");
+  assert.equal(recordedManifest.results.length, 3);
   assert.deepEqual(tasks[0], {
     operation: "generate",
+    executionMode: "batch-item",
     modelProfileId: "primary/gpt-image-2",
     prompt: "first",
     inputArtifactIds: [],
@@ -61,6 +77,7 @@ test("batch execution preserves input order and bounds heterogeneous task concur
   });
   assert.deepEqual(tasks[1], {
     operation: "edit",
+    executionMode: "batch-item",
     modelProfileId: "primary/gpt-image-2",
     prompt: "second",
     inputArtifactIds: [PARENT_ID, REFERENCE_ID],
@@ -80,9 +97,13 @@ test("batch execution returns safe per-item failures without discarding successf
     concurrency: 1,
     context: { bindingKey: "project" },
     validateEdit: async () => {},
+    recordManifest: async () => ({
+      ok: true,
+      manifest: { batchId: BATCH_ID, createdAt: MANIFEST_CREATED_AT },
+    }),
     runTask: async (task) => {
       if (task.prompt === "first") throw new Error(privateText);
-      return { ok: true, artifacts: [{ id: RESULT_IDS[0] }] };
+      return { ok: true, artifacts: [{ id: RESULT_IDS[0] }], apiDelivery: apiDelivery(RESULT_IDS[0]) };
     },
     readArtifact: async (id) => ({ metadata: artifact(id) }),
   });
@@ -109,9 +130,13 @@ test("batch edit validation becomes a stable item failure before the runtime sta
     concurrency: 1,
     context: { bindingKey: "project" },
     validateEdit: async () => { throw error; },
+    recordManifest: async () => ({
+      ok: true,
+      manifest: { batchId: BATCH_ID, createdAt: MANIFEST_CREATED_AT },
+    }),
     runTask: async () => {
       runtimeCalls += 1;
-      return { ok: true, artifacts: [{ id: RESULT_IDS[0] }] };
+      return { ok: true, artifacts: [{ id: RESULT_IDS[0] }], apiDelivery: apiDelivery(RESULT_IDS[0]) };
     },
     readArtifact: async (id) => ({ metadata: artifact(id) }),
   });
@@ -139,5 +164,23 @@ function artifact(id) {
     parameters: {},
     annotationId: null,
     createdAt: "2026-08-14T00:00:00.000Z",
+  };
+}
+
+
+function apiDelivery(artifactId, requestedCount = 1) {
+  return {
+    status: "published",
+    requestedCount,
+    returnedCount: requestedCount,
+    publishedCount: 1,
+    items: [{
+      responseIndex: 1,
+      artifactId,
+      actualFormat: "png",
+      width: 1,
+      height: 1,
+    }],
+    issues: [],
   };
 }

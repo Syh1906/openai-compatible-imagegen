@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import binascii
+from dataclasses import dataclass
 import json
 import os
 from pathlib import Path
@@ -11,9 +12,9 @@ from typing import Callable
 from typing import Any
 import zlib
 
-from image_png import MAX_PNG_IDAT_CHUNKS, PNG_SIGNATURE
-from image_transaction import OutputTransaction
-from image_webp import WebPDecodeError, WebPResourceLimitError, validate_vp8l_payload
+from scripts.image_png import MAX_PNG_IDAT_CHUNKS, PNG_SIGNATURE
+from scripts.image_transaction import OutputTransaction
+from scripts.image_webp import WebPDecodeError, WebPResourceLimitError, validate_vp8l_payload
 
 
 MAX_JSON_RESPONSE_BYTES = 96 * 1024 * 1024
@@ -27,6 +28,14 @@ READ_CHUNK_BYTES = 64 * 1024
 
 class ImageValidationResourceError(ValueError):
     pass
+
+
+@dataclass(frozen=True)
+class ImageInspection:
+    image_format: str
+    width: int
+    height: int
+    validation_warning: str | None
 
 
 def publish_response_images(
@@ -294,6 +303,20 @@ def decode_base64_image(value: str, limit: int = MAX_IMAGE_RESPONSE_BYTES) -> by
 
 def detect_image_format(data: bytes) -> str | None:
     return _inspect_image_format(data)[0]
+
+
+def inspect_response_image(data: bytes) -> ImageInspection:
+    """Deeply validate one provider image and return its actual format and size."""
+    image_format, validation_warning = _inspect_image_format(data)
+    if image_format is None:
+        raise ValueError("image is not a complete PNG, JPEG, or WebP payload")
+    width, height = image_dimensions(data, image_format)
+    return ImageInspection(
+        image_format=image_format,
+        width=width,
+        height=height,
+        validation_warning=validation_warning,
+    )
 
 
 def _inspect_image_format(data: bytes) -> tuple[str | None, str | None]:

@@ -491,7 +491,7 @@ test("dynamic intent actions and version navigation accept direct host clicks", 
     assert.ok(version);
     version.dispatchEvent(new dom.window.MouseEvent("click", { bubbles: false, cancelable: true }));
     await waitFor(() => document.querySelector("[data-image-id]")?.textContent === childId);
-    assert.ok(host.toolCalls.some(({ name, arguments: args }) => name === "get_image_artifact" && args.imageId === childId));
+    assert.ok(host.toolCalls.some(({ name, arguments: args }) => name === "read_image_artifact_data" && args.imageId === childId));
   }, { children: [{ id: childId }] });
 });
 

@@ -387,7 +387,13 @@ def _write_all(handle: int, data: bytes) -> None:
         _raise_last_error(Path("<verified file>"))
 
 
-def _replace_file_by_handle(source_handle: int, source_path: Path, target_path: Path) -> None:
+def _replace_file_by_handle(
+    source_handle: int,
+    source_path: Path,
+    target_path: Path,
+    *,
+    replace_if_exists: bool = True,
+) -> None:
     del source_path
     try:
         existing_handle = _open_handle(target_path, directory=False)
@@ -399,7 +405,7 @@ def _replace_file_by_handle(source_handle: int, source_path: Path, target_path: 
     name_offset = _FileRenameInfo.file_name.offset
     buffer = ctypes.create_string_buffer(name_offset + len(encoded_name))
     info = ctypes.cast(buffer, ctypes.POINTER(_FileRenameInfo)).contents
-    info.replace_if_exists = True
+    info.replace_if_exists = replace_if_exists
     info.root_directory = None
     info.file_name_length = len(encoded_name) - 2
     ctypes.memmove(ctypes.addressof(buffer) + name_offset, encoded_name, len(encoded_name))
@@ -509,6 +515,78 @@ class DirectoryLease(AbstractContextManager["DirectoryLease"]):
 
     def __exit__(self, exc_type, exc_value, traceback) -> None:
         self.close()
+
+
+class SafeFileOperationError(OSError):
+    def __init__(self, message: str, *, residual_paths: tuple[Path, ...]) -> None:
+        super().__init__(message)
+        self.residual_paths = residual_paths
+
+
+def publish_new_file_safely(
+    directory_lease: DirectoryLease,
+    relative_path: str | Path,
+    data: bytes,
+) -> None:
+    relative = _relative_path(relative_path)
+    if len(relative.parts) != 1:
+        raise ValueError("safe publication target must be directly inside the leased directory")
+    target = directory_lease.path / relative
+    temporary = target.with_name(f".{target.name}.{secrets.token_hex(8)}.tmp")
+    handle = _open_handle(temporary, directory=False, disposition=CREATE_NEW)
+    published = False
+    failure: BaseException | None = None
+    try:
+        _write_all(handle, bytes(data))
+        _replace_file_by_handle(handle, temporary, target, replace_if_exists=False)
+        published = True
+    except BaseException as exc:
+        failure = exc
+        if not published:
+            try:
+                _delete_file_by_handle(handle, temporary)
+            except BaseException as cleanup_exc:
+                failure = SafeFileOperationError(
+                    f"safe publication failed and left a temporary file: {temporary}",
+                    residual_paths=(temporary,),
+                )
+                failure.__cause__ = cleanup_exc
+    try:
+        _close(handle)
+    except BaseException as close_exc:
+        residual = target if published else temporary
+        failure = SafeFileOperationError(
+            f"safe publication could not close its file handle: {residual}",
+            residual_paths=(residual,),
+        )
+        failure.__cause__ = close_exc
+    if failure is not None:
+        raise failure
+
+
+def delete_file_safely(directory_lease: DirectoryLease, relative_path: str | Path) -> None:
+    relative = _relative_path(relative_path)
+    if len(relative.parts) != 1:
+        raise ValueError("safe deletion target must be directly inside the leased directory")
+    target = directory_lease.path / relative
+    handle = _open_handle(
+        target,
+        directory=False,
+        protect_from_rename=True,
+        delete_access=True,
+    )
+    failure: BaseException | None = None
+    try:
+        _delete_file_by_handle(handle, target)
+    except BaseException as exc:
+        failure = exc
+    try:
+        _close(handle)
+    except BaseException as close_exc:
+        if failure is None:
+            failure = close_exc
+    if failure is not None:
+        raise failure
 
 
 def ensure_directory_tree_safely(project_root: Path, target: Path) -> DirectoryLease:

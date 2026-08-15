@@ -1,13 +1,12 @@
 <div align="center">
 
-# OpenAI 兼容图片生成 Skill
+# OpenAI 兼容图片
 
-**通过 OpenAI 兼容图片 API 生成、编辑、批量创建、检查并交付图片。**
+**通过 OpenAI 兼容图片 API 生成、编辑、批处理、检查并交付图片。**
 
 [![Release](https://img.shields.io/github/v/release/Syh1906/openai-compatible-imagegen?style=flat-square)](https://github.com/Syh1906/openai-compatible-imagegen/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
 [![CI](https://img.shields.io/github/actions/workflow/status/Syh1906/openai-compatible-imagegen/ci.yml?branch=main&style=flat-square)](https://github.com/Syh1906/openai-compatible-imagegen/actions)
-[![Skill](https://img.shields.io/badge/skill-SKILL.md-lightgrey?style=flat-square)](SKILL.md)
 
 [English](README.md) | 简体中文
 
@@ -15,37 +14,43 @@
 
 ---
 
-## 能做什么
+## 选择发行包
 
-这个可移植的 Agent Skill 为兼容客户端提供统一的图片工作流，可用于营销视觉、商品抠图、编辑插图、品牌素材、界面图形、游戏美术及其他图片交付物。
+这个仓库把同一套生图核心发布为两种替代安装形态。请按使用环境选择其中一种。
+
+| 发行包 | 适用场景 | 增加的入口 |
+| --- | --- | --- |
+| **OpenAI-Compatible Images Skill** | 需要可移植 Agent Skill、命令行工作流，或使用 Codex App 以外的兼容客户端 | Standalone CLI、本地 `auth.json`、JSONL 批处理、交付工具和 QA |
+| **OpenAI-Compatible Images** | 在 Codex App 中使用完整图片工作流 | MCP 工具、会话结果、聚焦画布、标注、不可变产物和版本历史 |
+
+Codex Plugin 完整包含 Standalone 的生成、编辑、批量、透明处理、交付和 QA 能力，不依赖 Standalone Skill 已安装。首个整合版本把两者视为替代选择，不承诺同时参与路由、自动同步配置，也不承诺两个安装共享产物目录。
+
+## 共享能力
 
 | 需求 | 能力 |
 | --- | --- |
-| 创建或修改图片 | 文生图和参考图编辑 |
-| 生成受控变体 | 支持逐任务参数和限流并发的 JSONL 批处理 |
-| 交付精确文件 | PNG 缩放、contain/stretch 适配、安全边距和网格拆分 |
-| 检查技术要求 | `qa.v1` 确定性检查，包括尺寸、alpha、边缘接触和可选连通组件 |
-| 检查展示效果 | 在多种尺寸和背景上生成预览板 |
-| 保持凭据私有 | git 忽略的 `auth.json`，支持直接密钥或环境变量认证 |
+| 创建或修改图片 | 文生图、参考图编辑、mask 和多参考图 |
+| 生成受控变体 | 单请求多图和受并发限制的 JSONL 批处理 |
+| 保留源结果 | 可选交付变换前先发布每张完整 API 原图 |
+| 交付精确文件 | PNG 缩放、contain/stretch、安全边距、网格拆分和预览板 |
+| 准备透明结果 | 明确的色键、发光 alpha、mask alpha 或已验证 prompt-alpha 路线 |
+| 检查技术要求 | `qa.v1` 确定性检查，包括尺寸、alpha、边缘接触和连通组件 |
+| 保持凭据私有 | 支持本地密钥或环境变量认证，结果不会返回密钥 |
 
-图片生成由 OpenAI 兼容后端完成。本地后处理是确定性操作，不会调用图片 API。
-
-## 兼容范围
-
-配置的 `base_url` 必须提供以下接口：
-
-| 模式 | 接口 | 请求类型 |
-| --- | --- | --- |
-| `generate` | `POST /v1/images/generations` | JSON |
-| `edit` | `POST /v1/images/edits` | `multipart/form-data` |
-
-图片响应可以包含 `data[].b64_json` 或 `data[].url`。单次请求支持 `n=1..16`。JSON 响应上限为 96 MiB，解码或下载后的单张图片上限为 64 MiB，整批解码后累计上限为 256 MiB，最多处理 64 个响应项。每项会依次解码、校验并发布，因此后续项触发上限或目标冲突时，已发布原图仍会保留。PNG 最多接受 4096 个 `IDAT` 分块；完整扫描线校验使用 96 MiB 工作预算，低内存精确长度校验覆盖到 512 MiB 解压扫描线，超过后会返回明确的资源上限错误。WebP 发布会检查 RIFF 容器和声明的分块边界；VP8 额外检查关键帧、尺寸和第一分区边界，VP8L 则执行完整且有界的熵码流校验。后端返回的数量、像素尺寸或格式与请求不一致时，仍会发布实际原图并记录偏差。图片 URL 不会收到 `API key`。
-
-请求参数支持精确像素尺寸、比例与分辨率预设、质量、输出格式、透明交付意图、moderation 和 compression。透明交付在 API 返回后通过明确的本地路线处理；经过验证的精确组合也可以使用提示词引导真实 alpha，但不会作为透明背景参数发送给 API。
+配置的后端必须提供 `POST /v1/images/generations` 和 `POST /v1/images/edits`。响应可以包含 `data[].b64_json` 或 `data[].url`。返回图片 URL 不会收到 API key。
 
 ## 安装
 
-从 [Releases](https://github.com/Syh1906/openai-compatible-imagegen/releases) 下载 `openai-compatible-imagegen-<version>.zip`，解压到 agent 客户端支持的 skills 目录。也可以把仓库直接 clone 到该目录。
+发行文件名会标明安装形态：
+
+```text
+openai-compatible-imagegen-skill-<version>.zip
+openai-compatible-imagegen-codex-plugin-<version>.zip
+```
+
+### Standalone Skill
+
+把 Skill 压缩包解压到 Agent 客户端支持的 skills 目录。解压后的 `openai-compatible-imagegen` 目录根部必须包含 `SKILL.md`。
 
 | 客户端 | 用户级路径 | 项目级路径 |
 | --- | --- | --- |
@@ -53,207 +58,166 @@
 | Claude Code | `~/.claude/skills/openai-compatible-imagegen` | `.claude/skills/openai-compatible-imagegen` |
 | OpenCode | `~/.config/opencode/skill/openai-compatible-imagegen` | `.opencode/skill/openai-compatible-imagegen` |
 
-安装目录根部必须包含 `SKILL.md`。
+### Codex Plugin
 
-## 配置后端
+使用当前 Codex App 版本支持的插件安装流程加载 Codex Plugin 压缩包。包根包含 `.codex-plugin/plugin.json`、`.mcp.json`、预构建 MCP server/widget 和 Plugin Skill，不需要本地 Web 服务。
 
-在安装后的 skill 目录运行配置向导：
+每个 release 会说明已验收分发渠道的具体安装和更新步骤。可下载压缩包不代表已经进入公共目录，也不代表支持自动更新。
+
+## 配置
+
+两个发行包会把各自的本地配置转换为同一个运行时模型。它们不会发现、合并或回退到另一种安装的配置文件。
+
+### Standalone 配置
+
+Standalone Skill 只读取安装目录中的 `auth.json`。请在安装目录运行配置向导：
 
 ```powershell
 $SkillDir = "/path/to/openai-compatible-imagegen"
 python "$SkillDir/scripts/quick-init.py"
 ```
 
-需要手动配置时，把 `examples/auth.example.json` 复制到 skill 目录并命名为 `auth.json`，再填写后端地址、模型和认证来源。git 会忽略 `auth.json`。
+手动配置时，把 [`examples/auth.example.json`](examples/auth.example.json) 复制为 `auth.json`，再设置 `base_url`、`model`，以及 `api_key_env` 或 `api_key`。Git 会忽略 `auth.json`。`url_download.proxy_mode` 默认使用环境代理。如果返回图片 URL 通过代理反复出现 TLS EOF，可用 `--allow-direct-url-download` 单次批准直连；只有已确认该 provider 的 URL 路线需要直连时，才持久设置为 `direct`。
 
-```json
-{
-  "base_url": "https://example.com/v1",
-  "api_key": "",
-  "api_key_env": "OPENAI_API_KEY",
-  "model": "gpt-image-2",
-  "postprocess": {
-    "enabled": false
-  },
-  "transparency": {
-    "default_route": "chroma-matting",
-    "prompt_only_allow": [],
-    "llm_assisted": {
-      "enabled": false,
-      "max_attempts": 2,
-      "allow_parameter_tuning": true,
-      "allow_route_change": true,
-      "allow_api_retry": false
-    }
-  }
-}
+运行时优先级：
+
+```text
+逐行 batch 字段 > 共享命令参数 > auth.json defaults > 内建默认值
 ```
 
-`api_key` 用于把密钥保存在本地配置中；`api_key_env` 用于填写环境变量名。运行 `info` 可查看打码后的配置摘要：
+运行 `info` 可查看脱敏摘要：
 
 ```powershell
-$SkillDir = "/path/to/openai-compatible-imagegen"
 python "$SkillDir/scripts/imagegen.py" info
 ```
 
-旧的 `capabilities.transparent_background` 配置和 `background=transparent` 请求值都已移除，不要把它们转换成 API 参数。`postprocess.enabled` 控制默认是否允许本地透明路线修改像素。关闭本地处理时，透明请求仍会正常调用 API：精确命中白名单时可以追加 alpha 提示词，否则保留用户原提示词，只检查返回原图是否自带有效 alpha。只有在确认后端确实支持提示词 alpha 后，才在 `transparency.prompt_only_allow` 中填写精确的 `model`、`mode` 和 `size` 组合。
+### Plugin 配置
 
-请求透明结果且允许本地处理时，会在 API 图片写入后执行选定路线，并不只依赖色键。受控纯色底使用颜色范围抠图，黑底发光特效使用亮度转 Alpha，已有蒙版时可读取 Alpha、亮度或指定 RGB 通道，覆盖传统通道选区与图层蒙版工作流。共享的 8 位 Alpha 流水线按路线组合扩缩边、羽化、小组件清理、已知黑白底 Remove Matte、Defringe 和多背景检查。可信蒙版会保护完全不透明前景，清理只作用于半透明边缘。毛发、玻璃、半透明布料以及前景与烟雾混合的复杂背景，需要受控底板或可信蒙版；条件不足时返回原图并标记未满足，不会猜测成功。`--no-postprocess` 不会阻止 API 请求或隐藏原图，2K/4K 也不会为了提示词降级。
+Codex Plugin 只读取以下固定路径：
 
-透明检查未通过时，API 原图会原样返回，并记录 `ok=true`、`transparency.status=unmet` 和 `delivery_ready=false`。skill 只告知实际状态，不拒绝或隐藏图片。
+1. 必需的用户配置：`~/.codex/openai-compatible-imagegen/config.json`
+2. 可选的项目配置：`<项目根>/.codex/openai-compatible-imagegen/config.json`
 
-可选的 `transparency.llm_assisted` 允许 Agent 查看未达标结果，并在限定次数内调整路线或参数。所有尝试仍需通过原有质量检查；只有设置 `allow_api_retry=true` 时才会再次请求图片 API。
+请从 [`skills/openai-compatible-imagegen/references/config.example.json`](skills/openai-compatible-imagegen/references/config.example.json) 开始配置。用户文件是可信基线，声明 `config_version: 1`、活动档案、provider、model、defaults、后处理、透明策略和 storage。
 
-## 向 Agent 提需求
+项目文件只能覆盖：
 
-用自然语言说明主体、视觉方向、最终尺寸、透明度、数量、检查要求和输出目录。
+- `defaults.size`
+- `defaults.quality`
+- `defaults.output_format`
+- `storage.output_directory`
 
-- “生成一张 `16:9`、`2K` 的新品发布横幅，再交付 `1200x675` PNG 到 `outputs/campaign`。”
-- “把这张商品照片处理成透明底 `512x512` PNG，四周保留 3% 安全边距。确认真实 alpha，并生成白色、黑色和棋盘格背景预览。”
-- “按这些提示词批量生成 4 张公共交通主题编辑插图，并保存 batch manifest。”
-- “创建一个方形品牌标志，报告连通组件和边缘接触，再生成 `64x64` 与 `256x256` 预览。”
-- “生成一张 `3x3` 的 UI 概念图，并拆成 9 张 `256x256` PNG。”
-- “创建一个幻想策略游戏的冰霜技能图标，不要文字，并交付 `64x64` 和 `128x128` 预览。”
+项目文件不能修改活动档案、模型、provider、endpoint、认证来源、密钥环境变量、超时、并发或路线权限。项目文件无效或越权时，会在读取凭据和发起网络请求前停止绑定。
 
-生成尺寸和交付尺寸相互独立。你可以先生成较大的源图，再输出精确尺寸的本地交付文件。如果后端返回了其他源图尺寸，仍会发布实际原图并记录尺寸偏差；显式 `delivery_size` 可以继续生成单独的派生文件。
+Plugin 生效优先级：
 
-## 手动命令
+```text
+工具显式值 > 项目白名单覆盖 > 用户 defaults > 内建默认值
+```
 
-手动命令适合验证和脚本化工作流。请先把 `$SkillDir` 设为 skill 的安装目录。
+`storage.output_directory` 必须是项目内安全相对目录，默认值为 `output/imagegen/`。项目根本身、项目外路径、文件、符号链接、junction 和其他重解析点都会被拒绝。项目绑定时会冻结配置；修改配置后需要重启 MCP 并重新绑定。
 
-### 生成与编辑
+## 迁移到 Plugin
+
+迁移必须由用户明确执行。Plugin 不会扫描、读取、复制、合并、删除或覆盖旧 `auth.json` 和开发期 Plugin 配置。
+
+在已安装 Plugin 根目录，用准确的旧配置路径和来源类型先运行脱敏 dry-run：
+
+```powershell
+python "<plugin-root>/dist/scripts/migrate_image_config.py" `
+  --source "<legacy-config>" `
+  --source-kind standalone
+```
+
+开发期 Plugin 配置使用 `--source-kind development-plugin`。只有这个来源可以迁移安全的项目覆盖，而且 dry-run 和 write 必须同时添加 `--include-project-overrides --project-root "<项目根>"`。
+
+检查 `sourceKind`、`sourceSha256`、目标路径、`readyToWrite` 和脱敏预览。确认后保持所有输入不变，并使用已检查的摘要写入：
+
+```powershell
+python "<plugin-root>/dist/scripts/migrate_image_config.py" `
+  --source "<legacy-config>" `
+  --source-kind standalone `
+  --write `
+  --expected-source-sha256 "<sourceSha256>"
+```
+
+默认迁移环境变量认证。可用的明文 key 需要单独批准，并在 write 命令添加 `--allow-plaintext-api-key`。源摘要变化、目标已存在、模型不支持、仍含已移除的 `transparent_background`、schema 无效或写入失败时，迁移会停止。源文件保持不变。项目不提供 Plugin 到 Standalone 的自动逆迁移。
+
+## 使用
+
+用自然语言说明主体、构图、视觉方向、尺寸、数量、透明要求、检查项和输出位置。
+
+- “生成一张 `16:9`、`2K` 的新品发布横幅，再交付 `1200x675` PNG。”
+- “把这张商品照片编辑成透明 `512x512` 抠图，保留 3% 安全边距，并在白色、黑色和棋盘格背景上预览。”
+- “按这些提示词生成 4 张编辑插图，并保留 batch manifest。”
+- “保护笔记本，把马克杯改成另一种颜色，然后在聚焦画布中检查结果。”
+
+在 Codex App 中，Plugin 通过 MCP 路由生成和编辑，在会话中渲染稳定结果，并在需要标注时打开聚焦画布。Standalone 则由 Agent 调用包内 CLI，并报告文件和 manifest 路径。
+
+### Standalone 命令
 
 ```powershell
 python "$SkillDir/scripts/imagegen.py" generate `
-  -p "Editorial illustration about urban shade, clear focal subject, no text" `
-  -f "outputs/urban-shade.png" `
+  -p "Editorial still life, soft window light, room for a headline, no text" `
+  -f "outputs/still-life.png" `
   --aspect 4:3 `
   --resolution 2K `
   --quality high
 
 python "$SkillDir/scripts/imagegen.py" edit `
-  -p "Convert this product photo into a clean catalog cutout" `
+  -p "Preserve the subject and camera angle; replace the background with a neutral studio wall" `
   -i "input.png" `
-  -f "outputs/product-cutout.png" `
-  --asset `
-  --transparent `
-  --postprocess
-```
+  -f "outputs/studio-edit.png"
 
-### 批量生成
-
-```powershell
 python "$SkillDir/scripts/imagegen.py" batch `
   --input "examples/batch.example.jsonl" `
   --out "outputs/imagegen" `
   --concurrency 3
 ```
 
-批处理行可以设置 `postprocess`、`transparency_route`、`transparency_mask`、`transparency_options`、`qa`、`components`、`delivery_size`、`grid`、`expected_count`、`resample`、`fit` 和 `safe_margin`。命令会写出 `manifest.json`。`original_files` 列出全部已发布 API 源图；`files` 按顺序包含源图及其成功派生图，`derived_files` 只列派生图。转换或透明检查失败时仍保留源图，并记录 `delivery_ready=false`。`api_delivery` 会保留请求值与实际数量、格式、尺寸、路径及警告。
+支持的命令包括 `info`、`generate`、`edit`、`batch`、`inspect-image`、`normalize`、`split-grid`、`preview-board` 和 `apply-transparency`。
 
-批处理路径使用两个明确基准：JSONL 中的 `images`、`mask` 和 `transparency_mask` 相对于 JSONL 文件目录；任务级或共享的 `file`、`out` 和 `postprocess_out_dir` 相对于 batch `--out`。绝对路径保持不变。manifest 会记录解析后的 `output_root`，并检查每个已声明的文件路径。输出冲突会在生成前报错。API 原图逐项独立发布；某张转换失败时返回该原图，其他成功派生图继续保留；全局文件数量和 QA 要求仍作用于完整派生结果集。
+## 原图与交付
 
-### 对已有图片应用透明处理
+生成成功和交付就绪是两个独立状态：
 
-```powershell
-python "$SkillDir/scripts/imagegen.py" apply-transparency "effect.png" `
-  --out "outputs/effect-transparent.png" `
-  --route emissive-alpha `
-  --transparency-param "black_point=8" `
-  --transparency-param "gamma=1.2"
-```
+- `ok=true` 表示至少发布了一张完整 API 原图。
+- Standalone 返回 `delivery_ready`；Plugin 把同一事实映射为 `deliveryReady`。
+- 透明、变换或 QA 失败时保留原图，并报告未满足条件。
+- API 返回数量、尺寸或格式偏差会记录为警告，不会隐藏有效原图。
 
-处理未达标时，命令会返回源图路径和 `delivery_ready=false`，不创建 `--out` 副本，并保持成功退出，让源图可以连同 warning 一起返回。
+生成尺寸和交付尺寸相互独立。较大的源图可以生成精确尺寸的本地派生图，不会覆盖源图。Plugin 会把原图、派生图、QA、交付收据、batch manifest 和编辑版本保存为相互关联的不可变产物。
 
-### 检查与验证
+## 透明处理
 
-```powershell
-python "$SkillDir/scripts/imagegen.py" inspect-image "input.png" `
-  --components `
-  --expected-size 512x512 `
-  --expect-transparent
-```
+`--transparent` 和 Plugin 的透明选项代表交付意图。它们会强制 PNG，但不会向图片 API 发送 `background=transparent`。
 
-`--expected-size` 检查精确尺寸。`--expect-transparent` 要求图片包含可见内容和真实 alpha。`--components` 为商品抠图、标志、界面元素和游戏素材等独立主体增加连通组件诊断。
+只有输入满足路线契约时才使用对应路线：
 
-QA 只检查确定性的技术指标，不判断审美、身份、布局或语义一致性。深度检查和本地变换支持不超过 2500 万像素、PNG 文件不超过 256 MiB、`IDAT` 分块不超过 4096 个的非交错 8 位或 16 位 RGB/RGBA。处理 16 位输入时，本地解码器会按通道确定性转换为 8 位 RGBA。带 `tRNS` 透明色块的 RGB PNG 会被明确拒绝，不会按不透明图片处理。
-
-### 准备交付文件
-
-```powershell
-python "$SkillDir/scripts/imagegen.py" normalize "input.png" `
-  --delivery-size 512x512 `
-  --fit contain `
-  --safe-margin 0.03 `
-  --resample bilinear `
-  --out "outputs/final.png"
-
-python "$SkillDir/scripts/imagegen.py" split-grid "sheet.png" `
-  --grid 3x3 `
-  --delivery-size 256x256 `
-  --expected-count 9 `
-  --resample bilinear `
-  --out-dir "outputs/candidates"
-```
-
-`stretch` 会填满精确交付尺寸。`contain` 在透明画布上保持宽高比。使用 `contain` 时，`--safe-margin` 会在每条边保留指定比例的边距。默认重采样方式是 `bilinear`；需要有意复制像素时使用 `nearest`。
-
-`generate`、`edit` 和 `batch` 也支持这些交付参数。添加 `--qa` 会附加 `qa.v1` 结果，不会改变生成成功状态或重试请求。透明检查未通过时，会跳过依赖透明结果的交付变换，并原样返回 API 图片；透明成功时，会同时返回 API 原图和最终派生交付图。
-
-### 生成预览板
-
-```powershell
-python "$SkillDir/scripts/imagegen.py" preview-board "input.png" `
-  --size 64x64 `
-  --size 256x256 `
-  --preview-background transparent `
-  --preview-background white `
-  --preview-background checker `
-  --out-dir "outputs/previews"
-```
-
-输出目录包含每种尺寸和背景组合、汇总预览板以及 `preview-manifest.json`。
-
-## 配置字段
-
-`auth.json` 的关键字段：
-
-| 字段 | 用途 |
+| 路线 | 适用输入 |
 | --- | --- |
-| `base_url` | OpenAI 兼容 API 基础地址，通常以 `/v1` 结尾 |
-| `api_key` / `api_key_env` | 本地密钥或环境变量名 |
-| `model` | 默认图片模型 |
-| `user_agent` | 图片 API 和图片 URL 请求使用的 HTTP 客户端标识 |
-| `url_download.proxy_mode` | 默认使用 `environment`，也可明确设置为 `direct` 直连下载 |
-| `defaults.*` | 默认尺寸、比例、分辨率、质量、格式、超时和并发数 |
-| `postprocess.enabled` | 默认允许本地透明处理；不会拦截大尺寸透明请求 |
-| `transparency.default_route` | 默认本地透明路线 |
-| `transparency.prompt_only_allow` | 允许提示词生成 alpha 的精确模型、模式和尺寸规则 |
-| `transparency.llm_assisted.*` | Agent 在限定范围内调整路线和参数的策略 |
+| `chroma-matting` | 已知、受控纯色底板上的独立主体 |
+| `emissive-alpha` | 纯黑背景上的火焰、粒子、闪电、发光或烟雾 |
+| `mask-alpha` | 可信 alpha、亮度或 RGB 通道蒙版 |
+| `prompt-alpha` | 已验证的精确后端 model/mode/size 组合 |
 
-如果图片 URL 通过代理反复出现 TLS EOF，可为单次命令明确使用 `--allow-direct-url-download`，或为已确认的供应商设置 `url_download.proxy_mode="direct"`。图片 API 请求仍使用正常网络路径。
+发丝、玻璃、半透明布料和复杂烟雾背景需要受控底板或可信蒙版。输入条件不足时会返回原图并标记未满足。画布中的保护/改图区域与透明交付使用的 alpha mask 是两个不同概念。
 
-透明未达标时，只要 API 图片已经写入，命令仍会保持成功。请先查看 warning 和 manifest 中的 `transparency` 记录，再判断文件是否适合最终使用。
+## QA 与限制
 
-HTTP 4xx 属于 API 拒绝，会记录为 `error_kind=api_rejected` 和 `status_code`；由于此时还没有图片，它不是透明失败。编辑结果或编辑错误可以附带参考图技术元数据，语义状态为 `not_evaluated`。异常长宽比会如实提示，但不会自动拦截请求。
+`qa.v1` 返回 `pass`、`fail`、`partial` 或 `not_evaluated`。它检查尺寸、alpha 覆盖、边缘接触、边距和可选连通组件等确定性技术事实，不判断审美、身份、布局或语义一致性，也不会修改请求来强制通过。
 
-## 支持的命令
+单次 API 请求支持 `n=1..16`。运行时会在发布前限制响应大小、单图解码大小、累计处理量、batch 并发和图片总数。PNG、JPEG 和 WebP 原图会经过有界结构校验。深度本地变换与 QA 只支持文档声明的 PNG 子集；不支持深度检查时只影响交付就绪状态，不会隐藏已经通过原图校验的文件。
 
-| 命令 | 用途 |
-| --- | --- |
-| `info` | 显示打码后的配置摘要 |
-| `generate` | 根据提示词生成图片 |
-| `edit` | 编辑一张或多张参考图 |
-| `batch` | 执行 JSONL 生成和编辑任务 |
-| `inspect-image` | 检查 PNG 属性和可选预期 |
-| `normalize` | 写出精确尺寸的 PNG 交付文件 |
-| `split-grid` | 把显式网格拆成独立 PNG 文件 |
-| `preview-board` | 渲染目标尺寸和背景预览 |
-| `apply-transparency` | 对已有 PNG 应用指定的本地透明路线 |
+任何路线都不会自动切换模型、provider、endpoint、协议、认证来源或下载代理。只有明确允许的工作流才能再次请求图片 API；Codex Plugin 不会在透明交付失败后重试图片 API。
 
-详细行为见 [提示词参考](references/prompting.md)、[参数参考](references/parameters.md)、[后处理参考](references/postprocess.md)和 [QA 参考](references/qa.md)。
+## 文档
 
-版本历史见 [CHANGELOG.md](CHANGELOG.md)。
+- [提示词指南](references/prompting.md)
+- [参数参考](references/parameters.md)
+- [后处理参考](references/postprocess.md)
+- [交付 QA 参考](references/qa.md)
+- [版本历史](CHANGELOG.md)
 
 ## 许可证
 

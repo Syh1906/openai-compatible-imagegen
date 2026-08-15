@@ -15,17 +15,18 @@ import {
   pathRelation,
 } from "../mcp/runtime-diagnostics.mjs";
 import { summarizeHostEnvelope } from "../web/host-observation.mjs";
+import { createFixtureProjectContext } from "./fixture-project-context.js";
 
 
 const RELEASE_IDENTITY = createReleaseBundle({
-  pluginId: "openai-compatible-imagegen-v2",
+  pluginId: "openai-compatible-imagegen",
   pluginVersion: "0.1.0-test",
   serverBuildInputs: [{ path: "mcp/server.mjs", content: "diagnostic server" }],
   widgetHtml: `<html><head>${RELEASE_IDENTITY_PLACEHOLDER}</head></html>`,
 }).releaseIdentity;
 const LAUNCH_CONTEXT = {
   cwd: "F:/workspace/current-project",
-  pluginRoot: "F:/plugin-cache/openai-compatible-imagegen-v2",
+  pluginRoot: "F:/plugin-cache/openai-compatible-imagegen",
 };
 const PROJECT_ROOT = "F:/workspace/current-project";
 const DIAGNOSTIC_PROJECT_ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -188,7 +189,7 @@ test("path diagnostics keep dot-prefixed descendants and detect absolute paths",
   assert.equal(containsAbsolutePath("EACCES: c:/users/alice/private.txt"), true);
   assert.equal(containsAbsolutePath("EACCES: \\\\server\\share\\private.txt"), true);
   assert.equal(containsAbsolutePath("EACCES: '/home/alice/private.txt'"), true);
-  assert.equal(containsAbsolutePath("ui://openai-compatible-imagegen-v2/result.html"), false);
+  assert.equal(containsAbsolutePath("ui://openai-compatible-imagegen/result.html"), false);
   assert.equal(containsAbsolutePath("https://example.test/image.png"), false);
 });
 
@@ -350,6 +351,7 @@ test("runtime diagnostics correlate widget and model calls within one MCP proces
   const server = createImagegenServer({
     releaseIdentity: RELEASE_IDENTITY,
     launchContext: LAUNCH_CONTEXT,
+    projectContext: createFixtureProjectContext({ projectRoot: DIAGNOSTIC_PROJECT_ROOT }),
     readWidgetHtml: async () => "<html></html>",
     runTask: async () => {
       throw new Error("not used");
@@ -405,6 +407,7 @@ test("runtime diagnostics retain only the latest process report", async () => {
   const server = createImagegenServer({
     releaseIdentity: RELEASE_IDENTITY,
     launchContext: LAUNCH_CONTEXT,
+    projectContext: createFixtureProjectContext({ projectRoot: DIAGNOSTIC_PROJECT_ROOT }),
     readWidgetHtml: async () => "<html></html>",
     runTask: async () => {
       throw new Error("not used");
@@ -536,6 +539,7 @@ async function withDiagnosticClient(capabilities, callback, roots = [], options 
   const server = createImagegenServer({
     releaseIdentity: RELEASE_IDENTITY,
     launchContext: LAUNCH_CONTEXT,
+    projectContext: createFixtureProjectContext({ projectRoot: DIAGNOSTIC_PROJECT_ROOT }),
     readWidgetHtml: async () => "<html></html>",
     runTask: async () => {
       throw new Error("not used");
@@ -572,7 +576,7 @@ async function bindDiagnosticProject(client, requestMeta) {
     arguments: { projectRoot: DIAGNOSTIC_PROJECT_ROOT },
     _meta: requestMeta,
   });
-  assert.equal(binding.isError, undefined);
+  assert.equal(binding.isError, undefined, binding.content?.[0]?.text);
   assert.deepEqual(binding.structuredContent, { status: "bound" });
 }
 

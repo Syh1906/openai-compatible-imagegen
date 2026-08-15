@@ -1284,7 +1284,7 @@ test("destroying after a version switch marks the session-bound image as destroy
       height: 1,
       operation: "generate",
       parentIds: [],
-      childIds: [childId],
+      childIds: [],
     },
   });
 
@@ -1308,7 +1308,10 @@ test("destroying after a version switch marks the session-bound image as destroy
       parentIds: [IMAGE_ID],
       childIds: [],
     }]);
-    await waitFor(() => document.querySelectorAll("[data-version-id] .version-thumb img").length === 2);
+    await waitFor(() => (
+      document.querySelectorAll("[data-version-id] .version-thumb img").length === 2
+      && [...document.querySelectorAll("[data-version-id]")].every((button) => !button.disabled)
+    ));
     assert.ok(document.querySelector(`[data-version-id="${IMAGE_ID}"]`));
     assert.ok(document.querySelector(`[data-version-id="${childId}"]`));
     document.querySelector(`[data-version-id="${childId}"]`).click();
@@ -1318,6 +1321,7 @@ test("destroying after a version switch marks the session-bound image as destroy
     document.querySelector("[data-action=confirm-destroy]").click();
     await waitFor(() => host.toolCalls.some(({ name }) => name === "destroy_image_editor"));
     await waitFor(() => document.querySelector(".inline-result") !== null);
+    host.notifyResultToolInput([IMAGE_ID, childId]);
     host.notifyResultArtifacts([{
       id: IMAGE_ID,
       mimeType: "image/png",

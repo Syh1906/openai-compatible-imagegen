@@ -5,15 +5,33 @@ import { z } from "zod";
 
 import { createEditSubmissionRegistry } from "./edit-submission-registry.mjs";
 import { executeImageBatch } from "./batch-images.mjs";
+import { createImageAuditHandlers } from "./image-audit-handlers.mjs";
+import {
+  safeDeliveryQa,
+  safeDeliverySummary,
+  safeDeliveryWarnings,
+} from "./delivery-result.mjs";
+import {
+  batchIdSchema,
+  batchManifestOutputSchema,
+  batchItemsSchema,
+  deliveryReceiptIdSchema,
+  deliveryInputSchema,
+  imageArtifactOutputSchema,
+  imageArtifactsOutputSchema,
+  imageBatchOutputSchema,
+  imageDeliveryOutputSchema,
+  imageIdSchema,
+  outputSchema,
+  transparencyInputSchema,
+} from "./image-tool-schemas.mjs";
 import {
   createRuntimeObservation,
   MAX_RUNTIME_ROOT_ENTRIES,
   MAX_RUNTIME_ROOT_SCHEME_LENGTH,
 } from "./runtime-diagnostics.mjs";
 import { createProjectContext } from "./project-context.mjs";
-import { createImageResultEnvelope } from "./result-envelope.mjs";
 import { isStableToolErrorCode, stableToolErrorMessages } from "./tool-errors.mjs";
-const imageIdSchema = z.string().regex(/^img_[0-9A-HJKMNP-TV-Z]{26}$/).describe("项目产物仓库中的稳定图片 ID");
 const editorSessionIdSchema = z.string().regex(/^eds_[0-9a-f]{32}$/).describe("已打开画布的会话 ID");
 const normalizedCoordinate = z.number().min(0).max(1);
 const normalizedPoint = z.object({ x: normalizedCoordinate, y: normalizedCoordinate });
@@ -39,126 +57,12 @@ const annotationItemSchema = z.discriminatedUnion("type", [
 ]);
 const annotationIdSchema = z.string().regex(/^ann_[0-9A-HJKMNP-TV-Z]{26}$/);
 const submissionIdSchema = z.string().regex(/^sub_[0-9a-f]{32}$/);
-const outputSchema = {
-  size: z.string().optional(),
-  quality: z.enum(["auto", "low", "medium", "high"]).optional(),
-  format: z.enum(["png", "jpeg", "webp"]).optional(),
-  count: z.number().int().min(1).max(10).optional(),
-  background: z.enum(["auto", "opaque", "transparent"]).optional(),
-};
-const batchRequestIdSchema = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/);
-const batchGenerateItemSchema = z.object({
-  requestId: batchRequestIdSchema,
-  operation: z.literal("generate"),
-  prompt: z.string().min(1),
-  modelProfileId: z.literal("primary/gpt-image-2").optional(),
-  ...outputSchema,
-}).strict();
-const batchEditItemSchema = z.object({
-  requestId: batchRequestIdSchema,
-  operation: z.literal("edit"),
-  parentImageId: imageIdSchema,
-  referenceImageIds: z.array(imageIdSchema).max(10).optional(),
-  prompt: z.string().min(1),
-  modelProfileId: z.literal("primary/gpt-image-2").optional(),
-  ...outputSchema,
-}).strict();
-const batchItemsSchema = z.array(z.discriminatedUnion("operation", [
-  batchGenerateItemSchema,
-  batchEditItemSchema,
-])).min(1).max(10).superRefine((items, context) => {
-  const seen = new Set();
-  for (const [index, item] of items.entries()) {
-    if (seen.has(item.requestId)) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: "requestId must be unique within a batch",
-        path: [index, "requestId"],
-      });
-    }
-    seen.add(item.requestId);
-  }
-});
-const imageArtifactOutputSchema = z.object({
-  id: imageIdSchema,
-  parentIds: z.array(imageIdSchema),
-  childIds: z.array(imageIdSchema),
-  mimeType: z.enum(["image/png", "image/jpeg", "image/webp"]),
-  width: z.number().int().positive(),
-  height: z.number().int().positive(),
-  provider: z.string().min(1),
-  model: z.string().min(1),
-  operation: z.enum(["generate", "edit", "derive"]),
-  prompt: z.string(),
-  parameters: z.record(z.unknown()),
-  annotationId: annotationIdSchema.nullable(),
-  createdAt: z.string().datetime(),
-  derivedFrom: imageIdSchema.optional(),
-  deliveryKind: z.string().regex(/^[a-z][a-z0-9-]{0,63}$/).optional(),
-}).strict();
-const imageArtifactsOutputSchema = z.object({
-  artifacts: z.array(imageArtifactOutputSchema).min(1).max(10),
-  artifact: imageArtifactOutputSchema.optional(),
-}).strict();
-const imageBatchResultOutputSchema = z.discriminatedUnion("ok", [
-  z.object({
-    requestId: batchRequestIdSchema,
-    operation: z.enum(["generate", "edit"]),
-    ok: z.literal(true),
-    artifacts: z.array(imageArtifactOutputSchema).min(1).max(10),
-  }).strict(),
-  z.object({
-    requestId: batchRequestIdSchema,
-    operation: z.enum(["generate", "edit"]),
-    ok: z.literal(false),
-    error: z.object({
-      code: z.string().regex(/^[a-z][a-z0-9_]{0,63}$/),
-      message: z.string().min(1),
-    }).strict(),
-  }).strict(),
-]);
-const imageBatchOutputSchema = z.object({
-  results: z.array(imageBatchResultOutputSchema).min(1).max(10),
-  summary: z.object({
-    total: z.number().int().min(1).max(10),
-    succeeded: z.number().int().min(0).max(10),
-    failed: z.number().int().min(0).max(10),
-    artifactCount: z.number().int().min(0).max(100),
-  }).strict(),
-  artifactIds: z.array(imageIdSchema).max(100),
-}).strict();
-const deliveryInputSchema = z.object({
-  deliverySize: z.string().regex(/^\d+[x*]\d+$/).optional(),
-  fit: z.enum(["stretch", "contain"]).optional(),
-  resample: z.enum(["nearest", "bilinear"]).optional(),
-  safeMargin: z.number().min(0).lt(0.5).optional(),
-  qa: z.boolean().optional(),
-  components: z.boolean().optional(),
-  grid: z.union([
-    z.string().regex(/^\d+[x*]\d+$/),
-    z.object({ rows: z.number().int().positive(), cols: z.number().int().positive() }).strict(),
-  ]).optional(),
-  expectedCount: z.number().int().min(1).max(10).optional(),
-  preview: z.object({
-    sizes: z.array(z.string().regex(/^\d+[x*]\d+$/)).min(1).max(10),
-    backgrounds: z.array(z.enum(["transparent", "white", "black", "gray", "checker"])).min(1).max(5).optional(),
-    resample: z.enum(["nearest", "bilinear"]).optional(),
-  }).strict().optional(),
-}).strict();
-const imageDeliveryOutputSchema = z.object({
-  sourceArtifactId: imageIdSchema,
-  deliveryReady: z.boolean(),
-  artifacts: z.array(imageArtifactOutputSchema).max(10),
-  qa: z.record(z.unknown()).nullable().optional(),
-  warnings: z.array(z.string()).max(20).optional(),
-  summary: z.record(z.unknown()).optional(),
-}).strict();
+const deliveryReceiptIdPattern = /^delivery_[0-9a-f]{64}$/;
 const imageModelCapabilitiesOutputSchema = z.object({
   generate: z.boolean().optional(),
   edit: z.boolean().optional(),
   mask: z.boolean().optional(),
   multi_reference: z.boolean().optional(),
-  transparent_background: z.boolean().optional(),
 }).strict();
 const imageModelOutputSchema = z.object({
   id: z.string().min(1),
@@ -301,7 +205,6 @@ const retainedHostErrorCodes = new Set([
   ...stableToolErrorMessages.keys(),
   "artifact_bridge_unavailable",
   "artifact_payload_invalid",
-  "artifact_result_invalid",
   "artifact_server_error",
   "artifact_tool_call_failed",
   "release_identity_mismatch",
@@ -356,7 +259,7 @@ export function createImagegenServer({
     {
       capabilities: {
         experimental: {
-          // Development-only: release-bound widget URIs require a fresh tools/list during V2 validation.
+          // Development-only: release-bound widget URIs require a fresh tools/list during pre-release validation.
           "codex/tool-catalog-cache": { cacheable: false },
         },
       },
@@ -366,6 +269,7 @@ export function createImagegenServer({
   const destroyedCanvasImageIdsByBinding = new Map();
   const hostObservationReports = new Map();
   const editSubmissions = createEditSubmissionRegistry();
+  const imageAuditHandlers = createImageAuditHandlers({ runTask, readArtifact });
 
   registerWidgetResource(server, {
     name: "image-result",
@@ -516,7 +420,7 @@ export function createImagegenServer({
     "list_image_models",
     {
       title: "读取图片模型",
-      description: "返回当前 V2 配置中可用的图片模型及安全能力声明。",
+      description: "返回当前图片配置中可用的图片模型及安全能力声明。",
       inputSchema: {},
       outputSchema: z.object({ models: z.array(imageModelOutputSchema) }).strict(),
       annotations: readAnnotations(),
@@ -547,14 +451,23 @@ export function createImagegenServer({
       inputSchema: {
         prompt: z.string().min(1),
         modelProfileId: z.literal("primary/gpt-image-2").optional(),
+        transparency: transparencyInputSchema.optional(),
         ...outputSchema,
       },
       outputSchema: imageArtifactsOutputSchema,
       annotations: writeAnnotations(),
     },
-    async ({ prompt, modelProfileId = "primary/gpt-image-2", ...output }, extra) =>
+    async ({ prompt, modelProfileId = "primary/gpt-image-2", transparency, ...output }, extra) =>
       await withBoundProject(projectContext, extra, async (context) => await executeImageTask(
-        { operation: "generate", modelProfileId, prompt, inputArtifactIds: [], annotationId: null, output },
+        {
+          operation: "generate",
+          modelProfileId,
+          prompt,
+          inputArtifactIds: [],
+          annotationId: null,
+          ...(transparency ? { transparency } : {}),
+          output,
+        },
         context,
         runTask,
         readArtifact,
@@ -573,6 +486,7 @@ export function createImagegenServer({
         annotationId: annotationIdSchema.optional(),
         submissionId: submissionIdSchema.optional(),
         modelProfileId: z.literal("primary/gpt-image-2").optional(),
+        transparency: transparencyInputSchema.optional(),
         ...outputSchema,
       },
       outputSchema: imageArtifactsOutputSchema,
@@ -585,6 +499,7 @@ export function createImagegenServer({
         referenceImageIds = [],
         prompt,
         modelProfileId = "primary/gpt-image-2",
+        transparency,
         ...output
       } = arguments_;
       const annotationId = arguments_.annotationId ?? null;
@@ -671,6 +586,7 @@ export function createImagegenServer({
             ...(claimedSubmission ? { submissionId: claimedSubmission.receipt.id } : {}),
             ...(annotation?.maskPath ? { mask: annotation.maskPath } : {}),
             ...(annotation?.maskPolicy ? { maskPolicy: annotation.maskPolicy } : {}),
+            ...(transparency ? { transparency } : {}),
             output: taskOutput,
           },
           context,
@@ -708,7 +624,7 @@ export function createImagegenServer({
       description: "执行一组相互独立的生成和普通编辑任务；结果按输入顺序逐项返回，允许部分成功，不自动展示图片。",
       inputSchema: {
         items: batchItemsSchema,
-        concurrency: z.number().int().min(1).max(3).optional(),
+        concurrency: z.number().int().min(1).max(8).optional(),
       },
       outputSchema: imageBatchOutputSchema,
       annotations: writeAnnotations(),
@@ -727,6 +643,11 @@ export function createImagegenServer({
               parentImageId: item.parentImageId,
             });
           },
+          recordManifest: async (manifest) => await runTask({
+            operation: "record_batch",
+            modelProfileId: "primary/gpt-image-2",
+            manifest,
+          }, context),
         });
         const artifacts = batch.results.flatMap((item) => (item.ok ? item.artifacts : []));
         return {
@@ -738,9 +659,38 @@ export function createImagegenServer({
           _meta: {
             imageIds: batch.artifactIds,
             artifacts,
+            ...(batch.batchId ? { batchId: batch.batchId } : {}),
           },
         };
       }),
+  );
+
+  server.registerTool(
+    "get_image_batch_manifest",
+    {
+      title: "读取批处理记录",
+      description: "按稳定批次 ID 读取不可变批处理 manifest；返回逐项原图、交付收据和错误状态，不自动展示图片。",
+      inputSchema: { batchId: batchIdSchema },
+      outputSchema: batchManifestOutputSchema,
+      annotations: readAnnotations(),
+    },
+    async ({ batchId }, extra) =>
+      await withBoundProject(projectContext, extra, async (context) =>
+        await imageAuditHandlers.getBatchManifest({ batchId, context })),
+  );
+
+  server.registerTool(
+    "get_image_delivery_receipt",
+    {
+      title: "读取图片交付记录",
+      description: "按稳定交付收据 ID 读取不可变派生产物和 QA 摘要；不自动展示图片。",
+      inputSchema: { deliveryReceiptId: deliveryReceiptIdSchema },
+      outputSchema: imageDeliveryOutputSchema,
+      annotations: readAnnotations(),
+    },
+    async ({ deliveryReceiptId }, extra) =>
+      await withBoundProject(projectContext, extra, async (context) =>
+        await imageAuditHandlers.getDeliveryReceipt({ deliveryReceiptId, context })),
   );
 
   server.registerTool(
@@ -774,9 +724,15 @@ export function createImagegenServer({
               result?.error?.code,
             );
           }
+          if (result.sourceArtifactId !== imageId) {
+            return toolError(new Error("delivery source artifact mismatch"), "invalid_task");
+          }
           const artifactIds = (result.artifacts || []).map((item) => item.id);
           const records = await Promise.all(artifactIds.map((id) => readArtifact(id, context)));
           const artifacts = records.map(({ metadata }) => imageArtifactMetadata(metadata));
+          const qa = safeDeliveryQa(result.qa);
+          const warnings = safeDeliveryWarnings(result.warnings);
+          const summary = safeDeliverySummary(result.summary);
           return {
             content: [{
               type: "text",
@@ -786,13 +742,14 @@ export function createImagegenServer({
             }],
             structuredContent: {
               sourceArtifactId: imageId,
+              ...(deliveryReceiptIdPattern.test(result.deliveryReceiptId)
+                ? { deliveryReceiptId: result.deliveryReceiptId }
+                : {}),
               deliveryReady: Boolean(result.deliveryReady),
               artifacts,
-              ...(result.qa !== undefined ? { qa: result.qa } : {}),
-              ...(Array.isArray(result.warnings) && result.warnings.length
-                ? { warnings: result.warnings }
-                : {}),
-              ...(result.summary ? { summary: result.summary } : {}),
+              ...(qa !== undefined ? { qa } : {}),
+              ...(warnings.length ? { warnings } : {}),
+              ...(summary !== undefined ? { summary } : {}),
             },
             _meta: {
               imageIds: artifactIds,
@@ -846,8 +803,8 @@ export function createImagegenServer({
       description: "供图片工作台按稳定图片 ID 读取图片像素数据。该工具只对 app/widget 可见。",
       inputSchema: { imageId: imageIdSchema },
       outputSchema: z.object({
-        id: imageIdSchema,
-        mimeType: z.string().regex(/^image\/(png|jpeg|webp)$/),
+        artifact: imageArtifactOutputSchema,
+        canvasStatus: z.enum(["available", "destroyed"]),
       }).strict(),
       annotations: readAnnotations(),
       _meta: {
@@ -858,11 +815,16 @@ export function createImagegenServer({
     async ({ imageId }, extra) => await withBoundProject(projectContext, extra, async (context) => {
       try {
         const artifact = await readArtifact(imageId, context);
+        assertArtifactIdentity(artifact, imageId);
         return {
           content: [{ type: "text", text: `已为图片工作台读取图片 ${imageId}。` }],
           structuredContent: {
-            id: artifact.metadata.id,
-            mimeType: artifact.metadata.mimeType,
+            artifact: imageArtifactMetadata(artifact.metadata),
+            canvasStatus: isCanvasDestroyed(
+              destroyedCanvasImageIdsByBinding,
+              context.bindingKey,
+              imageId,
+            ) ? "destroyed" : "available",
           },
           _meta: {
             widgetData: {
@@ -938,7 +900,11 @@ export function createImagegenServer({
         if (new Set(imageIds).size !== imageIds.length) {
           return toolError(new Error("图片 ID 不得重复"), "invalid_task");
         }
-        const records = await Promise.all(imageIds.map((imageId) => readArtifact(imageId, context)));
+        const records = await Promise.all(imageIds.map(async (imageId) => {
+          const artifact = await readArtifact(imageId, context);
+          assertArtifactIdentity(artifact, imageId);
+          return artifact;
+        }));
         const artifacts = records.map(({ metadata }) => ({
           ...imageArtifactMetadata(metadata),
           canvasStatus: isCanvasDestroyed(
@@ -949,7 +915,7 @@ export function createImagegenServer({
         }));
         return {
           content: [
-            { type: "text", text: createImageResultEnvelope(imageIds) },
+            { type: "text", text: `已显示 ${imageIds.length} 张图片。` },
             ...records.map(imageContent),
           ],
           structuredContent: { imageIds, artifacts },
@@ -1221,6 +1187,12 @@ async function rollbackPreparedAnnotation(annotation, deleteAnnotation, context,
     return toolError(new Error("failed to remove rejected annotation"), "annotation_save_failed");
   }
   return toolError(error, code);
+}
+
+function assertArtifactIdentity(artifact, imageId) {
+  if (artifact?.metadata?.id !== imageId) {
+    throw new Error("artifact identity mismatch");
+  }
 }
 
 function editorSessionResult(editorSession, status = editorSession?.status) {

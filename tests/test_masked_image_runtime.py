@@ -54,13 +54,15 @@ def make_png(width: int, height: int, pixels: list[tuple[int, int, int, int]]) -
     )
 
 
-def make_jpeg(width: int, height: int) -> bytes:
-    return (
-        b"\xff\xd8"
-        + b"\xff\xc0\x00\x07\x08"
-        + height.to_bytes(2, "big")
-        + width.to_bytes(2, "big")
-    )
+VALID_JPEG = base64.b64decode(
+    "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/"
+    "2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAACAAIDASIAAhEBAxEB/"
+    "8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkK"
+    "FhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXG"
+    "x8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAEC"
+    "AxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOE"
+    "hYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDlqKKK8c9Q/9k="
+)
 
 
 class MaskedImageRuntimeTests(unittest.TestCase):
@@ -338,7 +340,7 @@ class MaskedImageRuntimeTests(unittest.TestCase):
 
     def test_protect_only_accepts_a_non_png_parent_without_local_pixel_blending(self) -> None:
         self._use_fully_transparent_mask()
-        jpeg_parent_id = self._store_parent(make_jpeg(2, 2), "image/jpeg")
+        jpeg_parent_id = self._store_parent(VALID_JPEG, "image/jpeg")
         response = {
             "data": [{
                 "b64_json": base64.b64encode(make_png(2, 2, self.generated_pixels)).decode("ascii"),
@@ -372,7 +374,7 @@ class MaskedImageRuntimeTests(unittest.TestCase):
         self.assertIn("PNG parent", rejected["error"]["message"])
         edit_request.assert_not_called()
 
-    def test_protect_only_transparent_output_preserves_provider_rgba(self) -> None:
+    def test_protect_only_native_alpha_output_preserves_provider_rgba(self) -> None:
         self._use_fully_transparent_mask()
         generated_pixels = [
             (210, 220, 230, 255),
@@ -386,19 +388,11 @@ class MaskedImageRuntimeTests(unittest.TestCase):
             }]
         }
         task = self._task("protect-only")
-        task["output"] = {**task["output"], "background": "transparent"}
-        cfg = self.imagegen.Config(
-            **{
-                **self.cfg.__dict__,
-                "capabilities": {
-                    **self.cfg.capabilities,
-                    "transparent_background": True,
-                },
-            }
-        )
+        task["output"] = {**task["output"], "background": "opaque"}
+        cfg = self.cfg
 
         def request_side_effect(_cfg, _path, fields, files, _timeout):
-            self.assertEqual(fields["background"], "transparent")
+            self.assertEqual(fields["background"], "opaque")
             self.assertEqual(next(upload for upload in files if upload[0] == "mask")[2], self.mask_bytes)
             return response
 

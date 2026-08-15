@@ -22,10 +22,12 @@ const STABLE_TOOL_ERROR_ENTRIES = [
   ["stale_edit_submission", "画布提交已过期、已更新或已经使用。"],
   ["unsupported_capability", "当前图片模型不支持请求的能力。"],
   ["unsupported_model_profile", "当前图片模型配置不受支持。"],
-  ["output_directory_invalid", "V2 输出目录必须是图片项目内的安全目录。"],
-  ["v2_config_changed", "V2 配置在项目绑定后发生变化，请重启 MCP server 并重新绑定项目。"],
-  ["v2_config_invalid", "V2 配置文件无效或不可安全读取。"],
-  ["v2_config_missing", "V2 配置缺失。请创建用户配置或项目配置。"],
+  ["image_config_changed", "图片配置在项目绑定后发生变化，请重启 MCP server 并重新绑定项目。"],
+  ["image_config_invalid", "用户图片配置文件无效或不可安全读取。"],
+  ["image_config_missing", "用户图片配置缺失。请创建 ~/.codex/openai-compatible-imagegen/config.json。"],
+  ["output_directory_invalid", "输出目录必须是图片项目内的安全目录。"],
+  ["project_config_forbidden", "项目图片配置包含不允许覆盖的字段。"],
+  ["project_config_invalid", "项目图片配置文件无效或不可安全读取。"],
 ];
 
 export const stableToolErrorMessages = new Map(STABLE_TOOL_ERROR_ENTRIES);

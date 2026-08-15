@@ -2,6 +2,8 @@
 
 Post-processing converts returned PNG files into additional delivery files. It covers deterministic transparency processing, inspection, resizing, fit behavior, safe margins, grid splitting, QA, and preview boards. In generation, edit, and batch workflows, every published API original remains recorded in `original_files` and `files`, whether a derivative succeeds or fails.
 
+The Standalone CLI and Codex Plugin use the same post-processing implementation. Standalone reports `delivery_ready`; the Plugin reports `deliveryReady` and stores successful derivatives with their source relationship. A transparency alpha mask is an input to transparent delivery, while Codex canvas edit/protect regions express model editing intent; they are not interchangeable.
+
 Read [qa.md](qa.md) when the request includes quality checks. Read [prompting.md](prompting.md) when the request needs structured prompt construction or controlled batch variation.
 
 ## Natural-Language Requests

@@ -547,9 +547,10 @@ class ArtifactRepositoryTests(unittest.TestCase):
         class FailingCandidateMutation(mutation_type):
             def publish_new_file(self, relative_path, data):
                 nonlocal published
-                published += 1
-                if published == 3:
-                    raise OSError("candidate publish failed")
+                if Path(relative_path).parts[0] != ".transactions":
+                    published += 1
+                    if published == 3:
+                        raise OSError("candidate publish failed")
                 return super().publish_new_file(relative_path, data)
 
             def remove_directory_if_known(self, relative_path, known_files):

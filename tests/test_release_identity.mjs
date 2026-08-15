@@ -53,6 +53,7 @@ const EXPECTED_RUNTIME_FILES = [
   "image_response.py",
   "image_transaction.py",
   "image_transparency.py",
+  "image_transparency_contract.py",
   "image_transparency_runtime.py",
   "image_transport.py",
   "image_webp.py",
@@ -60,6 +61,7 @@ const EXPECTED_RUNTIME_FILES = [
   "imagegen_cli.py",
   "mask_policy.py",
   "image_runtime.py",
+  "migrate_image_config.py",
   "provider_config.py",
   "repository_fs_helper.py",
   "reveal_in_explorer.py",
@@ -69,13 +71,13 @@ const EXPECTED_RUNTIME_FILES = [
 
 test("release-bound widget URIs declare the Codex development cache opt-out", async () => {
   const previousRelease = createReleaseBundle({
-    pluginId: "openai-compatible-imagegen-v2",
+    pluginId: "openai-compatible-imagegen",
     pluginVersion: "0.1.0-test",
     serverBuildInputs: [{ path: "mcp/server.mjs", content: "previous server" }],
     widgetHtml: `<html><head>${RELEASE_IDENTITY_PLACEHOLDER}</head><body>previous widget</body></html>`,
   }).releaseIdentity;
   const currentRelease = createReleaseBundle({
-    pluginId: "openai-compatible-imagegen-v2",
+    pluginId: "openai-compatible-imagegen",
     pluginVersion: "0.1.0-test",
     serverBuildInputs: [{ path: "mcp/server.mjs", content: "current server" }],
     widgetHtml: `<html><head>${RELEASE_IDENTITY_PLACEHOLDER}</head><body>current widget</body></html>`,
@@ -166,7 +168,8 @@ test("the built plugin exposes one content-bound release identity", async () => 
   assert.equal(imageLoader.includes("resources/read"), false);
 
   const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), "imagegen-release-identity-"));
-  await writeArtifactFixture(fixtureRoot);
+  const userHome = path.join(fixtureRoot, "user-home");
+  await writeArtifactFixture(fixtureRoot, userHome);
   const client = new Client({ name: "release-identity-test", version: "0.1.0" });
   let toolListChangedCount = 0;
   let resourceListChangedCount = 0;
@@ -181,6 +184,7 @@ test("the built plugin exposes one content-bound release identity", async () => 
     args: [serverOutput],
     cwd: fixtureRoot,
     stderr: "pipe",
+    env: { HOME: userHome, USERPROFILE: userHome },
   });
 
   try {
@@ -260,6 +264,8 @@ test("the built plugin exposes one content-bound release identity", async () => 
       projectRoot,
       "--project-root",
       fixtureRoot,
+      "--user-home",
+      userHome,
       "--image-id",
       IMAGE_ID,
     ], { cwd: projectRoot });
@@ -337,16 +343,32 @@ function assertReleaseIdentity(releaseIdentity, manifest) {
 }
 
 
-async function writeArtifactFixture(root) {
-  const configDirectory = path.join(root, ".codex", "openai-compatible-imagegen-v2");
+async function writeArtifactFixture(root, userHome) {
+  const configDirectory = path.join(userHome, ".codex", "openai-compatible-imagegen");
   await mkdir(configDirectory, { recursive: true });
   await writeFile(path.join(configDirectory, "config.json"), `${JSON.stringify({
-    base_url: "https://example.test/v1",
-    api_key: "test-only-key",
-    model: "gpt-image-2",
-    capabilities: { mask: true },
+    config_version: 1,
+    active_profile: "primary/gpt-image-2",
+    providers: {
+      primary: {
+        protocol: "openai-compatible",
+        base_url: "https://example.test/v1",
+        api_key_env: "IMAGEGEN_TEST_API_KEY",
+        user_agent: "Imagegen-Test/1.0",
+        url_download: { proxy_mode: "environment" },
+      },
+    },
+    models: {
+      "primary/gpt-image-2": {
+        provider: "primary",
+        model: "gpt-image-2",
+        capabilities: { generate: true, edit: true, mask: true, multi_reference: true },
+      },
+    },
     defaults: { size: "1024x1024", quality: "low", output_format: "png" },
     postprocess: { enabled: false },
+    transparency: { default_route: "chroma-matting", prompt_only_allow: [], llm_assisted: { enabled: false } },
+    storage: { output_directory: "output/imagegen" },
   })}\n`);
   const artifactDirectory = path.join(root, "output", "imagegen", "artifacts", IMAGE_ID);
   await mkdir(artifactDirectory, { recursive: true });

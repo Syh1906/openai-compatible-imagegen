@@ -1,10 +1,11 @@
 {
-  "name": "openai-compatible-imagegen-v2",
-  "version": "0.1.0+codex.20260813235620",
+  "name": "openai-compatible-imagegen",
+  "version": "0.1.0+codex.20260815154540",
   "private": true,
   "type": "module",
   "scripts": {
     "build": "node scripts/build.mjs",
+    "build:release": "npm run build && node scripts/build-release-artifacts.mjs",
     "check": "node scripts/check-plugin.mjs",
     "prepare:personal": "node scripts/prepare-personal-plugin.mjs",
     "probe": "node scripts/probe-plugin.mjs",

@@ -14,7 +14,7 @@ import { createReleaseBundle, RELEASE_IDENTITY_PLACEHOLDER } from "../mcp/releas
 const IMAGE_ID = "img_01J00000000000000000000000";
 const PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFgAI/ScL1WQAAAABJRU5ErkJggg==";
 const TEST_RELEASE_IDENTITY = createReleaseBundle({
-  pluginId: "openai-compatible-imagegen-v2",
+  pluginId: "openai-compatible-imagegen",
   pluginVersion: "0.1.0-test",
   serverBuildInputs: [{ path: "test-server.mjs", content: "test server" }],
   widgetHtml: `<html><head>${RELEASE_IDENTITY_PLACEHOLDER}</head></html>`,
@@ -27,7 +27,10 @@ test("app-only image data tool returns binary data by stable image ID", async ()
       arguments: { imageId: IMAGE_ID },
     });
 
-    assert.deepEqual(result.structuredContent, { id: IMAGE_ID, mimeType: "image/png" });
+    assert.deepEqual(result.structuredContent, {
+      artifact: artifact(IMAGE_ID),
+      canvasStatus: "available",
+    });
     assert.deepEqual(result._meta.widgetData, {
       id: IMAGE_ID,
       mimeType: "image/png",
@@ -35,6 +38,27 @@ test("app-only image data tool returns binary data by stable image ID", async ()
     });
     assert.equal(result.content.some((item) => item.type === "image"), false);
   });
+});
+
+test("app-only image data tool rejects an artifact whose stable ID does not match the request", async () => {
+  const otherImageId = "img_01J00000000000000000000001";
+  await withClient(
+    {
+      readArtifact: async () => ({ metadata: artifact(otherImageId), data: PNG_BASE64 }),
+    },
+    async (client) => {
+      const result = await client.callTool({
+        name: "read_image_artifact_data",
+        arguments: { imageId: IMAGE_ID },
+      });
+
+      assert.equal(result.isError, true);
+      assert.match(result.content?.[0]?.text ?? "", /^artifact_read_failed:/);
+      assert.equal(result.content?.some((item) => item.type === "image"), false);
+      assert.equal(result.structuredContent, undefined);
+      assert.equal(result._meta?.widgetData, undefined);
+    },
+  );
 });
 
 test("app-only reveal tool confirms an artifact by stable image ID without returning a local path", async () => {
@@ -94,7 +118,7 @@ test("reveal tool returns a stable error without leaking launcher details", asyn
   );
 });
 
-test("tool catalog exposes exactly ten model tools and eight app-only tools", async () => {
+test("tool catalog exposes exactly twelve model tools and eight app-only tools", async () => {
   await withClient({}, async (client) => {
     const { tools } = await client.listTools();
     const appOnlyTools = tools
@@ -114,6 +138,8 @@ test("tool catalog exposes exactly ten model tools and eight app-only tools", as
       "edit_image",
       "generate_image",
       "get_image_artifact",
+      "get_image_batch_manifest",
+      "get_image_delivery_receipt",
       "inspect_imagegen_runtime",
       "list_image_models",
       "render_image_results",
@@ -128,7 +154,7 @@ test("tool catalog exposes exactly ten model tools and eight app-only tools", as
       "reveal_image_artifact",
       "save_image_annotations",
     ]);
-    assert.equal(tools.length, 18);
+    assert.equal(tools.length, 20);
   });
 });
 
@@ -140,6 +166,7 @@ async function withClient(dependencies, callback) {
   const server = createImagegenServer({
     releaseIdentity: TEST_RELEASE_IDENTITY,
     launchContext: { cwd: pluginRoot, pluginRoot },
+    projectContext: createFixtureProjectContext(projectRoot),
     readWidgetHtml: async () => "<html>editor</html>",
     runTask: async () => { throw new Error("not used"); },
     readArtifact: async (imageId) => ({ metadata: artifact(imageId), data: PNG_BASE64 }),
@@ -169,6 +196,29 @@ async function withClient(dependencies, callback) {
     await server.close();
     await rm(fixtureRoot, { recursive: true });
   }
+}
+
+function createFixtureProjectContext(projectRoot) {
+  let bound = false;
+  const context = {
+    bindingKey: "fixture-binding",
+    projectRoot,
+    artifactRoot: path.join(projectRoot, "output", "imagegen"),
+    effectiveConfigJson: "{}",
+    effectiveConfigSha256: "0".repeat(64),
+    userConfigSha256: "1".repeat(64),
+    projectConfigSha256: null,
+  };
+  return {
+    async bind() {
+      bound = true;
+      return { status: "bound" };
+    },
+    async require() {
+      if (!bound) throw new Error("project_binding_required");
+      return context;
+    },
+  };
 }
 
 function artifact(id) {

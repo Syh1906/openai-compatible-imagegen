@@ -1,4 +1,4 @@
-import { ArtifactHydrationError, extractResultArtifacts, hydrateResultArtifacts } from "./result-state.mjs";
+import { ArtifactHydrationError, hydrateResultArtifacts } from "./result-state.mjs";
 
 export function createArtifactCandidateLoader({ app, records }) {
   async function hydrate(metadata) {
@@ -10,18 +10,7 @@ export function createArtifactCandidateLoader({ app, records }) {
   }
 
   async function load(imageId) {
-    const result = await app.callServerTool({ name: "get_image_artifact", arguments: { imageId } });
-    if (result.isError) {
-      throw new ArtifactHydrationError("artifact_server_error", "MCP artifact tool returned an error");
-    }
-    const metadata = {
-      ...extractResultArtifacts(result)[0],
-      canvasStatus: result?.structuredContent?.canvasStatus || "available",
-    };
-    if (metadata.id !== imageId) {
-      throw new ArtifactHydrationError("artifact_payload_invalid", "MCP artifact ID does not match the requested image");
-    }
-    return hydrate(metadata);
+    return hydrate({ id: imageId });
   }
 
   function start(imageId, metadata = null) {

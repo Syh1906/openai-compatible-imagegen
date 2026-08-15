@@ -10,18 +10,18 @@ const runtimePath = fileURLToPath(new URL(runtimeRelativePath, import.meta.url))
 
 export async function runImageTask(task, {
   projectRoot,
-  configPath,
-  configSha256,
+  effectiveConfigJson,
+  effectiveConfigSha256,
   artifactRoot,
 } = {}) {
   if (typeof projectRoot !== "string" || !path.isAbsolute(projectRoot)) {
     throw new Error("project root is required");
   }
-  if (typeof configPath !== "string" || !path.isAbsolute(configPath)) {
-    throw new Error("config path is required");
+  if (typeof effectiveConfigJson !== "string" || !effectiveConfigJson) {
+    throw new Error("effective config JSON is required");
   }
-  if (typeof configSha256 !== "string" || !/^[a-f0-9]{64}$/.test(configSha256)) {
-    throw new Error("config SHA-256 is required");
+  if (typeof effectiveConfigSha256 !== "string" || !/^[a-f0-9]{64}$/.test(effectiveConfigSha256)) {
+    throw new Error("effective config SHA-256 is required");
   }
   if (typeof artifactRoot !== "string" || !path.isAbsolute(artifactRoot)) {
     throw new Error("artifact root is required");
@@ -34,10 +34,6 @@ export async function runImageTask(task, {
       projectRoot,
       "--artifact-root",
       artifactRoot,
-      "--config",
-      configPath,
-      "--config-sha256",
-      configSha256,
     ];
     const child = spawn(
       "python",
@@ -75,6 +71,10 @@ export async function runImageTask(task, {
         reject(new Error(`image runtime failed: ${code}`));
       }
     });
-    child.stdin.end(JSON.stringify(task));
+    child.stdin.end(JSON.stringify({
+      task,
+      effectiveConfigJson,
+      effectiveConfigSha256,
+    }));
   });
 }

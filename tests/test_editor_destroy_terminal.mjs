@@ -93,7 +93,7 @@ test("a server-destroyed editor unlocks return after an inline refusal", { timeo
   }
 });
 
-test("a destroy acknowledgement stays terminal when session cleanup fails", async () => {
+test("a destroy acknowledgement stays terminal when session cleanup fails", { timeout: 5000 }, async () => {
   const dom = new JSDOM(
     '<!doctype html><html><body><main><p>正在加载图片...</p></main></body></html>',
     { pretendToBeVisual: true, url: "https://widget.local/" },
@@ -111,9 +111,9 @@ test("a destroy acknowledgement stays terminal when session cleanup fails", asyn
     await waitFor(() => document.querySelector("[data-action=destroy]")?.disabled === false);
     document.querySelector("[data-action=destroy]").click();
     document.querySelector("[data-action=confirm-destroy]").click();
-    await waitFor(() => host.toolCalls.some(({ name }) => name === "finalize_image_editor_session"));
-    await waitFor(() => document.querySelector('[data-destroyed-terminal="true"]') !== null);
-    await waitFor(() => document.querySelector("[data-action=back]")?.disabled === false);
+    await waitFor(() => host.toolCalls.some(({ name }) => name === "finalize_image_editor_session"), 3000);
+    await waitFor(() => document.querySelector('[data-destroyed-terminal="true"]') !== null, 3000);
+    await waitFor(() => document.querySelector("[data-action=back]")?.disabled === false, 3000);
 
     assert.equal(document.querySelector("[data-tool=rectangle]").disabled, true);
     assert.equal(document.querySelector("[data-action=submit]").disabled, true);

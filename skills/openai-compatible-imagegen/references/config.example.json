@@ -1,4 +1,6 @@
 {
+  "config_version": 1,
+  "active_profile": "primary/gpt-image-2",
   "providers": {
     "primary": {
       "protocol": "openai-compatible",
@@ -18,8 +20,7 @@
         "generate": true,
         "edit": true,
         "mask": true,
-        "multi_reference": true,
-        "transparent_background": false
+        "multi_reference": true
       }
     }
   },
@@ -27,6 +28,20 @@
     "size": "1536x1024",
     "quality": "auto",
     "output_format": "png"
+  },
+  "postprocess": {
+    "enabled": true
+  },
+  "transparency": {
+    "default_route": "chroma-matting",
+    "prompt_only_allow": [],
+    "llm_assisted": {
+      "enabled": false,
+      "max_attempts": 2,
+      "allow_parameter_tuning": true,
+      "allow_route_change": true,
+      "allow_api_retry": false
+    }
   },
   "storage": {
     "output_directory": "output/imagegen"

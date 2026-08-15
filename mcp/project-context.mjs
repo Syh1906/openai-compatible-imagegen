@@ -4,12 +4,12 @@ import { access, lstat, realpath } from "node:fs/promises";
 import path from "node:path";
 
 import {
-  assertV2StorageBindingCurrent,
-  resolveV2StorageBinding,
+  assertImageConfigBindingCurrent,
+  resolveImageConfigBinding,
 } from "./config-resolution.mjs";
 
 
-const PROCESS_BINDING_KEY_SEED = "openai-compatible-imagegen-v2:process-binding";
+const PROCESS_BINDING_KEY_SEED = "openai-compatible-imagegen:process-binding";
 
 
 export class ProjectContextError extends Error {
@@ -23,8 +23,8 @@ export class ProjectContextError extends Error {
 
 export function createProjectContext({
   pluginRoot,
-  resolveStorageBinding = resolveV2StorageBinding,
-  verifyStorageBinding = assertV2StorageBindingCurrent,
+  resolveConfigBinding = resolveImageConfigBinding,
+  verifyConfigBinding = assertImageConfigBindingCurrent,
 }) {
   if (typeof pluginRoot !== "string" || !path.isAbsolute(pluginRoot)) {
     throw new Error("pluginRoot must be an absolute path");
@@ -62,11 +62,11 @@ export function createProjectContext({
           throw new ProjectContextError("project_binding_conflict");
         }
         const resolvedProjectRoot = await validateProjectRoot(projectRoot, resolvedPluginRoot);
-        const storageBinding = await resolveStorageBinding({ projectRoot: resolvedProjectRoot });
+        const configBinding = await resolveConfigBinding({ projectRoot: resolvedProjectRoot });
         binding = Object.freeze({
           bindingKey,
           projectRoot: resolvedProjectRoot,
-          ...storageBinding,
+          ...configBinding,
         });
         return { status: "bound" };
       });
@@ -75,7 +75,7 @@ export function createProjectContext({
     async require(_extra) {
       if (!binding) throw new ProjectContextError("project_binding_required");
       await validateProjectRoot(binding.projectRoot, resolvedPluginRoot);
-      await verifyStorageBinding(binding);
+      await verifyConfigBinding(binding);
       return binding;
     },
   });

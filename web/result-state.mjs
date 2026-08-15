@@ -1,7 +1,15 @@
-import { extractImageResultEnvelopeIds } from "../mcp/result-envelope.mjs";
+const IMAGE_ID_PATTERN = /^img_[0-9A-HJKMNP-TV-Z]{26}$/;
 
-export function extractResultImageIds(result) {
-  return extractImageResultEnvelopeIds(result);
+export function extractResultInputImageIds(input) {
+  const imageIds = input?.arguments?.imageIds;
+  if (
+    !Array.isArray(imageIds)
+    || imageIds.length < 1
+    || imageIds.length > 10
+    || !imageIds.every((imageId) => typeof imageId === "string" && IMAGE_ID_PATTERN.test(imageId))
+    || new Set(imageIds).size !== imageIds.length
+  ) return [];
+  return [...imageIds];
 }
 
 export function extractResultArtifacts(result) {
@@ -36,10 +44,15 @@ export async function hydrateResultArtifacts(app, artifacts) {
       throw new ArtifactHydrationError("artifact_server_error", "MCP image data tool returned an error");
     }
     const publicPayload = result?.structuredContent;
+    const publicArtifact = publicPayload?.artifact;
     const privatePayload = result?._meta?.widgetData;
+    const publicMimeType = publicArtifact?.mimeType;
     if (
-      publicPayload?.id !== artifact.id
+      publicArtifact?.id !== artifact.id
       || privatePayload?.id !== artifact.id
+      || !["image/png", "image/jpeg", "image/webp"].includes(publicMimeType)
+      || privatePayload?.mimeType !== publicMimeType
+      || !["available", "destroyed"].includes(publicPayload?.canvasStatus)
       || typeof privatePayload?.dataBase64 !== "string"
       || !privatePayload.dataBase64
     ) {
@@ -47,7 +60,9 @@ export async function hydrateResultArtifacts(app, artifacts) {
     }
     return {
       ...artifact,
-      mimeType: privatePayload.mimeType || publicPayload.mimeType || artifact.mimeType || "image/png",
+      ...publicArtifact,
+      canvasStatus: publicPayload.canvasStatus,
+      mimeType: publicMimeType,
       data: privatePayload.dataBase64,
     };
   }));

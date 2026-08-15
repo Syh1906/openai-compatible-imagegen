@@ -13,7 +13,7 @@ const execFileAsync = promisify(execFile);
 const projectRoot = fileURLToPath(new URL("..", import.meta.url));
 const stageScript = fileURLToPath(new URL("../scripts/stage-personal-plugin.mjs", import.meta.url));
 const prepareScript = fileURLToPath(new URL("../scripts/prepare-personal-plugin.mjs", import.meta.url));
-const pluginId = "openai-compatible-imagegen-v2";
+const pluginId = "openai-compatible-imagegen";
 const expectedRuntimeFiles = [
   "artifact_repository.py",
   "image_alpha.py",
@@ -33,6 +33,7 @@ const expectedRuntimeFiles = [
   "image_response.py",
   "image_transaction.py",
   "image_transparency.py",
+  "image_transparency_contract.py",
   "image_transparency_runtime.py",
   "image_transport.py",
   "image_webp.py",
@@ -40,6 +41,7 @@ const expectedRuntimeFiles = [
   "imagegen_cli.py",
   "mask_policy.py",
   "image_runtime.py",
+  "migrate_image_config.py",
   "provider_config.py",
   "repository_fs_helper.py",
   "reveal_in_explorer.py",
@@ -129,7 +131,7 @@ test("personal staging rejects a marketplace source outside the canonical person
 
   await assert.rejects(
     runStage({ sourceRoot: projectRoot, marketplacePath }),
-    /marketplace plugin source must be \.\/plugins\/openai-compatible-imagegen-v2/,
+    /marketplace plugin source must be \.\/plugins\/openai-compatible-imagegen/,
   );
   assert.equal(await lstatOrNull(nestedPluginRoot), null);
 });

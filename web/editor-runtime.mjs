@@ -37,7 +37,8 @@ import { createEditorColorController } from "./editor-color-controller.mjs";
 import { createHostObservationReporter } from "./host-observation.mjs";
 import { createArtifactLoadRegistry, uniqueImageIds } from "./artifact-load-registry.mjs";
 import { createArtifactCandidateLoader } from "./artifact-candidate-loader.mjs";
-import { ArtifactHydrationError, artifactLineage, artifactLineageImageIds, extractResultArtifacts, extractResultImageIds, lineageSeedFor, mergeLineageRecords, toImageUrl } from "./result-state.mjs";
+import { createResultBootstrap } from "./result-bootstrap.mjs";
+import { ArtifactHydrationError, artifactLineage, artifactLineageImageIds, extractResultArtifacts, extractResultInputImageIds, lineageSeedFor, mergeLineageRecords, toImageUrl } from "./result-state.mjs";
 import { artifactLoadFailure, resultFailureCode } from "./result-errors.mjs";
 import { createResultFileRevealController, createResultPreviewSession } from "./result-preview.mjs";
 import { createHostDisplayModeController } from "./editor-host-display.mjs";
@@ -99,7 +100,7 @@ let clearConfirmTrigger = null;
 let destroyInFlight = false;
 let artifactLoadSequence = 0;
 let artifactLoadInFlight = false;
-let resultToolCompleted = false;
+const resultBootstrap = createResultBootstrap();
 const artifactRecordCache = createArtifactLoadRegistry({
   timeoutMs: 8000,
   setTimeoutFn: window.setTimeout.bind(window),
@@ -150,7 +151,7 @@ const colorController = createEditorColorController({
   discardInteraction,
   pushHistory: (before) => { undoStack.push(before); redoStack = []; },
 });
-const app = new App({ name: "openai-compatible-imagegen-v2-editor", version: "0.1.0" }, {});
+const app = new App({ name: "openai-compatible-imagegen-editor", version: "0.1.0" }, {});
 const displayModeController = createHostDisplayModeController({
   app,
   isActive: () => resourceActive,
@@ -379,6 +380,7 @@ async function connectHost() {
   };
   app.onteardown = async () => {
     resourceActive = false;
+    applyResultBootstrapEffects(resultBootstrap.observe({ type: "dispose" }));
     toastController.dispose();
     resourceAbortController.abort();
     document.removeEventListener("keydown", handleEditorKeyDown);
@@ -391,7 +393,6 @@ async function connectHost() {
     artifactLoadInFlight = false;
     pendingImageIds = [];
     pendingArtifactRecords = [];
-    resultToolCompleted = false;
     sessionController.stop();
     await sessionController.finalize();
     return {};
@@ -401,12 +402,12 @@ async function connectHost() {
     if (!resourceActive) return;
     displayModeController.applyContext(app.getHostContext(), { initializeRole: true });
     hostReady = true;
+    applyResultBootstrapEffects(resultBootstrap.observe({ type: "host-ready" }));
     render();
     loadModelCapabilities();
     if (widgetRole === "editor") await displayModeController.request("fullscreen");
     if (!resourceActive) return;
-    if (widgetRole === "result") hydrateResultArtifactsFromResult();
-    else if (pendingArtifactRecords.length) hydrateArtifacts(pendingArtifactRecords);
+    if (widgetRole !== "result" && pendingArtifactRecords.length) hydrateArtifacts(pendingArtifactRecords);
     if (widgetRole === "editor" && sessionController.id) sessionController.start();
     render();
   } catch (error) {
@@ -514,6 +515,13 @@ async function ensureEditorSession() {
   }
 }
 function ingestToolInput(input) {
+  const isResultToolInput = Object.prototype.hasOwnProperty.call(input?.arguments || {}, "imageIds")
+    || app.getHostContext()?.toolInfo?.tool?.name === "render_image_results";
+  if (isResultToolInput) {
+    const imageIds = extractResultInputImageIds(input);
+    applyResultBootstrapEffects(resultBootstrap.observe({ type: "tool-input", imageIds, valid: imageIds.length > 0 }));
+    return;
+  }
   const imageId = input?._meta?.imageId || input?.imageId || input?.arguments?.imageId;
   if (imageId) {
     pendingImageId = imageId;
@@ -754,28 +762,8 @@ function ingestToolResult(result) {
   }
   if (widgetRole === "result") {
     canvasResize.disconnect();
-    const imageIds = extractResultImageIds(result);
-    if (result?.isError || !imageIds.length) {
-      artifactLoadInFlight = false;
-      pendingImageIds = [];
-      resultToolCompleted = false;
-      const failure = artifactLoadFailure({ code: resultFailureCode(result) });
-      resultCandidates = resultCandidates.map((candidate) => ({ ...candidate, loadError: failure }));
-      inlineStatus = failure;
-      inlineStatusTone = "error";
-      render();
-      return;
-    }
-    pendingImageIds = imageIds;
-    pendingImageId = "";
-    resultCandidates = imageIds.map((id) => ({ ...defaultImage, id }));
-    if (!editor.image.id || !imageIds.includes(editor.image.id)) {
-      editor = createEditorState({ image: resultCandidates[0] });
-    }
-    artifactLoadInFlight = true;
-    resultToolCompleted = true;
-    render();
-    hydrateResultArtifactsFromResult();
+    const type = resultFailureCode(result) === "artifact_server_error" ? "server-error" : "tool-result";
+    applyResultBootstrapEffects(resultBootstrap.observe({ type }));
     return;
   }
   const artifacts = extractResultArtifacts(result);
@@ -797,10 +785,24 @@ function ingestToolResult(result) {
   }
   void hydrateArtifacts(artifacts);
 }
-function hydrateResultArtifactsFromResult() {
-  if (!hostReady || !resultToolCompleted || !pendingImageIds.length) return;
-  resultToolCompleted = false;
-  void loadArtifacts(pendingImageIds);
+
+function applyResultBootstrapEffects(effects) {
+  for (const effect of effects) {
+    if (effect.type === "bind") {
+      pendingImageIds = [...effect.imageIds]; pendingImageId = "";
+      resultCandidates = effect.imageIds.map((id) => ({ ...defaultImage, id }));
+      if (!editor.image.id || !effect.imageIds.includes(editor.image.id)) editor = createEditorState({ image: resultCandidates[0] });
+      artifactLoadInFlight = true; inlineStatus = ""; inlineStatusTone = "neutral";
+      render();
+    } else if (effect.type === "start") { void loadArtifacts(effect.imageIds);
+    } else if (effect.type === "fail") {
+      artifactLoadSequence += 1; artifactLoadInFlight = false; pendingImageIds = [];
+      const failure = artifactLoadFailure({ code: effect.code });
+      resultCandidates = resultCandidates.map((candidate) => ({ ...candidate, loadError: failure, loadState: "error" }));
+      inlineStatus = failure; inlineStatusTone = "error";
+      render();
+    }
+  }
 }
 
 function applyArtifacts(artifacts, { candidates = artifacts, selectedImageId = "" } = {}) {

@@ -17,9 +17,10 @@ README_ZH_PATH = ROOT / "README.zh-CN.md"
 AUTH_EXAMPLE_PATH = ROOT / "examples" / "auth.example.json"
 PACKAGE_PATH = ROOT / "package.json"
 PACKAGE_LOCK_PATH = ROOT / "package-lock.json"
-PLUGIN_ID = "openai-compatible-imagegen-v2"
+PLUGIN_ID = "openai-compatible-imagegen"
 SKILL_PATH = ROOT / "skills" / PLUGIN_ID / "SKILL.md"
 V1_SKILL_PATH = ROOT / "SKILL.md"
+STANDALONE_AGENT_PATH = ROOT / "agents" / "openai.yaml"
 SERVER_PATH = ROOT / "dist" / "server.mjs"
 WIDGET_PATH = ROOT / "dist" / "widget" / "index.html"
 PROBE_PATH = ROOT / "scripts" / "probe-plugin.mjs"
@@ -46,6 +47,7 @@ DIST_RUNTIME_PATHS = [
         "image_response.py",
         "image_transaction.py",
         "image_transparency.py",
+        "image_transparency_contract.py",
         "image_transparency_runtime.py",
         "image_transport.py",
         "image_webp.py",
@@ -53,6 +55,7 @@ DIST_RUNTIME_PATHS = [
         "imagegen_cli.py",
         "mask_policy.py",
         "image_runtime.py",
+        "migrate_image_config.py",
         "provider_config.py",
         "repository_fs_helper.py",
         "reveal_in_explorer.py",
@@ -62,6 +65,29 @@ DIST_RUNTIME_PATHS = [
 
 
 class PluginSkeletonTests(unittest.TestCase):
+    def test_product_family_readmes_cover_both_packages_and_explicit_migration(self) -> None:
+        required = (
+            "OpenAI-Compatible Images Skill",
+            "openai-compatible-imagegen-skill-<version>.zip",
+            "openai-compatible-imagegen-codex-plugin-<version>.zip",
+            "~/.codex/openai-compatible-imagegen/config.json",
+            ".codex/openai-compatible-imagegen/config.json",
+            "auth.json",
+            "--source-kind",
+            "--expected-source-sha256",
+            "--allow-plaintext-api-key",
+            "delivery_ready",
+            "deliveryReady",
+            "transparent_background",
+            "background=transparent",
+        )
+        for path in (README_PATH, README_ZH_PATH):
+            text = path.read_text(encoding="utf-8")
+            for value in required:
+                with self.subTest(path=path.name, value=value):
+                    self.assertIn(value, text)
+            self.assertNotIn("openai-compatible-imagegen-v2", text)
+
     def test_url_download_contract_is_documented_in_both_public_languages(self) -> None:
         for path in (README_PATH, README_ZH_PATH):
             text = path.read_text(encoding="utf-8")
@@ -78,6 +104,8 @@ class PluginSkeletonTests(unittest.TestCase):
         manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
 
         self.assertEqual(manifest["name"], PLUGIN_ID)
+        self.assertEqual(manifest["interface"]["displayName"], "OpenAI-Compatible Images")
+        self.assertEqual(manifest["interface"]["developerName"], PLUGIN_ID)
         self.assertEqual(manifest["skills"], "./skills/")
         self.assertEqual(manifest["mcpServers"], "./.mcp.json")
         self.assertTrue((ROOT / manifest["skills"]).is_dir())
@@ -164,16 +192,30 @@ class PluginSkeletonTests(unittest.TestCase):
         self.assertIn("MCP server 重启后绑定会消失", text)
         self.assertIn("不得从插件安装目录、MCP `cwd`、roots、Git 搜索", text)
 
-    def test_v1_and_v2_skill_names_remain_independent(self) -> None:
-        v1_text = V1_SKILL_PATH.read_text(encoding="utf-8")
-        v2_text = SKILL_PATH.read_text(encoding="utf-8")
+    def test_skill_documents_the_explicit_config_migration_gate(self) -> None:
+        text = SKILL_PATH.read_text(encoding="utf-8")
 
-        self.assertIn("name: openai-compatible-imagegen\n", v1_text)
-        self.assertIn(f"name: {PLUGIN_ID}\n", v2_text)
-        self.assertNotEqual(
-            next(line for line in v1_text.splitlines() if line.startswith("name:")),
-            next(line for line in v2_text.splitlines() if line.startswith("name:")),
-        )
+        self.assertIn("dist/scripts/migrate_image_config.py", text)
+        self.assertIn("--source-kind standalone", text)
+        self.assertIn("--source-kind development-plugin", text)
+        self.assertIn("--expected-source-sha256", text)
+        self.assertIn("--include-project-overrides", text)
+        self.assertIn("--allow-plaintext-api-key", text)
+        self.assertIn("readyToWrite", text)
+
+    def test_distribution_skills_share_identity_but_keep_distinct_routes(self) -> None:
+        standalone_text = V1_SKILL_PATH.read_text(encoding="utf-8")
+        plugin_text = SKILL_PATH.read_text(encoding="utf-8")
+        standalone_agent = STANDALONE_AGENT_PATH.read_text(encoding="utf-8")
+
+        self.assertIn(f"name: {PLUGIN_ID}\n", standalone_text)
+        self.assertIn(f"name: {PLUGIN_ID}\n", plugin_text)
+        self.assertIn("# OpenAI-Compatible Images Skill", standalone_text)
+        self.assertIn('display_name: "OpenAI-Compatible Images Skill"', standalone_agent)
+        self.assertIn("scripts/imagegen.py", standalone_text)
+        self.assertNotIn("batch_images", standalone_text)
+        self.assertIn("batch_images", plugin_text)
+        self.assertIn("open_image_editor", plugin_text)
 
     def test_skill_routes_canvas_submissions_back_to_edit_image(self) -> None:
         text = SKILL_PATH.read_text(encoding="utf-8")
@@ -211,9 +253,20 @@ class PluginSkeletonTests(unittest.TestCase):
 
     def test_plugin_probe_reports_valid_skeleton(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            project_root = Path(directory)
+            fixture_root = Path(directory)
+            project_root = fixture_root / "project"
+            user_home = fixture_root / "user-home"
+            project_root.mkdir()
+            user_home.mkdir()
             result = subprocess.run(
-                ["node", str(PROBE_PATH), "--project-root", str(project_root)],
+                [
+                    "node",
+                    str(PROBE_PATH),
+                    "--project-root",
+                    str(project_root),
+                    "--user-home",
+                    str(user_home),
+                ],
                 cwd=ROOT,
                 capture_output=True,
                 text=True,
@@ -236,6 +289,8 @@ class PluginSkeletonTests(unittest.TestCase):
                 "finalize_image_editor_session",
                 "generate_image",
                 "get_image_artifact",
+                "get_image_batch_manifest",
+                "get_image_delivery_receipt",
                 "get_image_editor_session",
                 "inspect_imagegen_runtime",
                 "list_image_models",
@@ -254,12 +309,12 @@ class PluginSkeletonTests(unittest.TestCase):
         )
         self.assertRegex(payload["releaseIdentity"]["fingerprint"], r"^[a-f0-9]{20}$")
         runtime = payload["runtimeDiagnostic"]
-        self.assertEqual(runtime["projectRootSource"], "explicit_tool")
+        self.assertEqual(runtime["projectRootSource"], "unbound")
         self.assertRegex(runtime["cwdFingerprint"], r"^[a-f0-9]{20}$")
         self.assertRegex(runtime["pluginRootFingerprint"], r"^[a-f0-9]{20}$")
-        self.assertRegex(runtime["projectRootFingerprint"], r"^[a-f0-9]{20}$")
+        self.assertIsNone(runtime["projectRootFingerprint"])
         self.assertIn(runtime["cwdRelationToPlugin"], {"same", "descendant", "outside"})
-        self.assertIn(runtime["projectRootRelationToPlugin"], {"same", "descendant", "outside"})
+        self.assertIsNone(runtime["projectRootRelationToPlugin"])
         self.assertEqual(runtime["roots"]["status"], "unsupported")
         serialized_payload = json.dumps(payload).replace("\\\\", "/")
         self.assertNotIn(str(ROOT).replace("\\", "/"), serialized_payload)
@@ -373,7 +428,7 @@ class PluginSkeletonTests(unittest.TestCase):
             check=False,
         )
 
-    def test_project_check_binds_the_explicit_project_root(self) -> None:
+    def test_project_check_keeps_the_static_probe_unbound(self) -> None:
         result = subprocess.run(
             ["node", str(CHECK_PATH)],
             cwd=ROOT,
@@ -387,7 +442,7 @@ class PluginSkeletonTests(unittest.TestCase):
         self.assertTrue(payload["ok"])
         self.assertEqual(
             payload["runtimeDiagnostic"]["projectRootSource"],
-            "explicit_tool",
+            "unbound",
         )
 
     def test_remote_smoke_requires_the_isolated_project_root(self) -> None:

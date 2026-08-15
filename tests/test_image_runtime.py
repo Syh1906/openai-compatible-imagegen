@@ -222,7 +222,6 @@ class ImageRuntimeMachineModeTests(unittest.TestCase):
                 "edit": True,
                 "mask": False,
                 "multi_reference": True,
-                "transparent_background": True,
             },
             postprocess={"enabled": False},
             user_agent="Imagegen-Test/1.0",
@@ -397,7 +396,7 @@ class ImageRuntimeMachineModeTests(unittest.TestCase):
                 replay = self.imagegen.run_machine_task(edit_task, self.project_root, self.artifact_root, self.cfg)
 
         self.assertTrue(first["ok"])
-        self.assertTrue(replay["ok"])
+        self.assertTrue(replay["ok"], replay)
         parent_read.assert_not_called()
         self.assertEqual(request.call_count, 1)
         self.assertEqual(replay["artifacts"][0]["id"], first["artifacts"][0]["id"])
@@ -948,26 +947,14 @@ class ImageRuntimeMachineModeTests(unittest.TestCase):
         index_path = self.project_root / "output" / "imagegen" / "index.json"
         self.assertFalse(index_path.exists())
 
-    def test_unsupported_transparent_background_stops_before_request(self) -> None:
+    def test_removed_transparent_background_stops_before_request(self) -> None:
         task = self.task(output={**self.task()["output"], "background": "transparent"})
+        with mock.patch.object(self.imagegen, "request_json") as request:
+            result = self.imagegen.run_machine_task(task, self.project_root, self.artifact_root, self.cfg)
 
-        for unsupported_value in (False, "false", 1):
-            with self.subTest(transparent_background=unsupported_value):
-                cfg = self.imagegen.Config(
-                    **{
-                        **self.cfg.__dict__,
-                        "capabilities": {
-                            **self.cfg.capabilities,
-                            "transparent_background": unsupported_value,
-                        },
-                    }
-                )
-                with mock.patch.object(self.imagegen, "request_json") as request:
-                    result = self.imagegen.run_machine_task(task, self.project_root, self.artifact_root, cfg)
-
-                self.assertFalse(result["ok"])
-                self.assertEqual(result["error"]["code"], "unsupported_capability")
-                request.assert_not_called()
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error"]["code"], "invalid_task")
+        request.assert_not_called()
 
     def test_url_image_download_retries_tls_eof_once_without_switching_route(self) -> None:
         tls_eof = self.imagegen.urllib.error.URLError(
@@ -1121,16 +1108,18 @@ class ImageRuntimeMachineModeTests(unittest.TestCase):
 
         urlopen.assert_called_once()
 
-    def test_v2_provider_config_resolves_the_requested_model_profile(self) -> None:
-        config_path = self.project_root / "v2-config.json"
+    def test_plugin_provider_config_resolves_the_requested_model_profile(self) -> None:
+        config_path = self.project_root / "plugin-config.json"
         config_path.write_text(
             json.dumps(
                 {
+                    "config_version": 1,
+                    "active_profile": "primary/gpt-image-2",
                     "providers": {
                         "primary": {
                             "protocol": "openai-compatible",
                             "base_url": "https://provider.example.test/v1",
-                            "user_agent": "V2-Provider/1.0",
+                            "user_agent": "Example-Provider/1.0",
                             "api_key": "provider-secret",
                             "url_download": {"proxy_mode": "direct"},
                         }
@@ -1143,6 +1132,23 @@ class ImageRuntimeMachineModeTests(unittest.TestCase):
                         }
                     },
                     "defaults": {"quality": "high"},
+                    "transparency": {
+                        "default_route": "emissive-alpha",
+                        "prompt_only_allow": [
+                            {
+                                "model": "gpt-image-2",
+                                "mode": "generate",
+                                "size": "1024x1024",
+                            }
+                        ],
+                        "llm_assisted": {
+                            "enabled": True,
+                            "max_attempts": 1,
+                            "allow_parameter_tuning": False,
+                            "allow_route_change": False,
+                            "allow_api_retry": False,
+                        },
+                    },
                 }
             ),
             encoding="utf-8",
@@ -1154,16 +1160,26 @@ class ImageRuntimeMachineModeTests(unittest.TestCase):
         )
 
         self.assertEqual(cfg.base_url, "https://provider.example.test/v1")
-        self.assertEqual(cfg.user_agent, "V2-Provider/1.0")
+        self.assertEqual(cfg.user_agent, "Example-Provider/1.0")
         self.assertEqual(cfg.api_key, "provider-secret")
         self.assertEqual(cfg.model, "gpt-image-2")
         self.assertEqual(cfg.defaults["quality"], "high")
         self.assertEqual(cfg.url_download["proxy_mode"], "direct")
+        self.assertEqual(cfg.transparency.default_route, "emissive-alpha")
+        self.assertEqual(len(cfg.transparency.prompt_only_allow), 1)
+        self.assertEqual(cfg.transparency.prompt_only_allow[0].model, "gpt-image-2")
+        self.assertTrue(cfg.transparency.llm_assisted.enabled)
+        self.assertEqual(cfg.transparency.llm_assisted.max_attempts, 1)
+        self.assertFalse(cfg.transparency.llm_assisted.allow_parameter_tuning)
+        self.assertFalse(cfg.transparency.llm_assisted.allow_route_change)
+        self.assertFalse(cfg.transparency.llm_assisted.allow_api_retry)
 
-    def test_v2_provider_config_rejects_invalid_base_urls(self) -> None:
+    def test_plugin_provider_config_rejects_invalid_base_urls(self) -> None:
         for base_url in ["/", "ftp://example.test/v1", "https:///v1", "https://"]:
             with self.subTest(base_url=base_url):
                 raw = {
+                    "config_version": 1,
+                    "active_profile": "primary/gpt-image-2",
                     "providers": {
                         "primary": {
                             "protocol": "openai-compatible",
@@ -1179,15 +1195,16 @@ class ImageRuntimeMachineModeTests(unittest.TestCase):
                     },
                 }
                 with self.assertRaises(self.imagegen.ProviderConfigError):
-                    self.imagegen.parse_config(
+                    self.imagegen.parse_plugin_config(
                         raw,
                         require_api_key=True,
                         model_profile_id="primary/gpt-image-2",
-                        require_v2=True,
                     )
 
-    def test_v2_provider_config_requires_an_explicit_model_provider(self) -> None:
+    def test_plugin_provider_config_requires_an_explicit_model_provider(self) -> None:
         raw = {
+            "config_version": 1,
+            "active_profile": "primary/gpt-image-2",
             "providers": {
                 "primary": {
                     "protocol": "openai-compatible",
@@ -1203,16 +1220,17 @@ class ImageRuntimeMachineModeTests(unittest.TestCase):
         }
 
         with self.assertRaisesRegex(self.imagegen.ProviderConfigError, "missing provider"):
-            self.imagegen.parse_config(
+            self.imagegen.parse_plugin_config(
                 raw,
                 require_api_key=True,
                 model_profile_id="primary/gpt-image-2",
-                require_v2=True,
             )
 
-    def test_v2_config_bytes_allow_one_leading_bom_and_reject_invalid_utf8(self) -> None:
-        config_path = self.project_root / "v2-config.json"
+    def test_plugin_config_bytes_allow_one_leading_bom_and_reject_invalid_utf8(self) -> None:
+        config_path = self.project_root / "plugin-config.json"
         encoded = json.dumps({
+            "config_version": 1,
+            "active_profile": "primary/gpt-image-2",
             "providers": {
                 "primary": {
                     "protocol": "openai-compatible",
@@ -1249,8 +1267,8 @@ class ImageRuntimeMachineModeTests(unittest.TestCase):
                 model_profile_id="primary/gpt-image-2",
             )
 
-    def test_explicit_v2_config_path_rejects_legacy_flat_config(self) -> None:
-        config_path = self.project_root / "v2-config.json"
+    def test_plugin_config_path_rejects_legacy_flat_config(self) -> None:
+        config_path = self.project_root / "plugin-config.json"
         config_path.write_text(
             json.dumps(
                 {
@@ -1264,7 +1282,7 @@ class ImageRuntimeMachineModeTests(unittest.TestCase):
 
         with self.assertRaisesRegex(
             self.imagegen.ImagegenError,
-            "V2 config requires providers and models objects",
+            "image config requires config_version 1",
         ):
             self.imagegen.load_config(
                 config_path=config_path,
@@ -1272,10 +1290,12 @@ class ImageRuntimeMachineModeTests(unittest.TestCase):
             )
 
     def test_list_models_returns_safe_capabilities_without_api_key(self) -> None:
-        config_path = self.project_root / "v2-config.json"
+        config_path = self.project_root / "plugin-config.json"
         config_path.write_text(
             json.dumps(
                 {
+                    "config_version": 1,
+                    "active_profile": "primary/gpt-image-2",
                     "providers": {
                         "primary": {
                             "protocol": "openai-compatible",
@@ -1295,12 +1315,13 @@ class ImageRuntimeMachineModeTests(unittest.TestCase):
             encoding="utf-8",
         )
 
+        config_snapshot = config_path.read_bytes()
         result = self.imagegen.run_machine_task(
             {"operation": "list_models", "modelProfileId": "primary/gpt-image-2"},
             self.project_root,
             self.artifact_root,
-            config_path=config_path,
-            config_sha256=hashlib.sha256(config_path.read_bytes()).hexdigest(),
+            config_snapshot=config_snapshot,
+            config_sha256=hashlib.sha256(config_snapshot).hexdigest(),
         )
 
         self.assertTrue(result["ok"])
@@ -1323,10 +1344,12 @@ class ImageRuntimeMachineModeTests(unittest.TestCase):
     def test_list_models_rejects_unknown_or_non_boolean_capabilities_without_exposing_values(self) -> None:
         for capabilities in ({"api_key": "SENTINEL"}, {"mask": "SENTINEL"}):
             with self.subTest(capabilities=tuple(capabilities)):
-                config_path = self.project_root / "v2-config.json"
+                config_path = self.project_root / "plugin-config.json"
                 config_path.write_text(
                     json.dumps(
                         {
+                            "config_version": 1,
+                            "active_profile": "primary/gpt-image-2",
                             "providers": {
                                 "primary": {
                                     "protocol": "openai-compatible",
@@ -1345,23 +1368,24 @@ class ImageRuntimeMachineModeTests(unittest.TestCase):
                     encoding="utf-8",
                 )
 
+                config_snapshot = config_path.read_bytes()
                 result = self.imagegen.run_machine_task(
                     {"operation": "list_models", "modelProfileId": "primary/gpt-image-2"},
                     self.project_root,
                     self.artifact_root,
-                    config_path=config_path,
-                    config_sha256=hashlib.sha256(config_path.read_bytes()).hexdigest(),
+                    config_snapshot=config_snapshot,
+                    config_sha256=hashlib.sha256(config_snapshot).hexdigest(),
                 )
 
                 self.assertFalse(result["ok"])
-                self.assertEqual(result["error"]["code"], "image_task_failed")
+                self.assertEqual(result["error"]["code"], "image_config_invalid")
                 self.assertNotIn("SENTINEL", json.dumps(result))
                 self.assertFalse(self.artifact_root.exists())
 
-    def test_machine_config_snapshot_mismatch_fails_before_provider_or_repository_use(self) -> None:
-        config_path = self.project_root / "v2-config.json"
-        config_path.write_text(
-            json.dumps({
+    def test_machine_effective_config_snapshot_mismatch_fails_before_provider_or_repository_use(self) -> None:
+        config_snapshot = json.dumps({
+                "config_version": 1,
+                "active_profile": "primary/gpt-image-2",
                 "providers": {
                     "primary": {
                         "protocol": "openai-compatible",
@@ -1376,27 +1400,26 @@ class ImageRuntimeMachineModeTests(unittest.TestCase):
                         "capabilities": {"generate": True, "edit": True},
                     }
                 },
-            }),
-            encoding="utf-8",
-        )
+            }).encode("utf-8")
 
         with mock.patch.object(self.imagegen, "request_json") as request:
             result = self.imagegen.run_machine_task(
                 self.task(),
                 self.project_root,
                 self.artifact_root,
-                config_path=config_path,
+                config_snapshot=config_snapshot,
                 config_sha256="0" * 64,
             )
 
         self.assertFalse(result["ok"])
-        self.assertEqual(result["error"]["code"], "v2_config_changed")
+        self.assertEqual(result["error"]["code"], "image_config_changed")
         request.assert_not_called()
         self.assertFalse(self.artifact_root.exists())
 
-    def test_machine_hash_and_parse_use_the_same_config_byte_snapshot(self) -> None:
-        config_path = self.project_root / "v2-config.json"
-        original = json.dumps({
+    def test_machine_hash_and_parse_use_the_same_effective_config_snapshot(self) -> None:
+        config_snapshot = json.dumps({
+            "config_version": 1,
+            "active_profile": "primary/gpt-image-2",
             "providers": {
                 "primary": {
                     "protocol": "openai-compatible",
@@ -1412,47 +1435,16 @@ class ImageRuntimeMachineModeTests(unittest.TestCase):
                 }
             },
         }).encode("utf-8")
-        replacement = json.dumps({
-            "providers": {
-                "primary": {
-                    "protocol": "openai-compatible",
-                    "base_url": "https://replacement.example.test/v1",
-                    "api_key": "replacement-secret",
-                }
-            },
-            "models": {
-                "primary/gpt-image-2": {
-                    "provider": "primary",
-                    "model": "gpt-image-2",
-                    "capabilities": {"mask": False},
-                }
-            },
-        }).encode("utf-8")
-        config_path.write_bytes(original)
-        original_read_bytes = Path.read_bytes
-        reads = 0
-
-        def replace_after_first_read(path: Path) -> bytes:
-            nonlocal reads
-            snapshot = original_read_bytes(path)
-            if path == config_path:
-                reads += 1
-                if reads == 1:
-                    config_path.write_bytes(replacement)
-            return snapshot
-
-        with mock.patch.object(Path, "read_bytes", replace_after_first_read):
-            result = self.imagegen.run_machine_task(
-                {"operation": "list_models", "modelProfileId": "primary/gpt-image-2"},
-                self.project_root,
-                self.artifact_root,
-                config_path=config_path,
-                config_sha256=hashlib.sha256(original).hexdigest(),
-            )
+        result = self.imagegen.run_machine_task(
+            {"operation": "list_models", "modelProfileId": "primary/gpt-image-2"},
+            self.project_root,
+            self.artifact_root,
+            config_snapshot=config_snapshot,
+            config_sha256=hashlib.sha256(config_snapshot).hexdigest(),
+        )
 
         self.assertTrue(result["ok"])
         self.assertEqual(result["models"][0]["capabilities"], {"mask": True})
-        self.assertEqual(reads, 1)
 
 
 if __name__ == "__main__":

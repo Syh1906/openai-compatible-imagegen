@@ -1,5 +1,7 @@
 # Parameter Reference
 
+This reference describes the Standalone CLI surface. The Codex Plugin uses the same generation and delivery core through MCP, but reads the fixed Plugin user/project configuration instead of `auth.json`. Standalone keeps snake_case result fields such as `delivery_ready`; the Plugin maps the same public fact to `deliveryReady`.
+
 ## Parameter Priority
 
 ```text

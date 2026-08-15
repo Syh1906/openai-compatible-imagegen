@@ -58,7 +58,6 @@ const RETAINED_ERROR_CODES = new Set([
   ...stableToolErrorMessages.keys(),
   "artifact_bridge_unavailable",
   "artifact_payload_invalid",
-  "artifact_result_invalid",
   "artifact_server_error",
   "artifact_tool_call_failed",
   "release_identity_mismatch",

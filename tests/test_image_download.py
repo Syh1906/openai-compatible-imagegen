@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import ast
+import base64
 from pathlib import Path
 import sys
 import unittest
@@ -11,7 +13,9 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from scripts import image_download
 
 
-PNG_BYTES = b"\x89PNG\r\n\x1a\nIEND\xaeB`\x82"
+PNG_BYTES = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII="
+)
 
 
 class RecordingResponse:
@@ -38,6 +42,39 @@ class RecordingResponse:
 
 
 class ImageDownloadTests(unittest.TestCase):
+    def test_standalone_adapter_does_not_reimplement_url_download(self) -> None:
+        standalone_source = (ROOT / "scripts" / "imagegen.py").read_text(encoding="utf-8")
+        standalone_tree = ast.parse(standalone_source)
+        function_names = {
+            node.name
+            for node in ast.walk(standalone_tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+
+        self.assertTrue(
+            {
+                "is_tls_eof_error",
+                "url_download_error_reason",
+                "read_downloaded_image",
+                "is_complete_image_data",
+            }.isdisjoint(function_names)
+        )
+        download_adapter = next(
+            node
+            for node in standalone_tree.body
+            if isinstance(node, ast.FunctionDef) and node.name == "download_image_url"
+        )
+        adapter_calls = {
+            node.func.id
+            for node in ast.walk(download_adapter)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+        }
+        self.assertIn("_download_image_url", adapter_calls)
+        adapter_names = {
+            node.id for node in ast.walk(download_adapter) if isinstance(node, ast.Name)
+        }
+        self.assertTrue({"http", "ssl", "urllib"}.isdisjoint(adapter_names))
+
     def test_download_reads_in_bounded_chunks(self) -> None:
         response = RecordingResponse()
         with mock.patch.object(image_download.urllib.request, "urlopen", return_value=response):

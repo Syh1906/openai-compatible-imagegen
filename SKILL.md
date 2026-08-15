@@ -3,7 +3,9 @@ name: openai-compatible-imagegen
 description: Generate, edit, and batch-process images through the bundled OpenAI-compatible image API script. Use for photos, illustrations, product visuals, posters, covers, diagrams, UI references, game art, transparent subjects, reference-image edits, inpainting, multi-reference compositions, and image batches when this local OpenAI-compatible workflow is the requested backend. Do not force this workflow when the user explicitly selects another image tool or backend.
 ---
 
-# OpenAI-Compatible Image Generation
+# OpenAI-Compatible Images Skill
+
+This is the Standalone distribution. Read configuration only from `auth.json` beside this installed skill; do not discover, merge, or fall back to the Codex Plugin configuration under `~/.codex/openai-compatible-imagegen/`. When the Codex Plugin distribution is active, follow its bundled `skills/openai-compatible-imagegen/SKILL.md` instead of this CLI workflow.
 
 Use the bundled script for API calls. Resolve `$SkillDir` from the physical directory containing this `SKILL.md`; never substitute another same-named installation. Run `$SkillDir/scripts/imagegen.py info` before an API request and require both `script_path` and `auth_json` to remain under `$SkillDir`. Stop and report the path mismatch instead of using a different copy. When validating this skill through another agent, require it to report the absolute `imagegen.py` path actually executed.
 

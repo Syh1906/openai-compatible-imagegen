@@ -1,6 +1,6 @@
 # Prompting Guide
 
-Use this guide when a request needs prompt construction or a batch with controlled variation. Include only details that support the user's intended result.
+Use this shared guide with either the Standalone Skill or Codex Plugin when a request needs prompt construction or a batch with controlled variation. Include only details that support the user's intended result.
 
 ## Request Structure
 
@@ -44,7 +44,7 @@ Prompt-only wording increases the chance of alpha output; it does not guarantee 
 
 For a model or size that is not explicitly allowed for prompt-only alpha, do not silently downgrade a 2K or 4K request to 1K or change models. Continue the requested API generation. Use the configured local transparency route only when local processing is allowed; otherwise keep the user's prompt unchanged and inspect the returned original for native alpha. A 1K rule must match the exact pixel size, mode, and model in `auth.json`; a failed alpha prompt, source-alpha inspection, or local route still returns the API image unchanged.
 
-When `transparency.llm_assisted.enabled=true`, prompt changes remain bounded by the policy. A second API request is permitted only when `allow_api_retry=true`; it keeps the configured model, endpoint, and requested size. Local adjustment uses `apply-transparency` on the original image and changes only documented route parameters. If the attempt limit is reached, return the original image and factual warnings instead of refusing it.
+When `transparency.llm_assisted.enabled=true`, prompt changes remain bounded by the policy. The Standalone adapter may send a second image API request only when `allow_api_retry=true`; it keeps the configured model, endpoint, and requested size. The Plugin adapter never sends a second image API request, even when that configuration flag is present; it may only perform the documented local adjustment on the original image. If the attempt limit is reached, return the original image and factual warnings instead of refusing it.
 
 ## Cross-Industry Examples
 

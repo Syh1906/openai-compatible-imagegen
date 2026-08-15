@@ -5,13 +5,13 @@ import path from "node:path";
 import test from "node:test";
 
 import { createImagegenServer } from "../mcp/create-server.mjs";
-import { resolveV2StorageBinding } from "../mcp/config-resolution.mjs";
+import { resolveImageConfigBinding } from "../mcp/config-resolution.mjs";
 import { createProjectContext } from "../mcp/project-context.mjs";
 import { createReleaseBundle, RELEASE_IDENTITY_PLACEHOLDER } from "../mcp/release-identity.mjs";
 
 
 const RELEASE_IDENTITY = createReleaseBundle({
-  pluginId: "openai-compatible-imagegen-v2",
+  pluginId: "openai-compatible-imagegen",
   pluginVersion: "0.1.0-test",
   serverBuildInputs: [{ path: "mcp/server.mjs", content: "project binding server" }],
   widgetHtml: `<html><head>${RELEASE_IDENTITY_PLACEHOLDER}</head></html>`,
@@ -65,7 +65,7 @@ test("project binding works without host conversation metadata", async () => {
 });
 
 
-test("project binding rejects V1 flat config before accepting the project", async () => {
+test("project binding rejects legacy flat project config before accepting the project", async () => {
   await withProjectRoots(async ({ pluginRoot, projectA }) => {
     const configPath = projectConfigPath(projectA);
     await mkdir(path.dirname(configPath), { recursive: true });
@@ -81,7 +81,7 @@ test("project binding rejects V1 flat config before accepting the project", asyn
         { sessionId: "v1-config-transport", _meta: {} },
       );
 
-      assertStableError(result, "v2_config_invalid", [projectA, configPath]);
+      assertStableError(result, "project_config_forbidden", [projectA, configPath]);
     } finally {
       await server.close();
     }
@@ -89,31 +89,21 @@ test("project binding rejects V1 flat config before accepting the project", asyn
 });
 
 
-test("project binding rejects Python-invalid V2 provider fields without running a task", async () => {
-  await withProjectRoots(async ({ pluginRoot, projectA }) => {
+test("project binding rejects invalid user provider fields without running a task", async () => {
+  await withProjectRoots(async ({ pluginRoot, projectA, userHome }) => {
     let taskCalls = 0;
-    const configPath = projectConfigPath(projectA);
+    const configPath = userConfigPath(userHome);
     const cases = [
       { base_url: "/" },
       { base_url: "\u0085" },
       { url_download: [] },
       { url_download: { proxy_mode: "automatic" } },
-      { url_download: { proxy_mode: null } },
       { user_agent: "invalid\r\nheader" },
       { user_agent: "\ufeff\r\nheader" },
     ];
 
     for (const providerOverrides of cases) {
-      await writeProjectConfig(projectA, {
-        providers: {
-          primary: {
-            protocol: "openai-compatible",
-            base_url: "https://example.test/v1",
-            api_key_env: "IMAGE_API_KEY",
-            ...providerOverrides,
-          },
-        },
-      });
+      await writeUserConfig(userHome, providerOverrides);
       const server = createTestServer({
         pluginRoot,
         runTask: async () => {
@@ -127,7 +117,7 @@ test("project binding rejects Python-invalid V2 provider fields without running 
           { sessionId: "invalid-provider-transport", _meta: {} },
         );
 
-        assertStableError(result, "v2_config_invalid", [projectA, configPath]);
+        assertStableError(result, "image_config_invalid", [projectA, configPath]);
       } finally {
         await server.close();
       }
@@ -138,7 +128,7 @@ test("project binding rejects Python-invalid V2 provider fields without running 
 
 
 test("project binding is idempotent across callers in one MCP process", async () => {
-  await withProjectRoots(async ({ pluginRoot, projectA }) => {
+  await withProjectRoots(async ({ pluginRoot, projectA, userHome }) => {
     const taskCalls = [];
     const server = createTestServer({
       pluginRoot,
@@ -169,8 +159,14 @@ test("project binding is idempotent across callers in one MCP process", async ()
       assert.equal(taskCalls.length, 1);
       assert.equal(taskCalls[0].context.projectRoot, path.resolve(projectA));
       assert.equal(taskCalls[0].context.artifactRoot, path.join(path.resolve(projectA), "output", "imagegen"));
-      assert.equal(taskCalls[0].context.configPath, path.join(path.resolve(projectA), ".codex", "openai-compatible-imagegen-v2", "config.json"));
-      assert.match(taskCalls[0].context.configSha256, /^[a-f0-9]{64}$/);
+      assert.equal(taskCalls[0].context.userConfigPath, userConfigPath(userHome));
+      assert.equal(taskCalls[0].context.projectConfigPath, projectConfigPath(projectA));
+      assert.match(taskCalls[0].context.userConfigSha256, /^[a-f0-9]{64}$/);
+      assert.match(taskCalls[0].context.projectConfigSha256, /^[a-f0-9]{64}$/);
+      assert.match(taskCalls[0].context.effectiveConfigSha256, /^[a-f0-9]{64}$/);
+      assert.equal(taskCalls[0].context.activeProfile, "primary/gpt-image-2");
+      assert.deepEqual(taskCalls[0].context.runtimeDefaults, { timeout_seconds: 600, concurrency: 3 });
+      assert.equal(JSON.parse(taskCalls[0].context.effectiveConfigJson).config_version, 1);
       assert.match(taskCalls[0].context.bindingKey, /^[a-f0-9]{64}$/);
       assertValuesHidden([first, second, catalog], [projectA]);
     } finally {
@@ -200,7 +196,7 @@ test("project binding freezes the selected config and rejects later changes", as
 
       const result = await listModels({}, extra);
 
-      assertStableError(result, "v2_config_changed", [projectA, configPath]);
+      assertStableError(result, "image_config_changed", [projectA, configPath]);
       assert.equal(taskCalls, 0);
     } finally {
       await server.close();
@@ -530,7 +526,7 @@ function createTestServer({
     readWidgetHtml: async () => "<html></html>",
     projectContext: createProjectContext({
       pluginRoot,
-      resolveStorageBinding: async ({ projectRoot }) => await resolveV2StorageBinding({ projectRoot, userHome }),
+      resolveConfigBinding: async ({ projectRoot }) => await resolveImageConfigBinding({ projectRoot, userHome }),
     }),
     runTask,
     readArtifact,
@@ -542,17 +538,23 @@ function createTestServer({
 
 async function withProjectRoots(callback) {
   const root = await mkdtemp(path.join(os.tmpdir(), "imagegen-project-binding-"));
-  const pluginRoot = path.join(root, "plugin-cache", "openai-compatible-imagegen-v2");
+  const pluginRoot = path.join(root, "plugin-cache", "openai-compatible-imagegen");
   const projectA = path.join(root, "workspace-a");
   const projectB = path.join(root, "workspace-b");
+  const userHome = path.join(root, "test-home");
   await Promise.all([
     mkdir(pluginRoot, { recursive: true }),
     mkdir(projectA),
     mkdir(projectB),
+    mkdir(userHome),
   ]);
-  await Promise.all([writeProjectConfig(projectA), writeProjectConfig(projectB)]);
+  await Promise.all([
+    writeUserConfig(userHome),
+    writeProjectConfig(projectA),
+    writeProjectConfig(projectB),
+  ]);
   try {
-    await callback({ root, pluginRoot, projectA, projectB });
+    await callback({ root, pluginRoot, projectA, projectB, userHome });
   } finally {
     await rm(root, { recursive: true });
   }
@@ -560,7 +562,12 @@ async function withProjectRoots(callback) {
 
 
 function projectConfigPath(projectRoot) {
-  return path.join(projectRoot, ".codex", "openai-compatible-imagegen-v2", "config.json");
+  return path.join(projectRoot, ".codex", "openai-compatible-imagegen", "config.json");
+}
+
+
+function userConfigPath(userHome) {
+  return path.join(userHome, ".codex", "openai-compatible-imagegen", "config.json");
 }
 
 
@@ -568,21 +575,37 @@ async function writeProjectConfig(projectRoot, extra = {}) {
   const configPath = projectConfigPath(projectRoot);
   await mkdir(path.dirname(configPath), { recursive: true });
   await writeFile(configPath, JSON.stringify({
+    config_version: 1,
+    ...extra,
+  }));
+}
+
+
+async function writeUserConfig(userHome, providerOverrides = {}) {
+  const configPath = userConfigPath(userHome);
+  await mkdir(path.dirname(configPath), { recursive: true });
+  await writeFile(configPath, JSON.stringify({
+    config_version: 1,
+    active_profile: "primary/gpt-image-2",
     providers: {
       primary: {
         protocol: "openai-compatible",
         base_url: "https://example.test/v1",
         api_key_env: "IMAGE_API_KEY",
+        ...providerOverrides,
       },
     },
     models: {
       "primary/gpt-image-2": {
         provider: "primary",
         model: "gpt-image-2",
-        capabilities: { generate: true, edit: true, mask: true },
+        capabilities: { generate: true, edit: true, mask: true, multi_reference: true },
       },
     },
-    ...extra,
+    defaults: { size: "1024x1024", quality: "medium", output_format: "png" },
+    postprocess: { enabled: true },
+    transparency: { default_route: "chroma-matting", prompt_only_allow: [], llm_assisted: { enabled: false } },
+    storage: { output_directory: "output/imagegen" },
   }));
 }
 

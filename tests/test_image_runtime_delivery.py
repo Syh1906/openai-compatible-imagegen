@@ -30,7 +30,6 @@ class ImageRuntimeDeliveryTests(unittest.TestCase):
                 "edit": True,
                 "mask": False,
                 "multi_reference": True,
-                "transparent_background": True,
             },
             postprocess={"enabled": False},
             user_agent="Imagegen-Test/1.0",

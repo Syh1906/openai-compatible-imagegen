@@ -12,6 +12,7 @@ import {
   installHost,
   pointerEvent,
   restoreDomGlobals,
+  sendToApp,
   waitFor,
 } from "./support/widget-runtime-host.mjs";
 
@@ -108,10 +109,7 @@ test("the render result opens the selected candidate after server-backed artifac
       host.toolCalls.filter(({ name }) => name === "read_image_artifact_data").map(({ arguments: args }) => args.imageId),
       [IMAGE_ID, secondId],
     );
-    assert.deepEqual(
-      host.toolCalls.filter(({ name }) => name === "get_image_artifact").map(({ arguments: args }) => args.imageId),
-      [IMAGE_ID, secondId],
-    );
+    assert.deepEqual(host.toolCalls.filter(({ name }) => name === "get_image_artifact"), []);
     document.querySelector(`[data-result-image-id="${secondId}"] [data-action=open-editor]`).click();
     await waitFor(() => host.toolCalls.some(({ name, arguments: args }) => name === "open_image_editor" && args.imageId === secondId));
     await waitFor(() => document.querySelector(".editor-app") !== null);
@@ -134,48 +132,54 @@ test("the render result opens the selected candidate after server-backed artifac
   }
 });
 
-test("result widget loads images when the host only forwards the result content envelope", async () => {
+test("result widget loads each image once for either host notification order", async (t) => {
   const secondId = "img_01J00000000000000000000001";
   const initialArtifacts = [
     { id: IMAGE_ID, mimeType: "image/png", width: 1, height: 1, operation: "generate", parentIds: [], childIds: [] },
     { id: secondId, mimeType: "image/png", width: 1, height: 1, operation: "generate", parentIds: [], childIds: [] },
   ];
-  const dom = new JSDOM(
-    '<!doctype html><html><body><main><p>正在加载图片...</p></main></body></html>',
-    { pretendToBeVisual: true, url: "https://widget.local/" },
-  );
-  const previous = installDomGlobals(dom.window);
-  const host = installHost(dom.window, {
-    toolName: "render_image_results",
-    initialArtifacts,
-    initialResultIncludesImages: false,
-    initialResultIncludesStructuredContent: false,
-  });
+  for (const notificationOrder of ["input-first", "result-first"]) {
+    await t.test(notificationOrder, async () => {
+      const dom = new JSDOM(
+        '<!doctype html><html><body><main><p>正在加载图片...</p></main></body></html>',
+        { pretendToBeVisual: true, url: "https://widget.local/" },
+      );
+      const previous = installDomGlobals(dom.window);
+      const host = installHost(dom.window, {
+        toolName: "render_image_results",
+        initialArtifacts,
+        initialResultIncludesImages: false,
+        initialResultIncludesStructuredContent: false,
+        initialResultNotificationOrder: notificationOrder,
+        initialResultText: "x".repeat(1_048_601),
+      });
 
-  try {
-    await import(`../web/editor-runtime.mjs?tool-backed-result-images=${Date.now()}`);
-    const imageUrl = `data:image/png;base64,${PNG_BASE64}`;
-    await waitFor(() => document.querySelectorAll("[data-image]").length === 2);
-    await waitFor(() => [...document.querySelectorAll("[data-image]")]
-      .every((image) => image.getAttribute("src") === imageUrl));
-    assert.deepEqual(
-      [...document.querySelectorAll("[data-result-image-id]")].map((item) => item.dataset.resultImageId),
-      [IMAGE_ID, secondId],
-    );
-    assert.deepEqual(
-      host.toolCalls.filter(({ name }) => name === "read_image_artifact_data").map(({ arguments: args }) => args.imageId),
-      [IMAGE_ID, secondId],
-    );
-    assert.deepEqual(host.resourceReads, []);
-    assert.deepEqual(
-      host.toolCalls.filter(({ name }) => name === "get_image_artifact").map(({ arguments: args }) => args.imageId),
-      [IMAGE_ID, secondId],
-    );
-    assert.equal([...document.querySelectorAll("[data-action=open-editor]")].every((button) => !button.disabled), true);
-  } finally {
-    host.dispose();
-    restoreDomGlobals(previous);
-    dom.window.close();
+      try {
+        await import(`../web/editor-runtime.mjs?tool-backed-result-images=${notificationOrder}-${Date.now()}`);
+        const imageUrl = `data:image/png;base64,${PNG_BASE64}`;
+        await waitFor(() => document.querySelectorAll("[data-image]").length === 2);
+        await waitFor(() => [...document.querySelectorAll("[data-image]")]
+          .every((image) => image.getAttribute("src") === imageUrl));
+        assert.deepEqual(
+          [...document.querySelectorAll("[data-result-image-id]")].map((item) => item.dataset.resultImageId),
+          [IMAGE_ID, secondId],
+        );
+        const dataReadIds = () => host.toolCalls
+          .filter(({ name }) => name === "read_image_artifact_data")
+          .map(({ arguments: args }) => args.imageId);
+        assert.deepEqual(dataReadIds(), [IMAGE_ID, secondId]);
+        host.notifyResultArtifacts(initialArtifacts);
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        assert.deepEqual(dataReadIds(), [IMAGE_ID, secondId]);
+        assert.deepEqual(host.resourceReads, []);
+        assert.deepEqual(host.toolCalls.filter(({ name }) => name === "get_image_artifact"), []);
+        assert.equal([...document.querySelectorAll("[data-action=open-editor]")].every((button) => !button.disabled), true);
+      } finally {
+        host.dispose();
+        restoreDomGlobals(previous);
+        dom.window.close();
+      }
+    });
   }
 });
 
@@ -239,20 +243,56 @@ test("all failed candidates finish with per-card errors", async () => {
   }
 });
 
+test("a server error invalidates an artifact read already in flight", async () => {
+  const dom = new JSDOM(
+    '<!doctype html><html><body><main><p>正在加载图片...</p></main></body></html>',
+    { pretendToBeVisual: true, url: "https://widget.local/" },
+  );
+  const previous = installDomGlobals(dom.window);
+  const host = installHost(dom.window, {
+    toolName: "render_image_results",
+    initialArtifacts: [{ id: IMAGE_ID, mimeType: "image/png", width: 1, height: 1 }],
+    deferArtifactDataImageIds: [IMAGE_ID],
+  });
+
+  try {
+    await import(`../web/editor-runtime.mjs?server-error-after-start=${Date.now()}`);
+    await waitFor(() => host.pendingArtifactDataRequestCount === 1);
+    sendToApp(dom.window, {
+      jsonrpc: "2.0",
+      method: "ui/notifications/tool-result",
+      params: {
+        isError: true,
+        content: [{ type: "text", text: "artifact_read_failed: 读取图片产物失败。" }],
+      },
+    });
+    await waitFor(() => document.body.textContent.includes("IMG-SERVER"));
+    host.resolveArtifactData(IMAGE_ID);
+    await new Promise((resolve) => setTimeout(resolve, 40));
+
+    assert.equal(document.querySelector("[data-inline-status]")?.textContent, "图片读取失败 · IMG-SERVER");
+    assert.equal(document.querySelector("[data-image]:not([hidden])"), null);
+    assert.equal(host.toolCalls.filter(({ name }) => name === "read_image_artifact_data").length, 1);
+  } finally {
+    host.dispose();
+    restoreDomGlobals(previous);
+    dom.window.close();
+  }
+});
+
 test("result widget distinguishes schema, projection, server, and payload failures", async (t) => {
   const cases = [
-    { name: "missing result schema", options: { initialResultIncludesEnvelope: false }, code: "IMG-SCHEMA", noReads: true },
-    { name: "invalid result projection", options: { initialResultEnvelopeText: "IMAGEGEN_RESULT_V1:not-json" }, code: "IMG-RESULT", noReads: true },
+    { name: "missing result input field", options: { initialResultToolInputArguments: {} }, code: "IMG-SCHEMA", noReads: true },
+    { name: "empty result input", options: { initialResultToolInputArguments: { imageIds: [] } }, code: "IMG-SCHEMA", noReads: true },
+    { name: "malformed result input", options: { initialResultToolInputArguments: { imageIds: ["not-an-image-id"] } }, code: "IMG-SCHEMA", noReads: true },
     { name: "initial server error", options: { initialResultIsError: true }, code: "IMG-SERVER", noReads: true },
     {
       name: "projected server error without isError",
-      options: { initialResultEnvelopeText: "artifact_read_failed: 读取图片产物失败。", initialResultIncludesImages: false, initialResultIncludesStructuredContent: false },
+      options: { initialResultText: "artifact_read_failed: 读取图片产物失败。", initialResultIncludesImages: false, initialResultIncludesStructuredContent: false },
       code: "IMG-SERVER",
       noReads: true,
     },
-    { name: "projected binding error without isError", options: { initialResultEnvelopeText: "project_binding_required: 当前 MCP 进程尚未绑定图片项目。", initialResultIncludesImages: false, initialResultIncludesStructuredContent: false }, code: "IMG-SERVER", noReads: true },
-    { name: "unknown projected error prefix", options: { initialResultEnvelopeText: "artifact_unknown: unknown projection", initialResultIncludesImages: false, initialResultIncludesStructuredContent: false }, code: "IMG-SCHEMA", noReads: true },
-    { name: "artifact metadata server error", options: { getArtifactIsError: true }, code: "IMG-SERVER" },
+    { name: "projected binding error without isError", options: { initialResultText: "project_binding_required: 当前 MCP 进程尚未绑定图片项目。", initialResultIncludesImages: false, initialResultIncludesStructuredContent: false }, code: "IMG-SERVER", noReads: true },
     { name: "artifact data server error", options: { artifactDataIsError: true }, code: "IMG-SERVER" },
     { name: "artifact data payload invalid", options: { artifactDataPayloadInvalid: true }, code: "IMG-PAYLOAD" },
   ];
@@ -279,10 +319,11 @@ test("result widget distinguishes schema, projection, server, and payload failur
         await new Promise((resolve) => setTimeout(resolve, 20));
         const metadataReads = host.toolCalls.filter(({ name }) => name === "get_image_artifact").length;
         const dataReads = host.toolCalls.filter(({ name }) => name === "read_image_artifact_data").length;
+        assert.equal(metadataReads, 0);
         if (testCase.noReads) {
-          assert.deepEqual([metadataReads, dataReads], [0, 0]);
+          assert.equal(dataReads, 0);
         } else {
-          assert.deepEqual([metadataReads, dataReads], testCase.options.getArtifactIsError ? [1, 0] : [1, 1]);
+          assert.equal(dataReads, 1);
         }
       } finally {
         host.dispose();
@@ -326,10 +367,7 @@ test("result widget ignores legacy widget-only bytes and uses the app-only image
       [IMAGE_ID, secondId],
     );
     assert.deepEqual(host.resourceReads, []);
-    assert.deepEqual(
-      host.toolCalls.filter(({ name }) => name === "get_image_artifact").map(({ arguments: args }) => args.imageId),
-      [IMAGE_ID, secondId],
-    );
+    assert.deepEqual(host.toolCalls.filter(({ name }) => name === "get_image_artifact"), []);
   } finally {
     host.dispose();
     restoreDomGlobals(previous);
@@ -396,7 +434,7 @@ test("a failed multi-image canvas open keeps the error on the selected candidate
   );
   const previous = installDomGlobals(dom.window);
   const host = installHost(dom.window, {
-    toolName: "generate_image",
+    toolName: "render_image_results",
     failOpenImageId: secondId,
     initialArtifacts: [
       { id: IMAGE_ID, mimeType: "image/png", width: 1, height: 1, operation: "generate", parentIds: [], childIds: [] },
@@ -456,9 +494,8 @@ test("result widget expands into the editor and returns to a reusable conversati
     assert.deepEqual(host.displayModeRequests, ["fullscreen"]);
     assert.deepEqual(host.messages, []);
     assert.deepEqual(
-      host.toolCalls.filter(({ name }) => name !== "list_image_models").slice(0, 3).map(({ name, arguments: toolArguments }) => ({ name, arguments: toolArguments })),
+      host.toolCalls.filter(({ name }) => name !== "list_image_models").slice(0, 2).map(({ name, arguments: toolArguments }) => ({ name, arguments: toolArguments })),
       [
-        { name: "get_image_artifact", arguments: { imageId: IMAGE_ID } },
         { name: "read_image_artifact_data", arguments: { imageId: IMAGE_ID } },
         { name: "open_image_editor", arguments: { imageId: IMAGE_ID } },
       ],

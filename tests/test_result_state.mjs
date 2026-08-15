@@ -1,32 +1,28 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { extractImageResultEnvelopeIds } from "../mcp/result-envelope.mjs";
-import { artifactLineage, extractResultArtifacts, extractResultImageIds, hydrateResultArtifacts, mergeLineageRecords } from "../web/result-state.mjs";
+import { artifactLineage, extractResultArtifacts, extractResultInputImageIds, hydrateResultArtifacts, mergeLineageRecords } from "../web/result-state.mjs";
 
 
 const firstId = "img_01J00000000000000000000000";
 const secondId = "img_01J00000000000000000000001";
 
-test("result envelopes provide ordered image IDs through the standard text content channel", () => {
-  const result = {
-    content: [{ type: "text", text: `IMAGEGEN_RESULT_V1:${JSON.stringify({ imageIds: [firstId, secondId] })}` }],
-  };
-  assert.deepEqual(extractImageResultEnvelopeIds(result), [firstId, secondId]);
-  assert.deepEqual(extractResultImageIds(result), [firstId, secondId]);
+test("result tool input provides ordered image IDs through the MCP Apps input channel", () => {
+  const input = { arguments: { imageIds: [firstId, secondId] } };
+  assert.deepEqual(extractResultInputImageIds(input), [firstId, secondId]);
 });
 
-test("result envelope parsing rejects missing, unknown, malformed, and duplicate IDs", () => {
+test("result tool input rejects missing, unknown, malformed, and duplicate IDs", () => {
   const cases = [
     {},
-    { content: [{ type: "text", text: "IMAGEGEN_RESULT_V2:{\"imageIds\":[]}" }] },
-    { content: [{ type: "text", text: "IMAGEGEN_RESULT_V1:not-json" }] },
-    { content: [{ type: "text", text: `IMAGEGEN_RESULT_V1:${JSON.stringify({ imageIds: ["not-an-image-id"] })}` }] },
-    { content: [{ type: "text", text: `IMAGEGEN_RESULT_V1:${JSON.stringify({ imageIds: [firstId, firstId] })}` }] },
+    { arguments: {} },
+    { arguments: { imageIds: [] } },
+    { arguments: { imageIds: ["not-an-image-id"] } },
+    { arguments: { imageIds: [firstId, firstId] } },
+    { arguments: { imageIds: Array.from({ length: 11 }, () => firstId) } },
   ];
-  for (const result of cases) {
-    assert.deepEqual(extractImageResultEnvelopeIds(result), []);
-    assert.deepEqual(extractResultImageIds(result), []);
+  for (const input of cases) {
+    assert.deepEqual(extractResultInputImageIds(input), []);
   }
 });
 
@@ -64,8 +60,15 @@ test("artifact hydration reads each binary through the app-only MCP tool", async
       toolCalls.push(request);
       return {
         structuredContent: {
-          id: request.arguments.imageId,
-          mimeType: "image/png",
+          artifact: {
+            id: request.arguments.imageId,
+            mimeType: "image/png",
+            width: 1024,
+            height: 1024,
+            parentIds: [],
+            childIds: [],
+          },
+          canvasStatus: "available",
         },
         _meta: {
           widgetData: {
@@ -83,6 +86,7 @@ test("artifact hydration reads each binary through the app-only MCP tool", async
     arguments: { imageId: item.id },
   })));
   assert.deepEqual(hydrated.map((item) => item.data), artifacts.map((item) => `${item.id}-bytes`));
+  assert.deepEqual(hydrated.map((item) => item.canvasStatus), ["available", "available"]);
 });
 
 test("artifact hydration calls the MCP tool when the host omits optional capability metadata", async () => {
@@ -95,8 +99,8 @@ test("artifact hydration calls the MCP tool when the host omits optional capabil
       toolCalls.push(request);
       return {
         structuredContent: {
-          id: request.arguments.imageId,
-          mimeType: "image/png",
+          artifact: { id: request.arguments.imageId, mimeType: "image/png" },
+          canvasStatus: "available",
         },
         _meta: {
           widgetData: {
@@ -131,12 +135,61 @@ test("artifact hydration identifies an invalid private image payload", async () 
   await assert.rejects(
     hydrateResultArtifacts({
       callServerTool: async () => ({
-        structuredContent: { id: firstId, mimeType: "image/png" },
+        structuredContent: {
+          artifact: { id: firstId, mimeType: "image/png" },
+          canvasStatus: "available",
+        },
         _meta: { widgetData: { id: firstId, mimeType: "image/png" } },
       }),
     }, [{ id: firstId }]),
     (error) => error?.code === "artifact_payload_invalid",
   );
+});
+
+test("artifact hydration rejects public and private identity or MIME mismatches", async (t) => {
+  const cases = [
+    {
+      name: "public image ID mismatch",
+      artifact: { id: secondId, mimeType: "image/png" },
+      widgetData: { id: firstId, mimeType: "image/png", dataBase64: "bytes" },
+      canvasStatus: "available",
+    },
+    {
+      name: "private image ID mismatch",
+      artifact: { id: firstId, mimeType: "image/png" },
+      widgetData: { id: secondId, mimeType: "image/png", dataBase64: "bytes" },
+      canvasStatus: "available",
+    },
+    {
+      name: "MIME mismatch",
+      artifact: { id: firstId, mimeType: "image/png" },
+      widgetData: { id: firstId, mimeType: "image/jpeg", dataBase64: "bytes" },
+      canvasStatus: "available",
+    },
+    {
+      name: "unknown canvas status",
+      artifact: { id: firstId, mimeType: "image/png" },
+      widgetData: { id: firstId, mimeType: "image/png", dataBase64: "bytes" },
+      canvasStatus: "unknown",
+    },
+  ];
+
+  for (const testCase of cases) {
+    await t.test(testCase.name, async () => {
+      await assert.rejects(
+        hydrateResultArtifacts({
+          callServerTool: async () => ({
+            structuredContent: {
+              artifact: testCase.artifact,
+              canvasStatus: testCase.canvasStatus,
+            },
+            _meta: { widgetData: testCase.widgetData },
+          }),
+        }, [{ id: firstId }]),
+        (error) => error?.code === "artifact_payload_invalid",
+      );
+    });
+  }
 });
 
 test("artifact lineage uses the real repository parentIds and childIds contract", () => {

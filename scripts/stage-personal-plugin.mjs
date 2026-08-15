@@ -18,7 +18,7 @@ import {
 const execFileAsync = promisify(execFile);
 const defaultSourceRoot = fileURLToPath(new URL("..", import.meta.url));
 const probePath = fileURLToPath(new URL("./probe-plugin.mjs", import.meta.url));
-const pluginId = "openai-compatible-imagegen-v2";
+const pluginId = "openai-compatible-imagegen";
 const releaseEntries = releaseEntriesFor(pluginId);
 const legacyStageLockFileName = `.${pluginId}.stage.lock`;
 const stageLockDirectoryName = `.${pluginId}.stage.lock-v2`;

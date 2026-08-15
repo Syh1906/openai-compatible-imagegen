@@ -7,7 +7,6 @@ import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
-import { extractImageResultEnvelopeIds } from "../mcp/result-envelope.mjs";
 import { containsAbsolutePath, fingerprintPath, pathRelation } from "../mcp/runtime-diagnostics.mjs";
 import {
   distributionFiles as DISTRIBUTION_FILES,
@@ -15,7 +14,7 @@ import {
 } from "./plugin-file-set.mjs";
 
 const defaultRoot = fileURLToPath(new URL("..", import.meta.url));
-const PLUGIN_ID = "openai-compatible-imagegen-v2";
+const PLUGIN_ID = "openai-compatible-imagegen";
 const APP_ONLY_TOOLS = [
   "finalize_image_editor_session",
   "get_image_editor_session",
@@ -34,6 +33,7 @@ function parseOptions(args) {
   const options = {
     pluginRoot: defaultRoot,
     projectRoot: null,
+    userHome: null,
     sourceRoot: null,
     marketplacePath: null,
     imageIds: [],
@@ -43,6 +43,7 @@ function parseOptions(args) {
   const valueOptions = new Map([
     ["--plugin-root", "pluginRoot"],
     ["--project-root", "projectRoot"],
+    ["--user-home", "userHome"],
     ["--source-root", "sourceRoot"],
     ["--marketplace-path", "marketplacePath"],
     ["--image-id", "imageIds"],
@@ -64,7 +65,7 @@ function parseOptions(args) {
     if (!key || !value) {
       throw new Error(
         "usage: node scripts/probe-plugin.mjs "
-        + "[--plugin-root <path>] [--project-root <path>] "
+        + "[--plugin-root <path>] [--project-root <path>] [--user-home <path>] "
         + "[--source-root <path>] [--marketplace-path <path>] "
         + "[--image-id <id>]... [--remote-smoke] [--annotation-smoke]",
       );
@@ -79,6 +80,7 @@ function parseOptions(args) {
 const {
   pluginRoot,
   projectRoot,
+  userHome,
   sourceRoot,
   marketplacePath,
   imageIds,
@@ -264,6 +266,7 @@ async function listFiles(root, relativeDirectory = "") {
 
 async function main() {
   requireValue(projectRoot, "--project-root is required; the probe never infers a project root");
+  const requiresProjectBinding = remoteSmoke || annotationSmoke || imageIds.length > 0;
   if (remoteSmoke) requireRemoteSmokeRoot(projectRoot);
   if (annotationSmoke) {
     requireRemoteSmokeRoot(projectRoot);
@@ -313,6 +316,7 @@ async function main() {
     args: [resolvePath(server.args[0])],
     cwd: pluginRoot,
     stderr: "pipe",
+    ...(userHome ? { env: { HOME: userHome, USERPROFILE: userHome } } : {}),
   });
 
   try {
@@ -395,15 +399,17 @@ async function main() {
         && unboundResult.content?.[0]?.text?.startsWith("project_binding_required:"),
       "unbound project calls did not return a stable error",
     );
-    const bindingResult = await client.callTool({
-      name: "bind_imagegen_project",
-      arguments: { projectRoot },
-    });
-    requireValue(
-      bindingResult.isError !== true
-        && ["bound", "already_bound"].includes(bindingResult.structuredContent?.status),
-      "explicit project binding failed",
-    );
+    if (requiresProjectBinding) {
+      const bindingResult = await client.callTool({
+        name: "bind_imagegen_project",
+        arguments: { projectRoot },
+      });
+      requireValue(
+        bindingResult.isError !== true
+          && ["bound", "already_bound"].includes(bindingResult.structuredContent?.status),
+        "explicit project binding failed",
+      );
+    }
     const runtimeDiagnosticResult = await client.callTool({
       name: "inspect_imagegen_runtime",
       arguments: {},
@@ -416,9 +422,16 @@ async function main() {
     );
     requireValue(
       runtimeDiagnostic.pluginRootFingerprint === fingerprintPath(pluginRoot)
-        && runtimeDiagnostic.projectRootFingerprint === fingerprintPath(projectRoot)
+        && runtimeDiagnostic.projectRootFingerprint === (
+          requiresProjectBinding ? fingerprintPath(projectRoot) : null
+        )
         && runtimeDiagnostic.cwdFingerprint === fingerprintPath(pluginRoot)
-        && runtimeDiagnostic.projectRootSource === "explicit_tool",
+        && runtimeDiagnostic.projectRootRelationToPlugin === (
+          requiresProjectBinding ? pathRelation(projectRoot, pluginRoot) : null
+        )
+        && runtimeDiagnostic.projectRootSource === (
+          requiresProjectBinding ? "explicit_tool" : "unbound"
+        ),
       "runtime diagnostic root identity differs",
     );
     requireSafeToolResults([runtimeDiagnosticResult], pluginRoot, projectRoot);
@@ -466,7 +479,7 @@ async function main() {
         name: "render_image_results",
         arguments: { imageIds },
       });
-      requireResultEnvelope(renderResult, imageIds);
+      requireRenderedImages(renderResult, imageIds);
       const renderedArtifacts = renderResult.structuredContent?.artifacts ?? [];
       requireValue(renderResult.isError !== true, `render_image_results failed for ${imageIds.join(", ")}`);
       requireValue(
@@ -549,7 +562,7 @@ async function main() {
         name: "render_image_results",
         arguments: { imageIds: [generated.id] },
       });
-      requireResultEnvelope(generatedRender, [generated.id]);
+      requireRenderedImages(generatedRender, [generated.id]);
       requireValue(
         generatedRender.isError !== true
           && generatedRender.structuredContent?.artifacts?.length === 1,
@@ -581,7 +594,7 @@ async function main() {
         name: "render_image_results",
         arguments: { imageIds: [edited.id] },
       });
-      requireResultEnvelope(editedRender, [edited.id]);
+      requireRenderedImages(editedRender, [edited.id]);
       requireValue(
         editedRender.isError !== true
           && editedRender.structuredContent?.artifacts?.length === 1,
@@ -644,25 +657,34 @@ async function readArtifactData(client, artifacts) {
       arguments: { imageId: artifact.id },
     });
     const payload = result.structuredContent;
+    const publicArtifact = payload?.artifact;
     const widgetData = result._meta?.widgetData;
     requireValue(result.isError !== true && widgetData?.dataBase64, `image data tool returned no bytes for ${artifact.id}`);
     requireValue(
-      payload.id === artifact.id
-        && payload.mimeType === artifact.mimeType
+      publicArtifact?.id === artifact.id
+        && publicArtifact.mimeType === artifact.mimeType
         && widgetData.id === artifact.id
         && widgetData.mimeType === artifact.mimeType
+        && ["available", "destroyed"].includes(payload.canvasStatus)
         && Buffer.from(widgetData.dataBase64, "base64").byteLength > 0,
       `image data tool content differs for ${artifact.id}`,
     );
-    return { imageId: artifact.id, mimeType: payload.mimeType };
+    return { imageId: artifact.id, mimeType: publicArtifact.mimeType };
   }));
 }
 
-function requireResultEnvelope(result, expectedImageIds) {
-  const envelopeImageIds = extractImageResultEnvelopeIds(result);
+function requireRenderedImages(result, expectedImageIds) {
+  const artifacts = result.structuredContent?.artifacts ?? [];
+  const images = result.content?.filter((item) => item.type === "image") ?? [];
   requireValue(
-    JSON.stringify(envelopeImageIds) === JSON.stringify(expectedImageIds),
-    "render_image_results returned an invalid or mismatched result envelope",
+    JSON.stringify(artifacts.map((artifact) => artifact.id)) === JSON.stringify(expectedImageIds)
+      && images.length === artifacts.length
+      && images.every((image, index) => (
+        image.mimeType === artifacts[index].mimeType
+        && typeof image.data === "string"
+        && Buffer.from(image.data, "base64").byteLength > 0
+      )),
+    "render_image_results returned invalid or mismatched model-visible images",
   );
 }
 

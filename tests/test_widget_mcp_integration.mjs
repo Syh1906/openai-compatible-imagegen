@@ -11,19 +11,21 @@ import { JSDOM } from "jsdom";
 
 import { createImagegenServer } from "../mcp/create-server.mjs";
 import { createReleaseBundle } from "../mcp/release-identity.mjs";
+import { createFixtureProjectContext } from "./fixture-project-context.js";
 
 
 const IMAGE_ID = "img_01J00000000000000000000000";
 const PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFgAI/ScL1WQAAAABJRU5ErkJggg==";
+const OBSERVED_HOST_TEXT_LENGTH = 1_048_601;
 const WIDGET_SOURCE_PATH = fileURLToPath(new URL("../web/index.html", import.meta.url));
 
 
-test("widget consumes the real MCP result without a duplicated tool-input notification", async () => {
+test("widget binds standard tool input when the host projects image results", async () => {
   const pluginRoot = path.resolve(fileURLToPath(new URL("../", import.meta.url)));
   const projectRoot = path.dirname(pluginRoot);
   const widgetSource = await readFile(WIDGET_SOURCE_PATH, "utf8");
   const releaseBundle = createReleaseBundle({
-    pluginId: "openai-compatible-imagegen-v2",
+    pluginId: "openai-compatible-imagegen",
     pluginVersion: "0.1.0-integration-test",
     serverBuildInputs: [{ path: "test-server.mjs", content: "test server" }],
     widgetHtml: widgetSource,
@@ -47,6 +49,7 @@ test("widget consumes the real MCP result without a duplicated tool-input notifi
   const server = createImagegenServer({
     releaseIdentity,
     launchContext: { cwd: pluginRoot, pluginRoot },
+    projectContext: createFixtureProjectContext({ projectRoot }),
     readWidgetHtml: async () => releaseBundle.widgetHtml,
     runTask: async (task) => task.operation === "list_models"
       ? { ok: true, models: [{ id: "primary/gpt-image-2", provider: "primary", model: "gpt-image-2", capabilities: { mask: true } }] }
@@ -87,11 +90,12 @@ test("widget consumes the real MCP result without a duplicated tool-input notifi
       arguments: initialToolArguments,
     });
     assert.equal(initialToolResult.isError, undefined);
+    assert.equal(initialToolResult.content.filter((item) => item.type === "image").length, 1);
     const resourceUri = resultTool._meta?.ui?.resourceUri;
     assert.equal(resourceUri, releaseIdentity.resourceUris.result);
     assert.equal(initialToolResult._meta?.ui?.resourceUri, resourceUri);
     assert.equal(initialToolResult._meta?.releaseIdentity?.resourceUris?.result, resourceUri);
-    const projectedToolResult = { content: [initialToolResult.content[0]] };
+    const projectedToolResult = projectInitialResultLikeObservedCodex(initialToolResult);
     assert.equal(projectedToolResult.structuredContent, undefined);
     assert.equal(projectedToolResult._meta, undefined);
     const widgetResource = await client.readResource({ uri: resourceUri });
@@ -118,6 +122,7 @@ test("widget consumes the real MCP result without a duplicated tool-input notifi
     previousGlobals = installDomGlobals(widgetWindow);
     host = installHost(hostWindow, widgetWindow, {
       tool: resultTool,
+      initialToolArguments,
       initialToolResult: projectedToolResult,
       toolCaller: async ({ name, arguments: toolArguments }) => await client.callTool({
         name,
@@ -126,10 +131,17 @@ test("widget consumes the real MCP result without a duplicated tool-input notifi
     });
 
     await import(`../web/editor-runtime.mjs?mcp-widget-integration=${Date.now()}`);
-    await waitFor(() => document.querySelector("[data-image]")?.hidden === false);
+    await waitFor(() => (
+      document.querySelector("[data-image]")?.hidden === false
+      || document.body.textContent.includes("IMG-SCHEMA")
+    ));
+    assert.equal(
+      document.body.textContent.includes("IMG-SCHEMA"),
+      false,
+      "the real-host result projection must bind an image instead of showing IMG-SCHEMA",
+    );
     const requiredToolNames = new Set([
       "list_image_models",
-      "get_image_artifact",
       "read_image_artifact_data",
       "report_imagegen_host_observation",
     ]);
@@ -143,9 +155,9 @@ test("widget consumes the real MCP result without a duplicated tool-input notifi
     assert.equal(host.pendingToolCallCount, 0);
     assert.equal(host.failedToolCalls.length, 0);
     assert.equal(host.unexpectedSourceMessages.length, 0);
-    assert.equal(host.attemptedToolCalls.length, 4);
+    assert.equal(host.attemptedToolCalls.length, 3);
     const completedToolNames = host.completedToolCalls.map(({ name }) => name);
-    assert.equal(completedToolNames.length, 4);
+    assert.equal(completedToolNames.length, 3);
     assert.deepEqual(new Set(completedToolNames), requiredToolNames);
     const diagnostic = await client.callTool({ name: "inspect_imagegen_runtime", arguments: {} });
     assert.deepEqual(
@@ -182,7 +194,16 @@ test("widget consumes the real MCP result without a duplicated tool-input notifi
 });
 
 
-function installHost(hostWindow, widgetWindow, { tool, initialToolResult, toolCaller }) {
+function projectInitialResultLikeObservedCodex(result) {
+  const hasImageContent = result.content?.some((item) => item.type === "image");
+  if (!hasImageContent) return { content: [result.content[0]] };
+  return {
+    content: [{ type: "text", text: "x".repeat(OBSERVED_HOST_TEXT_LENGTH) }],
+  };
+}
+
+
+function installHost(hostWindow, widgetWindow, { tool, initialToolArguments, initialToolResult, toolCaller }) {
   const attemptedToolCalls = [];
   const completedToolCalls = [];
   const failedToolCalls = [];
@@ -222,6 +243,11 @@ function installHost(hostWindow, widgetWindow, { tool, initialToolResult, toolCa
         jsonrpc: "2.0",
         method: "ui/notifications/tool-result",
         params: initialToolResult,
+      });
+      sendToApp(hostWindow, widgetWindow, {
+        jsonrpc: "2.0",
+        method: "ui/notifications/tool-input",
+        params: { arguments: initialToolArguments },
       });
       return;
     }

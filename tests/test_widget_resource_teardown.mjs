@@ -119,6 +119,45 @@ test("resource teardown detaches stale result card actions", async () => {
 });
 
 for (const outcome of ["resolve", "reject"]) {
+  test(`resource teardown freezes a pending artifact read when it ${outcome}s`, async () => {
+    const dom = new JSDOM(
+      '<!doctype html><html><body><main><p>正在加载图片...</p></main></body></html>',
+      { pretendToBeVisual: true, url: "https://widget.local/" },
+    );
+    const previous = installDomGlobals(dom.window);
+    const host = installHost(dom.window, {
+      toolName: "render_image_results",
+      initialArtifacts: [{ id: IMAGE_ID, mimeType: "image/png", width: 1, height: 1 }],
+      deferArtifactDataImageIds: [IMAGE_ID],
+    });
+
+    try {
+      await import(`../web/editor-runtime.mjs?teardown-pending-artifact-${outcome}=${Date.now()}`);
+      await waitFor(() => host.pendingArtifactDataRequestCount === 1);
+      const cardBeforeCompletion = document.querySelector(".inline-result");
+
+      sendToApp(dom.window, {
+        jsonrpc: "2.0",
+        id: `teardown-pending-artifact-${outcome}`,
+        method: "ui/resource-teardown",
+        params: {},
+      });
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      host[outcome === "resolve" ? "resolveArtifactData" : "rejectArtifactData"](IMAGE_ID);
+      await new Promise((resolve) => setTimeout(resolve, 40));
+
+      assert.equal(document.querySelector(".inline-result"), cardBeforeCompletion);
+      assert.equal(document.querySelector("[data-image]:not([hidden])"), null);
+      assert.equal(host.toolCalls.filter(({ name }) => name === "read_image_artifact_data").length, 1);
+    } finally {
+      host.dispose();
+      restoreDomGlobals(previous);
+      dom.window.close();
+    }
+  });
+}
+
+for (const outcome of ["resolve", "reject"]) {
   test(`resource teardown freezes a pending canvas open when ensure ${outcome}s`, async () => {
     const dom = new JSDOM(
       '<!doctype html><html><body><main><p>正在加载图片...</p></main></body></html>',

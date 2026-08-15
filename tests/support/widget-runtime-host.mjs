@@ -1,12 +1,10 @@
-import { createImageResultEnvelope } from "../../mcp/result-envelope.mjs";
-
 export const IMAGE_ID = "img_01J00000000000000000000000";
 export const EDITOR_SESSION_ID = "eds_01J00000000000000000000000";
 export const PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFgAI/ScL1WQAAAABJRU5ErkJggg==";
 export const FULL_MESSAGE_HOST_CAPABILITIES = { message: { text: {}, image: {} }, updateModelContext: { structuredContent: {} } };
 export const CODEX_COMPOSER_HOST_CAPABILITIES = { message: {}, updateModelContext: { text: {}, image: {}, structuredContent: {} } };
 
-export function installHost(window, { toolName, editorSessionStatus = "active", destroySessionStatus = "destroyed", canvasStatus = "available", deferModelContext = false, deferDisplayModeRequests = false, deferOpenImageEditor = false, deferDestroyImageEditor = false, deferArtifactDataImageIds = [], children = [], maskCapability = true, failMessageOnce = false, failOpenImageId = null, artifactOverride = null, initialEditorResultIncludesArtifact = true, initialArtifacts = null, initialResultIncludesEnvelope = true, initialResultEnvelopeText = null, initialResultIsError = false, initialResultIncludesImages = true, initialResultIncludesStructuredContent = true, initialResultIncludesWidgetImages = false, rejectModelCatalog = false, rejectDisplayMode = null, rejectFinalizeImageEditor = false, uniqueEditorSessionIds = false, getArtifactIsError = false, artifactDataIsError = false, revealArtifactIsError = false, failArtifactMetadataImageId = null, failArtifactDataImageId = null, failArtifactDataImageIds = [], artifactDataPayloadInvalid = false, hostCapabilities = FULL_MESSAGE_HOST_CAPABILITIES }) {
+export function installHost(window, { toolName, editorSessionStatus = "active", destroySessionStatus = "destroyed", canvasStatus = "available", deferModelContext = false, deferDisplayModeRequests = false, deferOpenImageEditor = false, deferDestroyImageEditor = false, deferArtifactDataImageIds = [], children = [], maskCapability = true, failMessageOnce = false, failOpenImageId = null, artifactOverride = null, initialEditorResultIncludesArtifact = true, initialArtifacts = null, initialResultIncludesToolInput = true, initialResultToolInputArguments = null, initialResultText = null, initialResultNotificationOrder = "result-first", initialResultIsError = false, initialResultIncludesImages = true, initialResultIncludesStructuredContent = true, initialResultIncludesWidgetImages = false, rejectModelCatalog = false, rejectDisplayMode = null, rejectFinalizeImageEditor = false, uniqueEditorSessionIds = false, artifactDataIsError = false, revealArtifactIsError = false, failArtifactDataImageId = null, failArtifactDataImageIds = [], artifactDataPayloadInvalid = false, hostCapabilities = FULL_MESSAGE_HOST_CAPABILITIES }) {
   const toolCalls = [];
   const resourceReads = [];
   const displayModeRequests = [];
@@ -35,6 +33,9 @@ export function installHost(window, { toolName, editorSessionStatus = "active", 
     parentIds: id === IMAGE_ID ? [] : [IMAGE_ID],
     childIds: id === IMAGE_ID ? children.map((item) => item.id) : [],
   });
+  const artifactFor = (imageId) => (
+    artifactOverride?.id === imageId ? artifactOverride : runtimeArtifacts.get(imageId) || defaultArtifact(imageId)
+  );
   const onMessage = (event) => {
     const message = event.data;
     if (message?.method === "ui/initialize") {
@@ -67,21 +68,19 @@ export function installHost(window, { toolName, editorSessionStatus = "active", 
       }
       if (initialArtifactRecords) {
         const imageIds = initialArtifactRecords.map((item) => item.id);
-        sendToApp(window, {
+        const resultNotification = {
           jsonrpc: "2.0",
           method: "ui/notifications/tool-result",
           params: {
             ...(initialResultIsError ? { isError: true } : {}),
             content: [
-              ...(initialResultIncludesEnvelope
-                ? [{ type: "text", text: initialResultEnvelopeText || createImageResultEnvelope(imageIds) }]
-                : []),
+              { type: "text", text: initialResultText || `已显示 ${imageIds.length} 张图片。` },
               ...(initialResultIncludesImages
                 ? initialArtifactRecords.map(() => ({ type: "image", mimeType: "image/png", data: PNG_BASE64 }))
                 : []),
             ],
             ...(initialResultIncludesStructuredContent
-              ? { structuredContent: { artifacts: initialArtifactRecords } }
+              ? { structuredContent: { imageIds, artifacts: initialArtifactRecords } }
               : {}),
             _meta: {
               imageIds,
@@ -90,7 +89,21 @@ export function installHost(window, { toolName, editorSessionStatus = "active", 
                 : {}),
             },
           },
-        });
+        };
+        const inputNotification = {
+          jsonrpc: "2.0",
+          method: "ui/notifications/tool-input",
+          params: {
+            arguments: initialResultToolInputArguments || { imageIds },
+          },
+        };
+        const notifications = initialResultNotificationOrder === "input-first"
+          ? [inputNotification, resultNotification]
+          : [resultNotification, inputNotification];
+        for (const notification of notifications) {
+          if (notification === inputNotification && (!initialResultIncludesToolInput || toolName !== "render_image_results")) continue;
+          sendToApp(window, notification);
+        }
       } else if (toolName === "open_image_editor") {
         const initialArtifact = artifactOverride || defaultArtifact();
         sendToApp(window, {
@@ -172,16 +185,16 @@ export function installHost(window, { toolName, editorSessionStatus = "active", 
           ? {
               content: [],
               structuredContent: {
-                id: message.params.arguments.imageId,
-                mimeType: "image/png",
+                artifact: artifactFor(message.params.arguments.imageId),
+                canvasStatus,
               },
             }
         : toolName === "read_image_artifact_data"
         ? {
             content: [],
             structuredContent: {
-              id: message.params.arguments.imageId,
-              mimeType: "image/png",
+              artifact: artifactFor(message.params.arguments.imageId),
+              canvasStatus: artifactFor(message.params.arguments.imageId).canvasStatus || canvasStatus,
             },
             _meta: {
               widgetData: {
@@ -191,11 +204,6 @@ export function installHost(window, { toolName, editorSessionStatus = "active", 
               },
             },
           }
-        : toolName === "get_image_artifact" && (getArtifactIsError || message.params.arguments.imageId === failArtifactMetadataImageId)
-          ? {
-              isError: true,
-              content: [{ type: "text", text: "image_task_failed: artifact unavailable" }],
-            }
         : toolName === "list_image_models"
         ? {
             content: [],
@@ -276,11 +284,8 @@ export function installHost(window, { toolName, editorSessionStatus = "active", 
           : {
                 content: [{ type: "image", mimeType: "image/png", data: PNG_BASE64 }],
                 structuredContent: {
-                  artifact: artifactOverride || runtimeArtifacts.get(message.params.arguments.imageId) || defaultArtifact(message.params.arguments.imageId || IMAGE_ID),
-                  canvasStatus: (
-                    artifactOverride
-                    || runtimeArtifacts.get(message.params.arguments.imageId)
-                  )?.canvasStatus || canvasStatus,
+                  artifact: artifactFor(message.params.arguments.imageId || IMAGE_ID),
+                  canvasStatus: artifactFor(message.params.arguments.imageId || IMAGE_ID).canvasStatus || canvasStatus,
                 },
               };
       sendToApp(window, {
@@ -419,14 +424,28 @@ export function installHost(window, { toolName, editorSessionStatus = "active", 
       const index = pendingArtifactDataRequests.findIndex((message) => message.params.arguments.imageId === imageId);
       if (index < 0) throw new Error(`No pending artifact data request for ${imageId}`);
       const message = pendingArtifactDataRequests.splice(index, 1)[0];
+      const artifact = artifactFor(imageId);
       sendToApp(window, {
         jsonrpc: "2.0",
         id: message.id,
         result: {
           content: [],
-          structuredContent: { id: imageId, mimeType: "image/png" },
-          _meta: { widgetData: { id: imageId, mimeType: "image/png", dataBase64: PNG_BASE64 } },
+          structuredContent: {
+            artifact,
+            canvasStatus: artifact.canvasStatus || canvasStatus,
+          },
+          _meta: { widgetData: { id: imageId, mimeType: artifact.mimeType, dataBase64: PNG_BASE64 } },
         },
+      });
+    },
+    rejectArtifactData: (imageId) => {
+      const index = pendingArtifactDataRequests.findIndex((message) => message.params.arguments.imageId === imageId);
+      if (index < 0) throw new Error(`No pending artifact data request for ${imageId}`);
+      const message = pendingArtifactDataRequests.splice(index, 1)[0];
+      sendToApp(window, {
+        jsonrpc: "2.0",
+        id: message.id,
+        error: { code: -32603, message: "artifact data unavailable" },
       });
     },
     resolveDisplayModeRequest: (mode, { responseMode = mode, notifyAfter = true } = {}) => {
@@ -476,17 +495,29 @@ export function installHost(window, { toolName, editorSessionStatus = "active", 
       currentEditorSessionStatus = status;
       editorSessionImages.set(id, imageId);
     },
+    notifyResultToolInput: (imageIds) => sendToApp(window, {
+      jsonrpc: "2.0",
+      method: "ui/notifications/tool-input",
+      params: { arguments: { imageIds } },
+    }),
     notifyResultArtifacts: (artifacts) => {
       for (const artifact of artifacts) runtimeArtifacts.set(artifact.id, { ...artifact });
+      if (toolName === "render_image_results") {
+        sendToApp(window, {
+          jsonrpc: "2.0",
+          method: "ui/notifications/tool-input",
+          params: { arguments: { imageIds: artifacts.map((item) => item.id) } },
+        });
+      }
       sendToApp(window, {
         jsonrpc: "2.0",
         method: "ui/notifications/tool-result",
         params: {
           content: [
-            { type: "text", text: createImageResultEnvelope(artifacts.map((item) => item.id)) },
+            { type: "text", text: `已显示 ${artifacts.length} 张图片。` },
             ...artifacts.map(() => ({ type: "image", mimeType: "image/png", data: PNG_BASE64 })),
           ],
-          structuredContent: { artifacts },
+          structuredContent: { imageIds: artifacts.map((item) => item.id), artifacts },
           _meta: { imageIds: artifacts.map((item) => item.id) },
         },
       });

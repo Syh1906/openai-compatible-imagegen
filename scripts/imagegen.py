@@ -5,25 +5,33 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
-import http.client
 import json
-import os
-import ssl
 import sys
 import urllib.error
-import urllib.parse
 import urllib.request
-from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 
 SCRIPT_DIR = Path(__file__).resolve().parent
-if str(SCRIPT_DIR) not in sys.path:
-    sys.path.insert(0, str(SCRIPT_DIR))
+SKILL_DIR = SCRIPT_DIR.parent
+for import_root in (SCRIPT_DIR, SKILL_DIR):
+    if str(import_root) not in sys.path:
+        sys.path.insert(0, str(import_root))
 
 import image_transport
+from scripts.image_download import (
+    ImageDownloadError,
+    download_image_url as _download_image_url,
+    is_complete_image_data,
+)
+from provider_config import (
+    DEFAULT_USER_AGENT,
+    EffectiveImageConfig,
+    ProviderConfigError,
+    parse_standalone_config,
+)
 from image_preview import preview_board_image as build_preview_board
 from image_cli import build_parser as build_cli_parser
 from image_batch import (
@@ -56,12 +64,10 @@ from image_resize import fit_to_canvas as fit_pixels_to_canvas, resize_pixels
 from image_transparency import (
     LOCAL_ROUTES,
     TransparencyPlan,
-    TransparencyPolicy,
     TransparencyUnavailableError,
     normalize_route_options,
     parse_option_assignments,
     process_file as process_transparency_file,
-    resolve_policy as resolve_transparency_policy,
 )
 from image_transparency_runtime import (
     apply_prompt_directives,
@@ -93,11 +99,6 @@ DEFAULT_QUALITY = "medium"
 DEFAULT_FORMAT = "png"
 DEFAULT_RESOLUTION = "1K"
 MAX_IMAGES_PER_REQUEST = 16
-DEFAULT_USER_AGENT = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) "
-    "Chrome/131.0.0.0 Safari/537.36"
-)
 SUPPORTED_ASPECTS = {"1:1", "16:9", "4:3", "3:4", "9:16"}
 SUPPORTED_RESOLUTIONS = {"1K", "2K", "4K"}
 SIZE_PRESETS = {
@@ -117,19 +118,6 @@ SIZE_PRESETS = {
     ("3:4", "4K"): "3072x4096",
     ("9:16", "4K"): "2160x3840",
 }
-DEFAULT_POSTPROCESS = {
-    "enabled": False,
-}
-DEFAULT_URL_DOWNLOAD = {"proxy_mode": "environment"}
-PLACEHOLDER_API_KEYS = {
-    "",
-    "replace-with-temporary-local-key",
-    "replace-with-your-api-key",
-    "your-api-key",
-    "changeme",
-}
-
-
 class ImagegenError(Exception):
     """User-facing script error."""
 
@@ -155,17 +143,7 @@ class ApiRequestError(ImagegenError):
         )
 
 
-@dataclass(frozen=True)
-class Config:
-    base_url: str
-    api_key: str
-    api_key_source: str
-    model: str
-    defaults: dict[str, Any]
-    postprocess: dict[str, Any]
-    transparency: TransparencyPolicy = field(default_factory=TransparencyPolicy)
-    user_agent: str = DEFAULT_USER_AGENT
-    url_download: dict[str, Any] = field(default_factory=lambda: dict(DEFAULT_URL_DOWNLOAD))
+Config = EffectiveImageConfig
 
 
 def load_config(require_api_key: bool = True) -> Config:
@@ -179,100 +157,10 @@ def load_config(require_api_key: bool = True) -> Config:
         raw = json.loads(AUTH_PATH.read_text(encoding="utf-8-sig"))
     except json.JSONDecodeError as exc:
         raise ImagegenError(f"auth.json is not valid JSON: {exc}") from exc
-
-    base_url = str(raw.get("base_url") or "").strip().rstrip("/")
-    file_api_key = str(raw.get("api_key") or "").strip()
-    api_key_env = str(raw.get("api_key_env") or "").strip()
-    api_key, api_key_source = resolve_api_key(file_api_key, api_key_env)
-    model = str(raw.get("model") or DEFAULT_MODEL).strip()
-    user_agent = resolve_user_agent(raw.get("user_agent"))
-    defaults = raw.get("defaults") if isinstance(raw.get("defaults"), dict) else {}
-    capabilities = raw.get("capabilities")
-    if isinstance(capabilities, dict) and "transparent_background" in capabilities:
-        raise ImagegenError(
-            "auth.json capabilities.transparent_background is obsolete. Remove it; "
-            "use postprocess.enabled or transparency.prompt_only_allow instead."
-        )
-    postprocess = resolve_postprocess_config(raw.get("postprocess"))
     try:
-        transparency = resolve_transparency_policy(raw.get("transparency"))
-    except ValueError as exc:
+        return parse_standalone_config(raw, require_api_key=require_api_key)
+    except ProviderConfigError as exc:
         raise ImagegenError(str(exc)) from exc
-    url_download = resolve_url_download_config(raw.get("url_download"))
-
-    if not base_url:
-        raise ImagegenError("auth.json missing base_url")
-    if require_api_key and not api_key:
-        raise ImagegenError(auth_setup_message(file_api_key, api_key_env))
-    if not model:
-        raise ImagegenError("auth.json missing model")
-    return Config(
-        base_url=base_url,
-        api_key=api_key,
-        api_key_source=api_key_source,
-        model=model,
-        defaults=defaults,
-        postprocess=postprocess,
-        transparency=transparency,
-        user_agent=user_agent,
-        url_download=url_download,
-    )
-
-
-def resolve_postprocess_config(value: Any) -> dict[str, Any]:
-    cfg = dict(DEFAULT_POSTPROCESS)
-    if isinstance(value, dict):
-        for key in DEFAULT_POSTPROCESS:
-            if key in value:
-                cfg[key] = bool(value[key])
-    return cfg
-
-
-def resolve_url_download_config(value: Any) -> dict[str, Any]:
-    cfg = dict(DEFAULT_URL_DOWNLOAD)
-    if value is None:
-        return cfg
-    if not isinstance(value, dict):
-        raise ImagegenError("auth.json url_download must be an object")
-    proxy_mode = value.get("proxy_mode", "environment")
-    if proxy_mode not in {"environment", "direct"}:
-        raise ImagegenError("auth.json url_download.proxy_mode must be environment or direct")
-    cfg["proxy_mode"] = proxy_mode
-    return cfg
-
-
-def resolve_user_agent(value: Any) -> str:
-    user_agent = str(value or DEFAULT_USER_AGENT).strip()
-    if any(ord(char) < 32 or ord(char) == 127 for char in user_agent):
-        raise ImagegenError("auth.json user_agent must not contain control characters")
-    return user_agent
-
-
-def resolve_api_key(file_api_key: str, api_key_env: str) -> tuple[str, str]:
-    if file_api_key and not is_placeholder_api_key(file_api_key):
-        return file_api_key, "auth.json api_key"
-    if api_key_env:
-        env_value = os.environ.get(api_key_env, "").strip()
-        if env_value:
-            return env_value, f"env:{api_key_env}"
-    return "", "missing"
-
-
-def is_placeholder_api_key(value: str) -> bool:
-    return value.strip().lower() in PLACEHOLDER_API_KEYS
-
-
-def auth_setup_message(file_api_key: str, api_key_env: str) -> str:
-    if file_api_key and is_placeholder_api_key(file_api_key):
-        if api_key_env:
-            return (
-                f"auth.json api_key is still a placeholder and {api_key_env} is not set.\n"
-                "Edit auth.json api_key directly, or set that environment variable."
-            )
-        return "auth.json api_key is still a placeholder. Edit auth.json api_key or add api_key_env."
-    if api_key_env:
-        return f"auth.json missing api_key and environment variable {api_key_env} is not set."
-    return "auth.json missing api_key. Edit auth.json api_key or add api_key_env."
 
 
 def display_path(path: Path) -> str:
@@ -747,77 +635,21 @@ def download_image_url(
     user_agent: str = DEFAULT_USER_AGENT,
     direct_url_download: bool = False,
 ) -> bytes:
-    parsed = urllib.parse.urlparse(url)
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-        raise ImagegenError("image URL must use http or https")
-
-    request = urllib.request.Request(
-        url,
-        headers={"Accept": "image/*", "User-Agent": user_agent},
-    )
-    direct_opener = None
-    if direct_url_download:
-        direct_opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-    for attempt in range(2):
-        try:
-            if direct_opener is not None:
-                response = direct_opener.open(request, timeout=DEFAULT_TIMEOUT_SECONDS)
-            else:
-                response = urllib.request.urlopen(request, timeout=DEFAULT_TIMEOUT_SECONDS)
-            with response:
-                return read_downloaded_image(response)
-        except urllib.error.HTTPError as exc:
-            exc.close()
-            raise ImagegenError(f"image URL download failed: HTTP {exc.code}") from exc
-        except urllib.error.URLError as exc:
-            if attempt == 0 and is_tls_eof_error(exc.reason):
-                continue
-            reason = url_download_error_reason(exc.reason, direct_url_download)
-            raise ImagegenError(f"image URL download failed: {reason}") from exc
-        except ssl.SSLError as exc:
-            if attempt == 0 and is_tls_eof_error(exc):
-                continue
-            reason = url_download_error_reason(exc, direct_url_download)
-            raise ImagegenError(f"image URL download failed: {reason}") from exc
-
-    raise ImagegenError("image URL download failed")
-
-
-def is_tls_eof_error(error: Any) -> bool:
-    return isinstance(error, ssl.SSLEOFError) or (
-        isinstance(error, ssl.SSLError) and "UNEXPECTED_EOF_WHILE_READING" in str(error)
-    )
-
-
-def url_download_error_reason(error: Any, direct_url_download: bool) -> str:
-    if not is_tls_eof_error(error):
-        return "TLS error" if isinstance(error, ssl.SSLError) else "network error"
-    if direct_url_download:
-        return "TLS connection closed unexpectedly"
-    return (
-        "TLS connection closed unexpectedly; direct fallback is disabled. "
-        "Ask the user before retrying with --allow-direct-url-download or enabling "
-        "auth.json url_download.proxy_mode=direct"
-    )
-
-
-def read_downloaded_image(response: Any) -> bytes:
     try:
-        data = read_limited_bytes(response, MAX_IMAGE_RESPONSE_BYTES, "image response")
-    except http.client.IncompleteRead as exc:
-        raise ImagegenError("image URL download was incomplete") from exc
-    except ValueError as exc:
-        if "incomplete" in str(exc):
-            raise ImagegenError("image URL download was incomplete") from exc
+        return _download_image_url(
+            url,
+            user_agent,
+            DEFAULT_TIMEOUT_SECONDS,
+            direct_url_download=direct_url_download,
+            direct_download_guidance=(
+                "direct fallback is disabled. Ask the user before retrying with "
+                "--allow-direct-url-download or enabling auth.json "
+                "url_download.proxy_mode=direct"
+            ),
+            response_limit=MAX_IMAGE_RESPONSE_BYTES,
+        )
+    except ImageDownloadError as exc:
         raise ImagegenError(str(exc)) from exc
-    actual_format = detect_image_format(data)
-    if actual_format is None:
-        raise ImagegenError("image URL download did not contain a complete PNG, JPEG, or WebP image")
-    return data
-
-
-def is_complete_image_data(data: bytes) -> bool:
-    return detect_image_format(data) is not None
 
 
 def inspect_image_file(path: Path, include_components: bool = False) -> dict[str, Any]:

@@ -18,12 +18,6 @@ def build_parser(
     init_parser.add_argument("--base-url", default=None, help="OpenAI-compatible API base URL, usually ending in /v1")
     init_parser.add_argument("--model", default=None, help="Default image model")
     init_parser.add_argument("--api-key-env", default=None, help="Environment variable name to read the API key from")
-    init_parser.add_argument(
-        "--transparent-background",
-        action=argparse.BooleanOptionalAction,
-        default=None,
-        help="Whether the API supports background=transparent",
-    )
 
     add_generate_args(sub.add_parser("generate"), supported_aspects, supported_resolutions)
     add_generate_args(sub.add_parser("edit"), supported_aspects, supported_resolutions, edit=True)
@@ -53,8 +47,6 @@ def build_parser(
     machine_parser = sub.add_parser("machine")
     machine_parser.add_argument("--project-root", required=True)
     machine_parser.add_argument("--artifact-root", required=True)
-    machine_parser.add_argument("--config", required=True)
-    machine_parser.add_argument("--config-sha256", required=True)
 
     sub.add_parser("info")
     return parser
@@ -88,7 +80,7 @@ def add_common_args(
     parser.add_argument("--quality", default=None, choices=["auto", "low", "medium", "high"])
     parser.add_argument("--n", type=int, default=None)
     parser.add_argument("--format", default=None, choices=["png", "jpeg", "jpg", "webp"])
-    parser.add_argument("--background", default=None, choices=["auto", "opaque", "transparent"])
+    parser.add_argument("--background", default=None, choices=["auto", "opaque"])
     parser.add_argument("--transparent", action="store_true")
     parser.add_argument("--asset", action="store_true")
     parser.add_argument("--moderation", default=None, choices=["auto", "low"])

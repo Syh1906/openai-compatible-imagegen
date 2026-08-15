@@ -8,7 +8,7 @@ helpers stay inside a short-lived temporary directory.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import math
 from pathlib import Path
 import tempfile
@@ -22,6 +22,7 @@ from image_delivery_ops import (
     split_grid_image,
 )
 from image_response import detect_image_format, image_dimensions
+from image_transparency import TransparencyPlan, process_file as process_transparency_file
 
 
 MAX_DELIVERY_PIXELS = 25_000_000
@@ -52,7 +53,11 @@ class DeliveryRequest:
     preview_resample: str
 
 
-def parse_delivery_request(value: Any) -> DeliveryRequest:
+def parse_delivery_request(
+    value: Any,
+    *,
+    transparency_requested: bool = False,
+) -> DeliveryRequest:
     if not isinstance(value, dict):
         raise DeliveryError("delivery must be an object")
     allowed = {
@@ -85,10 +90,20 @@ def parse_delivery_request(value: Any) -> DeliveryRequest:
     components = parse_bool(value.get("components", False), "components")
     grid = parse_grid(value.get("grid"))
     expected_count = parse_expected_count(value.get("expectedCount"))
+    if grid is not None and delivery_size is None:
+        raise DeliveryError("grid requires deliverySize")
+    if expected_count is not None and grid is None:
+        raise DeliveryError("expectedCount requires grid")
     if grid and expected_count is not None and grid[0] * grid[1] != expected_count:
         raise DeliveryError("grid count does not match expectedCount")
     preview_sizes, preview_backgrounds, preview_resample = parse_preview(value.get("preview"))
-    if delivery_size is None and grid is None and not preview_sizes and not qa:
+    if (
+        delivery_size is None
+        and grid is None
+        and not preview_sizes
+        and not qa
+        and not transparency_requested
+    ):
         raise DeliveryError("delivery requires a transform, preview, or qa request")
     return DeliveryRequest(
         delivery_size=delivery_size,
@@ -111,9 +126,18 @@ def deliver_artifact(
     source_bytes: bytes,
     source_mime_type: str,
     delivery: Any,
+    transparency_plan: TransparencyPlan | None = None,
+    transparency_record: dict[str, Any] | None = None,
+    transparency_mask_bytes: bytes | None = None,
 ) -> dict[str, Any]:
     """Run one local delivery request and return bytes safe for artifact storage."""
-    request = parse_delivery_request(delivery)
+    transparency_requested = bool(
+        transparency_plan is not None and transparency_plan.mode != "none"
+    )
+    request = parse_delivery_request(
+        delivery,
+        transparency_requested=transparency_requested,
+    )
     source_format = detect_image_format(source_bytes)
     if source_format is None:
         raise DeliveryError("source artifact is not a complete PNG, JPEG, or WebP", "invalid_source")
@@ -121,7 +145,9 @@ def deliver_artifact(
 
     # The existing deterministic transform helpers operate on bounded RGBA PNG.
     # Preserve other valid originals, but do not silently transcode them.
-    if source_format != SUPPORTED_TRANSFORM_FORMAT and _requires_transform(request):
+    if source_format != SUPPORTED_TRANSFORM_FORMAT and (
+        transparency_requested or _requires_transform(request)
+    ):
         return {
             "sourceArtifactId": source_artifact_id,
             "deliveryReady": False,
@@ -150,12 +176,59 @@ def deliver_artifact(
             },
             "transforms": [],
         }
+        working_path = source_path
+        if transparency_requested and transparency_plan is not None:
+            effective_plan = transparency_plan
+            if effective_plan.mode == "mask-alpha":
+                if transparency_mask_bytes is None:
+                    return transparency_unmet_result(
+                        source_artifact_id,
+                        summary,
+                        ["mask_required: stable transparency mask is unavailable; source artifact was preserved"],
+                    )
+                mask_path = root / "transparency-mask.png"
+                mask_path.write_bytes(transparency_mask_bytes)
+                effective_plan = replace(effective_plan, mask_path=mask_path)
+            transparent_path = root / "transparent.png"
+            transparency_result = process_transparency_file(
+                source_path,
+                transparent_path,
+                effective_plan,
+            )
+            sanitized_transparency = sanitize_report(transparency_result)
+            sanitized_transparency["warnings"] = safe_transparency_warnings(
+                transparency_result.get("warnings")
+            )
+            summary["transparency"] = sanitized_transparency
+            summary["transforms"].append({
+                "kind": "transparent",
+                "mode": effective_plan.mode,
+                "status": transparency_result.get("status"),
+            })
+            if transparency_result.get("status") != "pass":
+                return transparency_unmet_result(
+                    source_artifact_id,
+                    summary,
+                    list(transparency_result.get("warnings") or []),
+                    transparency_result,
+                )
+            working_path = transparent_path
+
+        transparency_parameters = sanitized_transparency_parameters(
+            transparency_plan,
+            transparency_record,
+        )
+
+        if transparency_requested and request.delivery_size is None:
+            derived_paths.append(working_path)
+            derived_kinds.append("transparent")
+            derived_parameters.append(transparency_parameters)
 
         if request.delivery_size is not None:
             if request.grid is not None:
                 grid_dir = root / "grid"
                 grid_result = split_grid_image(
-                    source_path,
+                    working_path,
                     grid_dir,
                     request.grid[0],
                     request.grid[1],
@@ -174,18 +247,20 @@ def deliver_artifact(
                     path = Path(item["file"])
                     derived_paths.append(path)
                     derived_kinds.append("grid-cell")
-                    derived_parameters.append({
+                    parameters = {
                         "deliverySize": list(request.delivery_size),
                         "fit": "contain",
                         "resample": request.resample,
                         "safeMargin": request.safe_margin,
                         "grid": {"rows": request.grid[0], "cols": request.grid[1]},
                         "gridIndex": index,
-                    })
+                    }
+                    parameters.update(transparency_parameters)
+                    derived_parameters.append(parameters)
             else:
                 target = root / f"normalized-{request.delivery_size[0]}x{request.delivery_size[1]}.png"
                 normalize_result = normalize_image_file(
-                    source_path,
+                    working_path,
                     target,
                     request.delivery_size,
                     resample=request.resample,
@@ -201,17 +276,19 @@ def deliver_artifact(
                 })
                 derived_paths.append(target)
                 derived_kinds.append("exact-size")
-                derived_parameters.append({
+                parameters = {
                     "deliverySize": list(request.delivery_size),
                     "fit": request.fit,
                     "resample": request.resample,
                     "safeMargin": request.safe_margin,
-                })
+                }
+                parameters.update(transparency_parameters)
+                derived_parameters.append(parameters)
 
         if request.preview_sizes:
             preview_dir = root / "preview"
             preview_result = preview_board_image(
-                source_path,
+                working_path,
                 preview_dir,
                 list(request.preview_sizes),
                 list(request.preview_backgrounds),
@@ -220,11 +297,13 @@ def deliver_artifact(
             board_path = Path(preview_result["board"])
             derived_paths.append(board_path)
             derived_kinds.append("preview-board")
-            derived_parameters.append({
+            parameters = {
                 "previewSizes": [list(size) for size in request.preview_sizes],
                 "previewBackgrounds": list(request.preview_backgrounds),
                 "resample": request.preview_resample,
-            })
+            }
+            parameters.update(transparency_parameters)
+            derived_parameters.append(parameters)
             summary["transforms"].append({
                 "kind": "preview-board",
                 "count": int(preview_result["count"]),
@@ -242,6 +321,7 @@ def deliver_artifact(
                 derived_paths or [source_path],
                 derived_kinds or ["source"],
                 request,
+                require_transparency=transparency_requested,
             )
 
         delivery_ready = not request.qa or bool(qa_report and qa_report.get("status") == "pass")
@@ -380,10 +460,76 @@ def sanitize_report(value: Any) -> Any:
     return value
 
 
+def sanitized_transparency_parameters(
+    plan: TransparencyPlan | None,
+    record: dict[str, Any] | None,
+) -> dict[str, Any]:
+    if plan is None or plan.mode == "none":
+        return {}
+    stored = dict(record or plan.to_record())
+    stored.pop("mask", None)
+    stored["status"] = "pass"
+    stored["warnings"] = []
+    return {"transparency": sanitize_report(stored)}
+
+
+def transparency_unmet_result(
+    source_artifact_id: str,
+    summary: dict[str, Any],
+    warnings: Any,
+    transparency_result: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    safe_warnings = safe_transparency_warnings(warnings)
+    if not safe_warnings:
+        safe_warnings = [
+            "transparent_qa_unmet: transparency processing did not pass; source artifact was preserved"
+        ]
+    checks = sanitize_report((transparency_result or {}).get("checks") or {})
+    qa = {
+        "schema_version": "qa.v1",
+        "status": "fail",
+        "artifacts": [],
+        "conditions": [{
+            "kind": "transparent",
+            "requested": True,
+            "status": "fail",
+        }],
+        "warnings": safe_warnings,
+        "errors": [],
+        "checks": checks,
+    }
+    return {
+        "sourceArtifactId": source_artifact_id,
+        "deliveryReady": False,
+        "artifacts": [],
+        "deliveryKinds": [],
+        "parameters": [],
+        "qa": qa,
+        "warnings": safe_warnings,
+        "source": summary["source"],
+        "summary": summary,
+    }
+
+
+def safe_transparency_warnings(value: Any) -> list[str]:
+    warnings = value if isinstance(value, list) else []
+    result: list[str] = []
+    for warning in warnings:
+        code = str(warning).partition(":")[0].strip()
+        if not code or not all(char.isalnum() or char == "_" for char in code):
+            code = "transparent_qa_unmet"
+        result.append(
+            f"{code}: transparency processing did not pass; source artifact was preserved"
+        )
+    return result
+
+
 def evaluate_delivery_outputs(
     paths: list[Path],
     kinds: list[str],
     request: DeliveryRequest,
+    *,
+    require_transparency: bool = False,
 ) -> dict[str, Any]:
     """Evaluate each output family with only the expectations it can satisfy."""
     if len(paths) != len(kinds):
@@ -406,10 +552,15 @@ def evaluate_delivery_outputs(
         }
         if kind in {"exact-size", "grid-cell"} and request.delivery_size is not None:
             expectations["expected_size"] = list(request.delivery_size)
+        conditions = (
+            [{"kind": "transparent", "requested": True}]
+            if require_transparency and kind in {"transparent", "exact-size", "grid-cell"}
+            else None
+        )
         report = evaluate_delivery(
             group_paths,
             expectations=expectations,
-            conditions=None,
+            conditions=conditions,
             source_paths=None,
         )
         reports.append(sanitize_report(report))

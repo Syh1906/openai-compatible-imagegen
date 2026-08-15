@@ -1172,15 +1172,13 @@ class GenericImageQATests(unittest.TestCase):
         run_one.assert_not_called()
 
     def test_batch_prompt_alpha_does_not_reserve_unused_transparency_targets(self) -> None:
-        cfg = self.imagegen.Config(
-            base_url="https://example.test/v1",
-            api_key="secret",
-            api_key_source="test",
-            model="gpt-image-2",
-            defaults={},
-            postprocess={"enabled": False},
-            transparency=self.imagegen.resolve_transparency_policy(
-                {
+        cfg = self.imagegen.parse_standalone_config(
+            {
+                "base_url": "https://example.test/v1",
+                "api_key": "secret",
+                "model": "gpt-image-2",
+                "postprocess": {"enabled": False},
+                "transparency": {
                     "prompt_only_allow": [
                         {
                             "model": "gpt-image-2",
@@ -1188,8 +1186,9 @@ class GenericImageQATests(unittest.TestCase):
                             "size": "1024x1024",
                         }
                     ]
-                }
-            ),
+                },
+            },
+            require_api_key=True,
         )
         derived = self.temp_dir / "derived"
         args = SimpleNamespace(

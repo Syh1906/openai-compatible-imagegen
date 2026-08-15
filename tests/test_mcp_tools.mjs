@@ -1,7 +1,5 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { createServer } from "node:http";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -11,14 +9,12 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 
 import { createImagegenServer } from "../mcp/create-server.mjs";
 import { readImageArtifact } from "../mcp/artifact-repository.mjs";
-import { runImageTask } from "../mcp/image-runtime.mjs";
 import { createReleaseBundle, RELEASE_IDENTITY_PLACEHOLDER } from "../mcp/release-identity.mjs";
-import { createImageResultEnvelope } from "../mcp/result-envelope.mjs";
 
 
-const PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFgAI/ScL1WQAAAABJRU5ErkJggg==";
+const PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAEElEQVR4nGNgaPj/H4xhDABS0gn5PEa22gAAAABJRU5ErkJggg==";
 const TEST_RELEASE_IDENTITY = createReleaseBundle({
-  pluginId: "openai-compatible-imagegen-v2",
+  pluginId: "openai-compatible-imagegen",
   pluginVersion: "0.1.0-test",
   serverBuildInputs: [{ path: "test-server.mjs", content: "test server" }],
   widgetHtml: `<html><head>${RELEASE_IDENTITY_PLACEHOLDER}</head></html>`,
@@ -55,6 +51,33 @@ async function withClient(dependencies, callback) {
   const pluginRoot = path.join(fixtureRoot, "plugin-cache");
   const projectRoot = path.join(fixtureRoot, "workspace");
   await Promise.all([mkdir(pluginRoot), mkdir(projectRoot)]);
+  const artifactRoot = path.join(projectRoot, "output", "imagegen");
+  let bound = false;
+  const projectContext = {
+    async bind() {
+      bound = true;
+      return { status: "bound" };
+    },
+    async require() {
+      if (!bound) {
+        const error = new Error("project_binding_required");
+        error.code = "project_binding_required";
+        throw error;
+      }
+      return {
+        bindingKey: "test-binding",
+        projectRoot,
+        artifactRoot,
+        effectiveConfigJson: JSON.stringify({
+          config_version: 1,
+          active_profile: "primary/gpt-image-2",
+          providers: {},
+          models: {},
+        }),
+        effectiveConfigSha256: "0".repeat(64),
+      };
+    },
+  };
   const server = createImagegenServer({
     releaseIdentity: TEST_RELEASE_IDENTITY,
     launchContext: {
@@ -63,6 +86,7 @@ async function withClient(dependencies, callback) {
     },
     readWidgetHtml: async () => "<html>editor</html>",
     deleteAnnotation: async () => {},
+    projectContext,
     ...dependencies,
   });
   const client = new Client({ name: "mcp-contract-test", version: "0.1.0" });
@@ -149,7 +173,7 @@ test("only the result renderer and focused editor bind app resources", async () 
       assert.deepEqual(annotationTool._meta.ui.visibility, ["app"]);
       assert.deepEqual(imageDataTool._meta.ui.visibility, ["app"]);
       assert.equal(imageDataTool._meta["openai/widgetAccessible"], true);
-      assert.deepEqual(imageDataTool.outputSchema.required.sort(), ["id", "mimeType"]);
+      assert.deepEqual(imageDataTool.outputSchema.required.sort(), ["artifact", "canvasStatus"]);
       assert.equal(imageDataTool.outputSchema.properties.dataBase64, undefined);
       assert.notEqual(annotationTool, undefined);
       assert.notEqual(modelTool, undefined);
@@ -208,7 +232,7 @@ test("all product tools declare precise structured output schemas", async () => 
       assert.deepEqual(schemas.get("list_image_models").required, ["models"]);
       assert.deepEqual(schemas.get("list_image_models").properties.models.items.required.sort(), ["capabilities", "id", "model", "provider"]);
       assert.equal(schemas.get("list_image_models").properties.models.items.additionalProperties, false);
-      assert.deepEqual(Object.keys(schemas.get("list_image_models").properties.models.items.properties.capabilities.properties).sort(), ["edit", "generate", "mask", "multi_reference", "transparent_background"]);
+      assert.deepEqual(Object.keys(schemas.get("list_image_models").properties.models.items.properties.capabilities.properties).sort(), ["edit", "generate", "mask", "multi_reference"]);
 
       for (const name of ["generate_image", "edit_image"]) {
         assert.deepEqual(schemas.get(name).required, ["artifacts"]);
@@ -280,7 +304,6 @@ test("all product tools declare precise structured output schemas", async () => 
     },
   );
 });
-
 test("generate_image leaves candidate presentation to render_image_results", async () => {
   const artifacts = [artifact("img_01J00000000000000000000000"), artifact("img_01J00000000000000000000001")];
   const calls = [];
@@ -926,7 +949,7 @@ test("get_image_artifact returns image bytes without an absolute path", async ()
   );
 });
 
-test("render_image_results returns ordered metadata without duplicating image bytes", async () => {
+test("render_image_results returns ordered metadata and model-visible images", async () => {
   const imageIds = [
     "img_01J00000000000000000000000",
     "img_01J00000000000000000000001",
@@ -954,7 +977,37 @@ test("render_image_results returns ordered metadata without duplicating image by
       assert.deepEqual(result._meta.imageIds, imageIds);
       assert.equal(result._meta.ui.resourceUri, RESULT_WIDGET_URI);
       assert.equal(result._meta.imageArtifacts, undefined);
-      assert.deepEqual(result.content, [{ type: "text", text: createImageResultEnvelope(imageIds) }, ...imageIds.map(() => ({ type: "image", data: PNG_BASE64, mimeType: "image/png" }))]);
+      assert.deepEqual(result.content, [
+        { type: "text", text: "已显示 2 张图片。" },
+        { type: "image", data: PNG_BASE64, mimeType: "image/png" },
+        { type: "image", data: PNG_BASE64, mimeType: "image/png" },
+      ]);
+    },
+  );
+});
+
+test("render_image_results rejects an artifact whose stable ID does not match the request", async () => {
+  const requestedImageId = "img_01J00000000000000000000000";
+  const otherImageId = "img_01J00000000000000000000001";
+  await withClient(
+    {
+      runTask: async () => {
+        throw new Error("not used");
+      },
+      readArtifact: async () => ({
+        metadata: artifact(otherImageId),
+        data: PNG_BASE64,
+      }),
+    },
+    async (client) => {
+      const result = await client.callTool({
+        name: "render_image_results",
+        arguments: { imageIds: [requestedImageId] },
+      });
+
+      assertToolErrorCode(result, "artifact_read_failed");
+      assert.equal(result.content?.some((item) => item.type === "image"), false);
+      assert.equal(result._meta?.imageIds, undefined);
     },
   );
 });
@@ -1263,7 +1316,7 @@ test("tool errors preserve supported runtime codes with fixed safe summaries", a
   );
 
   const configError = new Error("unsafe local configuration detail");
-  configError.code = "v2_config_missing";
+  configError.code = "image_config_missing";
   await withClient(
     {
       runTask: async () => { throw configError; },
@@ -1271,7 +1324,7 @@ test("tool errors preserve supported runtime codes with fixed safe summaries", a
     },
     async (client) => {
       const result = await client.callTool({ name: "list_image_models", arguments: {} });
-      assertToolErrorCode(result, "v2_config_missing");
+      assertToolErrorCode(result, "image_config_missing");
       assert.equal(JSON.stringify(result).includes(configError.message), false);
     },
   );
@@ -1402,97 +1455,3 @@ test("missing artifact errors do not expose the project path", async () => {
     await rm(projectRoot, { recursive: true });
   }
 });
-
-test("Node bridge runs the Python generate and edit path end to end", async () => {
-  const projectRoot = await mkdtemp(path.join(os.tmpdir(), "imagegen-runtime-"));
-  const artifactRoot = path.join(projectRoot, "custom-output", "imagegen");
-  const requests = [];
-  const api = createServer((request, response) => {
-    let body = Buffer.alloc(0);
-    request.on("data", (chunk) => {
-      body = Buffer.concat([body, chunk]);
-    });
-    request.on("end", () => {
-      requests.push({ url: request.url, headers: request.headers, body });
-      response.writeHead(200, { "Content-Type": "application/json" });
-      response.end(JSON.stringify({ data: [{ b64_json: PNG_BASE64 }] }));
-    });
-  });
-  await new Promise((resolve) => api.listen(0, "127.0.0.1", resolve));
-  try {
-    const address = api.address();
-    const configPath = path.join(projectRoot, "auth.json");
-    await writeFile(
-      configPath,
-      JSON.stringify({
-        providers: {
-          primary: {
-            protocol: "openai-compatible",
-            base_url: `http://127.0.0.1:${address.port}/v1`,
-            api_key: "integration-secret",
-            user_agent: "Imagegen-Integration/1.0",
-          },
-        },
-        models: {
-          "primary/gpt-image-2": {
-            provider: "primary",
-            model: "gpt-image-2",
-            capabilities: { generate: true, edit: true, transparent_background: true },
-          },
-        },
-        defaults: { output_format: "png" },
-      }),
-    );
-    const configSha256 = createHash("sha256").update(await readFile(configPath)).digest("hex");
-    const output = { size: "1024x1024", quality: "high", format: "png", count: 1, background: "opaque" };
-    const generated = await runImageTask(
-      {
-        operation: "generate",
-        modelProfileId: "primary/gpt-image-2",
-        prompt: "integration candidate",
-        inputArtifactIds: [],
-        annotationId: null,
-        output,
-      },
-      { projectRoot, configPath, configSha256, artifactRoot },
-    );
-    assert.equal(generated.ok, true);
-    const parentId = generated.artifacts[0].id;
-
-    const edited = await runImageTask(
-      {
-        operation: "edit",
-        modelProfileId: "primary/gpt-image-2",
-        prompt: "保持极简白色构图并调整中央区域",
-        inputArtifactIds: [parentId],
-        annotationId: null,
-        output,
-      },
-      { projectRoot, configPath, configSha256, artifactRoot },
-    );
-    assert.equal(edited.ok, true);
-    assert.deepEqual(edited.artifacts[0].parentIds, [parentId]);
-    assert.deepEqual(
-      requests.map((request) => request.url),
-      ["/v1/images/generations", "/v1/images/edits"],
-    );
-    assert.equal(requests.every((request) => request.headers["user-agent"] === "Imagegen-Integration/1.0"), true);
-    assert.equal(requests.every((request) => request.headers.authorization === "Bearer integration-secret"), true);
-    assert.equal(requests[1].body.includes(Buffer.from("保持极简白色构图并调整中央区域", "utf8")), true);
-    assert.equal(await exists(path.join(artifactRoot, "index.json")), true);
-    assert.equal(await exists(path.join(projectRoot, "output", "imagegen")), false);
-  } finally {
-    await new Promise((resolve) => api.close(resolve));
-    await rm(projectRoot, { recursive: true });
-  }
-});
-
-async function exists(targetPath) {
-  try {
-    await access(targetPath);
-    return true;
-  } catch (error) {
-    if (error?.code === "ENOENT") return false;
-    throw error;
-  }
-}

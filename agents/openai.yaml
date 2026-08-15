@@ -1,4 +1,4 @@
 interface:
-  display_name: "OpenAI-Compatible Image Generation"
+  display_name: "OpenAI-Compatible Images Skill"
   short_description: "Generate, edit, batch, and process transparent images."
   default_prompt: "Use $openai-compatible-imagegen to create, edit, or transparently process images through the configured OpenAI-compatible workflow."

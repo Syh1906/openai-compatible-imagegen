@@ -10,15 +10,17 @@ test("artifact metadata must match the requested image ID", async () => {
   const otherImageId = "img_01J00000000000000000000041";
   const app = {
     async callServerTool({ name }) {
-      if (name === "get_image_artifact") {
-        return {
-          content: [],
-          structuredContent: {
-            artifact: { id: otherImageId, mimeType: "image/png", width: 1, height: 1 },
-          },
-        };
-      }
-      throw new Error(`unexpected tool call: ${name}`);
+      assert.equal(name, "read_image_artifact_data");
+      return {
+        content: [],
+        structuredContent: {
+          artifact: { id: otherImageId, mimeType: "image/png", width: 1, height: 1 },
+          canvasStatus: "available",
+        },
+        _meta: {
+          widgetData: { id: requestedImageId, mimeType: "image/png", dataBase64: "bytes" },
+        },
+      };
     },
   };
   const records = createArtifactLoadRegistry({

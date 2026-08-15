@@ -249,7 +249,7 @@ test("selecting a version loads its artifact before replacing the visible image"
     await import(`../web/editor-runtime.mjs?version-load=${Date.now()}`);
     await waitFor(() => document.querySelector("[data-image]")?.hidden === false);
     document.querySelector(`[data-version-id="${childId}"]`).click();
-    await waitFor(() => host.toolCalls.some(({ name, arguments: args }) => name === "get_image_artifact" && args.imageId === childId));
+    await waitFor(() => host.toolCalls.some(({ name, arguments: args }) => name === "read_image_artifact_data" && args.imageId === childId));
     await waitFor(() => document.querySelector("[data-image-id]")?.textContent === childId);
     assert.equal(document.querySelector("[data-image]").hidden, false);
   } finally {
@@ -735,7 +735,7 @@ test("returning after a failed version switch preserves the current result image
   const host = installHost(dom.window, {
     toolName: "open_image_editor",
     initialArtifacts: [current],
-    failArtifactMetadataImageId: childId,
+    failArtifactDataImageId: childId,
   });
 
   try {
@@ -744,7 +744,7 @@ test("returning after a failed version switch preserves the current result image
     await waitFor(() => document.querySelector(`[data-version-id="${childId}"] .version-error`) !== null);
     const childVersion = document.querySelector(`[data-version-id="${childId}"]`);
     childVersion.click();
-    await waitFor(() => host.toolCalls.filter(({ name, arguments: args }) => name === "get_image_artifact" && args.imageId === childId).length >= 2);
+    await waitFor(() => host.toolCalls.filter(({ name, arguments: args }) => name === "read_image_artifact_data" && args.imageId === childId).length >= 2);
     await waitFor(() => document.querySelector(`[data-version-id="${childId}"] .version-error`) !== null);
     document.querySelector("[data-action=back]").click();
     await waitFor(() => document.querySelector(".inline-result") !== null);
@@ -1013,7 +1013,18 @@ function sendArtifactData(window, requestId, imageId) {
     id: requestId,
     result: {
       content: [],
-      structuredContent: { id: imageId, mimeType: "image/png" },
+      structuredContent: {
+        artifact: {
+          id: imageId,
+          mimeType: "image/png",
+          width: 1,
+          height: 1,
+          operation: "edit",
+          parentIds: [],
+          childIds: [],
+        },
+        canvasStatus: "available",
+      },
       _meta: { widgetData: { id: imageId, mimeType: "image/png", dataBase64: PNG_BASE64 } },
     },
   });
