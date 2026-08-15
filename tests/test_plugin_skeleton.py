@@ -395,6 +395,19 @@ class PluginSkeletonTests(unittest.TestCase):
             self.assertIn("installed plugin differs from source", result.stderr)
             self.assertIn(relative_path.as_posix(), result.stderr.replace("\\", "/"))
 
+    def test_plugin_probe_normalizes_release_text_line_endings_for_source_comparison(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            fixture_root = Path(directory) / "plugin"
+            self._copy_probe_plugin(fixture_root)
+            manifest_path = fixture_root / ".codex-plugin" / "plugin.json"
+            normalized = manifest_path.read_bytes().replace(b"\r\n", b"\n")
+            manifest_path.write_bytes(normalized.replace(b"\n", b"\r\n"))
+
+            result = self._run_probe(fixture_root, source_root=ROOT)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(json.loads(result.stdout)["sourceConsistent"])
+
     def test_plugin_probe_omits_host_conversation_metadata(self) -> None:
         probe_text = PROBE_PATH.read_text(encoding="utf-8")
         self.assertNotIn('"openai/session"', probe_text)
