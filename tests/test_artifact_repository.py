@@ -458,7 +458,10 @@ class ArtifactRepositoryTests(unittest.TestCase):
             image_path, image_bytes = self.repository.get_image_snapshot(record.metadata["id"])
 
         self.assertEqual(image_bytes, record.image_bytes)
-        self.assertEqual(image_path, self.artifact_root / "artifacts" / record.metadata["id"] / "image.png")
+        self.assertEqual(
+            image_path,
+            self.repository.data_root / "artifacts" / record.metadata["id"] / "image.png",
+        )
         self.assertEqual(len(leases), 1)
         self.assertEqual(
             opened,

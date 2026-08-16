@@ -1255,7 +1255,7 @@ class DeliveryTransactionTests(unittest.TestCase):
         payload = json.loads(manifest.read_text(encoding="utf-8"))
         self.assertFalse(files_exist)
         self.assertEqual(payload["path_contract"]["status"], "fail")
-        self.assertIn(str(missing.resolve()), payload["path_contract"]["missing_files"])
+        self.assertIn(str(missing), payload["path_contract"]["missing_files"])
 
 
 if __name__ == "__main__":

@@ -103,7 +103,7 @@ class RevealInExplorerTests(unittest.TestCase):
             )
 
             self.assertEqual(result["status"], "revealed")
-            self.assertEqual(shell_api.targets, [str(image_path.absolute())])
+            self.assertEqual(shell_api.targets, [str(image_path.resolve(strict=False))])
 
     @unittest.skipUnless(os.name == "nt", "Windows handle sharing semantics are required")
     def test_reveal_holds_the_artifact_directory_and_image_until_shell_confirmation(self):

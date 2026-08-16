@@ -635,7 +635,7 @@ class PluginSkeletonTests(unittest.TestCase):
 
 
 def path_fingerprint(value: Path) -> str:
-    normalized = str(value.resolve()).replace("\\", "/").lower()
+    normalized = str(value.absolute()).replace("\\", "/").lower()
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:20]
 
 
