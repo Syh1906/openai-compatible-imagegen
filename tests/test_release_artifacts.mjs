@@ -157,10 +157,16 @@ test("Standalone release carries a Git ignore rule for local auth", async (t) =>
 
 
 test("release mode rejects a development version instead of publishing a regressive Standalone artifact", async (t) => {
+  const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), "imagegen-release-development-fixture-"));
   const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "imagegen-release-version-"));
-  t.after(() => rm(outputDirectory, { recursive: true, force: true }));
+  t.after(async () => Promise.all([
+    rm(fixtureRoot, { recursive: true, force: true }),
+    rm(outputDirectory, { recursive: true, force: true }),
+  ]));
+  await copyBuilderFixture(fixtureRoot);
+  await setFixtureVersion(fixtureRoot, "0.1.0+codex.20260816024439");
   await assert.rejects(
-    runBuild(outputDirectory),
+    runBuild(outputDirectory, fixtureRoot),
     /release version must be newer than v0\.3\.0|development-probe/i,
   );
   assert.deepEqual(await readdir(outputDirectory), []);
@@ -197,6 +203,23 @@ test("release mode rejects baseline metadata and publishes clean artifacts for t
   ]);
   for (const name of result.files) assert.doesNotMatch(name, /development/i);
   assert.deepEqual((await readdir(acceptedOutput)).sort(), result.files);
+});
+
+
+test("the release source builds the frozen v0.4.0 candidate artifact set", async (t) => {
+  const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "imagegen-release-candidate-"));
+  t.after(() => rm(outputDirectory, { recursive: true, force: true }));
+
+  const result = await runBuild(outputDirectory);
+
+  assert.equal(result.version, "0.4.0");
+  assert.deepEqual(result.files, [
+    "SHA256SUMS",
+    "openai-compatible-imagegen-codex-plugin-0.4.0.zip",
+    "openai-compatible-imagegen-shared-python-sha256-0.4.0.json",
+    "openai-compatible-imagegen-skill-0.4.0.zip",
+  ]);
+  assert.deepEqual((await readdir(outputDirectory)).sort(), result.files);
 });
 
 
