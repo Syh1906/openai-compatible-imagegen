@@ -12,7 +12,7 @@ Classify the change as `shared`, `standalone`, `plugin`, or a combination:
 | `standalone` | root `SKILL.md`, `agents/`, Standalone CLI | Python tests and Standalone release checks |
 | `plugin` | `mcp/`, `web/`, bundled Plugin Skill | Node tests, build, plugin check, Codex App acceptance |
 
-Read [the architecture guide](docs/arch.md) before changing module boundaries. Read [the documentation rules](docs/standards/README.md) before changing public docs.
+Read [the architecture guide](docs/arch.md) before changing module boundaries. Use the [documentation index](docs/README.md) to find affected public guides.
 
 ## Development setup
 
@@ -43,8 +43,8 @@ python -m unittest tests.<module>
 - Add a failing behavior test before implementing a feature or fix.
 - Update `dist/` with `npm run build` when Plugin runtime or widget sources change.
 - Include user-visible changes in `CHANGELOG.md` under `Unreleased`.
-- Complete a docs impact review for behavior, configuration, installation, or release changes.
-- Never include credentials, local provider URLs, generated images, caches, or smoke-test output.
+- Update affected public docs for behavior, configuration, installation, or release changes.
+- Never include credentials, private provider URLs, generated images, caches, or test output.
 
 ## Release candidates
 

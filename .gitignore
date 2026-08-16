@@ -17,6 +17,7 @@ outputs/
 generated/
 manifest.json
 node_modules/
+docs/.internal/
 
 .DS_Store
 Thumbs.db

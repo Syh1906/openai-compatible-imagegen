@@ -1,23 +1,6 @@
 # Architecture
 
-## Metadata
-
-| Item | Value |
-| --- | --- |
-| Audience | Contributors and integrators |
-| Status | Maintained |
-| Created | 2026-08-16 |
-| Last updated | 2026-08-16 |
-
-## Overview
-
-This document explains the stable boundaries that let one image core support a portable Standalone Skill and a Codex App Plugin. It does not document user installation steps or internal release-stage evidence.
-
-## Document role
-
-- Use this document before changing module ownership, dependency direction, or distribution boundaries.
-- Use the guides for user operations and the runtime Skill for Agent tool decisions.
-- When this document conflicts with code or tests, code and executable contracts take precedence.
+This document describes the stable boundaries that let one image core support a portable Standalone Skill and a Codex App Plugin. Use the [user guides](./guides/README.md) for installation and configuration.
 
 ## Sources of truth
 
@@ -29,12 +12,6 @@ This document explains the stable boundaries that let one image core support a p
 | `scripts/plugin-file-set.mjs` | Distribution file ownership and shared-core evidence |
 | `.codex-plugin/plugin.json`, `.mcp.json` | Plugin identity and launch contract |
 | `tests/` | Executable public behavior and release boundaries |
-
-## Document boundary
-
-- This document covers stable ownership and data flow.
-- It does not copy every tool schema, configuration field, or UI state.
-- It does not describe local smoke configurations or unpublished host behavior.
 
 ## Core flow
 
@@ -90,7 +67,6 @@ Standalone Skill -> Standalone adapter -> shared image core -> provider
 - `dist/` is tracked so the Git-backed Plugin installs without a source build or local web server.
 - The release builder verifies that shared Python files are byte-identical across packages.
 - One `SHA256SUMS` file covers both archives and the shared-core evidence file.
-- The release workflow is manually triggered, environment-gated, and uploads candidates without creating a tag or Release.
 - Marketplace, plugin manifest, package metadata, tag, and release assets must report one version.
 
 ## Change matrix
@@ -102,9 +78,3 @@ Standalone Skill -> Standalone adapter -> shared image core -> provider
 | MCP or artifact behavior | MCP and Plugin guide | Node tests, build, plugin check |
 | Result cards or canvas | `web/`, MCP Apps bridge | Widget tests and Codex App acceptance |
 | Distribution metadata | Both manifests and release builder | Version, file-set, archive, and marketplace checks |
-
-## Change history
-
-| Date | Change | Notes |
-| --- | --- | --- |
-| 2026-08-16 | Initial public architecture | Recorded the unified dual-distribution model. |

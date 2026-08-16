@@ -1,5 +1,3 @@
-<!-- updated: 2026-08-16 -->
-
 # Configuration
 
 Configure only the package you installed. The Standalone Skill and Codex Plugin do not scan, merge, or fall back to each other's configuration.

@@ -75,7 +75,7 @@ The Plugin presents results and canvas actions in Codex App. The Standalone Skil
 | --- | --- |
 | Choose and install a package | [Installation](docs/guides/installation.md) |
 | Connect a provider and model | [Configuration](docs/guides/configuration.md) |
-| Move from `v0.3.0` or a development Plugin | [Migration](docs/guides/migration.md) |
+| Move from an older installation | [Migration](docs/guides/migration.md) |
 | Restore a released version | [Rollback](docs/guides/rollback.md) |
 | Diagnose install or runtime errors | [Troubleshooting](docs/guides/troubleshooting.md) |
 | Understand repository boundaries | [Architecture](docs/arch.md) |

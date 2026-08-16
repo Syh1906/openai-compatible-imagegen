@@ -74,7 +74,7 @@ Plugin 只从以下两个固定路径解析配置：
 
 用户配置必须存在，并以 `config_version: 1`、`active_profile: "primary/gpt-image-2"`、provider、完整 model、defaults、后处理、透明策略和 storage 作为可信基线。项目配置先独立校验，之后才读取用户配置；它只能覆盖 `defaults.size`、`defaults.quality`、`defaults.output_format` 和 `storage.output_directory`。项目配置不得声明或间接改变档案、模型、provider、endpoint、认证、密钥环境变量、超时、并发或路线权限。越权或无效项目配置直接失败，不忽略、不回退，也不读取用户密钥或发起网络请求。
 
-生效优先级为工具显式参数 > 项目白名单覆盖 > 用户级 defaults > 内建默认。缺少用户配置时停止图片操作，并提示用户基于 `references/config.example.json` 创建正式配置。旧 `auth.json` 和开发期配置不会被自动读取、复制、合并、删除或覆盖；迁移只能通过用户明确执行的迁移命令完成，且不会回显 API key。
+生效优先级为工具显式参数 > 项目白名单覆盖 > 用户级 defaults > 内建默认。缺少用户配置时停止图片操作，并提示用户基于 `references/config.example.json` 创建正式配置。旧 `auth.json` 和旧版 Plugin 配置不会被自动读取、复制、合并、删除或覆盖；迁移只能通过用户明确执行的迁移命令完成，且不会回显 API key。
 
 ### 显式迁移
 
@@ -86,7 +86,7 @@ Plugin 只从以下两个固定路径解析配置：
 python "<plugin-root>/dist/scripts/migrate_image_config.py" --source "<legacy-config>" --source-kind standalone
 ```
 
-开发期 Plugin 配置改用 `--source-kind development-plugin`。只有用户明确要求把白名单 defaults 与输出目录写入当前项目时，才在 dry-run 和 write 两次命令中同时追加 `--include-project-overrides --project-root "<project-root>"`。
+旧版 Plugin 配置使用保留的兼容值 `--source-kind development-plugin`。只有用户明确要求把白名单 defaults 与输出目录写入当前项目时，才在 dry-run 和 write 两次命令中同时追加 `--include-project-overrides --project-root "<project-root>"`。
 
 向用户报告 dry-run 的 `sourceKind`、`sourceSha256`、`userTarget`、`projectTarget`、`readyToWrite` 和脱敏预览。用户确认后，保持源路径、来源类型、用户目录和项目覆盖参数不变，再执行：
 

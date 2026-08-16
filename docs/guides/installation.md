@@ -1,5 +1,3 @@
-<!-- updated: 2026-08-16 -->
-
 # Installation
 
 Choose one package. Both packages use the same image core, but they target different hosts and keep separate local configuration.

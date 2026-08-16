@@ -1,5 +1,3 @@
-<!-- updated: 2026-08-16 -->
-
 # Rollback
 
 Rollback changes the installed package version. It does not downgrade or rewrite your image-service configuration automatically.

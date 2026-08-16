@@ -1,5 +1,3 @@
-<!-- updated: 2026-08-16 -->
-
 # Troubleshooting
 
 Identify the failing layer before changing configuration. The project does not switch providers, models, endpoints, authentication, protocols, or install routes automatically.

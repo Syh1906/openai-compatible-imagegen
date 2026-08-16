@@ -75,7 +75,7 @@ Codex Plugin 在 App 中显示结果与画布操作。Standalone Skill 调用包
 | --- | --- |
 | 选择并安装 | [安装指南](docs/guides/installation.md) |
 | 连接 provider 和 model | [配置指南](docs/guides/configuration.md) |
-| 从 `v0.3.0` 或开发期 Plugin 迁移 | [迁移指南](docs/guides/migration.md) |
+| 从旧版安装迁移 | [迁移指南](docs/guides/migration.md) |
 | 恢复已发布版本 | [回滚指南](docs/guides/rollback.md) |
 | 排查安装和运行错误 | [故障排查](docs/guides/troubleshooting.md) |
 | 理解仓库边界 | [架构说明](docs/arch.md) |
