@@ -51,7 +51,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 var define_RELEASE_IDENTITY_default;
 var init_define_RELEASE_IDENTITY = __esm({
   "<define:__RELEASE_IDENTITY__>"() {
-    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "0.4.0", serverBuildDigest: "b7bbaa21bf32acc43dd7080c60658f59c5fb5acbf213e5c1acb07466a51bab40", widgetAssetDigest: "6755d829d948acc0aeb1abc6599a013901877324c4cf87b82f0e36123370d2b4", fingerprint: "a1ae6aa8b3051a3f4c2f", resourceUris: { result: "ui://openai-compatible-imagegen/result.html", editor: "ui://openai-compatible-imagegen/editor.html" } };
+    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "0.4.0", serverBuildDigest: "3661cf3313e311bd7f16491b73a017642ec8fa5010d516dbefc3aadc295da727", widgetAssetDigest: "6755d829d948acc0aeb1abc6599a013901877324c4cf87b82f0e36123370d2b4", fingerprint: "4637204eeb0e866db239", resourceUris: { result: "ui://openai-compatible-imagegen/result.html", editor: "ui://openai-compatible-imagegen/editor.html" } };
   }
 });
 
@@ -36394,6 +36394,7 @@ var IMAGE_ID_PATTERN5 = /^img_[0-9A-HJKMNP-TV-Z]{26}$/;
 var MAX_RECORD_BYTES4 = 256 * 1024;
 var MAX_IMAGES = 1024;
 var MAX_SESSIONS = 4096;
+var mutationQueues = /* @__PURE__ */ new Map();
 function createFileEditorStateRegistry({ idFactory = createEditorSessionId } = {}) {
   if (typeof idFactory !== "function") throw new TypeError("idFactory must be a function");
   return Object.freeze({ open: open4, getSession, destroy, finalize, getCanvasStatuses });
@@ -36454,6 +36455,23 @@ function createFileEditorStateRegistry({ idFactory = createEditorSessionId } = {
   }
 }
 async function withRecord(input, callback) {
+  const queueKey = mutationQueueKey(input);
+  if (queueKey === null) return await withFileLock(input, callback);
+  const previous = mutationQueues.get(queueKey) ?? Promise.resolve();
+  let release;
+  const current = new Promise((resolve) => {
+    release = resolve;
+  });
+  mutationQueues.set(queueKey, current);
+  await previous;
+  try {
+    return await withFileLock(input, callback);
+  } finally {
+    release();
+    if (mutationQueues.get(queueKey) === current) mutationQueues.delete(queueKey);
+  }
+}
+async function withFileLock(input, callback) {
   let scope;
   let ownership;
   let result;
@@ -36490,6 +36508,10 @@ async function withRecord(input, callback) {
   }
   if (failure) throw failure;
   return result;
+}
+function mutationQueueKey(input) {
+  if (typeof input?.artifactRoot !== "string" || typeof input?.bindingKey !== "string") return null;
+  return `${path13.resolve(input.artifactRoot)}\0${input.bindingKey}`;
 }
 function unavailableState3() {
   return editorStateError("editor_state_unavailable", "\u753B\u5E03\u72B6\u6001\u6682\u65F6\u4E0D\u53EF\u7528\u3002");

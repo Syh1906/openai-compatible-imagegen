@@ -195,6 +195,7 @@ test("an old destroyed callback cannot close or stop a newly adopted editor", { 
   try {
     await import(`../web/editor-runtime.mjs?destroy-new-session-race=${Date.now()}`);
     await waitFor(() => document.querySelector(".editor-app") !== null);
+    await waitFor(() => document.querySelector("[data-image]")?.hidden === false, 3000);
     sendToApp(dom.window, {
       jsonrpc: "2.0",
       method: "ui/notifications/tool-result",

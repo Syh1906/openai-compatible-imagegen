@@ -26,6 +26,7 @@ const IMAGE_ID_PATTERN = /^img_[0-9A-HJKMNP-TV-Z]{26}$/;
 const MAX_RECORD_BYTES = 256 * 1024;
 const MAX_IMAGES = 1024;
 const MAX_SESSIONS = 4096;
+const mutationQueues = new Map();
 
 
 export function createFileEditorStateRegistry({ idFactory = createEditorSessionId } = {}) {
@@ -102,6 +103,25 @@ export function createFileEditorStateRegistry({ idFactory = createEditorSessionI
 
 
 async function withRecord(input, callback) {
+  const queueKey = mutationQueueKey(input);
+  if (queueKey === null) return await withFileLock(input, callback);
+  const previous = mutationQueues.get(queueKey) ?? Promise.resolve();
+  let release;
+  const current = new Promise((resolve) => {
+    release = resolve;
+  });
+  mutationQueues.set(queueKey, current);
+  await previous;
+  try {
+    return await withFileLock(input, callback);
+  } finally {
+    release();
+    if (mutationQueues.get(queueKey) === current) mutationQueues.delete(queueKey);
+  }
+}
+
+
+async function withFileLock(input, callback) {
   let scope;
   let ownership;
   let result;
@@ -138,6 +158,12 @@ async function withRecord(input, callback) {
   }
   if (failure) throw failure;
   return result;
+}
+
+
+function mutationQueueKey(input) {
+  if (typeof input?.artifactRoot !== "string" || typeof input?.bindingKey !== "string") return null;
+  return `${path.resolve(input.artifactRoot)}\0${input.bindingKey}`;
 }
 
 
