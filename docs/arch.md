@@ -89,6 +89,8 @@ Standalone Skill -> Standalone adapter -> shared image core -> provider
 - One version and tag produce a Standalone Skill archive and a Codex Plugin archive.
 - `dist/` is tracked so the Git-backed Plugin installs without a source build or local web server.
 - The release builder verifies that shared Python files are byte-identical across packages.
+- One `SHA256SUMS` file covers both archives and the shared-core evidence file.
+- The release workflow is manually triggered, environment-gated, and uploads candidates without creating a tag or Release.
 - Marketplace, plugin manifest, package metadata, tag, and release assets must report one version.
 
 ## Change matrix

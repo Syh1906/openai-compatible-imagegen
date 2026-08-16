@@ -21,6 +21,7 @@ import { normalizeReleaseText, publishArtifactSet } from "../scripts/build-relea
 const execFileAsync = promisify(execFile);
 const projectRoot = fileURLToPath(new URL("..", import.meta.url));
 const buildScript = fileURLToPath(new URL("../scripts/build-release-artifacts.mjs", import.meta.url));
+const releaseWorkflow = fileURLToPath(new URL("../.github/workflows/release-artifacts.yml", import.meta.url));
 const pluginId = "openai-compatible-imagegen";
 const archiveRoot = `${pluginId}/`;
 const sharedCoreFiles = [
@@ -80,6 +81,26 @@ test("package scripts expose the release artifact builder", async () => {
     packageManifest.scripts["build:release"],
     "npm run build && node scripts/build-release-artifacts.mjs",
   );
+});
+
+
+test("release workflow is manual, environment-gated, and artifact-only", async () => {
+  const workflow = await readFile(releaseWorkflow, "utf8");
+  assert.match(workflow, /workflow_dispatch:/);
+  assert.match(workflow, /environment:\s*release/);
+  assert.match(workflow, /permissions:\s*\n\s*contents:\s*read/);
+  assert.match(workflow, /ref:\s*\$\{\{\s*inputs\.release_ref\s*\}\}/);
+  for (const command of [
+    "npm ci",
+    "npm run build",
+    "npm test",
+    "npm run check",
+    "node scripts/build-release-artifacts.mjs",
+  ]) {
+    assert.ok(workflow.includes(command), command);
+  }
+  assert.match(workflow, /actions\/upload-artifact@v4/);
+  assert.doesNotMatch(workflow, /gh release|git tag|git push/i);
 });
 
 
@@ -169,6 +190,7 @@ test("release mode rejects baseline metadata and publishes clean artifacts for t
   assert.equal(result.ok, true);
   assert.equal(result.version, "0.3.1");
   assert.deepEqual(result.files, [
+    "SHA256SUMS",
     "openai-compatible-imagegen-codex-plugin-0.3.1.zip",
     "openai-compatible-imagegen-shared-python-sha256-0.3.1.json",
     "openai-compatible-imagegen-skill-0.3.1.zip",
@@ -278,9 +300,11 @@ test("release builder creates exact, reproducible standalone and plugin archives
   const standaloneName = `openai-compatible-imagegen-development-skill-${first.version}.zip`;
   const pluginName = `openai-compatible-imagegen-development-codex-plugin-${first.version}.zip`;
   const evidenceName = `openai-compatible-imagegen-development-shared-python-sha256-${first.version}.json`;
+  const checksumName = "SHA256SUMS";
   assert.ok(first.files.includes(standaloneName));
   assert.ok(first.files.includes(pluginName));
   assert.ok(first.files.includes(evidenceName));
+  assert.ok(first.files.includes(checksumName));
   assert.ok(standaloneName);
   assert.ok(pluginName);
   assert.ok(evidenceName);
@@ -316,6 +340,19 @@ test("release builder creates exact, reproducible standalone and plugin archives
       standalonePath: `scripts/${name}`,
     });
   }
+
+  const checksumEntries = Object.fromEntries(
+    firstArtifacts[checksumName].toString("utf8").trim().split("\n").map((line) => {
+      const match = /^([0-9a-f]{64})  ([^/\\]+)$/.exec(line);
+      assert.ok(match, line);
+      return [match[2], match[1]];
+    }),
+  );
+  assert.deepEqual(checksumEntries, Object.fromEntries(
+    [standaloneName, pluginName, evidenceName]
+      .sort()
+      .map((name) => [name, sha256(firstArtifacts[name])]),
+  ));
 });
 
 

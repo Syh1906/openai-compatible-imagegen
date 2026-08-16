@@ -50,6 +50,7 @@ async function main() {
     standalone: `${artifactPrefix}-skill-${manifest.version}.zip`,
     plugin: `${artifactPrefix}-codex-plugin-${manifest.version}.zip`,
     evidence: `${artifactPrefix}-shared-python-sha256-${manifest.version}.json`,
+    checksums: "SHA256SUMS",
   };
   const outputPaths = Object.fromEntries(
     Object.entries(fileNames).map(([kind, name]) => [kind, path.join(outputDirectory, name)]),
@@ -70,11 +71,21 @@ async function main() {
     version: manifest.version,
     sharedPython,
   }, null, 2)}\n`, "utf8");
+  const checksumSources = [
+    [fileNames.standalone, standaloneZip],
+    [fileNames.plugin, pluginZip],
+    [fileNames.evidence, evidence],
+  ].sort(([left], [right]) => left.localeCompare(right));
+  const checksums = Buffer.from(
+    checksumSources.map(([name, content]) => `${sha256(content)}  ${name}`).join("\n") + "\n",
+    "utf8",
+  );
 
   await publishArtifactSet([
     { outputPath: outputPaths.standalone, content: standaloneZip },
     { outputPath: outputPaths.plugin, content: pluginZip },
     { outputPath: outputPaths.evidence, content: evidence },
+    { outputPath: outputPaths.checksums, content: checksums },
   ]);
 
   process.stdout.write(`${JSON.stringify({

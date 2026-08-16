@@ -1,0 +1,63 @@
+name: Build release artifacts
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_ref:
+        description: Commit SHA or tag to build
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-artifacts-${{ inputs.release_ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - name: Check out the requested ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_ref }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Build the Plugin once
+        run: npm run build
+
+      - name: Run tests
+        run: npm test
+
+      - name: Check the Plugin package
+        run: npm run check
+
+      - name: Compile Python sources
+        run: python -m compileall -q scripts
+
+      - name: Build versioned release artifacts
+        run: node scripts/build-release-artifacts.mjs --source-root . --output-directory release
+
+      - name: Upload the release candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: openai-compatible-imagegen-release-candidate
+          path: release/*
+          if-no-files-found: error
+          retention-days: 14

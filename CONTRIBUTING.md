@@ -46,6 +46,10 @@ python -m unittest tests.<module>
 - Complete a docs impact review for behavior, configuration, installation, or release changes.
 - Never include credentials, local provider URLs, generated images, caches, or smoke-test output.
 
+## Release candidates
+
+The `Build release artifacts` workflow is manually triggered for an exact commit or tag and uses the protected `release` environment. It builds and uploads the two archives, shared-core evidence, and `SHA256SUMS`; it does not create tags or GitHub Releases.
+
 ## Commit format
 
 Use `<type>: <English summary>` with one of `feat`, `fix`, `docs`, `chore`, `refactor`, `build`, `style`, `perf`, `test`, or `ci`.

@@ -12,6 +12,7 @@ This file records user-visible changes for each release of `openai-compatible-im
 - Publish separate Standalone Skill and Codex Plugin archives from the same shared image core.
 - Add a Git-backed Codex marketplace with a prebuilt MCP server, widget, and Python runtime so Plugin installation does not require a source build or local web server.
 - Add task-focused installation, configuration, migration, rollback, troubleshooting, architecture, contribution, security, and Agent maintenance documentation.
+- Add a manual, environment-gated release-candidate workflow and deterministic `SHA256SUMS` for both package archives and shared-core evidence.
 
 ### Changed
 

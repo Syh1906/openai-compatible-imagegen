@@ -91,4 +91,4 @@ Report the installed version and final skill path.
 
 Public Plugins Directory availability is separate from this Git-backed release channel.
 
-Each GitHub Release also provides `openai-compatible-imagegen-codex-plugin-<version>.zip` for offline inspection, checksum verification, archive, and rollback. The Git-backed marketplace remains the normal Plugin installation channel.
+Each GitHub Release also provides `openai-compatible-imagegen-codex-plugin-<version>.zip` for offline inspection, archive, and rollback. Verify downloaded archives against the release's `SHA256SUMS`. The Git-backed marketplace remains the normal Plugin installation channel.
