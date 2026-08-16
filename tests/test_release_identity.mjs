@@ -27,13 +27,17 @@ const widgetOutput = fileURLToPath(new URL("../dist/widget/index.html", import.m
 const serverOutput = fileURLToPath(new URL("../dist/server.mjs", import.meta.url));
 const runtimeOutput = fileURLToPath(new URL("../dist/scripts/imagegen.py", import.meta.url));
 const resultStateSource = fileURLToPath(new URL("../web/result-state.mjs", import.meta.url));
+const pluginProbeSource = fileURLToPath(new URL("../scripts/probe-plugin.mjs", import.meta.url));
 const IMAGE_ID = "img_01J00000000000000000000000";
+const LEGACY_WIDGET_RESOURCE_FINGERPRINTS = [
+  "43c3a69a85db10633692",
+  "9caad8c28a921a55611b",
+];
 const RELEASE_IDENTITY_PLACEHOLDER = "    <!-- RELEASE_IDENTITY -->";
 const PNG_BYTES = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFgAI/ScL1WQAAAABJRU5ErkJggg==",
   "base64",
 );
-const CALL_META = {};
 const EXPECTED_RUNTIME_FILES = [
   "artifact_repository.py",
   "image_alpha.py",
@@ -69,7 +73,18 @@ const EXPECTED_RUNTIME_FILES = [
 ];
 
 
-test("release-bound widget URIs declare the Codex development cache opt-out", async () => {
+test("plugin probe carries one explicit project binding ID without host session metadata", async () => {
+  const source = await readFile(pluginProbeSource, "utf8");
+
+  assert.doesNotMatch(source, /openai\/session|PROBE_HOST_SESSION_SEED/);
+  assert.match(source, /const callProjectTool = async \(name, arguments_ = \{\}\) =>/);
+  assert.match(source, /projectBindingId \? \{ \.\.\.arguments_, projectBindingId \} : arguments_/);
+  assert.equal(count(source, "client.callTool({"), 2);
+  assert.match(source, /\^pbind_\[a-f0-9\]\{64\}\$/);
+});
+
+
+test("widget resource URIs remain stable across compatible releases", async () => {
   const previousRelease = createReleaseBundle({
     pluginId: "openai-compatible-imagegen",
     pluginVersion: "0.1.0-test",
@@ -83,7 +98,7 @@ test("release-bound widget URIs declare the Codex development cache opt-out", as
     widgetHtml: `<html><head>${RELEASE_IDENTITY_PLACEHOLDER}</head><body>current widget</body></html>`,
   }).releaseIdentity;
 
-  assert.notEqual(previousRelease.resourceUris.result, currentRelease.resourceUris.result);
+  assert.deepEqual(previousRelease.resourceUris, currentRelease.resourceUris);
 
   await withReleaseClient(currentRelease, async (client) => {
     const cachePolicy = client.getServerCapabilities()?.experimental?.["codex/tool-catalog-cache"];
@@ -92,10 +107,13 @@ test("release-bound widget URIs declare the Codex development cache opt-out", as
     const resource = await client.readResource({ uri: resourceUri });
     assert.equal(resource.contents[0].uri, currentRelease.resourceUris.result);
     assert.deepEqual(cachePolicy, { cacheable: false });
-    await assert.rejects(
-      client.readResource({ uri: previousRelease.resourceUris.result }),
-      /not found/i,
-    );
+    for (const fingerprint of LEGACY_WIDGET_RESOURCE_FINGERPRINTS) {
+      for (const view of ["result", "editor"]) {
+        const legacyUri = `ui://openai-compatible-imagegen/${view}-${fingerprint}.html`;
+        const legacyResource = await client.readResource({ uri: legacyUri });
+        assert.equal(legacyResource.contents[0].uri, legacyUri);
+      }
+    }
   });
 });
 
@@ -156,6 +174,8 @@ test("the built plugin exposes one content-bound release identity", async () => 
   assert.equal(count(widgetHtml, '<body data-tool="open_image_editor">'), 1);
   assert.equal(widgetHtml.includes("<!-- WIDGET_SCRIPT -->"), false);
   assert.equal(widgetHtml.includes("read_image_artifact_data"), true);
+  assert.equal(widgetHtml.includes("projectBindingId"), true);
+  assert.equal(widgetHtml.includes("project_binding_conflict"), true);
   assert.equal(widgetHtml.includes("imageArtifacts"), false);
   const marker = `    <meta name="${RELEASE_IDENTITY_META_NAME}" content="${releaseIdentity.fingerprint}">`;
   assert.equal(widgetHtml.includes(marker), true);
@@ -205,11 +225,15 @@ test("the built plugin exposes one content-bound release identity", async () => 
     assert.equal(client.getServerCapabilities()?.resources?.listChanged, true);
 
     const { resources } = await client.listResources();
+    const legacyResourceUris = LEGACY_WIDGET_RESOURCE_FINGERPRINTS.flatMap((fingerprint) => [
+      `ui://${releaseIdentity.pluginId}/result-${fingerprint}.html`,
+      `ui://${releaseIdentity.pluginId}/editor-${fingerprint}.html`,
+    ]);
     assert.deepEqual(
       resources.map((resource) => resource.uri).sort(),
-      Object.values(releaseIdentity.resourceUris).sort(),
+      [...Object.values(releaseIdentity.resourceUris), ...legacyResourceUris].sort(),
     );
-    for (const uri of Object.values(releaseIdentity.resourceUris)) {
+    for (const uri of [...Object.values(releaseIdentity.resourceUris), ...legacyResourceUris]) {
       const resource = await client.readResource({ uri });
       assert.equal(resource.contents[0].uri, uri);
       assert.deepEqual(resource.contents[0]._meta.releaseIdentity, releaseIdentity);
@@ -226,8 +250,10 @@ test("the built plugin exposes one content-bound release identity", async () => 
 
     const unbound = await client.callTool({
       name: "render_image_results",
-      arguments: { imageIds: [IMAGE_ID] },
-      _meta: CALL_META,
+      arguments: {
+        projectBindingId: `pbind_${"e".repeat(64)}`,
+        imageIds: [IMAGE_ID],
+      },
     });
     assert.equal(unbound.isError, true);
     assert.equal(unbound.structuredContent, undefined);
@@ -236,14 +262,22 @@ test("the built plugin exposes one content-bound release identity", async () => 
     const binding = await client.callTool({
       name: "bind_imagegen_project",
       arguments: { projectRoot: fixtureRoot },
-      _meta: CALL_META,
     });
-    assert.deepEqual(binding.structuredContent, { status: "bound" });
+    const projectBindingId = binding.structuredContent?.projectBindingId;
+    assert.equal(binding.structuredContent?.status, "bound");
+    assert.match(projectBindingId, /^pbind_[0-9a-f]{64}$/);
+    const stateEntries = await readdir(path.join(
+      userHome,
+      ".codex",
+      "openai-compatible-imagegen",
+      "state",
+    ));
+    assert.equal(stateEntries.includes("project-bindings"), true);
+    assert.equal(stateEntries.includes("session-bindings"), false);
 
     const rendered = await client.callTool({
       name: "render_image_results",
-      arguments: { imageIds: [IMAGE_ID] },
-      _meta: CALL_META,
+      arguments: { projectBindingId, imageIds: [IMAGE_ID] },
     });
     assert.equal(rendered.isError, undefined);
     assert.equal(rendered._meta.ui.resourceUri, releaseIdentity.resourceUris.result);
@@ -251,8 +285,7 @@ test("the built plugin exposes one content-bound release identity", async () => 
 
     const opened = await client.callTool({
       name: "open_image_editor",
-      arguments: { imageId: IMAGE_ID },
-      _meta: CALL_META,
+      arguments: { projectBindingId, imageId: IMAGE_ID },
     });
     assert.equal(opened.isError, undefined);
     assert.equal(opened._meta.ui.resourceUri, releaseIdentity.resourceUris.editor);
@@ -337,8 +370,8 @@ function assertReleaseIdentity(releaseIdentity, manifest) {
   assert.match(releaseIdentity.serverBuildDigest, /^[a-f0-9]{64}$/);
   assert.match(releaseIdentity.widgetAssetDigest, /^[a-f0-9]{64}$/);
   assert.deepEqual(releaseIdentity.resourceUris, {
-    result: `ui://${manifest.name}/result-${releaseIdentity.fingerprint}.html`,
-    editor: `ui://${manifest.name}/editor-${releaseIdentity.fingerprint}.html`,
+    result: `ui://${manifest.name}/result.html`,
+    editor: `ui://${manifest.name}/editor.html`,
   });
 }
 

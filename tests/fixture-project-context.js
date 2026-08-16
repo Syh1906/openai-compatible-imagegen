@@ -21,12 +21,13 @@ const EFFECTIVE_CONFIG = Object.freeze({
   },
   defaults: { size: "1024x1024", quality: "low", output_format: "png" },
 });
+export const FIXTURE_PROJECT_BINDING_ID = `pbind_${"b".repeat(64)}`;
 
 
 export function createFixtureProjectContext({
   projectRoot,
   artifactRoot = path.join(projectRoot, "output", "imagegen"),
-  bindingKey = "fixture-binding",
+  bindingKey = "f".repeat(64),
 } = {}) {
   if (typeof projectRoot !== "string" || !path.isAbsolute(projectRoot)) {
     throw new Error("fixture projectRoot must be absolute");
@@ -49,14 +50,19 @@ export function createFixtureProjectContext({
   let bound = false;
 
   return Object.freeze({
-    async bind(_extra, { projectRoot: candidateRoot }) {
+    async bind({ projectRoot: candidateRoot, projectBindingId = null }) {
       if (path.resolve(candidateRoot) !== expectedProjectRoot) throw contextError("project_root_invalid");
-      if (bound) return { status: "already_bound" };
+      if (projectBindingId !== null && projectBindingId !== FIXTURE_PROJECT_BINDING_ID) {
+        throw contextError("project_binding_required");
+      }
+      if (bound) return { status: "already_bound", projectBindingId: FIXTURE_PROJECT_BINDING_ID };
       bound = true;
-      return { status: "bound" };
+      return { status: "bound", projectBindingId: FIXTURE_PROJECT_BINDING_ID };
     },
-    async require() {
-      if (!bound) throw contextError("project_binding_required");
+    async require(projectBindingId) {
+      if (!bound || projectBindingId !== FIXTURE_PROJECT_BINDING_ID) {
+        throw contextError("project_binding_required");
+      }
       return context;
     },
   });

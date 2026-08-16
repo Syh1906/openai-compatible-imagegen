@@ -12,6 +12,7 @@ import { createReleaseBundle, RELEASE_IDENTITY_PLACEHOLDER } from "../mcp/releas
 
 
 const IMAGE_ID = "img_01J00000000000000000000000";
+const PROJECT_BINDING_ID = `pbind_${"c".repeat(64)}`;
 const PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFgAI/ScL1WQAAAABJRU5ErkJggg==";
 const TEST_RELEASE_IDENTITY = createReleaseBundle({
   pluginId: "openai-compatible-imagegen",
@@ -87,7 +88,7 @@ test("app-only reveal tool confirms an artifact by stable image ID without retur
       assert.deepEqual(tool._meta.ui.visibility, ["app"]);
       assert.equal(tool._meta.ui.resourceUri, undefined);
       assert.equal(tool._meta["openai/widgetAccessible"], true);
-      assert.deepEqual(tool.inputSchema.required, ["imageId"]);
+      assert.deepEqual(tool.inputSchema.required.sort(), ["imageId", "projectBindingId"]);
       assert.deepEqual(tool.outputSchema.required.sort(), ["imageId", "status"]);
       assert.deepEqual(tool.annotations, {
         readOnlyHint: false,
@@ -181,13 +182,18 @@ async function withClient(dependencies, callback) {
     const originalCallTool = client.callTool.bind(client);
     const requestMeta = {};
     await client.listTools();
-    await originalCallTool({
+    const binding = await originalCallTool({
       name: "bind_imagegen_project",
       arguments: { projectRoot },
       _meta: requestMeta,
     });
+    assert.deepEqual(binding.structuredContent, { status: "bound", projectBindingId: PROJECT_BINDING_ID });
     client.callTool = async (request, ...rest) => await originalCallTool(
-      { ...request, _meta: request._meta ?? requestMeta },
+      {
+        ...request,
+        arguments: { projectBindingId: PROJECT_BINDING_ID, ...request.arguments },
+        _meta: request._meta ?? requestMeta,
+      },
       ...rest,
     );
     await callback(client);
@@ -201,7 +207,7 @@ async function withClient(dependencies, callback) {
 function createFixtureProjectContext(projectRoot) {
   let bound = false;
   const context = {
-    bindingKey: "fixture-binding",
+    bindingKey: "f".repeat(64),
     projectRoot,
     artifactRoot: path.join(projectRoot, "output", "imagegen"),
     effectiveConfigJson: "{}",
@@ -212,10 +218,12 @@ function createFixtureProjectContext(projectRoot) {
   return {
     async bind() {
       bound = true;
-      return { status: "bound" };
+      return { status: "bound", projectBindingId: PROJECT_BINDING_ID };
     },
-    async require() {
-      if (!bound) throw new Error("project_binding_required");
+    async require(projectBindingId) {
+      if (!bound || projectBindingId !== PROJECT_BINDING_ID) {
+        throw new Error("project_binding_required");
+      }
       return context;
     },
   };

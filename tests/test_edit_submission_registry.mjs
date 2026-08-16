@@ -71,10 +71,13 @@ test("prepared revisions remain claimable until one is selected for editing", ()
     { receipt: latest, maskSha256: null, maskPolicySha256: null },
   );
 
-  assert.deepEqual(
-    registry.claimForEdit(editInput({ submissionId: first.id })),
-    { receipt: first, maskSha256: null, maskPolicySha256: null },
-  );
+  const firstClaim = registry.claimForEdit(editInput({ submissionId: first.id }));
+  assert.deepEqual(firstClaim, {
+    receipt: first,
+    maskSha256: null,
+    maskPolicySha256: null,
+    claimGeneration: 1,
+  });
   assert.throws(
     () => registry.claimForEdit(editInput({ submissionId: latest.id })),
     errorWithCode("edit_submission_in_flight"),
@@ -84,17 +87,19 @@ test("prepared revisions remain claimable until one is selected for editing", ()
     bindingKey: "project-alpha",
     parentImageId: "img_parent",
     submissionId: first.id,
+    claimGeneration: firstClaim.claimGeneration,
   });
   assert.deepEqual(
     registry.resolveForEdit(editInput({ submissionId: latest.id })),
     { receipt: latest, maskSha256: null, maskPolicySha256: null },
   );
 
-  registry.claimForEdit(editInput({ submissionId: latest.id }));
+  const latestClaim = registry.claimForEdit(editInput({ submissionId: latest.id }));
   registry.complete({
     bindingKey: "project-alpha",
     parentImageId: "img_parent",
     submissionId: latest.id,
+    claimGeneration: latestClaim.claimGeneration,
     artifactIds: ["img_01J00000000000000000000001"],
   });
   assert.throws(
@@ -170,7 +175,7 @@ test("claimForEdit synchronously claims a pending submission only once", () => {
 
   assert.deepEqual(
     registry.claimForEdit(editInput({ submissionId: receipt.id })),
-    { receipt, maskSha256: null, maskPolicySha256: null },
+    { receipt, maskSha256: null, maskPolicySha256: null, claimGeneration: 1 },
   );
   assert.throws(
     () => registry.claimForEdit(editInput({ submissionId: receipt.id })),
@@ -182,7 +187,7 @@ test("claimForEdit synchronously claims a pending submission only once", () => {
 test("issue rejects a new revision while the current submission is in flight", () => {
   const registry = createEditSubmissionRegistry({ idFactory: sequenceFactory(IDS) });
   const receipt = registry.issue(submissionInput());
-  registry.claimForEdit(editInput({ submissionId: receipt.id }));
+  const claim = registry.claimForEdit(editInput({ submissionId: receipt.id }));
 
   assert.throws(
     () => registry.issue(submissionInput({ sourcePrompt: "replacement" })),
@@ -192,6 +197,7 @@ test("issue rejects a new revision while the current submission is in flight", (
     bindingKey: "project-alpha",
     parentImageId: "img_parent",
     submissionId: receipt.id,
+    claimGeneration: claim.claimGeneration,
   });
   assert.equal(
     registry.issue(submissionInput({ sourcePrompt: "replacement" })).id,
@@ -203,21 +209,26 @@ test("issue rejects a new revision while the current submission is in flight", (
 test("release retries the current claim and completion preserves response recovery", () => {
   const registry = createEditSubmissionRegistry({ idFactory: sequenceFactory(IDS) });
   const receipt = registry.issue(submissionInput());
-  registry.claimForEdit(editInput({ submissionId: receipt.id }));
+  const firstClaim = registry.claimForEdit(editInput({ submissionId: receipt.id }));
 
   assert.deepEqual(registry.releaseForEdit({
     bindingKey: "project-alpha",
     parentImageId: "img_parent",
     submissionId: receipt.id,
+    claimGeneration: firstClaim.claimGeneration,
   }), receipt);
-  assert.deepEqual(
-    registry.claimForEdit(editInput({ submissionId: receipt.id })),
-    { receipt, maskSha256: null, maskPolicySha256: null },
-  );
+  const secondClaim = registry.claimForEdit(editInput({ submissionId: receipt.id }));
+  assert.deepEqual(secondClaim, {
+    receipt,
+    maskSha256: null,
+    maskPolicySha256: null,
+    claimGeneration: 2,
+  });
   assert.deepEqual(registry.complete({
     bindingKey: "project-alpha",
     parentImageId: "img_parent",
     submissionId: receipt.id,
+    claimGeneration: secondClaim.claimGeneration,
     artifactIds: ["img_01J00000000000000000000001"],
   }), receipt);
   const replacement = registry.issue(submissionInput({ sourcePrompt: "replacement" }));
@@ -226,13 +237,16 @@ test("release retries the current claim and completion preserves response recove
       bindingKey: "project-alpha",
       parentImageId: "img_parent",
       submissionId: receipt.id,
+      claimGeneration: secondClaim.claimGeneration,
     }),
     errorWithCode("stale_edit_submission"),
   );
-  assert.deepEqual(
-    registry.claimForEdit(editInput({ submissionId: replacement.id })),
-    { receipt: replacement, maskSha256: null, maskPolicySha256: null },
-  );
+  assert.deepEqual(registry.claimForEdit(editInput({ submissionId: replacement.id })), {
+    receipt: replacement,
+    maskSha256: null,
+    maskPolicySha256: null,
+    claimGeneration: 1,
+  });
   assert.deepEqual(registry.claimForEdit(editInput({ submissionId: receipt.id })), {
     receipt,
     maskSha256: null,
@@ -256,6 +270,7 @@ test("complete consumes only the current matching submission", () => {
       bindingKey: "project-alpha",
       parentImageId: "img_parent",
       submissionId: stale.id,
+      claimGeneration: 1,
     }),
     errorWithCode("stale_edit_submission"),
   );
@@ -268,14 +283,16 @@ test("complete consumes only the current matching submission", () => {
       bindingKey: "other-project",
       parentImageId: "img_parent",
       submissionId: latest.id,
+      claimGeneration: 1,
     }),
     errorWithCode("edit_submission_mismatch"),
   );
-  registry.claimForEdit(editInput({ submissionId: latest.id }));
+  const claim = registry.claimForEdit(editInput({ submissionId: latest.id }));
   assert.deepEqual(registry.complete({
     bindingKey: "project-alpha",
     parentImageId: "img_parent",
     submissionId: latest.id,
+    claimGeneration: claim.claimGeneration,
   }), latest);
   assert.equal(registry.resolveForEdit({
     bindingKey: "project-alpha",
@@ -286,6 +303,7 @@ test("complete consumes only the current matching submission", () => {
       bindingKey: "project-alpha",
       parentImageId: "img_parent",
       submissionId: latest.id,
+      claimGeneration: claim.claimGeneration,
     }),
     errorWithCode("stale_edit_submission"),
   );
@@ -295,11 +313,12 @@ test("complete consumes only the current matching submission", () => {
 test("a completed submission keeps its immutable artifact IDs for response recovery", () => {
   const registry = createEditSubmissionRegistry({ idFactory: sequenceFactory(IDS) });
   const receipt = registry.issue(submissionInput());
-  registry.claimForEdit(editInput({ submissionId: receipt.id }));
+  const claim = registry.claimForEdit(editInput({ submissionId: receipt.id }));
   registry.complete({
     bindingKey: "project-alpha",
     parentImageId: "img_parent",
     submissionId: receipt.id,
+    claimGeneration: claim.claimGeneration,
     artifactIds: ["img_01J00000000000000000000001"],
   });
 

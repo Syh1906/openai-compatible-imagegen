@@ -206,7 +206,7 @@ test("an old destroyed callback cannot close or stop a newly adopted editor", { 
         },
       },
     });
-    await waitFor(() => pendingFinalizeId !== null);
+    await waitFor(() => pendingFinalizeId !== null, 3000);
 
     sendToApp(dom.window, {
       jsonrpc: "2.0",

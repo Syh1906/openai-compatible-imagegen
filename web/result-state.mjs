@@ -25,7 +25,7 @@ export function extractResultArtifacts(result) {
     .filter(Boolean);
 }
 
-export async function hydrateResultArtifacts(app, artifacts) {
+export async function hydrateResultArtifacts(app, artifacts, { observeToolCall = null } = {}) {
   if (typeof app?.callServerTool !== "function") {
     throw new ArtifactHydrationError("artifact_bridge_unavailable", "MCP tool bridge is unavailable");
   }
@@ -40,6 +40,7 @@ export async function hydrateResultArtifacts(app, artifacts) {
     } catch (cause) {
       throw new ArtifactHydrationError("artifact_tool_call_failed", "MCP image data call failed", { cause });
     }
+    observeToolCallSafely(observeToolCall, result);
     if (result?.isError) {
       throw new ArtifactHydrationError("artifact_server_error", "MCP image data tool returned an error");
     }
@@ -66,6 +67,12 @@ export async function hydrateResultArtifacts(app, artifacts) {
       data: privatePayload.dataBase64,
     };
   }));
+}
+
+
+function observeToolCallSafely(observer, result) {
+  if (typeof observer !== "function") return;
+  try { observer(result); } catch {}
 }
 
 export class ArtifactHydrationError extends Error {

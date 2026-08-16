@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -8,6 +8,7 @@ import { createImagegenServer } from "../mcp/create-server.mjs";
 import { resolveImageConfigBinding } from "../mcp/config-resolution.mjs";
 import { createProjectContext } from "../mcp/project-context.mjs";
 import { createReleaseBundle, RELEASE_IDENTITY_PLACEHOLDER } from "../mcp/release-identity.mjs";
+import { latestCommittedRecordPath } from "./support/fenced-record-fixture.mjs";
 
 
 const RELEASE_IDENTITY = createReleaseBundle({
@@ -18,6 +19,7 @@ const RELEASE_IDENTITY = createReleaseBundle({
 }).releaseIdentity;
 const IMAGE_ID = "img_01J00000000000000000000000";
 const EDITOR_SESSION_ID = `eds_${"0".repeat(32)}`;
+const PROJECT_BINDING_ID_PATTERN = /^pbind_[0-9a-f]{64}$/;
 const PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFgAI/ScL1WQAAAABJRU5ErkJggg==";
 const HOST_OBSERVATIONS = [
   {
@@ -34,6 +36,27 @@ const HOST_OBSERVATIONS = [
   },
 ];
 
+const PROJECT_BOUND_TOOL_NAMES = [
+  "report_imagegen_host_observation",
+  "list_image_models",
+  "generate_image",
+  "edit_image",
+  "batch_images",
+  "get_image_batch_manifest",
+  "get_image_delivery_receipt",
+  "deliver_image",
+  "get_image_artifact",
+  "read_image_artifact_data",
+  "reveal_image_artifact",
+  "render_image_results",
+  "open_image_editor",
+  "save_image_annotations",
+  "prepare_image_edit_submission",
+  "get_image_editor_session",
+  "destroy_image_editor",
+  "finalize_image_editor_session",
+];
+
 
 test("path leak assertions detect Windows paths after JSON escaping", () => {
   const windowsRoot = "C:\\Users\\tester\\workspace";
@@ -44,20 +67,112 @@ test("path leak assertions detect Windows paths after JSON escaping", () => {
 });
 
 
-test("project binding works without host conversation metadata", async () => {
+test("explicit project binding IDs restore one project across MCP processes without host metadata", async () => {
+  await withProjectRoots(async ({ pluginRoot, projectA }) => {
+    const modelServer = createTestServer({ pluginRoot });
+    const widgetServer = createTestServer({ pluginRoot });
+    try {
+      const bound = await modelServer._registeredTools.bind_imagegen_project.handler(
+        { projectRoot: projectA },
+        { sessionId: "model-transport" },
+      );
+      assert.match(bound.structuredContent?.projectBindingId, PROJECT_BINDING_ID_PATTERN);
+
+      const catalog = await widgetServer._registeredTools.list_image_models.handler(
+        { projectBindingId: bound.structuredContent.projectBindingId },
+        { sessionId: "widget-transport" },
+      );
+
+      assert.equal(bound.structuredContent.status, "bound");
+      assert.deepEqual(catalog.structuredContent, { models: [] });
+      assertValuesHidden([bound, catalog], [projectA]);
+    } finally {
+      await Promise.all([modelServer.close(), widgetServer.close()]);
+    }
+  });
+});
+
+
+test("all project-bound tools require an explicit project binding ID", async () => {
+  await withProjectRoots(async ({ pluginRoot }) => {
+    const server = createTestServer({ pluginRoot });
+    try {
+      assert.equal(Object.keys(server._registeredTools).length, 20);
+      for (const name of PROJECT_BOUND_TOOL_NAMES) {
+        const schema = server._registeredTools[name]?.inputSchema;
+        assert.notEqual(schema, undefined, `${name} input schema missing`);
+        assert.notEqual(schema.shape.projectBindingId, undefined, `${name} projectBindingId missing`);
+        assert.equal(schema.shape.projectBindingId.isOptional(), false, `${name} projectBindingId must be required`);
+      }
+      assert.equal(server._registeredTools.inspect_imagegen_runtime.inputSchema.shape.projectBindingId.isOptional(), true);
+      assert.equal(server._registeredTools.bind_imagegen_project.inputSchema.shape.projectBindingId.isOptional(), true);
+    } finally {
+      await server.close();
+    }
+  });
+});
+
+
+test("runtime diagnostics distinguish no binding ID from an unknown explicit binding ID", async () => {
+  await withProjectRoots(async ({ pluginRoot }) => {
+    const server = createTestServer({ pluginRoot });
+    try {
+      const unbound = await server._registeredTools.inspect_imagegen_runtime.handler({});
+      assert.equal(unbound.isError, undefined);
+      assert.equal(unbound.structuredContent.runtime.projectRootSource, "unbound");
+
+      const unknown = await server._registeredTools.inspect_imagegen_runtime.handler({
+        projectBindingId: `pbind_${"f".repeat(64)}`,
+      });
+      assertStableError(unknown, "project_binding_required");
+    } finally {
+      await server.close();
+    }
+  });
+});
+
+
+test("binding rejects malformed explicit project binding IDs", async () => {
   await withProjectRoots(async ({ pluginRoot, projectA }) => {
     const server = createTestServer({ pluginRoot });
     try {
-      const handler = server._registeredTools.bind_imagegen_project?.handler;
-      assert.equal(typeof handler, "function");
+      for (const projectBindingId of ["pbind_1234", `pbind_${"A".repeat(64)}`, "legacy-session"]) {
+        const result = await server._registeredTools.bind_imagegen_project.handler({ projectRoot: projectA, projectBindingId });
+        assertStableError(result, "project_binding_invalid");
+      }
+    } finally {
+      await server.close();
+    }
+  });
+});
 
-      const result = await handler(
-        { projectRoot: projectA },
-        { sessionId: "transport-session", _meta: {} },
+
+test("different explicit binding IDs isolate projects in one MCP process", async () => {
+  await withProjectRoots(async ({ pluginRoot, projectA, projectB }) => {
+    const reads = [];
+    const server = createTestServer({
+      pluginRoot,
+      readArtifact: async (imageId, context) => {
+        reads.push(context.projectRoot);
+        return { metadata: artifact(imageId), data: PNG_BASE64 };
+      },
+    });
+    try {
+      const boundA = await server._registeredTools.bind_imagegen_project.handler({ projectRoot: projectA });
+      const boundB = await server._registeredTools.bind_imagegen_project.handler({ projectRoot: projectB });
+      const artifactA = await server._registeredTools.get_image_artifact.handler(
+        { projectBindingId: boundA.structuredContent.projectBindingId, imageId: IMAGE_ID },
+      );
+      const artifactB = await server._registeredTools.get_image_artifact.handler(
+        { projectBindingId: boundB.structuredContent.projectBindingId, imageId: IMAGE_ID },
       );
 
-      assert.deepEqual(result.structuredContent, { status: "bound" });
-      assertValuesHidden([result], [projectA]);
+      assert.equal(boundA.structuredContent.status, "bound");
+      assert.equal(boundB.structuredContent.status, "bound");
+      assert.equal(artifactA.isError, undefined);
+      assert.equal(artifactB.isError, undefined);
+      assert.deepEqual(reads, [path.resolve(projectA), path.resolve(projectB)]);
+      assertValuesHidden([boundA, boundB, artifactA, artifactB], [projectA, projectB]);
     } finally {
       await server.close();
     }
@@ -78,7 +193,6 @@ test("project binding rejects legacy flat project config before accepting the pr
     try {
       const result = await server._registeredTools.bind_imagegen_project.handler(
         { projectRoot: projectA },
-        { sessionId: "v1-config-transport", _meta: {} },
       );
 
       assertStableError(result, "project_config_forbidden", [projectA, configPath]);
@@ -114,7 +228,6 @@ test("project binding rejects invalid user provider fields without running a tas
       try {
         const result = await server._registeredTools.bind_imagegen_project.handler(
           { projectRoot: projectA },
-          { sessionId: "invalid-provider-transport", _meta: {} },
         );
 
         assertStableError(result, "image_config_invalid", [projectA, configPath]);
@@ -127,7 +240,7 @@ test("project binding rejects invalid user provider fields without running a tas
 });
 
 
-test("project binding is idempotent across callers in one MCP process", async () => {
+test("explicit project binding is idempotent when callers reuse its ID", async () => {
   await withProjectRoots(async ({ pluginRoot, projectA, userHome }) => {
     const taskCalls = [];
     const server = createTestServer({
@@ -140,21 +253,13 @@ test("project binding is idempotent across callers in one MCP process", async ()
     const bind = server._registeredTools.bind_imagegen_project.handler;
     const listModels = server._registeredTools.list_image_models.handler;
     try {
-      const first = await bind(
-        { projectRoot: projectA },
-        { sessionId: "widget-transport", _meta: {} },
-      );
-      const second = await bind(
-        { projectRoot: path.join(projectA, ".") },
-        { sessionId: "model-transport", _meta: {} },
-      );
-      const catalog = await listModels({}, {
-        sessionId: "another-transport",
-        _meta: {},
-      });
+      const first = await bind({ projectRoot: projectA });
+      const projectBindingId = first.structuredContent.projectBindingId;
+      const second = await bind({ projectRoot: path.join(projectA, "."), projectBindingId });
+      const catalog = await listModels({ projectBindingId });
 
-      assert.deepEqual(first.structuredContent, { status: "bound" });
-      assert.deepEqual(second.structuredContent, { status: "already_bound" });
+      assert.deepEqual(first.structuredContent, { status: "bound", projectBindingId });
+      assert.deepEqual(second.structuredContent, { status: "already_bound", projectBindingId });
       assert.deepEqual(catalog.structuredContent, { models: [] });
       assert.equal(taskCalls.length, 1);
       assert.equal(taskCalls[0].context.projectRoot, path.resolve(projectA));
@@ -188,16 +293,23 @@ test("project binding freezes the selected config and rejects later changes", as
     });
     const bind = server._registeredTools.bind_imagegen_project.handler;
     const listModels = server._registeredTools.list_image_models.handler;
-    const extra = { sessionId: "changed-config-transport", _meta: {} };
     const configPath = projectConfigPath(projectA);
     try {
-      await bind({ projectRoot: projectA }, extra);
+      const first = await bind({ projectRoot: projectA });
+      const projectBindingId = first.structuredContent.projectBindingId;
       await writeProjectConfig(projectA, { storage: { output_directory: "changed-output" } });
 
-      const result = await listModels({}, extra);
+      const result = await listModels({ projectBindingId });
 
       assertStableError(result, "image_config_changed", [projectA, configPath]);
       assert.equal(taskCalls, 0);
+
+      const rebound = await bind({ projectRoot: projectA, projectBindingId });
+      const recovered = await listModels({ projectBindingId });
+      assert.deepEqual(rebound.structuredContent, { status: "rebound", projectBindingId });
+      assert.equal(rebound.content?.[0]?.text, "已更新当前图片项目的配置绑定。");
+      assert.deepEqual(recovered.structuredContent, { models: [] });
+      assert.equal(taskCalls, 1);
     } finally {
       await server.close();
     }
@@ -217,16 +329,15 @@ test("project binding rejects a second root and keeps the active root", async ()
     });
     const bind = server._registeredTools.bind_imagegen_project.handler;
     const readArtifact = server._registeredTools.get_image_artifact.handler;
-    const callerA = { sessionId: "caller-a", _meta: {} };
-    const callerB = { sessionId: "caller-b", _meta: {} };
     try {
-      await bind({ projectRoot: projectA }, callerA);
+      const first = await bind({ projectRoot: projectA });
+      const projectBindingId = first.structuredContent.projectBindingId;
 
-      const conflict = await bind({ projectRoot: projectB }, callerB);
+      const conflict = await bind({ projectRoot: projectB, projectBindingId });
       assertStableError(conflict, "project_binding_conflict", [projectA, projectB]);
 
-      const resultA = await readArtifact({ imageId: IMAGE_ID }, callerA);
-      const resultB = await readArtifact({ imageId: IMAGE_ID }, callerB);
+      const resultA = await readArtifact({ projectBindingId, imageId: IMAGE_ID });
+      const resultB = await readArtifact({ projectBindingId, imageId: IMAGE_ID });
       assert.equal(resultA.isError, undefined);
       assert.equal(resultB.isError, undefined);
       assert.deepEqual(reads, [
@@ -255,16 +366,16 @@ test("bound projects fail closed when the root is replaced with a linked directo
     const getArtifact = server._registeredTools.get_image_artifact.handler;
     const renderResults = server._registeredTools.render_image_results.handler;
     const inspectRuntime = server._registeredTools.inspect_imagegen_runtime.handler;
-    const extra = { sessionId: "replaced-root-transport", _meta: {} };
     const movedProject = path.join(root, "workspace-a-original");
     try {
-      await bind({ projectRoot: projectA }, extra);
+      const bound = await bind({ projectRoot: projectA });
+      const projectBindingId = bound.structuredContent.projectBindingId;
       await rename(projectA, movedProject);
       await symlink(projectB, projectA, process.platform === "win32" ? "junction" : "dir");
 
-      const artifactResult = await getArtifact({ imageId: IMAGE_ID }, extra);
-      const renderResult = await renderResults({ imageIds: [IMAGE_ID] }, extra);
-      const diagnosticResult = await inspectRuntime({}, extra);
+      const artifactResult = await getArtifact({ projectBindingId, imageId: IMAGE_ID });
+      const renderResult = await renderResults({ projectBindingId, imageIds: [IMAGE_ID] });
+      const diagnosticResult = await inspectRuntime({ projectBindingId });
 
       assertStableError(artifactResult, "project_root_invalid", [projectA, projectB]);
       assertStableError(renderResult, "project_root_invalid", [projectA, projectB]);
@@ -287,11 +398,11 @@ test("project binding conflicts do not probe a second candidate root", async () 
 
     const server = createTestServer({ pluginRoot });
     const bind = server._registeredTools.bind_imagegen_project.handler;
-    const extra = { sessionId: "conflict-transport", _meta: {} };
     try {
-      await bind({ projectRoot: projectA }, extra);
+      const bound = await bind({ projectRoot: projectA });
+      const projectBindingId = bound.structuredContent.projectBindingId;
       for (const candidate of [missingRoot, fileRoot, linkedRoot, pluginRoot, "relative-project"] ) {
-        const result = await bind({ projectRoot: candidate }, extra);
+        const result = await bind({ projectRoot: candidate, projectBindingId });
         assertStableError(result, "project_binding_conflict", [candidate]);
       }
     } finally {
@@ -301,7 +412,7 @@ test("project binding conflicts do not probe a second candidate root", async () 
 });
 
 
-test("editor state is isolated between MCP processes", async () => {
+test("editor state is isolated between explicit project bindings across MCP processes", async () => {
   await withProjectRoots(async ({ pluginRoot, projectA, projectB }) => {
     const serverA = createTestServer({ pluginRoot });
     const serverB = createTestServer({ pluginRoot });
@@ -315,33 +426,32 @@ test("editor state is isolated between MCP processes", async () => {
     const finalizeEditorB = serverB._registeredTools.finalize_image_editor_session.handler;
     const getArtifactA = serverA._registeredTools.get_image_artifact.handler;
     const getArtifactB = serverB._registeredTools.get_image_artifact.handler;
-    const callerA = { sessionId: "editor-transport-a", _meta: {} };
-    const callerB = { sessionId: "editor-transport-b", _meta: {} };
     try {
-      await bindA({ projectRoot: projectA }, callerA);
-      await bindB({ projectRoot: projectB }, callerB);
-      const openedA = await openEditorA({ imageId: IMAGE_ID }, callerA);
-      const openedB = await openEditorB({ imageId: IMAGE_ID }, callerB);
+      const boundA = await bindA({ projectRoot: projectA });
+      const boundB = await bindB({ projectRoot: projectB });
+      const projectBindingIdA = boundA.structuredContent.projectBindingId;
+      const projectBindingIdB = boundB.structuredContent.projectBindingId;
+      const openedA = await openEditorA({ projectBindingId: projectBindingIdA, imageId: IMAGE_ID });
+      const openedB = await openEditorB({ projectBindingId: projectBindingIdB, imageId: IMAGE_ID });
       const sessionA = openedA.structuredContent.editorSession.id;
       const sessionB = openedB.structuredContent.editorSession.id;
 
-      const foreignRead = await getEditorB({ editorSessionId: sessionA }, callerB);
+      const foreignRead = await getEditorB({ projectBindingId: projectBindingIdB, editorSessionId: sessionA });
       assertStableError(foreignRead, "editor_session_not_found");
       const foreignDestroy = await serverB._registeredTools.destroy_image_editor.handler(
-        { editorSessionId: sessionA },
-        callerB,
+        { projectBindingId: projectBindingIdB, editorSessionId: sessionA },
       );
       assert.equal(foreignDestroy.structuredContent.editorSession.status, "released");
-      const foreignFinalize = await finalizeEditorB({ editorSessionId: sessionA }, callerB);
+      const foreignFinalize = await finalizeEditorB({ projectBindingId: projectBindingIdB, editorSessionId: sessionA });
       assert.equal(foreignFinalize.structuredContent.editorSession.status, "released");
 
-      const stillActiveA = await getEditorA({ editorSessionId: sessionA }, callerA);
+      const stillActiveA = await getEditorA({ projectBindingId: projectBindingIdA, editorSessionId: sessionA });
       assert.equal(stillActiveA.structuredContent.editorSession.status, "active");
-      await destroyEditorA({ editorSessionId: sessionA }, callerA);
+      await destroyEditorA({ projectBindingId: projectBindingIdA, editorSessionId: sessionA });
 
-      const projectAArtifact = await getArtifactA({ imageId: IMAGE_ID }, callerA);
-      const projectBArtifact = await getArtifactB({ imageId: IMAGE_ID }, callerB);
-      const stillActiveB = await getEditorB({ editorSessionId: sessionB }, callerB);
+      const projectAArtifact = await getArtifactA({ projectBindingId: projectBindingIdA, imageId: IMAGE_ID });
+      const projectBArtifact = await getArtifactB({ projectBindingId: projectBindingIdB, imageId: IMAGE_ID });
+      const stillActiveB = await getEditorB({ projectBindingId: projectBindingIdB, editorSessionId: sessionB });
       assert.equal(projectAArtifact.structuredContent.canvasStatus, "destroyed");
       assert.equal(projectBArtifact.structuredContent.canvasStatus, "available");
       assert.equal(stillActiveB.structuredContent.editorSession.status, "active");
@@ -370,7 +480,7 @@ test("all business and app-only tools fail closed before project binding", async
       readAnnotation: unavailable,
       saveAnnotations: unavailable,
     });
-    const extra = { sessionId: "unbound-transport", _meta: {} };
+    const unknownProjectBindingId = `pbind_${"e".repeat(64)}`;
     const calls = [
       ["list_image_models", {}],
       ["batch_images", {
@@ -397,7 +507,10 @@ test("all business and app-only tools fail closed before project binding", async
     ];
     try {
       for (const [name, arguments_] of calls) {
-        const result = await server._registeredTools[name].handler(arguments_, extra);
+        const result = await server._registeredTools[name].handler({
+          projectBindingId: unknownProjectBindingId,
+          ...arguments_,
+        });
         assertStableError(result, "project_binding_required");
       }
       assert.equal(dependencyCalls, 0);
@@ -408,35 +521,54 @@ test("all business and app-only tools fail closed before project binding", async
 });
 
 
-test("transport metadata never selects a project root", async () => {
-  await withProjectRoots(async ({ pluginRoot }) => {
-    const server = createTestServer({ pluginRoot });
+test("explicit project bindings persist when the server restarts", async () => {
+  await withProjectRoots(async ({ pluginRoot, projectA }) => {
+    const firstServer = createTestServer({ pluginRoot });
+    const bound = await firstServer._registeredTools.bind_imagegen_project.handler({ projectRoot: projectA });
+    const projectBindingId = bound.structuredContent.projectBindingId;
+    await firstServer.close();
+
+    const restartedServer = createTestServer({ pluginRoot });
     try {
-      const result = await server._registeredTools.list_image_models.handler(
-        {},
-        { sessionId: "transport-only-session" },
-      );
-      assertStableError(result, "project_binding_required");
+      const result = await restartedServer._registeredTools.list_image_models.handler({ projectBindingId });
+      assert.deepEqual(result.structuredContent, { models: [] });
+      assertValuesHidden([result], [projectA]);
     } finally {
-      await server.close();
+      await restartedServer.close();
     }
   });
 });
 
 
-test("project bindings are process-local and disappear when the server restarts", async () => {
-  await withProjectRoots(async ({ pluginRoot, projectA }) => {
-    const caller = { sessionId: "restart-transport", _meta: {} };
-    const firstServer = createTestServer({ pluginRoot });
-    await firstServer._registeredTools.bind_imagegen_project.handler({ projectRoot: projectA }, caller);
-    await firstServer.close();
-
-    const restartedServer = createTestServer({ pluginRoot });
+test("project bindings reject a record with a mismatched binding hash", async () => {
+  await withProjectRoots(async ({ pluginRoot, projectA, userHome }) => {
+    const server = createTestServer({ pluginRoot });
     try {
-      const result = await restartedServer._registeredTools.list_image_models.handler({}, caller);
-      assertStableError(result, "project_binding_required");
+      const bound = await server._registeredTools.bind_imagegen_project.handler({ projectRoot: projectA });
+      const projectBindingId = bound.structuredContent.projectBindingId;
+      const bindingsRoot = path.join(
+        userHome,
+        ".codex",
+        "openai-compatible-imagegen",
+        "state",
+        "project-bindings",
+      );
+      const [bindingDirectory] = await readdir(bindingsRoot);
+      assert.match(bindingDirectory, /^[0-9a-f]{64}$/);
+      assert.notEqual(bindingDirectory, projectBindingId);
+      const recordPath = await latestCommittedRecordPath(
+        path.join(bindingsRoot, bindingDirectory, "binding.json"),
+      );
+      const recordText = await readFile(recordPath, "utf8");
+      assert.equal(recordText.includes(projectBindingId), false);
+      const record = JSON.parse(recordText);
+      record.bindingHash = record.bindingHash === "0".repeat(64) ? "1".repeat(64) : "0".repeat(64);
+      await writeFile(recordPath, `${JSON.stringify(record)}\n`);
+
+      const result = await server._registeredTools.list_image_models.handler({ projectBindingId });
+      assertStableError(result, "project_binding_state_invalid", [projectA]);
     } finally {
-      await restartedServer.close();
+      await server.close();
     }
   });
 });
@@ -464,11 +596,7 @@ test("project binding rejects invalid, linked, and plugin-owned roots without di
     ];
     try {
       for (const [projectRoot, code] of cases) {
-        const caller = { sessionId: `invalid-${cases.indexOf(cases.find((item) => item[0] === projectRoot))}`, _meta: {} };
-        const result = await bind(
-          { projectRoot },
-          caller,
-        );
+        const result = await bind({ projectRoot });
         assertStableError(result, code, [projectRoot]);
       }
     } finally {
@@ -478,18 +606,19 @@ test("project binding rejects invalid, linked, and plugin-owned roots without di
 });
 
 
-test("runtime diagnostics report an unbound root and then the explicit process binding", async () => {
+test("runtime diagnostics report an unbound root and then an explicit project binding", async () => {
   await withProjectRoots(async ({ pluginRoot, projectA }) => {
     const server = createTestServer({ pluginRoot });
-    const extra = { sessionId: "diagnostic-transport", _meta: {} };
     try {
-      const before = await server._registeredTools.inspect_imagegen_runtime.handler({}, extra);
+      const before = await server._registeredTools.inspect_imagegen_runtime.handler({});
       assert.equal(before.structuredContent.runtime.projectRootFingerprint, null);
       assert.equal(before.structuredContent.runtime.projectRootRelationToPlugin, null);
       assert.equal(before.structuredContent.runtime.projectRootSource, "unbound");
 
-      await server._registeredTools.bind_imagegen_project.handler({ projectRoot: projectA }, extra);
-      const after = await server._registeredTools.inspect_imagegen_runtime.handler({}, extra);
+      const bound = await server._registeredTools.bind_imagegen_project.handler({ projectRoot: projectA });
+      const after = await server._registeredTools.inspect_imagegen_runtime.handler({
+        projectBindingId: bound.structuredContent.projectBindingId,
+      });
       assert.match(after.structuredContent.runtime.projectRootFingerprint, /^[a-f0-9]{20}$/);
       assert.equal(after.structuredContent.runtime.projectRootRelationToPlugin, "outside");
       assert.equal(after.structuredContent.runtime.projectRootSource, "explicit_tool");
@@ -526,6 +655,7 @@ function createTestServer({
     readWidgetHtml: async () => "<html></html>",
     projectContext: createProjectContext({
       pluginRoot,
+      stateRoot: path.join(userHome, ".codex", "openai-compatible-imagegen", "state"),
       resolveConfigBinding: async ({ projectRoot }) => await resolveImageConfigBinding({ projectRoot, userHome }),
     }),
     runTask,

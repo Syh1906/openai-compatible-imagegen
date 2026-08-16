@@ -1,6 +1,6 @@
 {
   "name": "openai-compatible-imagegen",
-  "version": "0.1.0+codex.20260815154540",
+  "version": "0.1.0+codex.20260816024439",
   "private": true,
   "type": "module",
   "scripts": {
@@ -18,11 +18,11 @@
     "@modelcontextprotocol/ext-apps": "^1.7.5",
     "@modelcontextprotocol/sdk": "^1.30.0",
     "lucide": "^0.468.0",
+    "proper-lockfile": "^4.1.2",
     "zod": "^3.25.76"
   },
   "devDependencies": {
     "esbuild": "^0.28.1",
-    "jsdom": "^26.1.0",
-    "proper-lockfile": "^4.1.2"
+    "jsdom": "^26.1.0"
   }
 }

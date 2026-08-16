@@ -74,6 +74,9 @@ await build({
   platform: "node",
   format: "esm",
   target: "node20",
+  banner: {
+    js: 'import { createRequire } from "node:module"; const require = createRequire(import.meta.url);',
+  },
   legalComments: "none",
   sourcemap: false,
   define: { __RELEASE_IDENTITY__: JSON.stringify(releaseIdentity) },

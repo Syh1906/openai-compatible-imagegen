@@ -1,5 +1,6 @@
 export const IMAGE_ID = "img_01J00000000000000000000000";
 export const EDITOR_SESSION_ID = "eds_01J00000000000000000000000";
+export const PROJECT_BINDING_ID = `pbind_${"a".repeat(64)}`;
 export const PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFgAI/ScL1WQAAAABJRU5ErkJggg==";
 export const FULL_MESSAGE_HOST_CAPABILITIES = { message: { text: {}, image: {} }, updateModelContext: { structuredContent: {} } };
 export const CODEX_COMPOSER_HOST_CAPABILITIES = { message: {}, updateModelContext: { text: {}, image: {}, structuredContent: {} } };
@@ -63,7 +64,7 @@ export function installHost(window, { toolName, editorSessionStatus = "active", 
         sendToApp(window, {
           jsonrpc: "2.0",
           method: "ui/notifications/tool-input",
-          params: { arguments: { imageId: IMAGE_ID } },
+          params: { arguments: { imageId: IMAGE_ID, projectBindingId: PROJECT_BINDING_ID } },
         });
       }
       if (initialArtifactRecords) {
@@ -94,7 +95,7 @@ export function installHost(window, { toolName, editorSessionStatus = "active", 
           jsonrpc: "2.0",
           method: "ui/notifications/tool-input",
           params: {
-            arguments: initialResultToolInputArguments || { imageIds },
+            arguments: initialResultToolInputArguments || { imageIds, projectBindingId: PROJECT_BINDING_ID },
           },
         };
         const notifications = initialResultNotificationOrder === "input-first"
@@ -498,7 +499,7 @@ export function installHost(window, { toolName, editorSessionStatus = "active", 
     notifyResultToolInput: (imageIds) => sendToApp(window, {
       jsonrpc: "2.0",
       method: "ui/notifications/tool-input",
-      params: { arguments: { imageIds } },
+      params: { arguments: { imageIds, projectBindingId: PROJECT_BINDING_ID } },
     }),
     notifyResultArtifacts: (artifacts) => {
       for (const artifact of artifacts) runtimeArtifacts.set(artifact.id, { ...artifact });
@@ -506,7 +507,7 @@ export function installHost(window, { toolName, editorSessionStatus = "active", 
         sendToApp(window, {
           jsonrpc: "2.0",
           method: "ui/notifications/tool-input",
-          params: { arguments: { imageIds: artifacts.map((item) => item.id) } },
+          params: { arguments: { imageIds: artifacts.map((item) => item.id), projectBindingId: PROJECT_BINDING_ID } },
         });
       }
       sendToApp(window, {
@@ -616,7 +617,14 @@ export function installDomGlobals(window) {
       this.targets.clear();
     }
   }
+  const quietConsole = Object.create(globalThis.console);
+  Object.defineProperty(quietConsole, "debug", {
+    configurable: true,
+    value() {},
+    writable: true,
+  });
   const values = {
+    console: quietConsole,
     window,
     document: window.document,
     navigator: window.navigator,

@@ -47,6 +47,7 @@ import { createEditorDisclosureController } from "./editor-disclosure-controller
 import { isNativeEditingTarget } from "./editor-keyboard-annotation.mjs";
 import { createEditorKeyboardController } from "./editor-keyboard-controller.mjs";
 import { App, PostMessageTransport } from "@modelcontextprotocol/ext-apps";
+import { createBoundToolClient } from "./bound-tool-client.mjs";
 const defaultImage = {
   id: "",
   mimeType: "image/png",
@@ -152,6 +153,7 @@ const colorController = createEditorColorController({
   pushHistory: (before) => { undoStack.push(before); redoStack = []; },
 });
 const app = new App({ name: "openai-compatible-imagegen-editor", version: "0.1.0" }, {});
+const boundToolClient = createBoundToolClient(app);
 const displayModeController = createHostDisplayModeController({
   app,
   isActive: () => resourceActive,
@@ -168,34 +170,32 @@ const displayModeController = createHostDisplayModeController({
   },
   render,
 });
-const artifactCandidates = createArtifactCandidateLoader({ app, records: artifactRecordCache });
+const artifactCandidates = createArtifactCandidateLoader({ app: boundToolClient, records: artifactRecordCache, observeToolCall: (result) => hostObservationReporter.observeToolCall(result) });
 const resultFileReveal = createResultFileRevealController({
   root,
-  app,
+  app: boundToolClient,
   isActive: () => resourceActive,
   onBusyChange: (_imageId, surface) => { if (surface === "editor" && resourceActive && widgetRole === "editor") render(); },
   onFailure: (_imageId, surface) => { if (surface === "editor") toast("无法在文件夹中显示图片"); },
 });
-const resultPreview = createResultPreviewSession({ root, app, isActive: () => resourceActive, getState: () => ({ hostReady, availableDisplayModes, displayMode, candidates: resultCandidates }), onReveal: resultFileReveal.reveal, onSessionEnd: render });
+const resultPreview = createResultPreviewSession({ root, app: boundToolClient, isActive: () => resourceActive, getState: () => ({ hostReady, availableDisplayModes, displayMode, candidates: resultCandidates }), onReveal: resultFileReveal.reveal, onSessionEnd: render });
 const hostObservationReporter = createHostObservationReporter({
-  app,
+  app: boundToolClient,
   releaseFingerprint: document.querySelector('meta[name="openai-compatible-imagegen-release"]')?.content || "",
 });
-const submissionCoordinator = createSubmissionCoordinator({ app, isActive: () => resourceActive });
+const submissionCoordinator = createSubmissionCoordinator({ app: boundToolClient, isActive: () => resourceActive });
 const toastController = createEditorToast({ root, window, isActive: () => resourceActive, onFallback: (message) => { inlineStatus = message; inlineStatusTone = "error"; render(); } });
 const toast = toastController.show;
 const sessionController = createEditorSessionController({
-  app,
+  app: boundToolClient,
   setIntervalFn: window.setInterval.bind(window),
   clearIntervalFn: window.clearInterval.bind(window),
   onDestroyed: teardownDestroyedEditor,
   onError: () => toast("无法确认画布会话状态"),
 });
-
 render();
 connectHost();
 document.addEventListener("keydown", handleEditorKeyDown);
-
 function bindUi() {
   uiCleanup?.();
   uiCleanup = null;
@@ -404,7 +404,7 @@ async function connectHost() {
     hostReady = true;
     applyResultBootstrapEffects(resultBootstrap.observe({ type: "host-ready" }));
     render();
-    loadModelCapabilities();
+    if (widgetRole === "editor" && boundToolClient.isBound()) loadModelCapabilities();
     if (widgetRole === "editor") await displayModeController.request("fullscreen");
     if (!resourceActive) return;
     if (widgetRole !== "result" && pendingArtifactRecords.length) hydrateArtifacts(pendingArtifactRecords);
@@ -419,8 +419,10 @@ async function connectHost() {
 }
 
 async function loadModelCapabilities() {
+  if (modelCapabilities !== null) return;
+  modelCapabilities = {};
   try {
-    const result = await app.callServerTool({ name: "list_image_models", arguments: {} });
+    const result = await boundToolClient.callServerTool({ name: "list_image_models", arguments: {} });
     if (!resourceActive) return;
     hostObservationReporter.observeToolCall(result);
     const model = result?.structuredContent?.models?.find((item) => item.id === "primary/gpt-image-2");
@@ -436,7 +438,6 @@ async function loadModelCapabilities() {
     toast("无法读取当前模型能力");
   }
 }
-
 async function requestOpenEditor(imageId = editor.image.id) {
   if (!resourceActive || openingInFlight) return;
   if (destroyedCanvasImageIds.has(imageId)) {
@@ -515,6 +516,7 @@ async function ensureEditorSession() {
   }
 }
 function ingestToolInput(input) {
+  const bindingObserved = boundToolClient.observeToolInput(input);
   const isResultToolInput = Object.prototype.hasOwnProperty.call(input?.arguments || {}, "imageIds")
     || app.getHostContext()?.toolInfo?.tool?.name === "render_image_results";
   if (isResultToolInput) {
@@ -528,6 +530,7 @@ function ingestToolInput(input) {
     if (!editor.image.id) editor = createEditorState({ image: { ...defaultImage, id: imageId } });
     artifactLoadInFlight = true;
   }
+  if (bindingObserved && hostReady && widgetRole === "editor") loadModelCapabilities();
   render();
 }
 

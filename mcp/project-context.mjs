@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { constants } from "node:fs";
 import { access, lstat, realpath } from "node:fs/promises";
 import path from "node:path";
@@ -6,10 +6,16 @@ import path from "node:path";
 import {
   assertImageConfigBindingCurrent,
   resolveImageConfigBinding,
+  userConfigPath,
 } from "./config-resolution.mjs";
+import {
+  createProjectBindingStore,
+  ProjectBindingStoreError,
+} from "./project-binding-store.mjs";
 
 
-const PROCESS_BINDING_KEY_SEED = "openai-compatible-imagegen:process-binding";
+const PROJECT_BINDING_KEY_SEED = "openai-compatible-imagegen:project-binding:v1";
+const PROJECT_BINDING_ID_PATTERN = /^pbind_[0-9a-f]{64}$/;
 
 
 export class ProjectContextError extends Error {
@@ -23,6 +29,7 @@ export class ProjectContextError extends Error {
 
 export function createProjectContext({
   pluginRoot,
+  stateRoot = path.join(path.dirname(userConfigPath()), "state"),
   resolveConfigBinding = resolveImageConfigBinding,
   verifyConfigBinding = assertImageConfigBindingCurrent,
 }) {
@@ -30,55 +37,138 @@ export function createProjectContext({
     throw new Error("pluginRoot must be an absolute path");
   }
   const resolvedPluginRoot = path.resolve(pluginRoot);
-  let binding = null;
-  let pendingBindingOperation = null;
-  // MCP tool calls do not include a documented conversation identity; bind once per server process.
-  const bindingKey = createHash("sha256")
-    .update(`${PROCESS_BINDING_KEY_SEED}:${resolvedPluginRoot}`, "utf8")
-    .digest("hex");
+  const bindingStore = createProjectBindingStore({ stateRoot });
+  const pendingBindingOperations = new Map();
 
-  async function serializeBinding(operation) {
-    const previous = pendingBindingOperation ?? Promise.resolve();
+  async function serializeBinding(bindingKey, operation) {
+    const previous = pendingBindingOperations.get(bindingKey) ?? Promise.resolve();
     const current = previous.catch(() => undefined).then(operation);
-    pendingBindingOperation = current;
+    pendingBindingOperations.set(bindingKey, current);
     try {
       return await current;
     } finally {
-      if (pendingBindingOperation === current) pendingBindingOperation = null;
+      if (pendingBindingOperations.get(bindingKey) === current) {
+        pendingBindingOperations.delete(bindingKey);
+      }
     }
   }
 
   return Object.freeze({
-    async bind(_extra, { projectRoot }) {
-      return await serializeBinding(async () => {
-        if (binding) {
-          if (
-            typeof projectRoot === "string"
-            && path.isAbsolute(projectRoot)
-            && samePath(binding.projectRoot, projectRoot)
-          ) {
-            return { status: "already_bound" };
+    async bind({ projectRoot, projectBindingId = null }) {
+      const requestedBindingId = projectBindingId === null
+        ? newProjectBindingId()
+        : requireProjectBindingId(projectBindingId);
+      const bindingKey = projectBindingKey(requestedBindingId);
+      return await serializeBinding(bindingKey, async () => {
+        let existing = null;
+        try {
+          existing = await bindingStore.require(bindingKey);
+        } catch (error) {
+          if (!(error instanceof ProjectBindingStoreError) || error.code !== "project_binding_missing") {
+            throw mapBindingStoreError(error);
           }
+          if (projectBindingId !== null) {
+            throw new ProjectContextError("project_binding_required");
+          }
+        }
+        if (
+          existing
+          && (
+            typeof projectRoot !== "string"
+            || !path.isAbsolute(projectRoot)
+            || !samePath(existing.projectRoot, projectRoot)
+          )
+        ) {
           throw new ProjectContextError("project_binding_conflict");
         }
         const resolvedProjectRoot = await validateProjectRoot(projectRoot, resolvedPluginRoot);
         const configBinding = await resolveConfigBinding({ projectRoot: resolvedProjectRoot });
-        binding = Object.freeze({
+        let stored;
+        try {
+          stored = await bindingStore.bind({
+            schemaVersion: "project-binding.v1",
+            bindingHash: bindingKey,
+            projectRoot: resolvedProjectRoot,
+            userConfigSha256: configBinding.userConfigSha256,
+            projectConfigSha256: configBinding.projectConfigSha256,
+          });
+        } catch (error) {
+          throw mapBindingStoreError(error);
+        }
+        return {
+          status: stored.status === "created"
+            ? "bound"
+            : stored.status === "rebound" ? "rebound" : "already_bound",
+          projectBindingId: requestedBindingId,
+        };
+      });
+    },
+
+    async require(projectBindingId) {
+      const bindingKey = projectBindingKey(requireProjectBindingId(projectBindingId));
+      let record;
+      try {
+        record = await bindingStore.require(bindingKey);
+      } catch (error) {
+        throw mapBindingStoreError(error);
+      }
+      const resolvedProjectRoot = await validateProjectRoot(record.projectRoot, resolvedPluginRoot);
+      let configBinding;
+      try {
+        configBinding = await resolveConfigBinding({ projectRoot: resolvedProjectRoot });
+      } catch {
+        throw new ProjectContextError("image_config_changed");
+      }
+      if (
+        configBinding.userConfigSha256 !== record.userConfigSha256
+        || configBinding.projectConfigSha256 !== record.projectConfigSha256
+      ) {
+        throw new ProjectContextError("image_config_changed");
+      }
+      const binding = Object.freeze({
           bindingKey,
           projectRoot: resolvedProjectRoot,
           ...configBinding,
         });
-        return { status: "bound" };
-      });
-    },
-
-    async require(_extra) {
-      if (!binding) throw new ProjectContextError("project_binding_required");
-      await validateProjectRoot(binding.projectRoot, resolvedPluginRoot);
       await verifyConfigBinding(binding);
       return binding;
     },
   });
+}
+
+
+function projectBindingKey(projectBindingId) {
+  return createHash("sha256")
+    .update(`${PROJECT_BINDING_KEY_SEED}\0${projectBindingId}`, "utf8")
+    .digest("hex");
+}
+
+
+function newProjectBindingId() {
+  return `pbind_${randomBytes(32).toString("hex")}`;
+}
+
+
+function requireProjectBindingId(value) {
+  if (typeof value !== "string" || !PROJECT_BINDING_ID_PATTERN.test(value)) {
+    throw new ProjectContextError("project_binding_invalid");
+  }
+  return value;
+}
+
+
+function mapBindingStoreError(error) {
+  if (!(error instanceof ProjectBindingStoreError)) return error;
+  if (error.code === "project_binding_missing") {
+    return new ProjectContextError("project_binding_required");
+  }
+  if (error.code === "project_binding_conflict") {
+    return new ProjectContextError("project_binding_conflict");
+  }
+  if (error.code === "project_binding_state_invalid") {
+    return new ProjectContextError("project_binding_state_invalid");
+  }
+  return new ProjectContextError("project_binding_unavailable");
 }
 
 

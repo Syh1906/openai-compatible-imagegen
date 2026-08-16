@@ -7,6 +7,9 @@ import { deleteImageAnnotation, readImageAnnotation, saveImageAnnotations } from
 import { readImageArtifact } from "./artifact-repository.mjs";
 import { revealImageArtifact } from "./artifact-revealer.mjs";
 import { createImagegenServer } from "./create-server.mjs";
+import { createFileEditSubmissionRegistry } from "./file-edit-submission-registry.mjs";
+import { createFileEditorStateRegistry } from "./file-editor-state-registry.mjs";
+import { createFileHostObservationStore } from "./host-observation-store.mjs";
 import { runImageTask } from "./image-runtime.mjs";
 
 
@@ -18,6 +21,9 @@ const server = createImagegenServer({
     cwd: process.cwd(),
     pluginRoot,
   },
+  hostObservationStore: createFileHostObservationStore(),
+  editSubmissions: createFileEditSubmissionRegistry(),
+  editorState: createFileEditorStateRegistry(),
   readWidgetHtml: async () => await readFile(widgetPath, "utf8"),
   runTask: async (task, context) => await runImageTask(task, context),
   readArtifact: async (imageId, { artifactRoot }) => await readImageArtifact(imageId, { artifactRoot }),

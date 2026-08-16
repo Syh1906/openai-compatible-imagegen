@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -10,8 +11,9 @@ import { RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
 import { JSDOM } from "jsdom";
 
 import { createImagegenServer } from "../mcp/create-server.mjs";
+import { createFileHostObservationStore } from "../mcp/host-observation-store.mjs";
+import { createProjectContext } from "../mcp/project-context.mjs";
 import { createReleaseBundle } from "../mcp/release-identity.mjs";
-import { createFixtureProjectContext } from "./fixture-project-context.js";
 
 
 const IMAGE_ID = "img_01J00000000000000000000000";
@@ -23,6 +25,8 @@ const WIDGET_SOURCE_PATH = fileURLToPath(new URL("../web/index.html", import.met
 test("widget binds standard tool input when the host projects image results", async () => {
   const pluginRoot = path.resolve(fileURLToPath(new URL("../", import.meta.url)));
   const projectRoot = path.dirname(pluginRoot);
+  const stateRoot = await mkdtemp(path.join(os.tmpdir(), "imagegen-widget-session-"));
+  await mkdir(path.join(stateRoot, "artifacts"));
   const widgetSource = await readFile(WIDGET_SOURCE_PATH, "utf8");
   const releaseBundle = createReleaseBundle({
     pluginId: "openai-compatible-imagegen",
@@ -46,10 +50,17 @@ test("widget binds standard tool input when the host projects image results", as
     annotationId: null,
     createdAt: "2026-08-06T00:00:00.000Z",
   };
-  const server = createImagegenServer({
+  const createServer = () => createImagegenServer({
     releaseIdentity,
     launchContext: { cwd: pluginRoot, pluginRoot },
-    projectContext: createFixtureProjectContext({ projectRoot }),
+    hostObservationStore: createFileHostObservationStore(),
+    projectContext: createProjectContext({
+      pluginRoot,
+      stateRoot,
+      resolveConfigBinding: async ({ projectRoot: requestedRoot }) =>
+        fixtureConfigBinding(requestedRoot, stateRoot),
+      verifyConfigBinding: async () => {},
+    }),
     readWidgetHtml: async () => releaseBundle.widgetHtml,
     runTask: async (task) => task.operation === "list_models"
       ? { ok: true, models: [{ id: "primary/gpt-image-2", provider: "primary", model: "gpt-image-2", capabilities: { mask: true } }] }
@@ -58,10 +69,16 @@ test("widget binds standard tool input when the host projects image results", as
     readAnnotation: async () => { throw new Error("not used"); },
     saveAnnotations: async () => { throw new Error("not used"); },
   });
-  const client = new Client({ name: "widget-integration-test", version: "0.1.0" });
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-  let clientConnected = false;
-  let serverConnected = false;
+  const modelServer = createServer();
+  const widgetServer = createServer();
+  const modelClient = new Client({ name: "widget-integration-model", version: "0.1.0" });
+  const widgetClient = new Client({ name: "widget-integration-app", version: "0.1.0" });
+  const [modelClientTransport, modelServerTransport] = InMemoryTransport.createLinkedPair();
+  const [widgetClientTransport, widgetServerTransport] = InMemoryTransport.createLinkedPair();
+  let modelClientConnected = false;
+  let modelServerConnected = false;
+  let widgetClientConnected = false;
+  let widgetServerConnected = false;
   let dom = null;
   let previousGlobals = null;
   let host = null;
@@ -69,23 +86,29 @@ test("widget binds standard tool input when the host projects image results", as
 
   try {
     const connectionResults = await Promise.allSettled([
-      server.connect(serverTransport),
-      client.connect(clientTransport),
+      modelServer.connect(modelServerTransport),
+      modelClient.connect(modelClientTransport),
+      widgetServer.connect(widgetServerTransport),
+      widgetClient.connect(widgetClientTransport),
     ]);
-    serverConnected = connectionResults[0].status === "fulfilled";
-    clientConnected = connectionResults[1].status === "fulfilled";
+    modelServerConnected = connectionResults[0].status === "fulfilled";
+    modelClientConnected = connectionResults[1].status === "fulfilled";
+    widgetServerConnected = connectionResults[2].status === "fulfilled";
+    widgetClientConnected = connectionResults[3].status === "fulfilled";
     const connectionFailure = connectionResults.find(({ status }) => status === "rejected");
     if (connectionFailure) throw connectionFailure.reason;
-    const toolCatalog = await client.listTools();
+    const toolCatalog = await modelClient.listTools();
     const resultTool = toolCatalog.tools.find(({ name }) => name === "render_image_results");
     assert.ok(resultTool);
-    const bindingResult = await client.callTool({
+    const bindingResult = await modelClient.callTool({
       name: "bind_imagegen_project",
       arguments: { projectRoot },
     });
     assert.equal(bindingResult.structuredContent.status, "bound");
-    const initialToolArguments = { imageIds: [IMAGE_ID] };
-    const initialToolResult = await client.callTool({
+    const projectBindingId = bindingResult.structuredContent.projectBindingId;
+    assert.match(projectBindingId, /^pbind_[0-9a-f]{64}$/);
+    const initialToolArguments = { projectBindingId, imageIds: [IMAGE_ID] };
+    const initialToolResult = await modelClient.callTool({
       name: "render_image_results",
       arguments: initialToolArguments,
     });
@@ -98,7 +121,7 @@ test("widget binds standard tool input when the host projects image results", as
     const projectedToolResult = projectInitialResultLikeObservedCodex(initialToolResult);
     assert.equal(projectedToolResult.structuredContent, undefined);
     assert.equal(projectedToolResult._meta, undefined);
-    const widgetResource = await client.readResource({ uri: resourceUri });
+    const widgetResource = await modelClient.readResource({ uri: resourceUri });
     const widgetResourceContent = widgetResource.contents.find((content) => content.uri === resourceUri);
     assert.equal(widgetResourceContent?._meta?.releaseIdentity?.resourceUris?.result, resourceUri);
     assert.equal(widgetResourceContent?.mimeType, RESOURCE_MIME_TYPE);
@@ -124,7 +147,7 @@ test("widget binds standard tool input when the host projects image results", as
       tool: resultTool,
       initialToolArguments,
       initialToolResult: projectedToolResult,
-      toolCaller: async ({ name, arguments: toolArguments }) => await client.callTool({
+      toolCaller: async ({ name, arguments: toolArguments }) => await widgetClient.callTool({
         name,
         arguments: toolArguments,
       }),
@@ -134,14 +157,19 @@ test("widget binds standard tool input when the host projects image results", as
     await waitFor(() => (
       document.querySelector("[data-image]")?.hidden === false
       || document.body.textContent.includes("IMG-SCHEMA")
+      || document.body.textContent.includes("IMG-SERVER")
     ));
     assert.equal(
       document.body.textContent.includes("IMG-SCHEMA"),
       false,
       "the real-host result projection must bind an image instead of showing IMG-SCHEMA",
     );
+    assert.equal(
+      document.body.textContent.includes("IMG-SERVER"),
+      false,
+      "app-only calls routed through a fresh MCP process must still read the bound project image",
+    );
     const requiredToolNames = new Set([
-      "list_image_models",
       "read_image_artifact_data",
       "report_imagegen_host_observation",
     ]);
@@ -155,14 +183,27 @@ test("widget binds standard tool input when the host projects image results", as
     assert.equal(host.pendingToolCallCount, 0);
     assert.equal(host.failedToolCalls.length, 0);
     assert.equal(host.unexpectedSourceMessages.length, 0);
-    assert.equal(host.attemptedToolCalls.length, 3);
+    assert.equal(host.attemptedToolCalls.length, 2);
+    assert.equal(
+      host.attemptedToolCalls.every(({ arguments: toolArguments }) =>
+        toolArguments.projectBindingId === projectBindingId),
+      true,
+    );
     const completedToolNames = host.completedToolCalls.map(({ name }) => name);
-    assert.equal(completedToolNames.length, 3);
+    assert.equal(completedToolNames.length, 2);
     assert.deepEqual(new Set(completedToolNames), requiredToolNames);
-    const diagnostic = await client.callTool({ name: "inspect_imagegen_runtime", arguments: {} });
+    const diagnostic = await modelClient.callTool({
+      name: "inspect_imagegen_runtime",
+      arguments: { projectBindingId },
+    });
     assert.deepEqual(
       diagnostic.structuredContent.hostObservationReport.observations.map(({ source }) => source),
       ["ui/notifications/tool-result", "tools/call"],
+    );
+    assert.equal(
+      diagnostic.structuredContent.hostObservationReport.observations[1].fields
+        .some(({ path }) => path === "$.structuredContent.artifact"),
+      true,
     );
   } catch (error) {
     testFailure = error;
@@ -174,15 +215,22 @@ test("widget binds standard tool input when the host projects image results", as
     },
     () => host?.dispose(),
     async () => {
-      if (clientConnected) await withTimeout(client.close(), 1000, "MCP client cleanup timed out");
+      if (widgetClientConnected) await withTimeout(widgetClient.close(), 1000, "widget MCP client cleanup timed out");
     },
     async () => {
-      if (serverConnected) await withTimeout(server.close(), 1000, "MCP server cleanup timed out");
+      if (widgetServerConnected) await withTimeout(widgetServer.close(), 1000, "widget MCP server cleanup timed out");
+    },
+    async () => {
+      if (modelClientConnected) await withTimeout(modelClient.close(), 1000, "model MCP client cleanup timed out");
+    },
+    async () => {
+      if (modelServerConnected) await withTimeout(modelServer.close(), 1000, "model MCP server cleanup timed out");
     },
     () => {
       if (previousGlobals) restoreDomGlobals(previousGlobals);
     },
     () => dom?.window.close(),
+    async () => await rm(stateRoot, { recursive: true, force: true }),
   ]);
   if (testFailure && cleanupErrors.length === 0) throw testFailure;
   if (testFailure || cleanupErrors.length > 0) {
@@ -192,6 +240,21 @@ test("widget binds standard tool input when the host projects image results", as
     );
   }
 });
+
+
+function fixtureConfigBinding(projectRoot, stateRoot) {
+  return Object.freeze({
+    userConfigPath: path.join(stateRoot, "config.json"),
+    userConfigSha256: "1".repeat(64),
+    projectConfigPath: path.join(projectRoot, ".codex", "openai-compatible-imagegen", "config.json"),
+    projectConfigSha256: null,
+    effectiveConfigJson: "{}",
+    effectiveConfigSha256: "2".repeat(64),
+    activeProfile: "primary/gpt-image-2",
+    runtimeDefaults: Object.freeze({ timeout_seconds: 600, concurrency: 3 }),
+    artifactRoot: path.join(stateRoot, "artifacts"),
+  });
+}
 
 
 function projectInitialResultLikeObservedCodex(result) {

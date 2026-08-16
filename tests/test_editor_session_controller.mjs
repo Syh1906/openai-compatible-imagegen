@@ -8,7 +8,10 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 
 import { createImagegenServer } from "../mcp/create-server.mjs";
 import { createReleaseBundle, RELEASE_IDENTITY_PLACEHOLDER } from "../mcp/release-identity.mjs";
-import { createFixtureProjectContext } from "./fixture-project-context.js";
+import {
+  createFixtureProjectContext,
+  FIXTURE_PROJECT_BINDING_ID,
+} from "./fixture-project-context.js";
 import {
   EDITOR_SESSION_SETTLED_TOMBSTONE_LIMIT,
   createEditorSessionController,
@@ -1358,7 +1361,7 @@ test("session controller rebuilds released sessions from real MCP error results"
     app: {
       callServerTool: async ({ name, arguments: toolArguments }) => await client.callTool({
         name,
-        arguments: toolArguments,
+        arguments: { projectBindingId: FIXTURE_PROJECT_BINDING_ID, ...toolArguments },
       }),
     },
   });
@@ -1372,7 +1375,7 @@ test("session controller rebuilds released sessions from real MCP error results"
     const first = await controller.ensure(IMAGE_ID);
     await client.callTool({
       name: "finalize_image_editor_session",
-      arguments: { editorSessionId: first.session.id },
+      arguments: { projectBindingId: FIXTURE_PROJECT_BINDING_ID, editorSessionId: first.session.id },
     });
 
     const ensured = await controller.ensure(IMAGE_ID);
@@ -1381,7 +1384,7 @@ test("session controller rebuilds released sessions from real MCP error results"
 
     await client.callTool({
       name: "finalize_image_editor_session",
-      arguments: { editorSessionId: ensured.session.id },
+      arguments: { projectBindingId: FIXTURE_PROJECT_BINDING_ID, editorSessionId: ensured.session.id },
     });
     const status = await controller.checkStatus();
     assert.equal(status, "active");

@@ -462,7 +462,7 @@ async function writeMarketplace(marketplacePath) {
 }
 
 
-test("personal preparation rebuilds before running source gates and staging", async () => {
+test("personal preparation rebuilds and stages the validated local plugin", async () => {
   const { preparePersonalPlugin } = await import(pathToFileURL(prepareScript));
   const calls = [];
   const marketplacePath = path.join(projectRoot, ".agents", "plugins", "marketplace.json");
@@ -473,7 +473,10 @@ test("personal preparation rebuilds before running source gates and staging", as
     execute: async (command, args) => {
       calls.push({ command, args });
       return args[0] === stageScript
-        ? { stdout: '{"ok":true,"sourceConsistent":true,"probeOk":true}\n', stderr: "" }
+        ? {
+            stdout: '{"ok":true,"plugin":"openai-compatible-imagegen","marketplaceName":"personal-test","sourceConsistent":true,"probeOk":true}\n',
+            stderr: "",
+          }
         : { stdout: "", stderr: "" };
     },
   });
@@ -490,6 +493,7 @@ test("personal preparation rebuilds before running source gates and staging", as
   assert.deepEqual(result.steps, ["build", "test", "check", "stage:personal"]);
   assert.equal(result.stage.sourceConsistent, true);
   assert.equal(result.stage.probeOk, true);
+  assert.equal("install" in result, false);
 });
 
 

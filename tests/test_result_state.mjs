@@ -121,14 +121,32 @@ test("artifact hydration calls the MCP tool when the host omits optional capabil
 });
 
 test("artifact hydration identifies a rejected tools/call request", async () => {
+  const observed = [];
   await assert.rejects(
     hydrateResultArtifacts({
       callServerTool: async () => {
         throw new Error("request rejected");
       },
-    }, [{ id: firstId }]),
+    }, [{ id: firstId }], { observeToolCall: (result) => observed.push(result) }),
     (error) => error?.code === "artifact_tool_call_failed",
   );
+  assert.deepEqual(observed, []);
+});
+
+
+test("artifact hydration reports stable server errors before rejecting", async () => {
+  const observed = [];
+  const result = {
+    isError: true,
+    structuredContent: { error: { code: "project_binding_required" } },
+  };
+  await assert.rejects(
+    hydrateResultArtifacts({ callServerTool: async () => result }, [{ id: firstId }], {
+      observeToolCall: (value) => observed.push(value),
+    }),
+    (error) => error?.code === "artifact_server_error",
+  );
+  assert.deepEqual(observed, [result]);
 });
 
 test("artifact hydration identifies an invalid private image payload", async () => {

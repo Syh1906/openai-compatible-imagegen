@@ -9,7 +9,10 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 
 import { createImagegenServer } from "../mcp/create-server.mjs";
 import { createReleaseBundle, RELEASE_IDENTITY_PLACEHOLDER } from "../mcp/release-identity.mjs";
-import { createFixtureProjectContext } from "./fixture-project-context.js";
+import {
+  createFixtureProjectContext,
+  FIXTURE_PROJECT_BINDING_ID,
+} from "./fixture-project-context.js";
 
 
 const PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFgAI/ScL1WQAAAABJRU5ErkJggg==";
@@ -1473,9 +1476,16 @@ async function withClient(dependencies, callback) {
       arguments: { projectRoot },
       _meta: requestMeta,
     });
-    assert.deepEqual(binding.structuredContent, { status: "bound" });
+    assert.deepEqual(binding.structuredContent, {
+      status: "bound",
+      projectBindingId: FIXTURE_PROJECT_BINDING_ID,
+    });
     client.callTool = async (request, ...rest) => await originalCallTool(
-      { ...request, _meta: request._meta ?? requestMeta },
+      {
+        ...request,
+        arguments: { projectBindingId: FIXTURE_PROJECT_BINDING_ID, ...request.arguments },
+        _meta: request._meta ?? requestMeta,
+      },
       ...rest,
     );
     await callback(client, { artifactRoot: path.join(projectRoot, "output", "imagegen") });

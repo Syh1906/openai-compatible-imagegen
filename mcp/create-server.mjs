@@ -1,9 +1,9 @@
 import { RESOURCE_MIME_TYPE, registerAppResource } from "@modelcontextprotocol/ext-apps/server";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
 import { createEditSubmissionRegistry } from "./edit-submission-registry.mjs";
+import { createEditorStateRegistry } from "./editor-state-registry.mjs";
 import { executeImageBatch } from "./batch-images.mjs";
 import { createImageAuditHandlers } from "./image-audit-handlers.mjs";
 import {
@@ -31,8 +31,21 @@ import {
   MAX_RUNTIME_ROOT_SCHEME_LENGTH,
 } from "./runtime-diagnostics.mjs";
 import { createProjectContext } from "./project-context.mjs";
+import {
+  hostObservationInputSchema,
+  hostObservationReportOutputSchema,
+  hostObservationScopeSchema,
+  stableHostErrorCodeSchema,
+} from "./host-observation-contract.mjs";
+import { createInMemoryHostObservationStore } from "./host-observation-store.mjs";
 import { isStableToolErrorCode, stableToolErrorMessages } from "./tool-errors.mjs";
+const legacyWidgetResourceFingerprints = [
+  "43c3a69a85db10633692",
+  "9caad8c28a921a55611b",
+];
 const editorSessionIdSchema = z.string().regex(/^eds_[0-9a-f]{32}$/).describe("已打开画布的会话 ID");
+const projectBindingIdSchema = z.string().regex(/^pbind_[0-9a-f]{64}$/).describe("图片项目绑定 ID");
+const projectBindingInputSchema = { projectBindingId: projectBindingIdSchema };
 const normalizedCoordinate = z.number().min(0).max(1);
 const normalizedPoint = z.object({ x: normalizedCoordinate, y: normalizedCoordinate });
 const annotationStyleSchema = {
@@ -179,21 +192,6 @@ const runtimeObservationOutputSchema = z.object({
     truncated: z.boolean(),
   }),
 });
-const hostFieldPathSchema = z.string().max(512).regex(/^\$(?:(?:\.[A-Za-z_][A-Za-z0-9_-]{0,63})|(?:\[(?:[0-9]|[12][0-9]|3[01])\])){0,8}$/);
-const stableErrorCodeSchema = z.string().regex(/^[a-z][a-z0-9_]{0,63}$/);
-const hostReportedLengthSchema = z.number().int().min(0).max(64 * 1024 * 1024);
-const hostFieldSchema = z.union([
-  z.object({
-    path: hostFieldPathSchema,
-    type: z.enum(["string", "array"]),
-    length: hostReportedLengthSchema,
-  }).strict(),
-  z.object({
-    path: hostFieldPathSchema,
-    type: z.enum(["null", "boolean", "number", "object", "unknown"]),
-    length: z.null(),
-  }).strict(),
-]);
 const retainedHostFieldKeys = new Set([
   "_meta", "accepted", "artifact", "artifacts", "blob", "canvasStatus", "capabilities",
   "childIds", "code", "content", "data", "dataBase64", "editorSession", "error", "errorCode",
@@ -212,31 +210,14 @@ const retainedHostErrorCodes = new Set([
   "tools_call_rejected",
 ]);
 const sensitiveHostFieldKeyPattern = /(api[_-]?key|authorization|credential|password|secret|token|cookie)/i;
-const hostObservationShape = {
-  fields: z.array(hostFieldSchema).max(256),
-  errorCodes: z.array(stableErrorCodeSchema).max(32),
-  truncated: z.boolean(),
-};
-const hostObservationOutputSchema = z.object({
-  source: z.enum(["ui/notifications/tool-result", "tools/call"]),
-  ...hostObservationShape,
-}).strict();
 const hostObservationProvenance = "unverified_widget_report";
-const maxHostObservationReportSlots = 8;
-const hostObservationScopeSchema = z.literal("mcp_process_latest");
-const hostObservationReportOutputSchema = z.object({
-  provenance: z.literal(hostObservationProvenance),
-  scope: hostObservationScopeSchema,
-  observations: z.array(hostObservationOutputSchema).max(2),
-}).strict().nullable();
-const hostObservationInputSchema = z.tuple([
-  z.object({ source: z.literal("ui/notifications/tool-result"), ...hostObservationShape }).strict(),
-  z.object({ source: z.literal("tools/call"), ...hostObservationShape }).strict(),
-]);
 
 export function createImagegenServer({
   releaseIdentity,
   launchContext,
+  hostObservationStore = createInMemoryHostObservationStore(),
+  editSubmissions = createEditSubmissionRegistry(),
+  editorState = createEditorStateRegistry(),
   projectContext: providedProjectContext,
   readWidgetHtml,
   runTask,
@@ -265,10 +246,6 @@ export function createImagegenServer({
       },
     },
   );
-  const editorSessions = new Map();
-  const destroyedCanvasImageIdsByBinding = new Map();
-  const hostObservationReports = new Map();
-  const editSubmissions = createEditSubmissionRegistry();
   const imageAuditHandlers = createImageAuditHandlers({ runTask, readArtifact });
 
   registerWidgetResource(server, {
@@ -287,25 +264,56 @@ export function createImagegenServer({
     releaseIdentity,
     readWidgetHtml,
   });
+  for (const fingerprint of legacyWidgetResourceFingerprints) {
+    registerWidgetResource(server, {
+      name: `image-result-legacy-${fingerprint}`,
+      uri: `ui://${releaseIdentity.pluginId}/result-${fingerprint}.html`,
+      title: "图片结果",
+      description: "在会话结果中持续显示图片，并提供在同一宿主实例展开聚焦画布的入口。",
+      releaseIdentity,
+      readWidgetHtml,
+    });
+    registerWidgetResource(server, {
+      name: `image-editor-legacy-${fingerprint}`,
+      uri: `ui://${releaseIdentity.pluginId}/editor-${fingerprint}.html`,
+      title: "图片编辑画布",
+      description: "为会话图片结果展开与稳定图片 ID 绑定的聚焦画布。",
+      releaseIdentity,
+      readWidgetHtml,
+    });
+  }
 
   server.registerTool(
     "bind_imagegen_project",
     {
       title: "绑定图片项目",
-      description: "把当前 MCP 进程绑定到一个已存在的绝对项目根目录。首次使用图片工具前调用；同一进程只能绑定一个项目，绑定不会持久化，server 重启后需要重新调用。",
-      inputSchema: { projectRoot: z.string().min(1) },
-      outputSchema: z.object({ status: z.enum(["bound", "already_bound"]) }).strict(),
+      description: "把当前任务绑定到一个已存在的绝对项目根目录，并返回供后续模型与 App-only 工具跨 MCP 进程使用的图片项目绑定 ID。配置变化后携带同一绑定 ID 再次绑定可更新配置摘要。",
+      inputSchema: {
+        projectRoot: z.string().min(1),
+        projectBindingId: projectBindingIdSchema.optional(),
+      },
+      outputSchema: z.object({
+        status: z.enum(["bound", "already_bound", "rebound"]),
+        projectBindingId: projectBindingIdSchema,
+      }).strict(),
       annotations: {
         readOnlyHint: false,
         destructiveHint: false,
-        idempotentHint: true,
+        idempotentHint: false,
         openWorldHint: false,
       },
     },
-    async ({ projectRoot }, extra) => {
+    async ({ projectRoot, projectBindingId }) => {
       try {
-        const receipt = await projectContext.bind(extra, { projectRoot });
-        const text = receipt.status === "bound" ? "已绑定当前图片项目。" : "当前图片项目已经绑定。";
+        const receipt = await projectContext.bind({
+          projectRoot,
+          ...(projectBindingId ? { projectBindingId } : {}),
+        });
+        const text = receipt.status === "bound"
+          ? "已绑定当前图片项目。"
+          : receipt.status === "rebound"
+            ? "已更新当前图片项目的配置绑定。"
+            : "当前图片项目已经绑定。";
         return { content: [{ type: "text", text }], structuredContent: receipt };
       } catch (error) {
         return toolError(error);
@@ -318,7 +326,7 @@ export function createImagegenServer({
     {
       title: "检查图片运行环境",
       description: "返回当前 MCP server、启动根关系和客户端 roots 能力的脱敏诊断信息，不返回本机路径或 root URI。",
-      inputSchema: {},
+      inputSchema: { projectBindingId: projectBindingIdSchema.optional() },
       outputSchema: {
         hostObservationReport: hostObservationReportOutputSchema,
         releaseIdentity: releaseIdentityOutputSchema,
@@ -326,7 +334,7 @@ export function createImagegenServer({
       },
       annotations: readAnnotations(),
     },
-    async (_arguments, extra) => {
+    async ({ projectBindingId }) => {
       try {
         const clientCapabilities = server.server.getClientCapabilities() ?? {};
         const rootsSupported = Boolean(clientCapabilities.roots);
@@ -339,7 +347,7 @@ export function createImagegenServer({
             rootsErrorCode = "roots_list_failed";
           }
         }
-        const boundProject = await optionalProjectContext(projectContext, extra);
+        const boundProject = await optionalProjectContext(projectContext, projectBindingId);
         const runtime = createRuntimeObservation({
           ...launchContext,
           projectRoot: boundProject?.projectRoot ?? null,
@@ -351,7 +359,10 @@ export function createImagegenServer({
           rootsErrorCode,
         });
         const hostObservationReport = boundProject
-          ? hostObservationReports.get(getHostObservationScope(boundProject).key) ?? null
+          ? await hostObservationStore.read({
+            context: boundProject,
+            releaseFingerprint: releaseIdentity.fingerprint,
+          })
           : null;
         return {
           content: [{ type: "text", text: "已读取图片 MCP 的脱敏运行环境。" }],
@@ -370,6 +381,7 @@ export function createImagegenServer({
       title: "记录图片工作台宿主形状",
       description: "记录当前发布版本下两类标准宿主结果的脱敏结构。该报告只能标记为未验证的 widget 上报，不是宿主来源证明；不记录图片、文本值、本机路径或客户端身份。",
       inputSchema: {
+        ...projectBindingInputSchema,
         releaseFingerprint: fingerprintSchema,
         observations: hostObservationInputSchema,
       },
@@ -377,7 +389,7 @@ export function createImagegenServer({
         accepted: z.number().int().min(0).max(2),
         provenance: z.literal(hostObservationProvenance),
         scope: hostObservationScopeSchema,
-        error: z.object({ code: stableErrorCodeSchema }).strict().optional(),
+        error: z.object({ code: stableHostErrorCodeSchema }).strict().optional(),
       },
       annotations: {
         readOnlyHint: false,
@@ -387,9 +399,9 @@ export function createImagegenServer({
       },
       _meta: { ui: { visibility: ["app"] } },
     },
-    async ({ releaseFingerprint, observations }, extra) => await withBoundProject(
+    async ({ projectBindingId, releaseFingerprint, observations }) => await withBoundProject(
       projectContext,
-      extra,
+      projectBindingId,
       async (context) => {
         const scope = getHostObservationScope(context);
       if (releaseFingerprint !== releaseIdentity.fingerprint) {
@@ -399,10 +411,15 @@ export function createImagegenServer({
         });
       }
       const copiedObservations = observations.map(copyHostObservation);
-      retainLatestHostObservationReport(hostObservationReports, scope.key, {
+      const report = {
         provenance: hostObservationProvenance,
         scope: scope.label,
         observations: copiedObservations,
+      };
+      await hostObservationStore.write({
+        context,
+        releaseFingerprint: releaseIdentity.fingerprint,
+        report,
       });
       return {
         content: [{ type: "text", text: "已记录当前发布版本的未验证 widget 结果结构。" }],
@@ -421,11 +438,11 @@ export function createImagegenServer({
     {
       title: "读取图片模型",
       description: "返回当前图片配置中可用的图片模型及安全能力声明。",
-      inputSchema: {},
+      inputSchema: { ...projectBindingInputSchema },
       outputSchema: z.object({ models: z.array(imageModelOutputSchema) }).strict(),
       annotations: readAnnotations(),
     },
-    async (_arguments, extra) => await withBoundProject(projectContext, extra, async (context) => {
+    async ({ projectBindingId }) => await withBoundProject(projectContext, projectBindingId, async (context) => {
       try {
         const result = await runTask(
           { operation: "list_models", modelProfileId: "primary/gpt-image-2" },
@@ -449,6 +466,7 @@ export function createImagegenServer({
       title: "生成图片",
       description: "使用已配置的 gpt-image-2 生成一张或多张独立候选图片。多候选由运行时按顺序执行等量单图请求，全部成功后才返回整组。",
       inputSchema: {
+        ...projectBindingInputSchema,
         prompt: z.string().min(1),
         modelProfileId: z.literal("primary/gpt-image-2").optional(),
         transparency: transparencyInputSchema.optional(),
@@ -457,8 +475,8 @@ export function createImagegenServer({
       outputSchema: imageArtifactsOutputSchema,
       annotations: writeAnnotations(),
     },
-    async ({ prompt, modelProfileId = "primary/gpt-image-2", transparency, ...output }, extra) =>
-      await withBoundProject(projectContext, extra, async (context) => await executeImageTask(
+    async ({ projectBindingId, prompt, modelProfileId = "primary/gpt-image-2", transparency, ...output }) =>
+      await withBoundProject(projectContext, projectBindingId, async (context) => await executeImageTask(
         {
           operation: "generate",
           modelProfileId,
@@ -480,6 +498,7 @@ export function createImagegenServer({
       title: "编辑图片",
       description: "基于父图片和提示创建新的不可变图片版本。",
       inputSchema: {
+        ...projectBindingInputSchema,
         parentImageId: imageIdSchema,
         prompt: z.string().min(1),
         referenceImageIds: z.array(imageIdSchema).optional(),
@@ -492,8 +511,8 @@ export function createImagegenServer({
       outputSchema: imageArtifactsOutputSchema,
       annotations: writeAnnotations(),
     },
-    async (arguments_, extra) =>
-      await withBoundProject(projectContext, extra, async (context) => {
+    async (arguments_) =>
+      await withBoundProject(projectContext, arguments_.projectBindingId, async (context) => {
       const {
         parentImageId,
         referenceImageIds = [],
@@ -503,11 +522,13 @@ export function createImagegenServer({
         ...output
       } = arguments_;
       const annotationId = arguments_.annotationId ?? null;
+      delete output.projectBindingId;
       delete output.annotationId;
       delete output.submissionId;
       let claimedSubmission;
       try {
-        claimedSubmission = editSubmissions.claimForEdit({
+        claimedSubmission = await editSubmissions.claimForEdit({
+          artifactRoot: context.artifactRoot,
           bindingKey: context.bindingKey,
           parentImageId,
           ...(Object.hasOwn(arguments_, "submissionId") ? { submissionId: arguments_.submissionId } : {}),
@@ -593,12 +614,14 @@ export function createImagegenServer({
           runTask,
           readArtifact,
           {
-            onTaskCommitted: (artifacts) => {
+            onTaskCommitted: async (artifacts) => {
               if (!claimedSubmission) return;
-              editSubmissions.complete({
+              await editSubmissions.complete({
+                artifactRoot: context.artifactRoot,
                 bindingKey: context.bindingKey,
                 parentImageId,
                 submissionId: claimedSubmission.receipt.id,
+                claimGeneration: claimedSubmission.claimGeneration,
                 artifactIds: artifacts.map((artifact) => artifact.id),
               });
               submissionCommitted = true;
@@ -607,10 +630,12 @@ export function createImagegenServer({
         );
       } finally {
         if (claimedSubmission && !submissionCommitted) {
-          editSubmissions.releaseForEdit({
+          await editSubmissions.releaseForEdit({
+            artifactRoot: context.artifactRoot,
             bindingKey: context.bindingKey,
             parentImageId,
             submissionId: claimedSubmission.receipt.id,
+            claimGeneration: claimedSubmission.claimGeneration,
           });
         }
       }
@@ -623,14 +648,15 @@ export function createImagegenServer({
       title: "批量处理图片",
       description: "执行一组相互独立的生成和普通编辑任务；结果按输入顺序逐项返回，允许部分成功，不自动展示图片。",
       inputSchema: {
+        ...projectBindingInputSchema,
         items: batchItemsSchema,
         concurrency: z.number().int().min(1).max(8).optional(),
       },
       outputSchema: imageBatchOutputSchema,
       annotations: writeAnnotations(),
     },
-    async ({ items, concurrency = 3 }, extra) =>
-      await withBoundProject(projectContext, extra, async (context) => {
+    async ({ projectBindingId, items, concurrency = 3 }) =>
+      await withBoundProject(projectContext, projectBindingId, async (context) => {
         const batch = await executeImageBatch({
           items,
           concurrency,
@@ -638,7 +664,8 @@ export function createImagegenServer({
           runTask,
           readArtifact,
           validateEdit: async (item) => {
-            editSubmissions.resolveForEdit({
+            await editSubmissions.resolveForEdit({
+              artifactRoot: context.artifactRoot,
               bindingKey: context.bindingKey,
               parentImageId: item.parentImageId,
             });
@@ -670,12 +697,12 @@ export function createImagegenServer({
     {
       title: "读取批处理记录",
       description: "按稳定批次 ID 读取不可变批处理 manifest；返回逐项原图、交付收据和错误状态，不自动展示图片。",
-      inputSchema: { batchId: batchIdSchema },
+      inputSchema: { ...projectBindingInputSchema, batchId: batchIdSchema },
       outputSchema: batchManifestOutputSchema,
       annotations: readAnnotations(),
     },
-    async ({ batchId }, extra) =>
-      await withBoundProject(projectContext, extra, async (context) =>
+    async ({ projectBindingId, batchId }) =>
+      await withBoundProject(projectContext, projectBindingId, async (context) =>
         await imageAuditHandlers.getBatchManifest({ batchId, context })),
   );
 
@@ -684,12 +711,12 @@ export function createImagegenServer({
     {
       title: "读取图片交付记录",
       description: "按稳定交付收据 ID 读取不可变派生产物和 QA 摘要；不自动展示图片。",
-      inputSchema: { deliveryReceiptId: deliveryReceiptIdSchema },
+      inputSchema: { ...projectBindingInputSchema, deliveryReceiptId: deliveryReceiptIdSchema },
       outputSchema: imageDeliveryOutputSchema,
       annotations: readAnnotations(),
     },
-    async ({ deliveryReceiptId }, extra) =>
-      await withBoundProject(projectContext, extra, async (context) =>
+    async ({ projectBindingId, deliveryReceiptId }) =>
+      await withBoundProject(projectContext, projectBindingId, async (context) =>
         await imageAuditHandlers.getDeliveryReceipt({ deliveryReceiptId, context })),
   );
 
@@ -699,6 +726,7 @@ export function createImagegenServer({
       title: "交付图片",
       description: "基于稳定图片 ID 执行本地精确尺寸、网格、预览板和 QA 交付；原图保持不变，派生图单独存储，结果不会自动挂载图片画布。",
       inputSchema: {
+        ...projectBindingInputSchema,
         imageId: imageIdSchema,
         modelProfileId: z.literal("primary/gpt-image-2").optional(),
         delivery: deliveryInputSchema,
@@ -706,8 +734,8 @@ export function createImagegenServer({
       outputSchema: imageDeliveryOutputSchema,
       annotations: writeAnnotations(),
     },
-    async ({ imageId, modelProfileId = "primary/gpt-image-2", delivery }, extra) =>
-      await withBoundProject(projectContext, extra, async (context) => {
+    async ({ projectBindingId, imageId, modelProfileId = "primary/gpt-image-2", delivery }) =>
+      await withBoundProject(projectContext, projectBindingId, async (context) => {
         try {
           const result = await runTask(
             {
@@ -768,25 +796,25 @@ export function createImagegenServer({
     {
       title: "读取图片产物",
       description: "按稳定图片 ID 读取图片内容、安全元数据和当前画布可用状态。",
-      inputSchema: { imageId: imageIdSchema },
+      inputSchema: { ...projectBindingInputSchema, imageId: imageIdSchema },
       outputSchema: z.object({
         artifact: imageArtifactOutputSchema,
         canvasStatus: z.enum(["available", "destroyed"]),
       }).strict(),
       annotations: readAnnotations(),
     },
-    async ({ imageId }, extra) => await withBoundProject(projectContext, extra, async (context) => {
+    async ({ projectBindingId, imageId }) => await withBoundProject(projectContext, projectBindingId, async (context) => {
       try {
         const artifact = await readArtifact(imageId, context);
         return {
           content: [imageContent(artifact), { type: "text", text: `已读取图片 ${imageId}。` }],
           structuredContent: {
             artifact: imageArtifactMetadata(artifact.metadata),
-            canvasStatus: isCanvasDestroyed(
-              destroyedCanvasImageIdsByBinding,
-              context.bindingKey,
-              imageId,
-            ) ? "destroyed" : "available",
+            canvasStatus: (await editorState.getCanvasStatuses({
+              artifactRoot: context.artifactRoot,
+              bindingKey: context.bindingKey,
+              imageIds: [imageId],
+            }))[0],
           },
           _meta: { imageId },
         };
@@ -801,7 +829,7 @@ export function createImagegenServer({
     {
       title: "读取工作台图片数据",
       description: "供图片工作台按稳定图片 ID 读取图片像素数据。该工具只对 app/widget 可见。",
-      inputSchema: { imageId: imageIdSchema },
+      inputSchema: { ...projectBindingInputSchema, imageId: imageIdSchema },
       outputSchema: z.object({
         artifact: imageArtifactOutputSchema,
         canvasStatus: z.enum(["available", "destroyed"]),
@@ -812,7 +840,7 @@ export function createImagegenServer({
         "openai/widgetAccessible": true,
       },
     },
-    async ({ imageId }, extra) => await withBoundProject(projectContext, extra, async (context) => {
+    async ({ projectBindingId, imageId }) => await withBoundProject(projectContext, projectBindingId, async (context) => {
       try {
         const artifact = await readArtifact(imageId, context);
         assertArtifactIdentity(artifact, imageId);
@@ -820,11 +848,11 @@ export function createImagegenServer({
           content: [{ type: "text", text: `已为图片工作台读取图片 ${imageId}。` }],
           structuredContent: {
             artifact: imageArtifactMetadata(artifact.metadata),
-            canvasStatus: isCanvasDestroyed(
-              destroyedCanvasImageIdsByBinding,
-              context.bindingKey,
-              imageId,
-            ) ? "destroyed" : "available",
+            canvasStatus: (await editorState.getCanvasStatuses({
+              artifactRoot: context.artifactRoot,
+              bindingKey: context.bindingKey,
+              imageIds: [imageId],
+            }))[0],
           },
           _meta: {
             widgetData: {
@@ -835,7 +863,10 @@ export function createImagegenServer({
           },
         };
       } catch (error) {
-        return toolError(error, "artifact_read_failed");
+        return toolError(
+          error,
+          isStableToolErrorCode(error?.code) ? error.code : "artifact_read_failed",
+        );
       }
     }),
   );
@@ -845,7 +876,7 @@ export function createImagegenServer({
     {
       title: "在文件夹中显示图片",
       description: "按稳定图片 ID 在系统文件管理器中显示并选中对应的本机图片文件。该工具只对图片工作台可见，不返回本机路径。",
-      inputSchema: { imageId: imageIdSchema },
+      inputSchema: { ...projectBindingInputSchema, imageId: imageIdSchema },
       outputSchema: z.object({
         status: z.literal("revealed"),
         imageId: imageIdSchema,
@@ -861,7 +892,7 @@ export function createImagegenServer({
         "openai/widgetAccessible": true,
       },
     },
-    async ({ imageId }, extra) => await withBoundProject(projectContext, extra, async (context) => {
+    async ({ projectBindingId, imageId }) => await withBoundProject(projectContext, projectBindingId, async (context) => {
       try {
         const revealResult = await revealArtifact(imageId, context);
         if (revealResult?.status !== "revealed" || revealResult.imageId !== imageId) {
@@ -882,7 +913,7 @@ export function createImagegenServer({
     {
       title: "显示图片结果",
       description: "在一个会话结果容器中按顺序显示一张或多张已创建图片，并为每张图片提供独立画布入口。生成或编辑成功后只调用一次。",
-      inputSchema: { imageIds: z.array(imageIdSchema).min(1).max(10) },
+      inputSchema: { ...projectBindingInputSchema, imageIds: z.array(imageIdSchema).min(1).max(10) },
       outputSchema: z.object({
         imageIds: z.array(imageIdSchema).min(1).max(10),
         artifacts: z.array(imageArtifactOutputSchema.extend({
@@ -895,7 +926,7 @@ export function createImagegenServer({
         releaseIdentity,
       },
     },
-    async ({ imageIds }, extra) => await withBoundProject(projectContext, extra, async (context) => {
+    async ({ projectBindingId, imageIds }) => await withBoundProject(projectContext, projectBindingId, async (context) => {
       try {
         if (new Set(imageIds).size !== imageIds.length) {
           return toolError(new Error("图片 ID 不得重复"), "invalid_task");
@@ -905,13 +936,14 @@ export function createImagegenServer({
           assertArtifactIdentity(artifact, imageId);
           return artifact;
         }));
-        const artifacts = records.map(({ metadata }) => ({
+        const canvasStatuses = await editorState.getCanvasStatuses({
+          artifactRoot: context.artifactRoot,
+          bindingKey: context.bindingKey,
+          imageIds,
+        });
+        const artifacts = records.map(({ metadata }, index) => ({
           ...imageArtifactMetadata(metadata),
-          canvasStatus: isCanvasDestroyed(
-            destroyedCanvasImageIdsByBinding,
-            context.bindingKey,
-            metadata.id,
-          ) ? "destroyed" : "available",
+          canvasStatus: canvasStatuses[index],
         }));
         return {
           content: [
@@ -926,7 +958,10 @@ export function createImagegenServer({
           },
         };
       } catch (error) {
-        return toolError(error, "artifact_read_failed");
+        return toolError(
+          error,
+          isStableToolErrorCode(error?.code) ? error.code : "artifact_read_failed",
+        );
       }
     }),
   );
@@ -935,8 +970,8 @@ export function createImagegenServer({
     "open_image_editor",
     {
       title: "打开图片画布",
-      description: "按稳定图片 ID 打开对应的聚焦图片画布；已显式销毁的图片画布在当前 MCP server 生命周期内不能再次打开。",
-      inputSchema: { imageId: imageIdSchema },
+      description: "按稳定图片 ID 打开对应的聚焦图片画布；已在当前图片项目绑定中显式销毁的图片画布不能再次打开。",
+      inputSchema: { ...projectBindingInputSchema, imageId: imageIdSchema },
       outputSchema: z.object({
         editorSession: openEditorSessionOutputSchema,
         artifact: imageArtifactOutputSchema,
@@ -952,19 +987,19 @@ export function createImagegenServer({
         releaseIdentity,
       },
     },
-    async ({ imageId }, extra) => await withBoundProject(projectContext, extra, async (context) => {
+    async ({ projectBindingId, imageId }) => await withBoundProject(projectContext, projectBindingId, async (context) => {
+      let artifact;
       try {
-        const artifact = await readArtifact(imageId, context);
-        if (isCanvasDestroyed(destroyedCanvasImageIdsByBinding, context.bindingKey, imageId)) {
-          return toolError(new Error("当前图片的画布已经销毁"), "image_canvas_destroyed");
-        }
-        const editorSession = {
-          id: `eds_${randomUUID().replaceAll("-", "")}`,
-          imageId,
-          status: "active",
+        artifact = await readArtifact(imageId, context);
+      } catch (error) {
+        return toolError(error, "artifact_not_found");
+      }
+      try {
+        const editorSession = await editorState.open({
+          artifactRoot: context.artifactRoot,
           bindingKey: context.bindingKey,
-        };
-        editorSessions.set(editorSession.id, editorSession);
+          imageId,
+        });
         return {
           content: [{ type: "text", text: `已打开图片 ${imageId} 的聚焦画布，画布会话 ID 为 ${editorSession.id}。` }],
           structuredContent: {
@@ -979,7 +1014,7 @@ export function createImagegenServer({
           },
         };
       } catch (error) {
-        return toolError(error, "artifact_not_found");
+        return toolError(error);
       }
     }),
   );
@@ -990,6 +1025,7 @@ export function createImagegenServer({
       title: "保存图片标注",
       description: "一次保存当前图片上的多条独立归一化标注，并返回稳定标注 ID。",
       inputSchema: {
+        ...projectBindingInputSchema,
         imageId: imageIdSchema,
         items: z.array(annotationItemSchema).min(1).max(100),
       },
@@ -997,7 +1033,7 @@ export function createImagegenServer({
       annotations: writeAnnotations(),
       _meta: { ui: { visibility: ["app"] } },
     },
-    async ({ imageId, items }, extra) => await withBoundProject(projectContext, extra, async (context) => {
+    async ({ projectBindingId, imageId, items }) => await withBoundProject(projectContext, projectBindingId, async (context) => {
       try {
         await readArtifact(imageId, context);
         const annotation = await saveAnnotations({ imageId, items }, context);
@@ -1017,6 +1053,7 @@ export function createImagegenServer({
       title: "准备图片修改提交",
       description: "保存当前画布修订并签发一次服务端提交 ID，使后续 edit_image 只能使用同一父图、标注和 mask 策略。",
       inputSchema: {
+        ...projectBindingInputSchema,
         parentImageId: imageIdSchema,
         items: z.array(annotationItemSchema).max(100),
         sourcePrompt: z.string().max(600),
@@ -1028,9 +1065,9 @@ export function createImagegenServer({
       annotations: writeAnnotations(),
       _meta: { ui: { visibility: ["app"] } },
     },
-    async ({ parentImageId, items, sourcePrompt }, extra) => await withBoundProject(
+    async ({ projectBindingId, parentImageId, items, sourcePrompt }) => await withBoundProject(
       projectContext,
-      extra,
+      projectBindingId,
       async (context) => {
         try {
           await readArtifact(parentImageId, context);
@@ -1067,7 +1104,8 @@ export function createImagegenServer({
         }
 
         try {
-          const submission = editSubmissions.issue({
+          const submission = await editSubmissions.issue({
+            artifactRoot: context.artifactRoot,
             bindingKey: context.bindingKey,
             parentImageId,
             annotationId: annotation?.id ?? null,
@@ -1098,17 +1136,19 @@ export function createImagegenServer({
     {
       title: "读取画布会话状态",
       description: "供图片画布检查自身是否仍处于活动状态。",
-      inputSchema: { editorSessionId: editorSessionIdSchema },
+      inputSchema: { ...projectBindingInputSchema, editorSessionId: editorSessionIdSchema },
       outputSchema: z.object({ editorSession: editorSessionOutputSchema }).strict(),
       annotations: readAnnotations(),
       _meta: { ui: { visibility: ["app"] } },
     },
-    async ({ editorSessionId }, extra) => await withBoundProject(
+    async ({ projectBindingId, editorSessionId }) => await withBoundProject(
       projectContext,
-      extra,
-      async (context) => editorSessionResult(
-        getOwnedEditorSession(editorSessions, editorSessionId, context.bindingKey),
-      ),
+      projectBindingId,
+      async (context) => editorSessionResult(await editorState.getSession({
+        artifactRoot: context.artifactRoot,
+        bindingKey: context.bindingKey,
+        editorSessionId,
+      })),
     ),
   );
 
@@ -1116,8 +1156,8 @@ export function createImagegenServer({
     "destroy_image_editor",
     {
       title: "销毁图片画布",
-      description: "结束并释放指定图片的全部活动画布会话，并终止当前 MCP server 生命周期内的重新打开入口。仅在用户明确要求销毁，或任务已明确转移且当前图片不再需要继续查看、标注或修改时调用；普通隐藏、关闭右栏或暂时讨论其他内容时不要调用。",
-      inputSchema: { editorSessionId: editorSessionIdSchema },
+      description: "结束并释放指定图片在当前图片项目绑定中的全部活动画布会话，并终止该图片在此绑定中的重新打开入口。仅在用户明确要求销毁，或任务已明确转移且当前图片不再需要继续查看、标注或修改时调用；普通隐藏、关闭右栏或暂时讨论其他内容时不要调用。",
+      inputSchema: { ...projectBindingInputSchema, editorSessionId: editorSessionIdSchema },
       outputSchema: z.object({ editorSession: editorSessionOutputSchema }).strict(),
       annotations: {
         readOnlyHint: false,
@@ -1126,26 +1166,13 @@ export function createImagegenServer({
         openWorldHint: false,
       },
     },
-    async ({ editorSessionId }, extra) => await withBoundProject(projectContext, extra, async (context) => {
-      const editorSession = getOwnedEditorSession(
-        editorSessions,
+    async ({ projectBindingId, editorSessionId }) => await withBoundProject(projectContext, projectBindingId, async (context) => {
+      const editorSession = await editorState.destroy({
+        artifactRoot: context.artifactRoot,
+        bindingKey: context.bindingKey,
         editorSessionId,
-        context.bindingKey,
-      );
+      });
       if (!editorSession) return editorSessionResult({ id: editorSessionId }, "released");
-      markCanvasDestroyed(
-        destroyedCanvasImageIdsByBinding,
-        context.bindingKey,
-        editorSession.imageId,
-      );
-      for (const session of editorSessions.values()) {
-        if (
-          session.bindingKey === context.bindingKey
-          && session.imageId === editorSession.imageId
-        ) {
-          session.status = "destroyed";
-        }
-      }
       return editorSessionResult(editorSession);
     }),
   );
@@ -1155,7 +1182,7 @@ export function createImagegenServer({
     {
       title: "释放画布会话状态",
       description: "供图片画布在宿主卸载前释放自身的临时会话状态。",
-      inputSchema: { editorSessionId: editorSessionIdSchema },
+      inputSchema: { ...projectBindingInputSchema, editorSessionId: editorSessionIdSchema },
       outputSchema: z.object({ editorSession: editorSessionOutputSchema }).strict(),
       annotations: {
         readOnlyHint: false,
@@ -1165,13 +1192,12 @@ export function createImagegenServer({
       },
       _meta: { ui: { visibility: ["app"] } },
     },
-    async ({ editorSessionId }, extra) => await withBoundProject(projectContext, extra, async (context) => {
-      const editorSession = getOwnedEditorSession(
-        editorSessions,
+    async ({ projectBindingId, editorSessionId }) => await withBoundProject(projectContext, projectBindingId, async (context) => {
+      const editorSession = await editorState.finalize({
+        artifactRoot: context.artifactRoot,
+        bindingKey: context.bindingKey,
         editorSessionId,
-        context.bindingKey,
-      );
-      if (editorSession) editorSessions.delete(editorSessionId);
+      });
       return editorSessionResult(editorSession || { id: editorSessionId }, "released");
     }),
   );
@@ -1212,31 +1238,13 @@ function editorSessionOutput(editorSession, status = editorSession.status) {
   };
 }
 
-function getOwnedEditorSession(editorSessions, editorSessionId, bindingKey) {
-  const editorSession = editorSessions.get(editorSessionId);
-  return editorSession?.bindingKey === bindingKey ? editorSession : null;
-}
-
-function isCanvasDestroyed(destroyedCanvasImageIdsByBinding, bindingKey, imageId) {
-  return destroyedCanvasImageIdsByBinding.get(bindingKey)?.has(imageId) ?? false;
-}
-
-function markCanvasDestroyed(destroyedCanvasImageIdsByBinding, bindingKey, imageId) {
-  let imageIds = destroyedCanvasImageIdsByBinding.get(bindingKey);
-  if (!imageIds) {
-    imageIds = new Set();
-    destroyedCanvasImageIdsByBinding.set(bindingKey, imageIds);
-  }
-  imageIds.add(imageId);
-}
-
 async function executeImageTask(task, context, runTask, readArtifact, { onTaskCommitted } = {}) {
   try {
     const result = await runTask(task, context);
     if (!result?.ok) {
       return toolError(new Error(result?.error?.message || "image task failed"), result?.error?.code);
     }
-    onTaskCommitted?.(result.artifacts);
+    await onTaskCommitted?.(result.artifacts);
     return await readImageTaskResult(
       result.artifacts.map((item) => item.id),
       context,
@@ -1288,9 +1296,9 @@ function deriveMaskedEditOutput(output, maskPolicy) {
 }
 
 
-async function withBoundProject(projectContext, extra, callback) {
+async function withBoundProject(projectContext, projectBindingId, callback) {
   try {
-    return await callback(await projectContext.require(extra));
+    return await callback(await projectContext.require(projectBindingId));
   } catch (error) {
     return toolError(error);
   }
@@ -1365,15 +1373,9 @@ function requireProjectContext(projectContext) {
 }
 
 
-async function optionalProjectContext(projectContext, extra) {
-  try {
-    return await projectContext.require(extra);
-  } catch (error) {
-    if (error?.code === "project_binding_required") {
-      return null;
-    }
-    throw error;
-  }
+async function optionalProjectContext(projectContext, projectBindingId) {
+  if (projectBindingId === undefined) return null;
+  return await projectContext.require(projectBindingId);
 }
 
 function imageContent(artifact) {
@@ -1386,17 +1388,9 @@ function imageArtifactMetadata(metadata) {
 
 function getHostObservationScope(context) {
   return {
-    key: `mcp-process:${context.bindingKey}`,
-    label: "mcp_process_latest",
+    key: `project-binding:${context.bindingKey}`,
+    label: "project_binding_latest",
   };
-}
-
-function retainLatestHostObservationReport(reports, key, report) {
-  reports.delete(key);
-  reports.set(key, report);
-  while (reports.size > maxHostObservationReportSlots) {
-    reports.delete(reports.keys().next().value);
-  }
 }
 
 function copyHostObservation(observation) {

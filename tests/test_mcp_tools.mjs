@@ -21,6 +21,7 @@ const TEST_RELEASE_IDENTITY = createReleaseBundle({
 }).releaseIdentity;
 const RESULT_WIDGET_URI = TEST_RELEASE_IDENTITY.resourceUris.result;
 const EDITOR_WIDGET_URI = TEST_RELEASE_IDENTITY.resourceUris.editor;
+const PROJECT_BINDING_ID = `pbind_${"0".repeat(64)}`;
 
 function artifact(id, parentIds = []) {
   return {
@@ -56,16 +57,16 @@ async function withClient(dependencies, callback) {
   const projectContext = {
     async bind() {
       bound = true;
-      return { status: "bound" };
+      return { status: "bound", projectBindingId: PROJECT_BINDING_ID };
     },
-    async require() {
-      if (!bound) {
+    async require(projectBindingId) {
+      if (!bound || projectBindingId !== PROJECT_BINDING_ID) {
         const error = new Error("project_binding_required");
         error.code = "project_binding_required";
         throw error;
       }
       return {
-        bindingKey: "test-binding",
+        bindingKey: "0".repeat(64),
         projectRoot,
         artifactRoot,
         effectiveConfigJson: JSON.stringify({
@@ -101,9 +102,13 @@ async function withClient(dependencies, callback) {
       arguments: { projectRoot },
       _meta: requestMeta,
     });
-    assert.deepEqual(binding.structuredContent, { status: "bound" });
+    assert.deepEqual(binding.structuredContent, { status: "bound", projectBindingId: PROJECT_BINDING_ID });
     client.callTool = async (request, ...rest) => await originalCallTool(
-      { ...request, _meta: request._meta ?? requestMeta },
+      {
+        ...request,
+        arguments: { projectBindingId: PROJECT_BINDING_ID, ...request.arguments },
+        _meta: request._meta ?? requestMeta,
+      },
       ...rest,
     );
     await callback(client);
@@ -181,7 +186,14 @@ test("only the result renderer and focused editor bind app resources", async () 
       const { resources } = await client.listResources();
       assert.deepEqual(
         resources.map((resource) => resource.uri).sort(),
-        [resultUri, editorUri].sort(),
+        [
+          resultUri,
+          editorUri,
+          "ui://openai-compatible-imagegen/result-43c3a69a85db10633692.html",
+          "ui://openai-compatible-imagegen/result-9caad8c28a921a55611b.html",
+          "ui://openai-compatible-imagegen/editor-43c3a69a85db10633692.html",
+          "ui://openai-compatible-imagegen/editor-9caad8c28a921a55611b.html",
+        ].sort(),
       );
     },
   );
@@ -227,7 +239,7 @@ test("all product tools declare precise structured output schemas", async () => 
         assert.equal(schemas.get(name).additionalProperties, false, `${name} outputSchema must be strict`);
       }
 
-      assert.deepEqual(schemas.get("bind_imagegen_project").required, ["status"]);
+      assert.deepEqual(schemas.get("bind_imagegen_project").required.sort(), ["projectBindingId", "status"]);
 
       assert.deepEqual(schemas.get("list_image_models").required, ["models"]);
       assert.deepEqual(schemas.get("list_image_models").properties.models.items.required.sort(), ["capabilities", "id", "model", "provider"]);
@@ -1454,4 +1466,36 @@ test("missing artifact errors do not expose the project path", async () => {
   } finally {
     await rm(projectRoot, { recursive: true });
   }
+});
+
+test("editor state failures keep their stable codes across canvas status tools", async () => {
+  const invalidState = Object.assign(new Error("invalid editor state"), { code: "editor_state_invalid" });
+  const unavailableState = Object.assign(new Error("unavailable editor state"), { code: "editor_state_unavailable" });
+  await withClient(
+    {
+      runTask: async () => { throw new Error("not used"); },
+      readArtifact: async (id) => ({ metadata: artifact(id), data: PNG_BASE64 }),
+      editorState: {
+        async open() { throw invalidState; },
+        async getSession() { throw new Error("not used"); },
+        async destroy() { throw new Error("not used"); },
+        async finalize() { throw new Error("not used"); },
+        async getCanvasStatuses() { throw unavailableState; },
+      },
+    },
+    async (client) => {
+      const imageId = "img_01J00000000000000000000000";
+      const opened = await client.callTool({ name: "open_image_editor", arguments: { imageId } });
+      assertToolErrorCode(opened, "editor_state_invalid");
+
+      for (const [name, arguments_] of [
+        ["get_image_artifact", { imageId }],
+        ["read_image_artifact_data", { imageId }],
+        ["render_image_results", { imageIds: [imageId] }],
+      ]) {
+        const result = await client.callTool({ name, arguments: arguments_ });
+        assertToolErrorCode(result, "editor_state_unavailable", name);
+      }
+    },
+  );
 });

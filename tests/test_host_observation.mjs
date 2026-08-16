@@ -155,7 +155,7 @@ test("host observation reporter submits one release-bound pair", async () => {
 });
 
 
-test("host observation reporter ignores failed tools/call results", async () => {
+test("host observation reporter preserves stable failed tools/call codes", async () => {
   const calls = [];
   const app = {
     callServerTool: async (request) => {
@@ -168,11 +168,8 @@ test("host observation reporter ignores failed tools/call results", async () => 
   reporter.observeNotification({ structuredContent: { artifacts: [] } });
   await Promise.resolve();
   reporter.observeToolCall({ isError: true, structuredContent: { error: { code: "image_task_failed" } } });
-  await new Promise((resolve) => setTimeout(resolve, 20));
-  assert.equal(calls.length, 0);
-
-  reporter.observeToolCall({ isError: false, structuredContent: { models: [] } });
   await waitFor(() => calls.length === 1);
+  assert.deepEqual(calls[0].arguments.observations[1].errorCodes, ["image_task_failed"]);
 });
 
 

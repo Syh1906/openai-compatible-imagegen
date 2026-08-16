@@ -105,6 +105,7 @@ async function main() {
   process.stdout.write(`${JSON.stringify({
     ok: true,
     plugin: pluginId,
+    marketplaceName: marketplace.name,
     version: sourceManifest.version,
     stagedFileCount,
     sourceConsistent: true,
@@ -439,6 +440,10 @@ async function resolveMarketplaceSource(marketplacePath) {
   );
   const marketplaceRoot = path.resolve(catalogDirectory, "..", "..");
   const catalog = await readJson(marketplacePath);
+  requireValue(
+    typeof catalog.name === "string" && catalog.name.length > 0,
+    "marketplace name is missing",
+  );
   const matches = catalog.plugins?.filter((entry) => entry.name === pluginId) ?? [];
   requireValue(matches.length === 1, `marketplace must contain exactly one ${pluginId} entry`);
   const source = matches[0].source;
@@ -451,7 +456,7 @@ async function resolveMarketplaceSource(marketplacePath) {
     pluginRoot === expectedPluginRoot,
     `marketplace plugin source must be ./plugins/${pluginId}`,
   );
-  return { marketplaceRoot, pluginRoot };
+  return { name: catalog.name, marketplaceRoot, pluginRoot };
 }
 
 

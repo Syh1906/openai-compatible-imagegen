@@ -2,12 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { JSDOM } from "jsdom";
+import { createBoundToolClient } from "../web/bound-tool-client.mjs";
 import {
   CODEX_COMPOSER_HOST_CAPABILITIES,
   EDITOR_SESSION_ID,
   FULL_MESSAGE_HOST_CAPABILITIES,
   IMAGE_ID,
   PNG_BASE64,
+  PROJECT_BINDING_ID,
   installDomGlobals,
   installHost,
   pointerEvent,
@@ -15,6 +17,122 @@ import {
   sendToApp,
   waitFor,
 } from "./support/widget-runtime-host.mjs";
+
+test("bound tool client freezes the first valid project binding for the widget lifecycle", async () => {
+  const alternateBindingId = `pbind_${"b".repeat(64)}`;
+  const toolCalls = [];
+  const modelContexts = [];
+  const client = createBoundToolClient({
+    async callServerTool(request) {
+      toolCalls.push(request);
+      return { ok: true };
+    },
+    updateModelContext(request) {
+      modelContexts.push(request);
+    },
+  });
+
+  assert.equal(client.observeToolInput({ arguments: { projectBindingId: PROJECT_BINDING_ID } }), true);
+  assert.equal(client.observeToolInput({ arguments: { projectBindingId: PROJECT_BINDING_ID } }), true);
+  assert.equal(client.observeToolInput({ arguments: { projectBindingId: alternateBindingId } }), false);
+  assert.equal(client.isBound(), false);
+  assert.equal(client.observeToolInput({ arguments: { projectBindingId: PROJECT_BINDING_ID } }), false);
+
+  const callError = await client.callServerTool({ name: "get_image_artifact", arguments: { imageId: IMAGE_ID } })
+    .then(() => null, (error) => error);
+  assert.equal(callError?.name, "ProjectBindingError");
+  assert.equal(callError?.code, "project_binding_conflict");
+  assert.equal(callError?.message, "Project binding conflicts with the binding already established for this widget");
+  assert.throws(
+    () => client.updateModelContext({ structuredContent: { imageId: IMAGE_ID } }),
+    (error) => error?.name === callError.name
+      && error?.code === callError.code
+      && error?.message === callError.message,
+  );
+  assert.deepEqual(toolCalls, []);
+  assert.deepEqual(modelContexts, []);
+});
+
+test("bound tool client preserves its frozen binding when later tool input is invalid", async () => {
+  const toolCalls = [];
+  const client = createBoundToolClient({
+    async callServerTool(request) {
+      toolCalls.push(request);
+      return { ok: true };
+    },
+  });
+
+  assert.equal(client.observeToolInput({ arguments: { projectBindingId: PROJECT_BINDING_ID } }), true);
+  assert.equal(client.observeToolInput({ arguments: { projectBindingId: "pbind_invalid" } }), false);
+  await assert.rejects(
+    client.callServerTool({ name: "get_image_artifact", arguments: { imageId: IMAGE_ID } }),
+    { name: "ProjectBindingError", code: "project_binding_invalid", message: "Project binding in the tool input is invalid" },
+  );
+  assert.equal(client.observeToolInput({ arguments: { projectBindingId: PROJECT_BINDING_ID } }), true);
+  await client.callServerTool({ name: "get_image_artifact", arguments: { imageId: IMAGE_ID } });
+  assert.equal(toolCalls[0].arguments.projectBindingId, PROJECT_BINDING_ID);
+});
+
+test("widget forwards the tool-input project binding to every App-only tool call", async () => {
+  const dom = new JSDOM(
+    '<!doctype html><html><body><main><p>正在加载图片...</p></main></body></html>',
+    { pretendToBeVisual: true, url: "https://widget.local/" },
+  );
+  const previous = installDomGlobals(dom.window);
+  const host = installHost(dom.window, {
+    toolName: "render_image_results",
+    initialArtifacts: [
+      { id: IMAGE_ID, mimeType: "image/png", width: 1, height: 1, operation: "generate", parentIds: [], childIds: [] },
+    ],
+    initialResultToolInputArguments: { imageIds: [IMAGE_ID], projectBindingId: PROJECT_BINDING_ID },
+  });
+
+  try {
+    await import(`../web/editor-runtime.mjs?explicit-project-binding=${Date.now()}`);
+    await waitFor(() => host.toolCalls.some(({ name }) => name === "read_image_artifact_data"));
+    assert.equal(host.toolCalls.length > 0, true);
+    assert.equal(
+      host.toolCalls.every(({ arguments: toolArguments }) => toolArguments.projectBindingId === PROJECT_BINDING_ID),
+      true,
+    );
+  } finally {
+    host.dispose();
+    restoreDomGlobals(previous);
+    dom.window.close();
+  }
+});
+
+test("widget rejects missing or invalid project bindings before App-only tool calls", async (t) => {
+  for (const [label, projectBindingId] of [["missing", undefined], ["invalid", "pbind_invalid"]]) {
+    await t.test(label, async () => {
+      const dom = new JSDOM(
+        '<!doctype html><html><body><main><p>正在加载图片...</p></main></body></html>',
+        { pretendToBeVisual: true, url: "https://widget.local/" },
+      );
+      const previous = installDomGlobals(dom.window);
+      const host = installHost(dom.window, {
+        toolName: "render_image_results",
+        initialArtifacts: [
+          { id: IMAGE_ID, mimeType: "image/png", width: 1, height: 1, operation: "generate", parentIds: [], childIds: [] },
+        ],
+        initialResultToolInputArguments: {
+          imageIds: [IMAGE_ID],
+          ...(projectBindingId === undefined ? {} : { projectBindingId }),
+        },
+      });
+
+      try {
+        await import(`../web/editor-runtime.mjs?rejected-project-binding=${label}-${Date.now()}`);
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        assert.deepEqual(host.toolCalls, []);
+      } finally {
+        host.dispose();
+        restoreDomGlobals(previous);
+        dom.window.close();
+      }
+    });
+  }
+});
 
 test("widget reports the initial notification and tools call response as safe shapes", async () => {
   const releaseFingerprint = "0123456789abcdefabcd";
@@ -63,12 +181,13 @@ test("widget does not synthesize a tools call envelope when the host rejects it"
     initialArtifacts: [
       { id: IMAGE_ID, mimeType: "image/png", width: 1, height: 1, operation: "generate", parentIds: [], childIds: [] },
     ],
-    rejectModelCatalog: true,
+    deferArtifactDataImageIds: [IMAGE_ID],
   });
 
   try {
     await import(`../web/editor-runtime.mjs?host-observation-rejected=${Date.now()}`);
-    await waitFor(() => host.toolCalls.some(({ name }) => name === "list_image_models"));
+    await waitFor(() => host.toolCalls.some(({ name }) => name === "read_image_artifact_data"));
+    host.rejectArtifactData(IMAGE_ID);
     await new Promise((resolve) => setTimeout(resolve, 50));
     assert.equal(host.toolCalls.some(({ name }) => name === "report_imagegen_host_observation"), false);
   } finally {
@@ -120,6 +239,7 @@ test("the render result opens the selected candidate after server-backed artifac
     document.querySelector("[data-action=submit]").click();
     await waitFor(() => host.messages.length === 1);
     await waitFor(() => document.querySelectorAll("[data-action=open-editor]").length === 2);
+    assert.equal(host.modelContexts[0].structuredContent.projectBindingId, PROJECT_BINDING_ID);
     assert.equal(host.modelContexts[0].structuredContent.imageId, secondId);
     assert.match(host.messages[0].content[0].text, new RegExp(secondId));
     assert.deepEqual(host.toolCalls.filter(({ name }) => name === "prepare_image_edit_submission").map(({ arguments: args }) => [args.parentImageId, args.items.length]), [[secondId, 0]]);
@@ -496,8 +616,8 @@ test("result widget expands into the editor and returns to a reusable conversati
     assert.deepEqual(
       host.toolCalls.filter(({ name }) => name !== "list_image_models").slice(0, 2).map(({ name, arguments: toolArguments }) => ({ name, arguments: toolArguments })),
       [
-        { name: "read_image_artifact_data", arguments: { imageId: IMAGE_ID } },
-        { name: "open_image_editor", arguments: { imageId: IMAGE_ID } },
+        { name: "read_image_artifact_data", arguments: { imageId: IMAGE_ID, projectBindingId: PROJECT_BINDING_ID } },
+        { name: "open_image_editor", arguments: { imageId: IMAGE_ID, projectBindingId: PROJECT_BINDING_ID } },
       ],
     );
 
@@ -623,7 +743,7 @@ test("result card menu and fullscreen toolbar reveal the matching artifact throu
     await waitFor(() => card.querySelector("[data-inline-status]")?.textContent === "");
     assert.deepEqual(
       host.toolCalls.find(({ name }) => name === "reveal_image_artifact").arguments,
-      { imageId: secondImageId },
+      { imageId: secondImageId, projectBindingId: PROJECT_BINDING_ID },
     );
     assert.equal(document.querySelector("[data-result-context-menu]"), null);
     assert.equal(document.activeElement, previewTrigger);
@@ -643,7 +763,7 @@ test("result card menu and fullscreen toolbar reveal the matching artifact throu
     await waitFor(() => revealButton.disabled === false);
     assert.deepEqual(
       host.toolCalls.filter(({ name }) => name === "reveal_image_artifact")[1].arguments,
-      { imageId: secondImageId },
+      { imageId: secondImageId, projectBindingId: PROJECT_BINDING_ID },
     );
     assert.equal(document.querySelector("[data-preview-status]")?.textContent, "");
 

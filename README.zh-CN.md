@@ -115,7 +115,9 @@ Plugin 生效优先级：
 工具显式值 > 项目白名单覆盖 > 用户 defaults > 内建默认值
 ```
 
-`storage.output_directory` 必须是项目内安全相对目录，默认值为 `output/imagegen/`。项目根本身、项目外路径、文件、符号链接、junction 和其他重解析点都会被拒绝。项目绑定时会冻结配置；修改配置后需要重启 MCP 并重新绑定。
+`storage.output_directory` 必须是项目内安全相对目录，默认值为 `output/imagegen/`。项目根本身、项目外路径、文件、符号链接、junction 和其他重解析点都会被拒绝。
+
+项目绑定从显式项目根开始，并为当前 Codex 任务返回一个不透明的 `projectBindingId`。模型调用和 widget 调用携带同一 ID，因此即使被路由到不同 MCP server 进程或 server 重启，也能恢复绑定和画布生命周期。Plugin 只保存该 ID 的带域摘要，不会从 `cwd`、roots、最近项目或宿主会话元数据猜测项目。项目绑定时会冻结配置；修改配置后，携带已有 ID 对同一项目重绑即可，不要求重启 MCP。
 
 ## 迁移到 Plugin
 

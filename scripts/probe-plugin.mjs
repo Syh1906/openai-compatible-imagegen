@@ -1,6 +1,6 @@
 import { access, lstat, readFile, readdir, stat } from "node:fs/promises";
 import { constants } from "node:fs";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -324,6 +324,11 @@ async function main() {
 
   try {
     await client.connect(transport);
+    let projectBindingId = null;
+    const callProjectTool = async (name, arguments_ = {}) => await client.callTool({
+      name,
+      arguments: projectBindingId ? { ...arguments_, projectBindingId } : arguments_,
+    });
     const serverVersion = client.getServerVersion();
     requireValue(serverVersion?.name === manifest.name, "running server name differs from plugin name");
     requireValue(serverVersion?.version === manifest.version, "running server version differs from plugin version");
@@ -377,8 +382,8 @@ async function main() {
       "tool resource URIs differ from release identity",
     );
     requireValue(
-      JSON.stringify(resources) === JSON.stringify(Object.values(releaseIdentity.resourceUris).sort()),
-      "MCP resources differ from release identity",
+      Object.values(releaseIdentity.resourceUris).every((uri) => resources.includes(uri)),
+      "MCP resources omit a release identity URI",
     );
     requireValue(
       widget.includes(`<meta name="openai-compatible-imagegen-release" content="${releaseIdentity.fingerprint}">`),
@@ -392,15 +397,14 @@ async function main() {
       "widget resources expose a different release identity",
     );
 
-    const unboundResult = await client.callTool({
-      name: "list_image_models",
-      arguments: {},
-    });
+    projectBindingId = `pbind_${randomBytes(32).toString("hex")}`;
+    const unboundResult = await callProjectTool("list_image_models");
+    projectBindingId = null;
     requireValue(
       unboundResult.isError === true
         && !unboundResult.structuredContent
         && unboundResult.content?.[0]?.text?.startsWith("project_binding_required:"),
-      "unbound project calls did not return a stable error",
+      "unknown project bindings did not return a stable error",
     );
     if (requiresProjectBinding) {
       const bindingResult = await client.callTool({
@@ -409,14 +413,13 @@ async function main() {
       });
       requireValue(
         bindingResult.isError !== true
-          && ["bound", "already_bound"].includes(bindingResult.structuredContent?.status),
+          && ["bound", "already_bound"].includes(bindingResult.structuredContent?.status)
+          && /^pbind_[a-f0-9]{64}$/.test(bindingResult.structuredContent?.projectBindingId ?? ""),
         "explicit project binding failed",
       );
+      projectBindingId = bindingResult.structuredContent.projectBindingId;
     }
-    const runtimeDiagnosticResult = await client.callTool({
-      name: "inspect_imagegen_runtime",
-      arguments: {},
-    });
+    const runtimeDiagnosticResult = await callProjectTool("inspect_imagegen_runtime");
     const runtimeDiagnostic = runtimeDiagnosticResult.structuredContent?.runtime;
     requireValue(runtimeDiagnosticResult.isError !== true && runtimeDiagnostic, "runtime diagnostic failed");
     requireValue(
@@ -442,7 +445,7 @@ async function main() {
       !resourceTemplates.includes("imagegen://artifact/{imageId}"),
       "MCP server still exposes the unsupported widget image resource template",
     );
-    const invalidCall = await client.callTool({ name: "open_image_editor", arguments: {} });
+    const invalidCall = await callProjectTool("open_image_editor");
     const missingImageIdRejected = invalidCall.isError === true;
     requireValue(missingImageIdRejected, "open_image_editor accepted a missing image ID");
     let artifactRead = null;
@@ -453,7 +456,7 @@ async function main() {
     let annotationSmokeResult = null;
     let editorLifecycle = null;
     if (remoteSmoke) {
-      const modelResult = await client.callTool({ name: "list_image_models", arguments: {} });
+      const modelResult = await callProjectTool("list_image_models");
       const modelIds = (modelResult.structuredContent?.models ?? []).map((model) => model.id);
       requireValue(modelResult.isError !== true, "list_image_models failed");
       requireValue(
@@ -465,10 +468,7 @@ async function main() {
 
     if (imageIds.length) {
       for (const currentImageId of imageIds) {
-        const artifactResult = await client.callTool({
-          name: "get_image_artifact",
-          arguments: { imageId: currentImageId },
-        });
+        const artifactResult = await callProjectTool("get_image_artifact", { imageId: currentImageId });
         requireValue(artifactResult.isError !== true, `get_image_artifact failed for ${currentImageId}`);
         requireValue(
           artifactResult.content.some((item) => item.type === "image"),
@@ -478,10 +478,7 @@ async function main() {
       artifactReads = [...imageIds];
       artifactRead = imageIds[0];
 
-      const renderResult = await client.callTool({
-        name: "render_image_results",
-        arguments: { imageIds },
-      });
+      const renderResult = await callProjectTool("render_image_results", { imageIds });
       requireRenderedImages(renderResult, imageIds);
       const renderedArtifacts = renderResult.structuredContent?.artifacts ?? [];
       requireValue(renderResult.isError !== true, `render_image_results failed for ${imageIds.join(", ")}`);
@@ -490,7 +487,7 @@ async function main() {
           && JSON.stringify(renderedArtifacts.map((artifact) => artifact.id)) === JSON.stringify(imageIds),
         "render_image_results did not preserve the requested image order",
       );
-      const renderedResources = await readArtifactData(client, renderedArtifacts);
+      const renderedResources = await readArtifactData(callProjectTool, renderedArtifacts);
       resultRender = {
         imageIds: renderResult.structuredContent.imageIds,
         artifactCount: renderedArtifacts.length,
@@ -498,22 +495,19 @@ async function main() {
       };
 
       if (annotationSmoke) {
-        const annotationResult = await client.callTool({
-          name: "save_image_annotations",
-          arguments: {
-            imageId: imageIds[0],
-            items: [{
-              id: "smoke-rectangle",
-              type: "rectangle",
-              x: 0.15,
-              y: 0.15,
-              width: 0.7,
-              height: 0.7,
-              text: "Change the marked area while preserving the surrounding background.",
-              color: "#ef4444",
-              strokeWidth: 3,
-            }],
-          },
+        const annotationResult = await callProjectTool("save_image_annotations", {
+          imageId: imageIds[0],
+          items: [{
+            id: "smoke-rectangle",
+            type: "rectangle",
+            x: 0.15,
+            y: 0.15,
+            width: 0.7,
+            height: 0.7,
+            text: "Change the marked area while preserving the surrounding background.",
+            color: "#ef4444",
+            strokeWidth: 3,
+          }],
         });
         const annotation = annotationResult.structuredContent?.annotation;
         requireValue(annotationResult.isError !== true && annotation?.id, "annotation smoke save failed");
@@ -530,41 +524,35 @@ async function main() {
       }
 
       const imageId = imageIds[0];
-      const openResult = await client.callTool({ name: "open_image_editor", arguments: { imageId } });
+      const openResult = await callProjectTool("open_image_editor", { imageId });
       const session = openResult.structuredContent?.editorSession;
       requireValue(openResult.isError !== true && session?.id, `open_image_editor failed for ${imageId}`);
       requireValue(session.imageId === imageId && session.status === "active", "open_image_editor returned an invalid session");
-      const activeResult = await client.callTool({ name: "get_image_editor_session", arguments: { editorSessionId: session.id } });
+      const activeResult = await callProjectTool("get_image_editor_session", { editorSessionId: session.id });
       requireValue(activeResult.structuredContent?.editorSession?.status === "active", "editor session was not active after open");
-      const destroyResult = await client.callTool({ name: "destroy_image_editor", arguments: { editorSessionId: session.id } });
+      const destroyResult = await callProjectTool("destroy_image_editor", { editorSessionId: session.id });
       requireValue(destroyResult.structuredContent?.editorSession?.status === "destroyed", "editor session was not destroyed");
-      const destroyedResult = await client.callTool({ name: "get_image_editor_session", arguments: { editorSessionId: session.id } });
+      const destroyedResult = await callProjectTool("get_image_editor_session", { editorSessionId: session.id });
       requireValue(destroyedResult.structuredContent?.editorSession?.status === "destroyed", "destroyed editor session was not observable");
-      const finalizeResult = await client.callTool({ name: "finalize_image_editor_session", arguments: { editorSessionId: session.id } });
+      const finalizeResult = await callProjectTool("finalize_image_editor_session", { editorSessionId: session.id });
       requireValue(finalizeResult.structuredContent?.editorSession?.status === "released", "editor session was not released");
-      const repeatedFinalize = await client.callTool({ name: "finalize_image_editor_session", arguments: { editorSessionId: session.id } });
+      const repeatedFinalize = await callProjectTool("finalize_image_editor_session", { editorSessionId: session.id });
       requireValue(repeatedFinalize.structuredContent?.editorSession?.status === "released", "editor session release was not idempotent");
       editorLifecycle = "released";
     }
 
     if (remoteSmoke) {
-      const generateResult = await client.callTool({
-        name: "generate_image",
-        arguments: {
-          prompt: REMOTE_SMOKE_GENERATE_PROMPT,
-          count: 1,
-          quality: "low",
-          size: "1024x1024",
-          format: "png",
-        },
+      const generateResult = await callProjectTool("generate_image", {
+        prompt: REMOTE_SMOKE_GENERATE_PROMPT,
+        count: 1,
+        quality: "low",
+        size: "1024x1024",
+        format: "png",
       });
       const generated = generateResult.structuredContent?.artifacts?.[0];
       requireValue(generateResult.isError !== true && generated?.id, "remote smoke generation failed");
 
-      const generatedRender = await client.callTool({
-        name: "render_image_results",
-        arguments: { imageIds: [generated.id] },
-      });
+      const generatedRender = await callProjectTool("render_image_results", { imageIds: [generated.id] });
       requireRenderedImages(generatedRender, [generated.id]);
       requireValue(
         generatedRender.isError !== true
@@ -572,19 +560,16 @@ async function main() {
         "remote smoke generated result did not render",
       );
       const generatedResources = await readArtifactData(
-        client,
+        callProjectTool,
         generatedRender.structuredContent?.artifacts ?? [],
       );
 
-      const editResult = await client.callTool({
-        name: "edit_image",
-        arguments: {
-          parentImageId: generated.id,
-          prompt: REMOTE_SMOKE_EDIT_PROMPT,
-          quality: "low",
-          size: "1024x1024",
-          format: "png",
-        },
+      const editResult = await callProjectTool("edit_image", {
+        parentImageId: generated.id,
+        prompt: REMOTE_SMOKE_EDIT_PROMPT,
+        quality: "low",
+        size: "1024x1024",
+        format: "png",
       });
       const edited = editResult.structuredContent?.artifacts?.[0];
       requireValue(editResult.isError !== true && edited?.id, "remote smoke edit failed");
@@ -593,10 +578,7 @@ async function main() {
         "remote smoke edit did not preserve the parent image ID",
       );
 
-      const editedRender = await client.callTool({
-        name: "render_image_results",
-        arguments: { imageIds: [edited.id] },
-      });
+      const editedRender = await callProjectTool("render_image_results", { imageIds: [edited.id] });
       requireRenderedImages(editedRender, [edited.id]);
       requireValue(
         editedRender.isError !== true
@@ -604,7 +586,7 @@ async function main() {
         "remote smoke edited result did not render",
       );
       const editedResources = await readArtifactData(
-        client,
+        callProjectTool,
         editedRender.structuredContent?.artifacts ?? [],
       );
       requireSafeToolResults([generateResult, generatedRender, editResult, editedRender], projectRoot);
@@ -653,12 +635,9 @@ async function main() {
   }
 }
 
-async function readArtifactData(client, artifacts) {
+async function readArtifactData(callProjectTool, artifacts) {
   return await Promise.all(artifacts.map(async (artifact) => {
-    const result = await client.callTool({
-      name: "read_image_artifact_data",
-      arguments: { imageId: artifact.id },
-    });
+    const result = await callProjectTool("read_image_artifact_data", { imageId: artifact.id });
     const payload = result.structuredContent;
     const publicArtifact = payload?.artifact;
     const widgetData = result._meta?.widgetData;

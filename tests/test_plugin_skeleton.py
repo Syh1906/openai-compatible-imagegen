@@ -187,9 +187,10 @@ class PluginSkeletonTests(unittest.TestCase):
 
         self.assertIn("首次调用任何项目相关工具前", text)
         self.assertIn("bind_imagegen_project", text)
-        self.assertIn("同一 MCP 进程重复绑定同一项目会幂等返回", text)
-        self.assertIn("绑定不依赖宿主会话字段", text)
-        self.assertIn("MCP server 重启后绑定会消失", text)
+        self.assertIn("保存返回的 `projectBindingId`", text)
+        self.assertIn("首次不带 ID 的绑定会签发新的随机绑定", text)
+        self.assertIn("同一 `projectBindingId` 可跨 MCP 进程和 server 重启恢复", text)
+        self.assertIn("不得用 transport `sessionId`", text)
         self.assertIn("不得从插件安装目录、MCP `cwd`、roots、Git 搜索", text)
 
     def test_skill_documents_the_explicit_config_migration_gate(self) -> None:
@@ -305,7 +306,13 @@ class PluginSkeletonTests(unittest.TestCase):
         )
         self.assertEqual(
             payload["resources"],
-            sorted(payload["releaseIdentity"]["resourceUris"].values()),
+            sorted([
+                *payload["releaseIdentity"]["resourceUris"].values(),
+                "ui://openai-compatible-imagegen/editor-43c3a69a85db10633692.html",
+                "ui://openai-compatible-imagegen/editor-9caad8c28a921a55611b.html",
+                "ui://openai-compatible-imagegen/result-43c3a69a85db10633692.html",
+                "ui://openai-compatible-imagegen/result-9caad8c28a921a55611b.html",
+            ]),
         )
         self.assertRegex(payload["releaseIdentity"]["fingerprint"], r"^[a-f0-9]{20}$")
         runtime = payload["runtimeDiagnostic"]
@@ -339,7 +346,7 @@ class PluginSkeletonTests(unittest.TestCase):
         self.assertIsNone(payload["annotationSmoke"])
 
         probe_text = PROBE_PATH.read_text(encoding="utf-8")
-        self.assertIn('name: "render_image_results"', probe_text)
+        self.assertIn('callProjectTool("render_image_results"', probe_text)
         self.assertIn("resultRender", probe_text)
         self.assertNotIn("readArtifactResources", probe_text)
 
@@ -408,9 +415,10 @@ class PluginSkeletonTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue(json.loads(result.stdout)["sourceConsistent"])
 
-    def test_plugin_probe_omits_host_conversation_metadata(self) -> None:
+    def test_plugin_probe_uses_explicit_project_binding_ids(self) -> None:
         probe_text = PROBE_PATH.read_text(encoding="utf-8")
         self.assertNotIn('"openai/session"', probe_text)
+        self.assertIn("projectBindingId", probe_text)
 
     def _copy_probe_plugin(self, destination: Path) -> None:
         for name in [".codex-plugin", "dist", "skills"]:

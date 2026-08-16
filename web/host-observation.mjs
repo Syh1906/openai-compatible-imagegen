@@ -164,10 +164,7 @@ export function createHostObservationReporter({ app, releaseFingerprint }) {
   return {
     getStatus: () => ({ state: submissionState, attempts: submissionAttempts }),
     observeNotification: (value) => observe(SOURCES[0], value),
-    observeToolCall: (value) => {
-      if (value?.isError === true) return;
-      observe(SOURCES[1], value);
-    },
+    observeToolCall: (value) => observe(SOURCES[1], value),
   };
 
   function observe(source, value) {

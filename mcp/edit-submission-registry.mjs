@@ -40,6 +40,7 @@ export function createEditSubmissionRegistry({ idFactory = createSubmissionId } 
       annotationId: revision.annotationId,
       maskSha256: revision.maskSha256,
       maskPolicySha256: revision.maskPolicySha256,
+      claimGeneration: 0,
       state: "prepared",
       receipt,
     });
@@ -101,8 +102,9 @@ export function createEditSubmissionRegistry({ idFactory = createSubmissionId } 
       throw registryError("edit_submission_in_flight", "当前画布提交正在用于图片编辑。");
     }
     inFlightByBindingAndParent.set(pendingKey, resolved.receipt.id);
+    record.claimGeneration += 1;
     record.state = "in_flight";
-    return resolved;
+    return Object.freeze({ ...resolved, claimGeneration: record.claimGeneration });
   }
 
 
@@ -135,6 +137,7 @@ export function createEditSubmissionRegistry({ idFactory = createSubmissionId } 
 
   function requireCurrentRecord(input, requiredState) {
     const request = normalizeLookupInput(input, { requireSubmissionId: true });
+    const claimGeneration = normalizeClaimGeneration(input.claimGeneration);
     const record = recordsById.get(request.submissionId);
     if (!record) {
       throw registryError("stale_edit_submission", "画布提交不存在、已过期或已被消费。");
@@ -145,6 +148,7 @@ export function createEditSubmissionRegistry({ idFactory = createSubmissionId } 
     if (
       record.state !== requiredState
       || inFlightByBindingAndParent.get(pendingKey) !== request.submissionId
+      || record.claimGeneration !== claimGeneration
     ) {
       throw registryError("stale_edit_submission", "画布提交已经被更新版本替代。");
     }
@@ -153,7 +157,15 @@ export function createEditSubmissionRegistry({ idFactory = createSubmissionId } 
 }
 
 
-function normalizeArtifactIds(value) {
+export function normalizeClaimGeneration(value) {
+  if (!Number.isSafeInteger(value) || value <= 0) {
+    throw registryError("stale_edit_submission", "画布提交已经被更新版本替代。");
+  }
+  return value;
+}
+
+
+export function normalizeArtifactIds(value) {
   if (value === undefined) return [];
   if (!Array.isArray(value) || value.length === 0 || value.some((id) => (
     typeof id !== "string" || !IMAGE_ID_PATTERN.test(id)
@@ -164,7 +176,7 @@ function normalizeArtifactIds(value) {
 }
 
 
-function normalizeIssueInput(input) {
+export function normalizeIssueInput(input) {
   requireObject(input, "submission");
   const bindingKey = requireText(input.bindingKey, "bindingKey");
   const parentImageId = requireText(input.parentImageId, "parentImageId");
@@ -190,7 +202,7 @@ function normalizeIssueInput(input) {
 }
 
 
-function normalizeLookupInput(input, { requireSubmissionId }) {
+export function normalizeLookupInput(input, { requireSubmissionId }) {
   requireObject(input, "edit submission lookup");
   const bindingKey = requireText(input.bindingKey, "bindingKey");
   const parentImageId = requireText(input.parentImageId, "parentImageId");
@@ -224,7 +236,7 @@ function assertBindingMatches(record, request) {
 }
 
 
-function digestRevision(revision) {
+export function digestRevision(revision) {
   const canonicalRevision = {
     annotationId: revision.annotationId,
     items: revision.items,
@@ -265,7 +277,7 @@ function bindingParentKey(bindingKey, parentImageId) {
 }
 
 
-function registryError(code, message) {
+export function registryError(code, message) {
   const error = new Error(message);
   error.name = "EditSubmissionError";
   error.code = code;
@@ -303,6 +315,6 @@ function requireNullableSha256(value, name) {
 }
 
 
-function createSubmissionId() {
+export function createSubmissionId() {
   return `sub_${randomBytes(16).toString("hex")}`;
 }

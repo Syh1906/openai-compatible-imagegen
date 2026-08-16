@@ -448,7 +448,7 @@ function forbiddenProjectConfigError() {
 function configChangedError() {
   return new ImageConfigResolutionError(
     "image_config_changed",
-    "图片配置在项目绑定后发生变化，请重启 MCP server 并重新绑定项目。",
+    "图片配置在项目绑定后发生变化，请重新显式绑定当前图片项目。",
   );
 }
 

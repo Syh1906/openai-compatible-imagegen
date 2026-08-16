@@ -9,9 +9,11 @@ description: 在 Codex App 会话中生成、编辑、标注和交付 OpenAI-com
 
 ## 项目绑定
 
-在首次调用任何项目相关工具前，先调用 `bind_imagegen_project`，把当前 Codex 任务的项目根作为 `projectRoot` 传入。项目根必须来自当前任务工作区，不得从插件安装目录、MCP `cwd`、roots、Git 搜索或其他本机状态推断。
+在首次调用任何项目相关工具前，先调用 `bind_imagegen_project`，把当前 Codex 任务的项目根作为 `projectRoot` 传入。保存返回的 `projectBindingId`，并在本任务后续每个项目工具调用中原样传入。项目根必须来自当前任务工作区，不得从插件安装目录、MCP `cwd`、roots、Git 搜索或其他本机状态推断。
 
-同一 MCP 进程重复绑定同一项目会幂等返回；进程已经绑定到另一个项目或项目根校验失败时立即停止，不切换根目录。绑定不依赖宿主会话字段、transport session、roots 或 MCP `cwd`。MCP server 重启后绑定会消失，收到 `project_binding_required` 时先用同一当前项目根重新绑定，再继续原操作；不要改走其他目录或传输路线。
+首次不带 ID 的绑定会签发新的随机绑定，因此不得在同一任务中重复首次绑定。配置变化时，携带已有 `projectBindingId` 和同一 `projectRoot` 再次绑定；同项目重绑保持幂等并更新配置摘要，换根直接冲突。MCP 只持久化绑定 ID 的带域摘要，不保存原始 ID。不得用 transport `sessionId`、roots、MCP `cwd`、最近项目或其他本机状态替代、恢复或猜测绑定 ID。
+
+同一 `projectBindingId` 可跨 MCP 进程和 server 重启恢复。收到 `project_binding_required` 或 `project_binding_invalid` 时停止当前操作；不要扫描旧状态或猜测其他 ID。确需重新开始时，只能用当前任务项目根创建新的隔离绑定，并继续使用新返回的 ID；旧画布和提交状态不会自动迁移。App-only 工具由 widget 从标准 `tool-input.arguments.projectBindingId` 取得同一 ID，不依赖宿主私有字段。
 
 ## 路由
 
@@ -44,7 +46,7 @@ description: 在 Codex App 会话中生成、编辑、标注和交付 OpenAI-com
 
 ## 画布提交
 
-收到画布提交消息时，优先读取最新模型上下文中的 `submissionId`、`imageId`、`annotationId`、`prompt`、`annotationCount`、`intents` 和 `requestText`。同一任务存在多条画布上下文时，以当前用户消息对应的最新 `submissionId` 为准，不合并旧提交。把 `submissionId` 原样作为 `edit_image.submissionId`，把 `imageId` 作为 `edit_image.parentImageId`；`annotationId` 为 `null` 时省略该参数，存在时原样传给 `edit_image`。不得再次调用 `prepare_image_edit_submission` 或 `save_image_annotations`。
+收到画布提交消息时，优先读取最新模型上下文中的 `projectBindingId`、`submissionId`、`imageId`、`annotationId`、`prompt`、`annotationCount`、`intents` 和 `requestText`。同一任务存在多条画布上下文时，以当前用户消息对应的最新 `submissionId` 为准，不合并旧提交。把 `projectBindingId` 原样作为本次 `edit_image` 的项目绑定，把 `submissionId` 原样作为 `edit_image.submissionId`，把 `imageId` 作为 `edit_image.parentImageId`；`annotationId` 为 `null` 时省略该参数，存在时原样传给 `edit_image`。不得再次调用 `prepare_image_edit_submission` 或 `save_image_annotations`。
 
 结合标注预览、各处文字说明和补充要求，整理一条描述完整目标图片的编辑提示，再调用一次 `edit_image`。包含 mask 标注时，提示必须描述完整目标图片，而不只是被替换的局部区域；“保护内容”要写清需保留对象及允许随场景自然适配的光影。只转述用户目标，不得自行编写、追加或覆盖 `MASK_GUARD_V2_BY_STRATEGY`。运行时会根据已签发提交绑定的 `maskPolicy` 策略构造最终保护提示。缺少图片 ID、`submissionId` 或无法确定修改意图时停止，不猜测 ID，也不切换到 `generate_image` 或其他图片路线。
 
@@ -59,7 +61,7 @@ description: 在 Codex App 会话中生成、编辑、标注和交付 OpenAI-com
 - 用户只隐藏或关闭右栏、暂时讨论其他内容、等待下一轮生成，或仍可能继续处理当前图片时，不要销毁画布。
 - 不知道活动 `editorSessionId` 时不要猜测，也不要调用销毁工具。
 
-画布内的“销毁画布”按钮与 `destroy_image_editor` 使用同一生命周期。销毁会结束该图片的全部活动画布会话，并终止当前 MCP server 生命周期内的重新打开入口；图片产物和版本关系仍然保留。销毁后不要再次为同一图片调用 `open_image_editor` 或 `render_image_results` 试图恢复画布入口。
+画布内的“销毁画布”按钮与 `destroy_image_editor` 使用同一生命周期。销毁会结束该图片在当前项目绑定中的全部活动画布会话，并终止该图片在此绑定中的重新打开入口；状态可跨 MCP 进程恢复，其他项目绑定不受影响，图片产物和版本关系仍然保留。销毁后不要再次为同一图片调用 `open_image_editor` 或 `render_image_results` 试图恢复画布入口。
 
 首期模型为 `gpt-image-2`。模型能力由目录声明，执行失败后不切换模型、端点、供应商或编辑路线。
 
@@ -94,7 +96,7 @@ python "<plugin-root>/dist/scripts/migrate_image_config.py" --source "<legacy-co
 
 `readyToWrite=false` 且提示明文 key 授权时停止；只有用户另行明确批准迁移明文 key，才在 write 命令追加 `--allow-plaintext-api-key`。摘要 SHA 不匹配、目标已存在、schema 不兼容或写入失败时报告原始迁移错误并停止，不改换源文件、目标、配置路线或认证方式。迁移成功后保留源文件；不要自动删除或改名。
 
-可选的 `storage.output_directory` 必须是项目内安全相对目录；缺失时使用 `<项目根>/output/imagegen/`。项目根本身、项目外路径、文件、符号链接、junction 或其他重解析点会被拒绝。配置在项目绑定时冻结，修改后需重启 MCP 并重新绑定才生效。
+可选的 `storage.output_directory` 必须是项目内安全相对目录；缺失时使用 `<项目根>/output/imagegen/`。项目根本身、项目外路径、文件、符号链接、junction 或其他重解析点会被拒绝。配置在项目绑定时冻结；修改后需对同一项目根再次显式绑定才生效。
 
 产物根只决定一个活动仓库。配置覆盖生效后，图片、版本、标注、mask、提交恢复和“在文件夹中显示”都只读取该目录；不会扫描、合并、迁移或复制默认目录中的旧产物。移除覆盖并重启绑定后，默认目录中的旧产物仍可继续访问。
 

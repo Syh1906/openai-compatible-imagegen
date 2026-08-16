@@ -115,7 +115,9 @@ Plugin priority is:
 explicit tool values > project allowlisted overrides > user defaults > built-in defaults
 ```
 
-`storage.output_directory` must be a safe relative directory inside the project. The default is `output/imagegen/`. Project-root output, outside paths, files, symbolic links, junctions, and other reparse points are rejected. Configuration is frozen when the project binds; restart the MCP server and bind again after changing it.
+`storage.output_directory` must be a safe relative directory inside the project. The default is `output/imagegen/`. Project-root output, outside paths, files, symbolic links, junctions, and other reparse points are rejected.
+
+Project binding starts with an explicit project root and returns an opaque `projectBindingId` for the current Codex task. Model and widget calls carry the same ID, so the binding and canvas lifecycle survive routing through different MCP server processes and server restarts. The Plugin stores only a domain-separated digest of the ID and never scans `cwd`, roots, recent projects, or host session metadata to guess a project. Configuration is frozen when the project binds; after changing it, rebind the same project with the existing ID. An MCP restart is not required.
 
 ## Migrate to the Plugin
 

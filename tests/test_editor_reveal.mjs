@@ -4,6 +4,7 @@ import test from "node:test";
 import { JSDOM } from "jsdom";
 import {
   IMAGE_ID,
+  PROJECT_BINDING_ID,
   installDomGlobals,
   installHost,
   restoreDomGlobals,
@@ -32,7 +33,7 @@ test("focused canvas reveals its image in the folder", async () => {
     assert.equal(document.querySelector("[data-toast]")?.textContent, "");
     assert.deepEqual(
       host.toolCalls.find(({ name }) => name === "reveal_image_artifact").arguments,
-      { imageId: IMAGE_ID },
+      { imageId: IMAGE_ID, projectBindingId: PROJECT_BINDING_ID },
     );
   } finally {
     host.dispose();

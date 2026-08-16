@@ -1,11 +1,11 @@
 import { ArtifactHydrationError, hydrateResultArtifacts } from "./result-state.mjs";
 
-export function createArtifactCandidateLoader({ app, records }) {
+export function createArtifactCandidateLoader({ app, records, observeToolCall = null }) {
   async function hydrate(metadata) {
     if (!metadata?.id) {
       throw new ArtifactHydrationError("artifact_payload_invalid", "MCP artifact metadata is invalid");
     }
-    const [artifact] = await hydrateResultArtifacts(app, [metadata]);
+    const [artifact] = await hydrateResultArtifacts(app, [metadata], { observeToolCall });
     return artifact;
   }
 

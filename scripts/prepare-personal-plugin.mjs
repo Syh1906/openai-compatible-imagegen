@@ -37,7 +37,6 @@ export async function preparePersonalPlugin({
     },
   ];
   let stage = null;
-
   for (const step of commands) {
     let result;
     try {
@@ -68,7 +67,14 @@ function parseStageResult(stdout) {
   } catch (error) {
     throw new Error("stage:personal returned invalid JSON", { cause: error });
   }
-  if (result.ok !== true || result.sourceConsistent !== true || result.probeOk !== true) {
+  if (
+    result.ok !== true
+    || result.sourceConsistent !== true
+    || result.probeOk !== true
+    || result.plugin !== "openai-compatible-imagegen"
+    || typeof result.marketplaceName !== "string"
+    || result.marketplaceName.length === 0
+  ) {
     throw new Error("stage:personal did not prove source consistency");
   }
   return result;
