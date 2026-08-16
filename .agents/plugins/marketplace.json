@@ -1,0 +1,20 @@
+{
+  "name": "openai-compatible-imagegen",
+  "interface": {
+    "displayName": "OpenAI-Compatible Images"
+  },
+  "plugins": [
+    {
+      "name": "openai-compatible-imagegen",
+      "source": {
+        "source": "url",
+        "url": "https://github.com/Syh1906/openai-compatible-imagegen.git"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}
