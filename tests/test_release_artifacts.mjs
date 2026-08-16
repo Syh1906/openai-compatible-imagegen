@@ -15,7 +15,11 @@ import {
   standaloneAdapterFileNames,
   standaloneRuntimeFileNames,
 } from "../scripts/plugin-file-set.mjs";
-import { normalizeReleaseText, publishArtifactSet } from "../scripts/build-release-artifacts.mjs";
+import {
+  normalizeReleaseFile,
+  normalizeReleaseText,
+  publishArtifactSet,
+} from "../scripts/build-release-artifacts.mjs";
 
 
 const execFileAsync = promisify(execFile);
@@ -67,6 +71,7 @@ const pluginFiles = [
   ".codex-plugin/plugin.json",
   ".mcp.json",
   "LICENSE",
+  "assets/icon.png",
   "dist/server.mjs",
   "dist/widget/index.html",
   ...runtimeFileNames.map((name) => `dist/scripts/${name}`),
@@ -293,6 +298,17 @@ test("release text normalization accepts only known UTF-8 text types and preserv
 });
 
 
+test("release file normalization preserves supported PNG assets byte for byte", () => {
+  const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+  assert.deepEqual(normalizeReleaseFile("assets/icon.png", png), png);
+  assert.throws(
+    () => normalizeReleaseFile("assets/payload.bin", png),
+    /unsupported release file type/i,
+  );
+});
+
+
 test("release builder creates exact, reproducible standalone and plugin archives with shared-core evidence", async (t) => {
   const firstOutput = await mkdtemp(path.join(os.tmpdir(), "imagegen-release-first-"));
   const secondOutput = await mkdtemp(path.join(os.tmpdir(), "imagegen-release-second-"));
@@ -455,7 +471,7 @@ test("development probe archives normalize text line endings before hashing", as
     ...pluginFiles,
     ...runtimeFileNames.map((name) => `scripts/${name}`),
   ]);
-  for (const relativePath of fixtureFiles) {
+  for (const relativePath of [...fixtureFiles].filter((name) => !name.endsWith(".png"))) {
     const target = path.join(fixtureRoot, relativePath);
     const content = (await readFile(target, "utf8")).replace(/\r?\n/g, "\r\n");
     await writeFile(target, content, "utf8");

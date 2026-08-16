@@ -106,6 +106,7 @@ export const pluginReleaseFiles = Object.freeze([
   ".codex-plugin/plugin.json",
   ".mcp.json",
   "LICENSE",
+  "assets/icon.png",
   ...distributionFiles.map((name) => `dist/${name}`),
   "skills/openai-compatible-imagegen/SKILL.md",
   "skills/openai-compatible-imagegen/references/config.example.json",
@@ -115,6 +116,7 @@ export const releaseTopLevelEntries = Object.freeze([
   ".codex-plugin",
   ".mcp.json",
   "LICENSE",
+  "assets",
   "dist",
   "skills",
 ].sort());
@@ -124,6 +126,7 @@ export function releaseEntriesFor(pluginId) {
     ".codex-plugin",
     ".mcp.json",
     "LICENSE",
+    "assets",
     "dist",
     `skills/${pluginId}`,
   ]);

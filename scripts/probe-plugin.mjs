@@ -12,7 +12,7 @@ import {
   distributionFiles as DISTRIBUTION_FILES,
   releaseEntriesFor,
 } from "./plugin-file-set.mjs";
-import { normalizeReleaseText } from "./build-release-artifacts.mjs";
+import { normalizeReleaseFile } from "./build-release-artifacts.mjs";
 
 const defaultRoot = fileURLToPath(new URL("..", import.meta.url));
 const PLUGIN_ID = "openai-compatible-imagegen";
@@ -191,7 +191,7 @@ async function resolveMarketplaceSource(catalogPath) {
 async function hashFile(root, relativePath) {
   const content = await readFile(path.resolve(root, relativePath));
   return createHash("sha256")
-    .update(normalizeReleaseText(relativePath, content))
+    .update(normalizeReleaseFile(relativePath, content))
     .digest("hex");
 }
 

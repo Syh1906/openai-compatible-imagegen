@@ -1172,7 +1172,7 @@ test("editing a submitted draft replaces the stale success notice with the updat
     document.querySelector('[data-color="#2563eb"]').click();
     assert.equal(document.querySelector("[data-submit-status]")?.textContent, "任务输入框中是当前版本");
     document.querySelector('[data-action="apply-foreground-color"]').click();
-    assert.equal(document.querySelector("[data-submit-status]")?.textContent, "任务输入框仍是上一版；更新能力等待真实宿主验收");
+    assert.equal(document.querySelector("[data-submit-status]")?.textContent, "任务输入框仍是上一版，可更新为当前修改");
     assert.equal(document.querySelector("[data-submit-status]")?.dataset.statusTone, "neutral");
   } finally {
     await closeRuntime(host);

@@ -139,7 +139,7 @@ export function draftStatusMessage(status) {
   return {
     writing: "正在等待任务输入框确认",
     pending: "任务输入框中是当前版本",
-    updated: "任务输入框仍是上一版；更新能力等待真实宿主验收",
+    updated: "任务输入框仍是上一版，可更新为当前修改",
   }[status?.kind] || "";
 }
 

@@ -17,6 +17,7 @@ const pluginId = "openai-compatible-imagegen";
 const archiveRoot = `${pluginId}/`;
 const standaloneCompatibilityBaselineVersion = "0.3.0";
 const forbiddenArchivePath = /(^|\/)(auth\.json|\.local|verification-scratch|node_modules|__pycache__|cache|test-results?|coverage)(\/|$)/i;
+const allowedReleaseBinaryExtensions = new Set([".png"]);
 const allowedReleaseTextExtensions = new Set([".html", ".json", ".jsonl", ".mjs", ".md", ".py", ".yaml"]);
 const allowedReleaseTextNames = new Set([".gitignore", "LICENSE"]);
 
@@ -193,7 +194,17 @@ async function readSourceFile(sourceRoot, relativePath) {
   await requirePathWithoutLinks(sourceRoot, relativePath);
   const metadata = await lstat(sourcePath);
   requireValue(metadata.isFile(), `release source is not a regular file: ${relativePath}`);
-  return normalizeReleaseText(relativePath, await readFile(sourcePath));
+  return normalizeReleaseFile(relativePath, await readFile(sourcePath));
+}
+
+
+export function normalizeReleaseFile(relativePath, content) {
+  const extension = path.posix.extname(path.posix.basename(relativePath)).toLowerCase();
+  if (allowedReleaseBinaryExtensions.has(extension)) return Buffer.from(content);
+  if (allowedReleaseTextNames.has(path.posix.basename(relativePath)) || allowedReleaseTextExtensions.has(extension)) {
+    return normalizeReleaseText(relativePath, content);
+  }
+  throw new Error(`release source has an unsupported release file type: ${relativePath}`);
 }
 
 

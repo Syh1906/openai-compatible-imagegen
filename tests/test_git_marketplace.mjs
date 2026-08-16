@@ -15,6 +15,8 @@ const pluginId = "openai-compatible-imagegen";
 
 
 test("the repository is a Git-backed marketplace with a runnable root plugin", async () => {
+  assert.ok(pluginReleaseFiles.includes("assets/icon.png"));
+
   const marketplace = JSON.parse(await readFile(
     path.join(projectRoot, ".agents/plugins/marketplace.json"),
     "utf8",
@@ -49,15 +51,18 @@ test("the repository is a Git-backed marketplace with a runnable root plugin", a
 
 
 test("public install and rollback guides use the documented plugin lifecycle commands", async () => {
-  const [readme, readmeZh, installation, rollback, troubleshooting] = await Promise.all([
+  const [readme, readmeEn, installation, rollback, troubleshooting] = await Promise.all([
     readFile(path.join(projectRoot, "README.md"), "utf8"),
-    readFile(path.join(projectRoot, "README.zh-CN.md"), "utf8"),
+    readFile(path.join(projectRoot, "README.en.md"), "utf8"),
     readFile(path.join(projectRoot, "docs/guides/installation.md"), "utf8"),
     readFile(path.join(projectRoot, "docs/guides/rollback.md"), "utf8"),
     readFile(path.join(projectRoot, "docs/guides/troubleshooting.md"), "utf8"),
   ]);
 
-  for (const document of [readme, readmeZh, installation]) {
+  assert.match(readme, /\[English\]\(README\.en\.md\)/);
+  assert.match(readmeEn, /\[简体中文\]\(README\.md\)/);
+
+  for (const document of [readme, readmeEn, installation]) {
     assert.match(document, /codex plugin marketplace add Syh1906\/openai-compatible-imagegen/);
     assert.match(document, /codex plugin add openai-compatible-imagegen@openai-compatible-imagegen/);
   }

@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = ROOT / ".codex-plugin" / "plugin.json"
 MCP_PATH = ROOT / ".mcp.json"
 README_PATH = ROOT / "README.md"
-README_ZH_PATH = ROOT / "README.zh-CN.md"
+README_EN_PATH = ROOT / "README.en.md"
 INSTALLATION_GUIDE_PATH = ROOT / "docs" / "guides" / "installation.md"
 CONFIGURATION_GUIDE_PATH = ROOT / "docs" / "guides" / "configuration.md"
 MIGRATION_GUIDE_PATH = ROOT / "docs" / "guides" / "migration.md"
@@ -70,7 +70,7 @@ DIST_RUNTIME_PATHS = [
 
 class PluginSkeletonTests(unittest.TestCase):
     def test_public_docs_route_package_installation_configuration_and_migration(self) -> None:
-        for path in (README_PATH, README_ZH_PATH):
+        for path in (README_PATH, README_EN_PATH):
             text = path.read_text(encoding="utf-8")
             self.assertIn("OpenAI-Compatible Images", text)
             self.assertIn("Standalone Skill", text)
@@ -83,7 +83,7 @@ class PluginSkeletonTests(unittest.TestCase):
             path.read_text(encoding="utf-8")
             for path in (
                 README_PATH,
-                README_ZH_PATH,
+                README_EN_PATH,
                 INSTALLATION_GUIDE_PATH,
                 CONFIGURATION_GUIDE_PATH,
                 MIGRATION_GUIDE_PATH,
@@ -125,6 +125,9 @@ class PluginSkeletonTests(unittest.TestCase):
         self.assertEqual(manifest["name"], PLUGIN_ID)
         self.assertEqual(manifest["interface"]["displayName"], "OpenAI-Compatible Images")
         self.assertEqual(manifest["interface"]["developerName"], PLUGIN_ID)
+        self.assertEqual(manifest["interface"]["composerIcon"], "./assets/icon.png")
+        self.assertEqual(manifest["interface"]["logo"], "./assets/icon.png")
+        self.assertTrue((ROOT / "assets" / "icon.png").is_file())
         self.assertEqual(manifest["skills"], "./skills/")
         self.assertEqual(manifest["mcpServers"], "./.mcp.json")
         self.assertTrue((ROOT / manifest["skills"]).is_dir())
@@ -440,7 +443,7 @@ class PluginSkeletonTests(unittest.TestCase):
         self.assertIn("projectBindingId", probe_text)
 
     def _copy_probe_plugin(self, destination: Path) -> None:
-        for name in [".codex-plugin", "dist", "skills"]:
+        for name in [".codex-plugin", "assets", "dist", "skills"]:
             shutil.copytree(ROOT / name, destination / name)
         for name in [".mcp.json", "LICENSE", "package.json", "package-lock.json"]:
             shutil.copy2(ROOT / name, destination / name)
@@ -580,7 +583,7 @@ class PluginSkeletonTests(unittest.TestCase):
             marketplace_path = (
                 catalog_root / ".agents" / "plugins" / "marketplace.json"
             )
-            for name in [".codex-plugin", "dist", "skills"]:
+            for name in [".codex-plugin", "assets", "dist", "skills"]:
                 shutil.copytree(ROOT / name, plugin_root / name)
             for name in [".mcp.json", "LICENSE"]:
                 shutil.copy2(ROOT / name, plugin_root / name)
