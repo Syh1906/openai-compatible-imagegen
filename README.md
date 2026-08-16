@@ -29,9 +29,10 @@ Requirements: a Codex version with Plugin support, Git, Node.js 20+, Python 3.12
 
 ```text
 codex plugin marketplace add Syh1906/openai-compatible-imagegen
+codex plugin add openai-compatible-imagegen@openai-compatible-imagegen
 ```
 
-Then open **Plugins** in Codex App, select the `openai-compatible-imagegen` marketplace, and install **OpenAI-Compatible Images**. In Codex CLI, start `codex`, enter `/plugins`, and install it from the same marketplace.
+You can also open **Plugins** in Codex App, select the `openai-compatible-imagegen` marketplace, and install **OpenAI-Compatible Images**. In an interactive Codex CLI session, enter `/plugins` to use the same browser.
 
 The Git-backed package already contains the MCP server and widget. You do not build the repository or run a local web server.
 

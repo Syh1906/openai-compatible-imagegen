@@ -46,3 +46,27 @@ test("the repository is a Git-backed marketplace with a runnable root plugin", a
     [...pluginReleaseFiles].sort(),
   );
 });
+
+
+test("public install and rollback guides use the documented plugin lifecycle commands", async () => {
+  const [readme, readmeZh, installation, rollback, troubleshooting] = await Promise.all([
+    readFile(path.join(projectRoot, "README.md"), "utf8"),
+    readFile(path.join(projectRoot, "README.zh-CN.md"), "utf8"),
+    readFile(path.join(projectRoot, "docs/guides/installation.md"), "utf8"),
+    readFile(path.join(projectRoot, "docs/guides/rollback.md"), "utf8"),
+    readFile(path.join(projectRoot, "docs/guides/troubleshooting.md"), "utf8"),
+  ]);
+
+  for (const document of [readme, readmeZh, installation]) {
+    assert.match(document, /codex plugin marketplace add Syh1906\/openai-compatible-imagegen/);
+    assert.match(document, /codex plugin add openai-compatible-imagegen@openai-compatible-imagegen/);
+  }
+  for (const command of [
+    "codex plugin list --json",
+    "codex plugin remove openai-compatible-imagegen@openai-compatible-imagegen --json",
+    "codex plugin marketplace upgrade openai-compatible-imagegen --json",
+    "codex plugin marketplace remove openai-compatible-imagegen --json",
+  ]) {
+    assert.ok(`${rollback}\n${troubleshooting}`.includes(command), command);
+  }
+});

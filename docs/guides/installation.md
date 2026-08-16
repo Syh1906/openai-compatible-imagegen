@@ -33,10 +33,16 @@ The Plugin includes its prebuilt MCP server and widget. You do not run `npm inst
 codex plugin marketplace add Syh1906/openai-compatible-imagegen
 ```
 
-2. In Codex App, open **Plugins**, select the `openai-compatible-imagegen` marketplace, and install **OpenAI-Compatible Images**.
-3. For Codex CLI, start `codex`, enter `/plugins`, select the same marketplace, and install the Plugin.
-4. Start a new task after installation.
-5. Continue with [Plugin configuration](./configuration.md#configure-the-codex-plugin).
+2. Install the Plugin:
+
+```text
+codex plugin add openai-compatible-imagegen@openai-compatible-imagegen
+```
+
+3. Alternatively, open **Plugins** in Codex App or enter `/plugins` in an interactive Codex CLI session, select the `openai-compatible-imagegen` marketplace, and install **OpenAI-Compatible Images**.
+4. Confirm the installed version with `codex plugin list --json`.
+5. Start a new task after installation.
+6. Continue with [Plugin configuration](./configuration.md#configure-the-codex-plugin).
 
 ### Agent handoff
 

@@ -8,8 +8,10 @@ Identify the failing layer before changing configuration. The project does not s
 
 | Symptom | Check | Action |
 | --- | --- | --- |
-| Marketplace cannot be added | Git is installed and GitHub is reachable | Run `codex plugin marketplace list`, then retry only after resolving the Git error |
-| Plugin is not listed | Marketplace name and snapshot are present | Restart Codex App, reopen Plugins, or start a new CLI session |
+| Marketplace cannot be added | Git is installed and GitHub is reachable | Run `codex plugin marketplace list --json`, then retry only after resolving the Git error |
+| Marketplace snapshot is stale | The configured Git source and ref are correct | Run `codex plugin marketplace upgrade openai-compatible-imagegen --json`, then inspect the reported errors |
+| Plugin is not listed | Marketplace name and snapshot are present | Run `codex plugin list --available --json`, then restart Codex App or start a new CLI session |
+| Plugin removal is incomplete | The installed Plugin and marketplace names are correct | Run `codex plugin remove openai-compatible-imagegen@openai-compatible-imagegen --json` before `codex plugin marketplace remove openai-compatible-imagegen --json` |
 | MCP server cannot start | `node --version` is 20 or later | Install or select a supported Node runtime outside the Plugin |
 | Python helper cannot start | `python --version` reports 3.12 | Install or select Python 3.12 outside the Plugin |
 | Standalone Skill is not detected | `SKILL.md` is at the installed package root | Fix the extraction level and start a new session |

@@ -6,22 +6,32 @@ Rollback changes the installed package version. It does not downgrade or rewrite
 
 ## Roll back the Codex Plugin
 
-1. Record the current Plugin version and the released tag you want to restore.
-2. Uninstall the Plugin from the Codex App Plugins page or CLI `/plugins` browser.
+1. Record the current Plugin version with `codex plugin list --json` and choose the released tag you want to restore.
+2. Remove the installed Plugin:
+
+```text
+codex plugin remove openai-compatible-imagegen@openai-compatible-imagegen --json
+```
+
 3. Remove the current marketplace source:
 
 ```text
-codex plugin marketplace remove openai-compatible-imagegen
+codex plugin marketplace remove openai-compatible-imagegen --json
 ```
 
 4. Add the repository marketplace pinned to the released tag:
 
 ```text
-codex plugin marketplace add Syh1906/openai-compatible-imagegen@vX.Y.Z
+codex plugin marketplace add Syh1906/openai-compatible-imagegen --ref vX.Y.Z --json
 ```
 
-5. Reopen the Plugins page or `/plugins` browser and install **OpenAI-Compatible Images** from that marketplace snapshot.
-6. Start a new task and confirm the installed version before using image tools.
+5. Install **OpenAI-Compatible Images** from that marketplace snapshot:
+
+```text
+codex plugin add openai-compatible-imagegen@openai-compatible-imagegen --json
+```
+
+6. Confirm the installed version with `codex plugin list --json`, then start a new task before using image tools.
 
 Do not use an unreleased commit as a rollback target. A Plugin version can read only configuration compatible with that release; consult the target release notes before reusing a newer config.
 

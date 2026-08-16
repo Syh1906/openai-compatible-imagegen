@@ -19,6 +19,7 @@ This file records user-visible changes for each release of `openai-compatible-im
 - Present the repository as the `OpenAI-Compatible Images` product family. Users choose either the portable `OpenAI-Compatible Images Skill` or the complete Codex Plugin; the Plugin includes the Standalone generation and delivery capabilities.
 - Use `openai-compatible-imagegen` as the stable technical identity and remove the development `V2` suffix from the Plugin, configuration directory, bundled Skill, and release artifacts.
 - Keep the root README focused on package choice and first installation, with detailed operations routed to audience-specific guides.
+- Use the documented `codex plugin` and `codex plugin marketplace` lifecycle commands for installation, inspection, removal, marketplace refresh, and version pinning.
 
 ### Fixed
 
