@@ -400,7 +400,7 @@ async function copyReleaseSource(sourceRoot, destinationRoot) {
   for (const relativePath of ["package.json", "package-lock.json", ".mcp.json", "LICENSE"]) {
     await copyFile(path.join(sourceRoot, relativePath), path.join(destinationRoot, relativePath));
   }
-  for (const relativePath of [".codex-plugin", "dist", `skills/${pluginId}`]) {
+  for (const relativePath of [".codex-plugin", "assets", "dist", `skills/${pluginId}`]) {
     await cp(path.join(sourceRoot, relativePath), path.join(destinationRoot, relativePath), {
       recursive: true,
     });
