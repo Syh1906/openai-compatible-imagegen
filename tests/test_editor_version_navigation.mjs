@@ -27,7 +27,9 @@ test("an editor tool result without artifact metadata reaches an error terminal 
 
   try {
     await import(`../web/editor-runtime.mjs?missing-editor-artifact=${Date.now()}`);
-    await waitFor(() => document.querySelector(".editor-app")?.getAttribute("aria-busy") === "false");
+    await waitFor(() => (
+      document.querySelector("[data-submit-status]")?.textContent === "图片读取失败 · IMG-SCHEMA"
+    ));
     assert.equal(document.querySelector("[data-submit-status]")?.textContent, "图片读取失败 · IMG-SCHEMA");
     assert.equal(document.querySelector("[data-submit-status]")?.dataset.statusTone, "error");
   } finally {

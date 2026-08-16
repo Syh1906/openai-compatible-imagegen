@@ -51,7 +51,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 var define_RELEASE_IDENTITY_default;
 var init_define_RELEASE_IDENTITY = __esm({
   "<define:__RELEASE_IDENTITY__>"() {
-    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "0.4.0", serverBuildDigest: "215e98d56ee49d03df25aa790b675766c21cc5dad1efc0416d9b714d05898bb8", widgetAssetDigest: "ed3a27c2bc3c3f3baa4ea2d2fb0bbf23c445281c57f870b9cd7a0697b19b431f", fingerprint: "30cc1395ab550576ea00", resourceUris: { result: "ui://openai-compatible-imagegen/result.html", editor: "ui://openai-compatible-imagegen/editor.html" } };
+    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "0.4.0", serverBuildDigest: "3a759e9a3cc09e4d283338d1ef70275fb7edb91f7481a2cf9781342ad0d4bfb7", widgetAssetDigest: "ed3a27c2bc3c3f3baa4ea2d2fb0bbf23c445281c57f870b9cd7a0697b19b431f", fingerprint: "371cc2df2e4e8cf53c26", resourceUris: { result: "ui://openai-compatible-imagegen/result.html", editor: "ui://openai-compatible-imagegen/editor.html" } };
   }
 });
 
@@ -22164,7 +22164,7 @@ function decodeRuntimeOutput(chunks) {
 }
 function safeRuntimeError(error40, stderr) {
   const value = String(error40 || stderr || "repository operation failed");
-  if (/not found/i.test(value) || /找不到/.test(value)) return "repository entry not found";
+  if (/not found|cannot find|no such file/i.test(value) || /找不到/.test(value)) return "repository entry not found";
   if (/reparse point/i.test(value)) return "repository path contains a reparse point";
   if (/locked by another image task/i.test(value)) return "repository is locked by another image task";
   if (/required/i.test(value)) return "repository operation is missing required data";

@@ -173,9 +173,10 @@ test("widget binds standard tool input when the host projects image results", as
       "read_image_artifact_data",
       "report_imagegen_host_observation",
     ]);
-    await waitFor(() => requiredToolNames.isSubsetOf(new Set(
-      host.completedToolCalls.map(({ name }) => name),
-    )));
+    await waitFor(() => {
+      const completedToolNames = new Set(host.completedToolCalls.map(({ name }) => name));
+      return [...requiredToolNames].every((name) => completedToolNames.has(name));
+    });
     await host.settle();
     assert.equal(document.querySelector("[data-image-id]")?.textContent, IMAGE_ID);
     assert.equal(document.querySelector("[data-action=open-editor]")?.textContent.trim(), "打开画布");

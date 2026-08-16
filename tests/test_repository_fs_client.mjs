@@ -135,6 +135,24 @@ test("repository client does not disclose helper paths in runtime errors", async
 });
 
 
+test("repository client recognizes the standard English Windows missing-file error", async () => {
+  await assert.rejects(
+    runRepositoryFsOperation(
+      { operation: "read-annotation" },
+      {
+        runtimePath: path.resolve("scripts/repository_fs_helper.py"),
+        spawnProcess() {
+          return completedChild({
+            stdout: '{"ok":false,"error":"[WinError 2] The system cannot find the file specified"}\n',
+          });
+        },
+      },
+    ),
+    /repository entry not found/i,
+  );
+});
+
+
 test("repository client does not disclose UNC or extended Windows paths in validation errors", async (t) => {
   const cases = [
     {

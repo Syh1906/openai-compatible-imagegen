@@ -249,7 +249,7 @@ function decodeRuntimeOutput(chunks) {
 
 function safeRuntimeError(error, stderr) {
   const value = String(error || stderr || "repository operation failed");
-  if (/not found/i.test(value) || /找不到/.test(value)) return "repository entry not found";
+  if (/not found|cannot find|no such file/i.test(value) || /找不到/.test(value)) return "repository entry not found";
   if (/reparse point/i.test(value)) return "repository path contains a reparse point";
   if (/locked by another image task/i.test(value)) return "repository is locked by another image task";
   if (/required/i.test(value)) return "repository operation is missing required data";
