@@ -3,6 +3,9 @@ from __future__ import annotations
 import json
 import concurrent.futures
 from contextlib import contextmanager
+import ctypes
+from ctypes import wintypes
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -58,6 +61,62 @@ class ArtifactRepositoryTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         self.temp_dir.cleanup()
+
+    def test_canonicalizes_the_project_root_before_repository_mutation(self) -> None:
+        from scripts.artifact_repository import ArtifactRepository
+
+        project_alias = self.project_root / "missing-segment" / ".."
+        repository = ArtifactRepository(
+            project_alias,
+            self.artifact_root,
+            id_factory=lambda: "img_01J00000000000000000000000",
+        )
+
+        record = repository.store_images(
+            images=[make_png(1, 1)],
+            mime_type="image/png",
+            provider="primary",
+            model="gpt-image-2",
+            operation="generate",
+            prompt="canonical root",
+            parameters={},
+        )[0]
+
+        self.assertEqual(repository.project_root, self.project_root.resolve(strict=False))
+        self.assertEqual(record.metadata["id"], "img_01J00000000000000000000000")
+
+    @unittest.skipUnless(os.name == "nt", "Windows short-path semantics only")
+    def test_canonicalizes_a_short_project_root_before_repository_mutation(self) -> None:
+        from scripts.artifact_repository import ArtifactRepository
+
+        get_short_path = ctypes.windll.kernel32.GetShortPathNameW
+        get_short_path.argtypes = [wintypes.LPCWSTR, wintypes.LPWSTR, wintypes.DWORD]
+        get_short_path.restype = wintypes.DWORD
+        required = get_short_path(str(self.project_root), None, 0)
+        self.assertGreater(required, 0)
+        buffer = ctypes.create_unicode_buffer(required)
+        self.assertGreater(get_short_path(str(self.project_root), buffer, required), 0)
+        short_root = Path(buffer.value)
+        if str(short_root).casefold() == str(self.project_root).casefold():
+            self.skipTest("8.3 short paths are unavailable for the temporary directory")
+
+        repository = ArtifactRepository(
+            short_root,
+            self.artifact_root,
+            id_factory=lambda: "img_01J00000000000000000000000",
+        )
+        record = repository.store_images(
+            images=[make_png(1, 1)],
+            mime_type="image/png",
+            provider="primary",
+            model="gpt-image-2",
+            operation="generate",
+            prompt="short path",
+            parameters={},
+        )[0]
+
+        self.assertEqual(repository.project_root, self.project_root.resolve(strict=False))
+        self.assertEqual(record.metadata["id"], "img_01J00000000000000000000000")
 
     def test_uses_the_explicit_project_local_artifact_root(self) -> None:
         from scripts.artifact_repository import ArtifactRepository

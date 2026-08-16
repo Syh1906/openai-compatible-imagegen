@@ -51,7 +51,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 var define_RELEASE_IDENTITY_default;
 var init_define_RELEASE_IDENTITY = __esm({
   "<define:__RELEASE_IDENTITY__>"() {
-    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "0.4.0", serverBuildDigest: "ee118caf18682ec78d2b634e5be645ad6051650d0472dc21e4bd5683200787c9", widgetAssetDigest: "ed3a27c2bc3c3f3baa4ea2d2fb0bbf23c445281c57f870b9cd7a0697b19b431f", fingerprint: "38ea6fd54e5d8de2ed29", resourceUris: { result: "ui://openai-compatible-imagegen/result.html", editor: "ui://openai-compatible-imagegen/editor.html" } };
+    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "0.4.0", serverBuildDigest: "6a317bced1f03a83f747ba9db5a26ccea36cf166ff1bb9c91a5ff92690757be2", widgetAssetDigest: "ed3a27c2bc3c3f3baa4ea2d2fb0bbf23c445281c57f870b9cd7a0697b19b431f", fingerprint: "9c9081e7ef0ca14aaa34", resourceUris: { result: "ui://openai-compatible-imagegen/result.html", editor: "ui://openai-compatible-imagegen/editor.html" } };
   }
 });
 

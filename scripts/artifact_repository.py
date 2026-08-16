@@ -52,7 +52,7 @@ class ArtifactRepository:
         *,
         id_factory: Callable[[], str] | None = None,
     ) -> None:
-        self.project_root = Path(project_root).absolute()
+        self.project_root = Path(project_root).resolve(strict=False)
         self.data_root = validate_artifact_root(self.project_root, artifact_root)
         self.artifacts_root = self.data_root / "artifacts"
         self.batches_root = self.data_root / "batches"
