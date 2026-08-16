@@ -5,7 +5,6 @@ import {
   mkdir,
   open,
   readdir,
-  realpath,
   rename,
   rmdir,
   unlink,
@@ -15,6 +14,7 @@ import path from "node:path";
 import lockfile from "proper-lockfile";
 
 import { replaceFileAtomically } from "./atomic-file-replace.mjs";
+import { pathContainsSymbolicLink } from "./filesystem-path-safety.mjs";
 import {
   StableFileSnapshotError,
   readStableFileSnapshot,
@@ -674,7 +674,7 @@ async function requireInitializationMarker(markerPath, { allowMissing = false } 
     if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.size !== 0) {
       throw new StableFileSnapshotError("invalid");
     }
-    if (!samePath(await realpath(markerPath), markerPath)) {
+    if (await pathContainsSymbolicLink(markerPath)) {
       throw new StableFileSnapshotError("invalid");
     }
     return true;
@@ -695,7 +695,7 @@ async function requireCanonicalDirectory(directory, { create, allowMissing = fal
       });
     }
     const metadata = await lstat(directory);
-    if (!metadata.isDirectory() || metadata.isSymbolicLink() || !samePath(await realpath(directory), directory)) {
+    if (!metadata.isDirectory() || metadata.isSymbolicLink() || await pathContainsSymbolicLink(directory)) {
       throw new StableFileSnapshotError("invalid");
     }
     return true;
@@ -746,7 +746,7 @@ async function isExistingCanonicalLock(lockPath) {
     const metadata = await lstat(lockPath);
     return metadata.isDirectory()
       && !metadata.isSymbolicLink()
-      && samePath(await realpath(lockPath), lockPath);
+      && !await pathContainsSymbolicLink(lockPath);
   } catch {
     return false;
   }

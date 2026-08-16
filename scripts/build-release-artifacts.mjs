@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
-import { lstat, mkdir, open, readFile, realpath, rm } from "node:fs/promises";
+import { lstat, mkdir, open, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { pathContainsSymbolicLink } from "../mcp/filesystem-path-safety.mjs";
 import {
   pluginReleaseFiles,
   runtimeFileNames,
@@ -225,8 +226,7 @@ async function requireDirectoryWithoutLinks(directory, label) {
   const metadata = await lstat(directory);
   requireValue(!metadata.isSymbolicLink(), `${label} is a symbolic link, junction, or reparse point`);
   requireValue(metadata.isDirectory(), `${label} is not a directory`);
-  const resolved = await realpath(directory);
-  requireValue(path.resolve(resolved) === path.resolve(directory), `${label} resolves through a symbolic link, junction, or reparse point`);
+  requireValue(!await pathContainsSymbolicLink(directory), `${label} resolves through a symbolic link, junction, or reparse point`);
 }
 
 

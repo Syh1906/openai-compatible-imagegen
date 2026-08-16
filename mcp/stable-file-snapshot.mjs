@@ -1,5 +1,7 @@
-import { lstat, open, realpath } from "node:fs/promises";
+import { lstat, open } from "node:fs/promises";
 import path from "node:path";
+
+import { pathContainsSymbolicLink } from "./filesystem-path-safety.mjs";
 
 
 const RETRY = Symbol("retry");
@@ -73,7 +75,7 @@ async function readSnapshotOnce(filePath, maxBytes) {
     if (pathMetadata.dev !== handleMetadata.dev || pathMetadata.ino !== handleMetadata.ino) {
       return RETRY;
     }
-    if (!samePath(await realpath(filePath), filePath)) {
+    if (await pathContainsSymbolicLink(filePath)) {
       throw new StableFileSnapshotError("invalid");
     }
     const bytes = await handle.readFile();
@@ -92,13 +94,4 @@ async function readSnapshotOnce(filePath, maxBytes) {
       throw new StableFileSnapshotError("unavailable");
     }
   }
-}
-
-
-function samePath(left, right) {
-  const normalizedLeft = path.resolve(left).replaceAll("\\", "/");
-  const normalizedRight = path.resolve(right).replaceAll("\\", "/");
-  return process.platform === "win32"
-    ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase()
-    : normalizedLeft === normalizedRight;
 }

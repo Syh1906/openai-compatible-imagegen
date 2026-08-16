@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
-import { lstat, readFile, realpath } from "node:fs/promises";
+import { lstat, readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+
+import { pathContainsSymbolicLink } from "./filesystem-path-safety.mjs";
 
 
 const CONFIG_DIRECTORY = "openai-compatible-imagegen";
@@ -156,8 +158,7 @@ async function readConfigSnapshot(configPath, {
   try {
     const metadata = await lstat(configPath);
     if (!metadata.isFile() || metadata.isSymbolicLink()) throw new Error("unsafe config file");
-    const canonicalPath = await realpath(configPath);
-    if (!samePath(canonicalPath, configPath)) throw new Error("unsafe config file");
+    if (await pathContainsSymbolicLink(configPath)) throw new Error("unsafe config file");
     return await readFile(configPath);
   } catch (error) {
     if (error?.code === "ENOENT") {
@@ -380,8 +381,7 @@ async function validateArtifactRoot(artifactRoot, projectRoot) {
     try {
       const metadata = await lstat(current);
       if (metadata.isSymbolicLink() || !metadata.isDirectory()) throw outputDirectoryError();
-      const canonicalPath = await realpath(current);
-      if (!samePath(canonicalPath, current)) throw outputDirectoryError();
+      if (await pathContainsSymbolicLink(current)) throw outputDirectoryError();
     } catch (error) {
       if (error?.code === "ENOENT") break;
       if (error instanceof ImageConfigResolutionError) throw error;

@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
-import { lstat, mkdir, realpath } from "node:fs/promises";
+import { lstat, mkdir } from "node:fs/promises";
 import path from "node:path";
+
+import { pathContainsSymbolicLink } from "./filesystem-path-safety.mjs";
 
 import {
   createSubmissionId,
@@ -431,8 +433,7 @@ async function ensureCanonicalDirectory(directory, { create }) {
     }
     const metadata = await lstat(directory);
     if (!metadata.isDirectory() || metadata.isSymbolicLink()) invalidState();
-    const canonical = await realpath(directory);
-    if (!samePath(canonical, directory)) invalidState();
+    if (await pathContainsSymbolicLink(directory)) invalidState();
   } catch (error) {
     if (error?.code === "edit_submission_state_invalid") throw error;
     throw registryError("edit_submission_state_unavailable", "画布提交状态暂时不可用。");
@@ -446,7 +447,7 @@ async function requireSafeLockPath(lockPath) {
     if (
       !metadata.isDirectory()
       || metadata.isSymbolicLink()
-      || !samePath(await realpath(lockPath), lockPath)
+      || await pathContainsSymbolicLink(lockPath)
     ) invalidState();
   } catch (error) {
     if (error?.code === "ENOENT") return;
@@ -463,13 +464,4 @@ function invalidState() {
 
 function invalidStateError() {
   return registryError("edit_submission_state_invalid", "画布提交状态无效。");
-}
-
-
-function samePath(left, right) {
-  const normalizedLeft = path.resolve(left).replaceAll("\\", "/");
-  const normalizedRight = path.resolve(right).replaceAll("\\", "/");
-  return process.platform === "win32"
-    ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase()
-    : normalizedLeft === normalizedRight;
 }

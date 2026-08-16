@@ -51,7 +51,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 var define_RELEASE_IDENTITY_default;
 var init_define_RELEASE_IDENTITY = __esm({
   "<define:__RELEASE_IDENTITY__>"() {
-    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "0.4.0", serverBuildDigest: "6a317bced1f03a83f747ba9db5a26ccea36cf166ff1bb9c91a5ff92690757be2", widgetAssetDigest: "ed3a27c2bc3c3f3baa4ea2d2fb0bbf23c445281c57f870b9cd7a0697b19b431f", fingerprint: "9c9081e7ef0ca14aaa34", resourceUris: { result: "ui://openai-compatible-imagegen/result.html", editor: "ui://openai-compatible-imagegen/editor.html" } };
+    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "0.4.0", serverBuildDigest: "215e98d56ee49d03df25aa790b675766c21cc5dad1efc0416d9b714d05898bb8", widgetAssetDigest: "ed3a27c2bc3c3f3baa4ea2d2fb0bbf23c445281c57f870b9cd7a0697b19b431f", fingerprint: "30cc1395ab550576ea00", resourceUris: { result: "ui://openai-compatible-imagegen/result.html", editor: "ui://openai-compatible-imagegen/editor.html" } };
   }
 });
 
@@ -32847,17 +32847,33 @@ function uriScheme(uri) {
 init_define_RELEASE_IDENTITY();
 import { createHash as createHash5, randomBytes as randomBytes5 } from "node:crypto";
 import { constants } from "node:fs";
-import { access, lstat as lstat5, realpath as realpath5 } from "node:fs/promises";
+import { access, lstat as lstat6 } from "node:fs/promises";
 import path10 from "node:path";
+
+// mcp/filesystem-path-safety.mjs
+init_define_RELEASE_IDENTITY();
+import { lstat } from "node:fs/promises";
+import path6 from "node:path";
+async function pathContainsSymbolicLink(targetPath) {
+  const absolutePath = path6.resolve(targetPath);
+  const root = path6.parse(absolutePath).root;
+  let currentPath = root;
+  const relativePath = path6.relative(root, absolutePath);
+  for (const component of relativePath.split(path6.sep).filter(Boolean)) {
+    currentPath = path6.join(currentPath, component);
+    if ((await lstat(currentPath)).isSymbolicLink()) return true;
+  }
+  return false;
+}
 
 // mcp/config-resolution.mjs
 init_define_RELEASE_IDENTITY();
 import { createHash as createHash4 } from "node:crypto";
-import { lstat, readFile, realpath } from "node:fs/promises";
+import { lstat as lstat2, readFile } from "node:fs/promises";
 import os from "node:os";
-import path6 from "node:path";
+import path7 from "node:path";
 var CONFIG_DIRECTORY = "openai-compatible-imagegen";
-var DEFAULT_OUTPUT_DIRECTORY = path6.join("output", "imagegen");
+var DEFAULT_OUTPUT_DIRECTORY = path7.join("output", "imagegen");
 var ACTIVE_PROFILE = "primary/gpt-image-2";
 var USER_TOP_LEVEL_KEYS = /* @__PURE__ */ new Set([
   "config_version",
@@ -32899,10 +32915,10 @@ var ImageConfigResolutionError = class extends Error {
   }
 };
 function userConfigPath(userHome = os.homedir()) {
-  return path6.resolve(userHome, ".codex", CONFIG_DIRECTORY, "config.json");
+  return path7.resolve(userHome, ".codex", CONFIG_DIRECTORY, "config.json");
 }
 function projectConfigPath(projectRoot) {
-  return path6.resolve(projectRoot, ".codex", CONFIG_DIRECTORY, "config.json");
+  return path7.resolve(projectRoot, ".codex", CONFIG_DIRECTORY, "config.json");
 }
 async function resolveImageConfigBinding({
   projectRoot,
@@ -32984,10 +33000,9 @@ async function readConfigSnapshot(configPath, {
   invalidCode = "image_config_invalid"
 }) {
   try {
-    const metadata = await lstat(configPath);
+    const metadata = await lstat2(configPath);
     if (!metadata.isFile() || metadata.isSymbolicLink()) throw new Error("unsafe config file");
-    const canonicalPath = await realpath(configPath);
-    if (!samePath(canonicalPath, configPath)) throw new Error("unsafe config file");
+    if (await pathContainsSymbolicLink(configPath)) throw new Error("unsafe config file");
     return await readFile(configPath);
   } catch (error40) {
     if (error40?.code === "ENOENT") {
@@ -33158,24 +33173,23 @@ function mergeEffectiveConfig(userConfig, projectConfig) {
 }
 function resolveArtifactRoot(config2, projectRoot) {
   const configured = config2.storage?.output_directory ?? DEFAULT_OUTPUT_DIRECTORY;
-  if (typeof configured !== "string" || path6.isAbsolute(configured)) throw outputDirectoryError();
+  if (typeof configured !== "string" || path7.isAbsolute(configured)) throw outputDirectoryError();
   try {
-    return path6.resolve(projectRoot, configured);
+    return path7.resolve(projectRoot, configured);
   } catch {
     throw outputDirectoryError();
   }
 }
 async function validateArtifactRoot(artifactRoot, projectRoot) {
-  const relative = path6.relative(projectRoot, artifactRoot);
-  if (!relative || relative.startsWith("..") || path6.isAbsolute(relative)) throw outputDirectoryError();
+  const relative = path7.relative(projectRoot, artifactRoot);
+  if (!relative || relative.startsWith("..") || path7.isAbsolute(relative)) throw outputDirectoryError();
   let current = projectRoot;
-  for (const segment of relative.split(path6.sep).filter(Boolean)) {
-    current = path6.join(current, segment);
+  for (const segment of relative.split(path7.sep).filter(Boolean)) {
+    current = path7.join(current, segment);
     try {
-      const metadata = await lstat(current);
+      const metadata = await lstat2(current);
       if (metadata.isSymbolicLink() || !metadata.isDirectory()) throw outputDirectoryError();
-      const canonicalPath = await realpath(current);
-      if (!samePath(canonicalPath, current)) throw outputDirectoryError();
+      if (await pathContainsSymbolicLink(current)) throw outputDirectoryError();
     } catch (error40) {
       if (error40?.code === "ENOENT") break;
       if (error40 instanceof ImageConfigResolutionError) throw error40;
@@ -33184,8 +33198,8 @@ async function validateArtifactRoot(artifactRoot, projectRoot) {
   }
 }
 function requireAbsoluteProjectRoot(projectRoot) {
-  if (typeof projectRoot !== "string" || !path6.isAbsolute(projectRoot)) throw outputDirectoryError();
-  return path6.resolve(projectRoot);
+  if (typeof projectRoot !== "string" || !path7.isAbsolute(projectRoot)) throw outputDirectoryError();
+  return path7.resolve(projectRoot);
 }
 function requireExactKeys(value, allowed, errorCode) {
   if (unknownKeys(value, allowed).length) throw configError(errorCode);
@@ -33250,7 +33264,7 @@ function isRecord2(value) {
 }
 function samePath(left, right) {
   if (typeof left !== "string" || typeof right !== "string") return false;
-  const normalize = (value) => path6.resolve(value).replaceAll("\\", "/");
+  const normalize = (value) => path7.resolve(value).replaceAll("\\", "/");
   const normalizedLeft = normalize(left);
   const normalizedRight = normalize(right);
   return process.platform === "win32" ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase() : normalizedLeft === normalizedRight;
@@ -33258,7 +33272,7 @@ function samePath(left, right) {
 
 // mcp/project-binding-store.mjs
 init_define_RELEASE_IDENTITY();
-import { lstat as lstat4, mkdir as mkdir2, realpath as realpath4 } from "node:fs/promises";
+import { lstat as lstat5, mkdir as mkdir2 } from "node:fs/promises";
 import path9 from "node:path";
 
 // mcp/file-lock-ownership.mjs
@@ -33267,11 +33281,10 @@ var import_proper_lockfile = __toESM(require_proper_lockfile(), 1);
 import fs from "node:fs";
 import { randomBytes as randomBytes4 } from "node:crypto";
 import {
-  lstat as lstat3,
+  lstat as lstat4,
   mkdir,
   open as open2,
   readdir,
-  realpath as realpath3,
   rename as rename2,
   rmdir,
   unlink
@@ -33301,8 +33314,7 @@ async function replaceFileAtomically(sourcePath, destinationPath) {
 
 // mcp/stable-file-snapshot.mjs
 init_define_RELEASE_IDENTITY();
-import { lstat as lstat2, open, realpath as realpath2 } from "node:fs/promises";
-import path7 from "node:path";
+import { lstat as lstat3, open } from "node:fs/promises";
 var RETRY = /* @__PURE__ */ Symbol("retry");
 var MISSING = /* @__PURE__ */ Symbol("missing");
 var StableFileSnapshotError = class extends Error {
@@ -33338,7 +33350,7 @@ async function readSnapshotOnce(filePath, maxBytes) {
   } catch (error40) {
     if (error40?.code === "ENOENT") {
       try {
-        const metadata = await lstat2(filePath);
+        const metadata = await lstat3(filePath);
         if (metadata.isSymbolicLink() || !metadata.isFile()) {
           throw new StableFileSnapshotError("invalid");
         }
@@ -33353,7 +33365,7 @@ async function readSnapshotOnce(filePath, maxBytes) {
   }
   try {
     const [pathMetadata, handleMetadata] = await Promise.all([
-      lstat2(filePath),
+      lstat3(filePath),
       handle.stat()
     ]);
     if (!pathMetadata.isFile() || pathMetadata.isSymbolicLink() || !handleMetadata.isFile() || handleMetadata.size <= 0 || handleMetadata.size > maxBytes) {
@@ -33362,7 +33374,7 @@ async function readSnapshotOnce(filePath, maxBytes) {
     if (pathMetadata.dev !== handleMetadata.dev || pathMetadata.ino !== handleMetadata.ino) {
       return RETRY;
     }
-    if (!samePath2(await realpath2(filePath), filePath)) {
+    if (await pathContainsSymbolicLink(filePath)) {
       throw new StableFileSnapshotError("invalid");
     }
     const bytes = await handle.readFile();
@@ -33381,11 +33393,6 @@ async function readSnapshotOnce(filePath, maxBytes) {
       throw new StableFileSnapshotError("unavailable");
     }
   }
-}
-function samePath2(left, right) {
-  const normalizedLeft = path7.resolve(left).replaceAll("\\", "/");
-  const normalizedRight = path7.resolve(right).replaceAll("\\", "/");
-  return process.platform === "win32" ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase() : normalizedLeft === normalizedRight;
 }
 
 // mcp/file-lock-ownership.mjs
@@ -33542,14 +33549,14 @@ async function replaceOwnedSnapshot(context, bytes) {
 function createGuardedLockFs(context) {
   const guardedFs = Object.create(fs);
   guardedFs.mkdir = (targetPath, callback) => {
-    if (!samePath3(targetPath, context.lockPath)) {
+    if (!samePath2(targetPath, context.lockPath)) {
       fs.mkdir(targetPath, callback);
       return;
     }
     installOwnedLock(context).then(() => callback(null), callback);
   };
   guardedFs.rmdir = (targetPath, callback) => {
-    if (!samePath3(targetPath, context.lockPath)) {
+    if (!samePath2(targetPath, context.lockPath)) {
       fs.rmdir(targetPath, callback);
       return;
     }
@@ -33561,7 +33568,7 @@ function createGuardedLockFs(context) {
     close.then(() => callback(null), callback);
   };
   guardedFs.rmdirSync = (targetPath) => {
-    if (samePath3(targetPath, context.lockPath)) throw releasedError();
+    if (samePath2(targetPath, context.lockPath)) throw releasedError();
     return fs.rmdirSync(targetPath);
   };
   return guardedFs;
@@ -33957,11 +33964,11 @@ async function createInitializationMarker(markerPath) {
 }
 async function requireInitializationMarker(markerPath, { allowMissing = false } = {}) {
   try {
-    const metadata = await lstat3(markerPath);
+    const metadata = await lstat4(markerPath);
     if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.size !== 0) {
       throw new StableFileSnapshotError("invalid");
     }
-    if (!samePath3(await realpath3(markerPath), markerPath)) {
+    if (await pathContainsSymbolicLink(markerPath)) {
       throw new StableFileSnapshotError("invalid");
     }
     return true;
@@ -33979,8 +33986,8 @@ async function requireCanonicalDirectory(directory, { create, allowMissing = fal
         if (error40?.code !== "EEXIST") throw error40;
       });
     }
-    const metadata = await lstat3(directory);
-    if (!metadata.isDirectory() || metadata.isSymbolicLink() || !samePath3(await realpath3(directory), directory)) {
+    const metadata = await lstat4(directory);
+    if (!metadata.isDirectory() || metadata.isSymbolicLink() || await pathContainsSymbolicLink(directory)) {
       throw new StableFileSnapshotError("invalid");
     }
     return true;
@@ -34020,8 +34027,8 @@ async function epochMatches(epochPath, expected) {
 }
 async function isExistingCanonicalLock(lockPath) {
   try {
-    const metadata = await lstat3(lockPath);
-    return metadata.isDirectory() && !metadata.isSymbolicLink() && samePath3(await realpath3(lockPath), lockPath);
+    const metadata = await lstat4(lockPath);
+    return metadata.isDirectory() && !metadata.isSymbolicLink() && !await pathContainsSymbolicLink(lockPath);
   } catch {
     return false;
   }
@@ -34077,7 +34084,7 @@ function releasedError() {
 function plainObject(value) {
   return Boolean(value) && Object.getPrototypeOf(value) === Object.prototype;
 }
-function samePath3(left, right) {
+function samePath2(left, right) {
   const normalizedLeft = path8.resolve(left).replaceAll("\\", "/");
   const normalizedRight = path8.resolve(right).replaceAll("\\", "/");
   return process.platform === "win32" ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase() : normalizedLeft === normalizedRight;
@@ -34117,7 +34124,7 @@ function createProjectBindingStore({ stateRoot }) {
         await ownership.replaceSnapshot(Buffer.from(serializeRecord(requested), "utf8"));
         return { status: "created", record: requested };
       }
-      if (!samePath4(existing.projectRoot, requested.projectRoot)) {
+      if (!samePath3(existing.projectRoot, requested.projectRoot)) {
         throw stateError("project_binding_conflict");
       }
       if (sameConfigSnapshot(existing, requested)) {
@@ -34168,8 +34175,8 @@ async function withRecordLock(scope, callback) {
 }
 async function requireSafeLockPath(lockPath) {
   try {
-    const metadata = await lstat4(lockPath);
-    if (!metadata.isDirectory() || metadata.isSymbolicLink() || !samePath4(await realpath4(lockPath), lockPath)) {
+    const metadata = await lstat5(lockPath);
+    if (!metadata.isDirectory() || metadata.isSymbolicLink() || await pathContainsSymbolicLink(lockPath)) {
       throw stateError("project_binding_state_invalid");
     }
   } catch (error40) {
@@ -34204,12 +34211,11 @@ async function ensureCanonicalDirectory(directory) {
     await mkdir2(directory, { recursive: false, mode: 448 }).catch((error40) => {
       if (error40?.code !== "EEXIST") throw error40;
     });
-    const metadata = await lstat4(directory);
+    const metadata = await lstat5(directory);
     if (!metadata.isDirectory() || metadata.isSymbolicLink()) {
       throw stateError("project_binding_state_invalid");
     }
-    const canonical = await realpath4(directory);
-    if (!samePath4(canonical, directory)) {
+    if (await pathContainsSymbolicLink(directory)) {
       throw stateError("project_binding_state_invalid");
     }
   } catch (error40) {
@@ -34248,7 +34254,7 @@ async function replaceRecord(recordPath, expected, replacement, ownership) {
       required: true,
       expectedBindingHash: expected.bindingHash
     }, ownership);
-    if (!samePath4(current.projectRoot, expected.projectRoot) || !sameConfigSnapshot(current, expected)) {
+    if (!samePath3(current.projectRoot, expected.projectRoot) || !sameConfigSnapshot(current, expected)) {
       throw stateError("project_binding_conflict");
     }
     await ownership.replaceSnapshot(Buffer.from(serializeRecord(replacement), "utf8"));
@@ -34307,7 +34313,7 @@ function requireBindingHash(value) {
 function stateError(code) {
   return new ProjectBindingStoreError(code);
 }
-function samePath4(left, right) {
+function samePath3(left, right) {
   const normalizedLeft = normalizePath2(left);
   const normalizedRight = normalizePath2(right);
   return normalizedLeft === normalizedRight;
@@ -34367,7 +34373,7 @@ function createProjectContext({
             throw new ProjectContextError("project_binding_required");
           }
         }
-        if (existing && (typeof projectRoot !== "string" || !path10.isAbsolute(projectRoot) || !samePath5(existing.projectRoot, projectRoot))) {
+        if (existing && (typeof projectRoot !== "string" || !path10.isAbsolute(projectRoot) || !samePath4(existing.projectRoot, projectRoot))) {
           throw new ProjectContextError("project_binding_conflict");
         }
         const resolvedProjectRoot = await validateProjectRoot(projectRoot, resolvedPluginRoot);
@@ -34452,39 +34458,25 @@ async function validateProjectRoot(projectRoot, pluginRoot2) {
     throw new ProjectContextError("project_root_is_plugin_root");
   }
   try {
-    await rejectLinkedSegments(resolvedProjectRoot);
-    const metadata = await lstat5(resolvedProjectRoot);
+    if (await pathContainsSymbolicLink(resolvedProjectRoot)) {
+      throw new ProjectContextError("project_root_invalid");
+    }
+    const metadata = await lstat6(resolvedProjectRoot);
     if (!metadata.isDirectory() || metadata.isSymbolicLink()) {
       throw new ProjectContextError("project_root_invalid");
     }
     await access(resolvedProjectRoot, constants.R_OK);
-    const canonicalRoot = await realpath5(resolvedProjectRoot);
-    if (!samePath5(canonicalRoot, resolvedProjectRoot)) {
-      throw new ProjectContextError("project_root_invalid");
-    }
   } catch (error40) {
     if (error40 instanceof ProjectContextError) throw error40;
     throw new ProjectContextError("project_root_invalid");
   }
   return resolvedProjectRoot;
 }
-async function rejectLinkedSegments(target) {
-  const parsed = path10.parse(target);
-  let current = parsed.root;
-  const relative = target.slice(parsed.root.length);
-  for (const segment of relative.split(path10.sep).filter(Boolean)) {
-    current = path10.join(current, segment);
-    const metadata = await lstat5(current);
-    if (metadata.isSymbolicLink()) {
-      throw new ProjectContextError("project_root_invalid");
-    }
-  }
-}
 function isSameOrDescendant(candidate, parent) {
   const relative = path10.relative(parent, candidate);
   return relative === "" || !relative.startsWith("..") && !path10.isAbsolute(relative);
 }
-function samePath5(left, right) {
+function samePath4(left, right) {
   return normalizePath3(left) === normalizePath3(right);
 }
 function normalizePath3(value) {
@@ -34542,7 +34534,7 @@ function parseHostObservationReport(value) {
 // mcp/host-observation-store.mjs
 init_define_RELEASE_IDENTITY();
 import { randomBytes as randomBytes6 } from "node:crypto";
-import { lstat as lstat6, mkdir as mkdir3, open as open3, realpath as realpath6, unlink as unlink2 } from "node:fs/promises";
+import { lstat as lstat7, mkdir as mkdir3, open as open3, unlink as unlink2 } from "node:fs/promises";
 import path11 from "node:path";
 var SCHEMA_VERSION2 = "host-observation.v1";
 var BINDING_KEY_PATTERN2 = /^[0-9a-f]{64}$/;
@@ -34668,7 +34660,7 @@ async function requireCanonicalDirectory2(directory, { create }) {
     }
     let metadata;
     try {
-      metadata = await lstat6(directory);
+      metadata = await lstat7(directory);
     } catch (error40) {
       if (!create && error40?.code === "ENOENT") return false;
       throw error40;
@@ -34676,8 +34668,7 @@ async function requireCanonicalDirectory2(directory, { create }) {
     if (!metadata.isDirectory() || metadata.isSymbolicLink()) {
       throw observationError("host_observation_state_invalid");
     }
-    const canonical = await realpath6(directory);
-    if (!samePath6(canonical, directory)) {
+    if (await pathContainsSymbolicLink(directory)) {
       throw observationError("host_observation_state_invalid");
     }
     return true;
@@ -34693,11 +34684,6 @@ function observationError(code) {
   const error40 = new Error(code);
   error40.code = code;
   return error40;
-}
-function samePath6(left, right) {
-  const normalizedLeft = path11.resolve(left).replaceAll("\\", "/");
-  const normalizedRight = path11.resolve(right).replaceAll("\\", "/");
-  return process.platform === "win32" ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase() : normalizedLeft === normalizedRight;
 }
 
 // mcp/create-server.mjs
@@ -36038,7 +36024,7 @@ function writeAnnotations() {
 // mcp/file-edit-submission-registry.mjs
 init_define_RELEASE_IDENTITY();
 import { createHash as createHash6 } from "node:crypto";
-import { lstat as lstat7, mkdir as mkdir4, realpath as realpath7 } from "node:fs/promises";
+import { lstat as lstat8, mkdir as mkdir4 } from "node:fs/promises";
 import path12 from "node:path";
 var SCHEMA_VERSION3 = "edit-submissions.v1";
 var BINDING_KEY_PATTERN3 = /^[0-9a-f]{64}$/;
@@ -36372,10 +36358,9 @@ async function ensureCanonicalDirectory2(directory, { create }) {
         if (error40?.code !== "EEXIST") throw error40;
       });
     }
-    const metadata = await lstat7(directory);
+    const metadata = await lstat8(directory);
     if (!metadata.isDirectory() || metadata.isSymbolicLink()) invalidState3();
-    const canonical = await realpath7(directory);
-    if (!samePath7(canonical, directory)) invalidState3();
+    if (await pathContainsSymbolicLink(directory)) invalidState3();
   } catch (error40) {
     if (error40?.code === "edit_submission_state_invalid") throw error40;
     throw registryError("edit_submission_state_unavailable", "\u753B\u5E03\u63D0\u4EA4\u72B6\u6001\u6682\u65F6\u4E0D\u53EF\u7528\u3002");
@@ -36383,8 +36368,8 @@ async function ensureCanonicalDirectory2(directory, { create }) {
 }
 async function requireSafeLockPath2(lockPath) {
   try {
-    const metadata = await lstat7(lockPath);
-    if (!metadata.isDirectory() || metadata.isSymbolicLink() || !samePath7(await realpath7(lockPath), lockPath)) invalidState3();
+    const metadata = await lstat8(lockPath);
+    if (!metadata.isDirectory() || metadata.isSymbolicLink() || await pathContainsSymbolicLink(lockPath)) invalidState3();
   } catch (error40) {
     if (error40?.code === "ENOENT") return;
     if (error40?.code === "edit_submission_state_invalid") throw error40;
@@ -36397,16 +36382,11 @@ function invalidState3() {
 function invalidStateError() {
   return registryError("edit_submission_state_invalid", "\u753B\u5E03\u63D0\u4EA4\u72B6\u6001\u65E0\u6548\u3002");
 }
-function samePath7(left, right) {
-  const normalizedLeft = path12.resolve(left).replaceAll("\\", "/");
-  const normalizedRight = path12.resolve(right).replaceAll("\\", "/");
-  return process.platform === "win32" ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase() : normalizedLeft === normalizedRight;
-}
 
 // mcp/file-editor-state-registry.mjs
 init_define_RELEASE_IDENTITY();
 import { createHash as createHash7 } from "node:crypto";
-import { lstat as lstat8, mkdir as mkdir5, realpath as realpath8 } from "node:fs/promises";
+import { lstat as lstat9, mkdir as mkdir5 } from "node:fs/promises";
 import path13 from "node:path";
 var SCHEMA_VERSION4 = "editor-state.v1";
 var SESSION_ID_PATTERN2 = /^eds_[0-9a-f]{32}$/;
@@ -36596,8 +36576,8 @@ async function requireCanonicalDirectory3(directory, { create, allowMissing = fa
     if (create) await mkdir5(directory, { recursive: false, mode: 448 }).catch((error40) => {
       if (error40?.code !== "EEXIST") throw error40;
     });
-    const metadata = await lstat8(directory);
-    if (!metadata.isDirectory() || metadata.isSymbolicLink() || !samePath8(await realpath8(directory), directory)) invalidState4();
+    const metadata = await lstat9(directory);
+    if (!metadata.isDirectory() || metadata.isSymbolicLink() || await pathContainsSymbolicLink(directory)) invalidState4();
   } catch (error40) {
     if (error40?.code === "editor_state_invalid") throw error40;
     if (error40?.code === "ENOENT" && allowMissing) return false;
@@ -36608,8 +36588,8 @@ async function requireCanonicalDirectory3(directory, { create, allowMissing = fa
 }
 async function requireSafeLockPath3(lockPath) {
   try {
-    const metadata = await lstat8(lockPath);
-    if (!metadata.isDirectory() || metadata.isSymbolicLink() || !samePath8(await realpath8(lockPath), lockPath)) {
+    const metadata = await lstat9(lockPath);
+    if (!metadata.isDirectory() || metadata.isSymbolicLink() || await pathContainsSymbolicLink(lockPath)) {
       invalidState4();
     }
   } catch (error40) {
@@ -36653,11 +36633,6 @@ function invalidState4() {
 }
 function invalidStateError2() {
   return editorStateError("editor_state_invalid", "\u753B\u5E03\u72B6\u6001\u65E0\u6548\u3002");
-}
-function samePath8(left, right) {
-  const normalizedLeft = path13.resolve(left).replaceAll("\\", "/");
-  const normalizedRight = path13.resolve(right).replaceAll("\\", "/");
-  return process.platform === "win32" ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase() : normalizedLeft === normalizedRight;
 }
 
 // mcp/image-runtime.mjs

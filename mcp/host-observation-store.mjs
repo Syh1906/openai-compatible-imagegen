@@ -1,8 +1,9 @@
 import { randomBytes } from "node:crypto";
-import { lstat, mkdir, open, realpath, unlink } from "node:fs/promises";
+import { lstat, mkdir, open, unlink } from "node:fs/promises";
 import path from "node:path";
 
 import { replaceFileAtomically } from "./atomic-file-replace.mjs";
+import { pathContainsSymbolicLink } from "./filesystem-path-safety.mjs";
 import { parseHostObservationReport } from "./host-observation-contract.mjs";
 import {
   StableFileSnapshotError,
@@ -163,8 +164,7 @@ async function requireCanonicalDirectory(directory, { create }) {
     if (!metadata.isDirectory() || metadata.isSymbolicLink()) {
       throw observationError("host_observation_state_invalid");
     }
-    const canonical = await realpath(directory);
-    if (!samePath(canonical, directory)) {
+    if (await pathContainsSymbolicLink(directory)) {
       throw observationError("host_observation_state_invalid");
     }
     return true;
@@ -184,13 +184,4 @@ function observationError(code) {
   const error = new Error(code);
   error.code = code;
   return error;
-}
-
-
-function samePath(left, right) {
-  const normalizedLeft = path.resolve(left).replaceAll("\\", "/");
-  const normalizedRight = path.resolve(right).replaceAll("\\", "/");
-  return process.platform === "win32"
-    ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase()
-    : normalizedLeft === normalizedRight;
 }

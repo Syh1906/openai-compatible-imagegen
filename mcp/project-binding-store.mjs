@@ -1,6 +1,7 @@
-import { lstat, mkdir, realpath } from "node:fs/promises";
+import { lstat, mkdir } from "node:fs/promises";
 import path from "node:path";
 
+import { pathContainsSymbolicLink } from "./filesystem-path-safety.mjs";
 import {
   acquireFileLockOwnership,
   readLatestFencedFileSnapshot,
@@ -108,7 +109,7 @@ async function requireSafeLockPath(lockPath) {
     if (
       !metadata.isDirectory()
       || metadata.isSymbolicLink()
-      || !samePath(await realpath(lockPath), lockPath)
+      || await pathContainsSymbolicLink(lockPath)
     ) {
       throw stateError("project_binding_state_invalid");
     }
@@ -158,8 +159,7 @@ async function ensureCanonicalDirectory(directory) {
     if (!metadata.isDirectory() || metadata.isSymbolicLink()) {
       throw stateError("project_binding_state_invalid");
     }
-    const canonical = await realpath(directory);
-    if (!samePath(canonical, directory)) {
+    if (await pathContainsSymbolicLink(directory)) {
       throw stateError("project_binding_state_invalid");
     }
   } catch (error) {

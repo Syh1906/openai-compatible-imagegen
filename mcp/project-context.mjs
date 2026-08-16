@@ -1,8 +1,9 @@
 import { createHash, randomBytes } from "node:crypto";
 import { constants } from "node:fs";
-import { access, lstat, realpath } from "node:fs/promises";
+import { access, lstat } from "node:fs/promises";
 import path from "node:path";
 
+import { pathContainsSymbolicLink } from "./filesystem-path-safety.mjs";
 import {
   assertImageConfigBindingCurrent,
   resolveImageConfigBinding,
@@ -181,35 +182,19 @@ async function validateProjectRoot(projectRoot, pluginRoot) {
     throw new ProjectContextError("project_root_is_plugin_root");
   }
   try {
-    await rejectLinkedSegments(resolvedProjectRoot);
+    if (await pathContainsSymbolicLink(resolvedProjectRoot)) {
+      throw new ProjectContextError("project_root_invalid");
+    }
     const metadata = await lstat(resolvedProjectRoot);
     if (!metadata.isDirectory() || metadata.isSymbolicLink()) {
       throw new ProjectContextError("project_root_invalid");
     }
     await access(resolvedProjectRoot, constants.R_OK);
-    const canonicalRoot = await realpath(resolvedProjectRoot);
-    if (!samePath(canonicalRoot, resolvedProjectRoot)) {
-      throw new ProjectContextError("project_root_invalid");
-    }
   } catch (error) {
     if (error instanceof ProjectContextError) throw error;
     throw new ProjectContextError("project_root_invalid");
   }
   return resolvedProjectRoot;
-}
-
-
-async function rejectLinkedSegments(target) {
-  const parsed = path.parse(target);
-  let current = parsed.root;
-  const relative = target.slice(parsed.root.length);
-  for (const segment of relative.split(path.sep).filter(Boolean)) {
-    current = path.join(current, segment);
-    const metadata = await lstat(current);
-    if (metadata.isSymbolicLink()) {
-      throw new ProjectContextError("project_root_invalid");
-    }
-  }
 }
 
 
