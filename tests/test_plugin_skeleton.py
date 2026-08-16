@@ -14,6 +14,10 @@ MANIFEST_PATH = ROOT / ".codex-plugin" / "plugin.json"
 MCP_PATH = ROOT / ".mcp.json"
 README_PATH = ROOT / "README.md"
 README_ZH_PATH = ROOT / "README.zh-CN.md"
+INSTALLATION_GUIDE_PATH = ROOT / "docs" / "guides" / "installation.md"
+CONFIGURATION_GUIDE_PATH = ROOT / "docs" / "guides" / "configuration.md"
+MIGRATION_GUIDE_PATH = ROOT / "docs" / "guides" / "migration.md"
+TROUBLESHOOTING_GUIDE_PATH = ROOT / "docs" / "guides" / "troubleshooting.md"
 AUTH_EXAMPLE_PATH = ROOT / "examples" / "auth.example.json"
 PACKAGE_PATH = ROOT / "package.json"
 PACKAGE_LOCK_PATH = ROOT / "package-lock.json"
@@ -65,9 +69,28 @@ DIST_RUNTIME_PATHS = [
 
 
 class PluginSkeletonTests(unittest.TestCase):
-    def test_product_family_readmes_cover_both_packages_and_explicit_migration(self) -> None:
+    def test_public_docs_route_package_installation_configuration_and_migration(self) -> None:
+        for path in (README_PATH, README_ZH_PATH):
+            text = path.read_text(encoding="utf-8")
+            self.assertIn("OpenAI-Compatible Images", text)
+            self.assertIn("Standalone Skill", text)
+            self.assertIn("Codex Plugin", text)
+            self.assertIn("codex plugin marketplace add Syh1906/openai-compatible-imagegen", text)
+            self.assertIn("docs/guides/installation.md", text)
+            self.assertNotIn("openai-compatible-imagegen-v2", text)
+
+        public_text = "\n".join(
+            path.read_text(encoding="utf-8")
+            for path in (
+                README_PATH,
+                README_ZH_PATH,
+                INSTALLATION_GUIDE_PATH,
+                CONFIGURATION_GUIDE_PATH,
+                MIGRATION_GUIDE_PATH,
+                TROUBLESHOOTING_GUIDE_PATH,
+            )
+        )
         required = (
-            "OpenAI-Compatible Images Skill",
             "openai-compatible-imagegen-skill-<version>.zip",
             "openai-compatible-imagegen-codex-plugin-<version>.zip",
             "~/.codex/openai-compatible-imagegen/config.json",
@@ -81,20 +104,16 @@ class PluginSkeletonTests(unittest.TestCase):
             "transparent_background",
             "background=transparent",
         )
-        for path in (README_PATH, README_ZH_PATH):
-            text = path.read_text(encoding="utf-8")
-            for value in required:
-                with self.subTest(path=path.name, value=value):
-                    self.assertIn(value, text)
-            self.assertNotIn("openai-compatible-imagegen-v2", text)
+        for value in required:
+            with self.subTest(value=value):
+                self.assertIn(value, public_text)
 
-    def test_url_download_contract_is_documented_in_both_public_languages(self) -> None:
-        for path in (README_PATH, README_ZH_PATH):
-            text = path.read_text(encoding="utf-8")
-            self.assertIn("url_download.proxy_mode", text)
-            self.assertIn("TLS EOF", text)
-            self.assertIn("allow-direct-url-download", text)
-            self.assertIn("API key", text)
+    def test_url_download_contract_is_documented_in_configuration_guide(self) -> None:
+        text = CONFIGURATION_GUIDE_PATH.read_text(encoding="utf-8")
+        self.assertIn("url_download.proxy_mode", text)
+        self.assertIn("TLS EOF", text)
+        self.assertIn("allow-direct-url-download", text)
+        self.assertIn("API key", text)
 
         config = json.loads(AUTH_EXAMPLE_PATH.read_text(encoding="utf-8"))
         self.assertEqual(config["url_download"], {"proxy_mode": "environment"})

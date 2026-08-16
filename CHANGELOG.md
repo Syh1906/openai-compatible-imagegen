@@ -10,11 +10,14 @@ This file records user-visible changes for each release of `openai-compatible-im
 - Add a versioned Plugin configuration with a trusted user baseline and allowlisted project overrides for default size, quality, format, and project-local output directory.
 - Add an explicit, redacted migration workflow for Standalone and development Plugin configuration. Migration never overwrites an existing target or deletes the source.
 - Publish separate Standalone Skill and Codex Plugin archives from the same shared image core.
+- Add a Git-backed Codex marketplace with a prebuilt MCP server, widget, and Python runtime so Plugin installation does not require a source build or local web server.
+- Add task-focused installation, configuration, migration, rollback, troubleshooting, architecture, contribution, security, and Agent maintenance documentation.
 
 ### Changed
 
 - Present the repository as the `OpenAI-Compatible Images` product family. Users choose either the portable `OpenAI-Compatible Images Skill` or the complete Codex Plugin; the Plugin includes the Standalone generation and delivery capabilities.
 - Use `openai-compatible-imagegen` as the stable technical identity and remove the development `V2` suffix from the Plugin, configuration directory, bundled Skill, and release artifacts.
+- Keep the root README focused on package choice and first installation, with detailed operations routed to audience-specific guides.
 
 ### Fixed
 
