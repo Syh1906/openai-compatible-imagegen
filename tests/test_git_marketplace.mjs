@@ -26,8 +26,8 @@ test("the repository is a Git-backed marketplace with a runnable root plugin", a
   assert.deepEqual(marketplace.plugins[0], {
     name: pluginId,
     source: {
-      source: "url",
-      url: "https://github.com/Syh1906/openai-compatible-imagegen.git",
+      source: "local",
+      path: "./",
     },
     policy: {
       installation: "AVAILABLE",
