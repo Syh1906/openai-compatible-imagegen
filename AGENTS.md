@@ -1,70 +1,67 @@
-# 智能体规则
+# Agent Instructions
 
-## 项目范围
+## Project Scope
 
-- `OpenAI-Compatible Images` 从同一代码库维护 Standalone Skill 与 Codex App Plugin。
-- 共享图片核心位于 `scripts/`；两种发行形态使用各自 Adapter，不复制共享实现。
-- Codex Plugin 由 `skills/`、`mcp/`、`web/`、`.mcp.json`、`.codex-plugin/plugin.json` 和预构建 `dist/` 组成。
-- `dist/` 必须跟踪，只通过 `npm run build` 更新，不手工编辑。
+- `OpenAI-Compatible Images` maintains the Standalone Skill and Codex App Plugin from one repository.
+- Shared image logic lives in `scripts/`; each distribution uses its own adapter without duplicating the shared implementation.
+- The Codex Plugin consists of `skills/`, `mcp/`, `web/`, `.mcp.json`, `.codex-plugin/plugin.json`, and the prebuilt `dist/` directory.
+- Track `dist/` in Git. Update it only through `npm run build`; do not edit it by hand.
 
-## 包管理
+## Package Management
 
-- Node 使用 npm 与 `package-lock.json`。
-- Python 运行时要求 Python 3.12，生产代码只使用标准库。
-- 不执行全局安装，不修改用户级 `PATH`、注册表或 Codex 配置。
+- Use npm with `package-lock.json` for Node dependencies.
+- Use Python 3.12. Production Python code uses only the standard library.
+- Do not install global packages or modify user-level `PATH`, registry entries, or Codex configuration.
 
-## 检查命令
+## Checks
 
-| 任务 | 命令 |
+| Task | Command |
 | --- | --- |
-| 全部测试 | `npm test` |
-| Node 单文件测试 | `node --test tests/<file>.mjs` |
-| Python 单模块测试 | `python -m unittest tests.<module>` |
-| 构建 Plugin | `npm run build` |
-| 检查 Plugin | `npm run check` |
-| Python 编译检查 | `python -m compileall -q scripts` |
-| 差异检查 | `git diff --check` |
+| All tests | `npm test` |
+| One Node test file | `node --test tests/<file>.mjs` |
+| One Python test module | `python -m unittest tests.<module>` |
+| Build the Plugin | `npm run build` |
+| Check the Plugin | `npm run check` |
+| Compile Python files | `python -m compileall -q scripts` |
+| Check diffs | `git diff --check` |
 
-## 模块边界
+## Module Boundaries
 
-- `scripts/`：鉴权、图片请求、响应校验、后处理、交付和 QA；不依赖 Codex、MCP 或 widget。
-- `mcp/`：工具 schema、项目绑定、产物仓库和运行时调用；不拼装供应商图片请求。
-- `web/`：结果卡与聚焦画布；不读取密钥，不直接连接图片服务。
-- `skills/openai-compatible-imagegen/`：Plugin 运行时工具选择和参数决策。
-- 根 `SKILL.md` 与 `references/`：Standalone 运行时契约。
-- `.agents/plugins/marketplace.json`：Git marketplace 入口；Plugin 来源必须跟随 marketplace checkout。
-- `.codex-plugin/plugin.json`、`package.json`、`package-lock.json`：版本与包身份保持一致。
+- `scripts/`: authentication, image requests, response validation, post-processing, delivery, and QA; independent of Codex, MCP, and the widget.
+- `mcp/`: tool schemas, project binding, artifact storage, and runtime calls; does not construct provider image requests.
+- `web/`: result cards and the focused canvas; does not read credentials or connect directly to image services.
+- `skills/openai-compatible-imagegen/`: Plugin runtime tool selection and parameter decisions.
+- Root `SKILL.md` and `references/`: Standalone runtime contract.
+- `.agents/plugins/marketplace.json`: Git marketplace entry; Plugin sources must follow the marketplace checkout.
+- `.codex-plugin/plugin.json`, `package.json`, and `package-lock.json`: keep package identity and version aligned.
 
-## 行为约束
+## Behavior Constraints
 
-- 不覆盖或伪造 Codex 内置 `image_gen`。
-- 不读取或修改 Codex 任务记录、App 数据库或未公开宿主协议。
-- 不自动切换模型、provider、endpoint、认证来源、请求协议或编辑路线。
-- 图片、编辑版本和交付产物保持不可变；失败不能留下索引指向的残缺文件。
-- 项目配置只能覆盖公开契约允许的字段。
-- 凭据不得写入日志、工具结果、测试夹具、文档、发布包或提交。
+- Do not replace or impersonate Codex's built-in `image_gen` capability.
+- Do not read or modify Codex task records, the App database, or unpublished host protocols.
+- Do not automatically switch models, providers, endpoints, authentication sources, request protocols, or editing routes.
+- Keep images, edit versions, and delivered artifacts immutable. Failed operations must not leave index entries pointing to incomplete files.
+- Project configuration may override only fields allowed by the public contract.
+- Never write credentials to logs, tool results, test fixtures, documentation, release packages, or commits.
 
-## 测试与文档
+## Tests and Documentation
 
-- 新增行为或修复缺陷时，先添加能复现目标行为的测试。
-- 共享核心变化同时验证 Standalone 与 Plugin Adapter。
-- MCP、widget、Plugin 清单或 marketplace 变化需要对应 Node 测试和 Codex App 验收。
-- 用户可见行为变化同步更新 `CHANGELOG.md` 和受影响的公开指南。
-- `README.md` 面向首次访问者；`docs/guides/` 面向用户；`AGENTS.md` 面向贡献者；发行包 `SKILL.md` 面向运行时 Agent。
-- 公开内容不包含凭据、私有地址、本机绝对路径、测试输出或未发布实施计划。
+- Add a test that reproduces the target behavior before implementing a feature or fixing a defect.
+- Validate both the Standalone and Plugin adapters when shared image logic changes.
+- Changes to MCP, the widget, Plugin manifests, or the marketplace require matching Node tests and Codex App acceptance checks.
+- Update `CHANGELOG.md` and affected public guides when user-visible behavior changes.
+- `README.md` serves first-time visitors; `docs/guides/` serves users; `AGENTS.md` serves contributors; distribution `SKILL.md` files serve runtime agents.
+- Public content must not contain credentials, private endpoints, local absolute paths, test output, or unpublished implementation plans.
 
-## 发布
+## Release
 
-- 一个版本和 tag 同时产生 Standalone Skill ZIP 与 Codex Plugin ZIP。
-- Git marketplace Plugin 必须包含 `dist/server.mjs`、`dist/widget/` 和 `dist/scripts/`。
-- 发布前检查 marketplace、Plugin 清单、包元数据、tag 和制品版本一致。
-- 发布包排除 `auth.json`、`.local/`、`verification-scratch/`、`node_modules/`、缓存和测试输出。
-- 未经维护者明确批准，不创建或移动 tag，不创建 Release，不修改远程或发布公共 MCP。
+- One version and tag produce both the Standalone Skill ZIP and the Codex Plugin ZIP.
+- The Git marketplace Plugin must contain `dist/server.mjs`, `dist/widget/`, and `dist/scripts/`.
+- Before release, verify that marketplace metadata, Plugin manifests, package metadata, tags, and artifact versions agree.
+- Exclude `auth.json`, `.local/`, `verification-scratch/`, `node_modules/`, caches, and test output from release packages.
+- Do not create or move tags, create Releases, modify remotes, or publish a public MCP server without maintainer approval.
 
-## 提交署名
+## Commits
 
-- 提交信息格式：`<type>: <英文摘要>`。
-- `type` 使用 `feat`、`fix`、`docs`、`chore`、`refactor`、`build`、`style`、`perf`、`test` 或 `ci`。
-- AI 提交必须包含实际模型身份：
-
-      Co-Authored-By: (the agent model's name and attribution byline)
+- Use `<type>: <English summary>`.
+- Use one of: `feat`, `fix`, `docs`, `chore`, `refactor`, `build`, `style`, `perf`, `test`, or `ci`.

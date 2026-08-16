@@ -51,18 +51,18 @@ test("the repository is a Git-backed marketplace with a runnable root plugin", a
 
 
 test("public install and rollback guides use the documented plugin lifecycle commands", async () => {
-  const [readme, readmeEn, installation, rollback, troubleshooting] = await Promise.all([
+  const [readme, readmeZh, installation, rollback, troubleshooting] = await Promise.all([
     readFile(path.join(projectRoot, "README.md"), "utf8"),
-    readFile(path.join(projectRoot, "README.en.md"), "utf8"),
+    readFile(path.join(projectRoot, "README.zh-CN.md"), "utf8"),
     readFile(path.join(projectRoot, "docs/guides/installation.md"), "utf8"),
     readFile(path.join(projectRoot, "docs/guides/rollback.md"), "utf8"),
     readFile(path.join(projectRoot, "docs/guides/troubleshooting.md"), "utf8"),
   ]);
 
-  assert.match(readme, /\[English\]\(README\.en\.md\)/);
-  assert.match(readmeEn, /\[简体中文\]\(README\.md\)/);
+  assert.match(readme, /\[简体中文\]\(README\.zh-CN\.md\)/);
+  assert.match(readmeZh, /\[English\]\(README\.md\)/);
 
-  for (const document of [readme, readmeEn, installation]) {
+  for (const document of [readme, readmeZh, installation]) {
     assert.match(document, /codex plugin marketplace add Syh1906\/openai-compatible-imagegen/);
     assert.match(document, /codex plugin add openai-compatible-imagegen@openai-compatible-imagegen/);
   }

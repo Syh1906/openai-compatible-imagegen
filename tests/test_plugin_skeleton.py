@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_PATH = ROOT / ".codex-plugin" / "plugin.json"
 MCP_PATH = ROOT / ".mcp.json"
 README_PATH = ROOT / "README.md"
-README_EN_PATH = ROOT / "README.en.md"
+README_ZH_PATH = ROOT / "README.zh-CN.md"
 INSTALLATION_GUIDE_PATH = ROOT / "docs" / "guides" / "installation.md"
 CONFIGURATION_GUIDE_PATH = ROOT / "docs" / "guides" / "configuration.md"
 MIGRATION_GUIDE_PATH = ROOT / "docs" / "guides" / "migration.md"
@@ -70,7 +70,7 @@ DIST_RUNTIME_PATHS = [
 
 class PluginSkeletonTests(unittest.TestCase):
     def test_public_docs_route_package_installation_configuration_and_migration(self) -> None:
-        for path in (README_PATH, README_EN_PATH):
+        for path in (README_PATH, README_ZH_PATH):
             text = path.read_text(encoding="utf-8")
             self.assertIn("OpenAI-Compatible Images", text)
             self.assertIn("Standalone Skill", text)
@@ -83,7 +83,7 @@ class PluginSkeletonTests(unittest.TestCase):
             path.read_text(encoding="utf-8")
             for path in (
                 README_PATH,
-                README_EN_PATH,
+                README_ZH_PATH,
                 INSTALLATION_GUIDE_PATH,
                 CONFIGURATION_GUIDE_PATH,
                 MIGRATION_GUIDE_PATH,
