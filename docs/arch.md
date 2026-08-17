@@ -1,5 +1,7 @@
 # Architecture
 
+> Parent: [Documentation](./README.md)
+
 This document describes the stable boundaries that let one image core support a portable Standalone Skill and a Codex App Plugin. Use the [user guides](./guides/README.md) for installation and configuration.
 
 ## Sources of truth

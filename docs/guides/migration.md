@@ -1,5 +1,7 @@
 # Migration
 
+> Parent: [User guides](./README.md)
+
 Migration to the Codex Plugin is explicit. The Plugin does not scan, copy, merge, delete, or overwrite an older Standalone or Plugin configuration.
 
 ## Supported sources
@@ -7,7 +9,7 @@ Migration to the Codex Plugin is explicit. The Plugin does not scan, copy, merge
 | Source | `--source-kind` | Project overrides |
 | --- | --- | --- |
 | Standalone `auth.json` | `standalone` | No |
-| Older Plugin config | `development-plugin` | Optional, allowlisted fields only |
+| Earlier Codex Plugin config | `development-plugin` (compatibility value) | Optional, allowlisted fields only |
 
 ## Preview the migration
 
@@ -19,7 +21,7 @@ python "<plugin-root>/dist/scripts/migrate_image_config.py" `
   --source-kind standalone
 ```
 
-For an older Plugin configuration, use the retained compatibility value `--source-kind development-plugin`. Add both `--include-project-overrides` and `--project-root "<project-root>"` only when you also want its allowed project defaults.
+For an earlier Codex Plugin configuration, pass `--source-kind development-plugin`. The value is retained only for command compatibility. Add both `--include-project-overrides` and `--project-root "<project-root>"` only when you also want its allowed project defaults.
 
 Review these fields:
 

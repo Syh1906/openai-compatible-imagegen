@@ -92,6 +92,7 @@ let submissionStatus = "";
 let submissionStatusTone = "neutral";
 let openingInFlight = false;
 let openingImageId = "";
+let hostInlineReturnInFlight = false;
 let intentPanelOpen = false;
 let intentPanelTrigger = null;
 let destroyConfirmOpen = false;
@@ -375,7 +376,14 @@ async function connectHost() {
   };
   app.onhostcontextchanged = (params) => {
     if (!resourceActive) return;
+    const requestedContext = displayModeController.consumeRequestedContext(params?.displayMode);
     const changed = displayModeController.applyContext(params);
+    if (params?.displayMode === "inline"
+      && widgetRole === "editor"
+      && !requestedContext) {
+      void returnAfterHostRestoredInline();
+      return;
+    }
     if (widgetRole === "result") resultPreview.syncHostContext(params?.displayMode); else if (changed) render();
   };
   app.onteardown = async () => {
@@ -477,6 +485,7 @@ async function requestOpenEditor(imageId = editor.image.id) {
   try {
     const ensured = await ensureEditorSession();
     if (!resourceActive || !ensured?.session) return;
+    restoreTransferredDraft(ensured.session.draft);
     const opened = await displayModeController.request("fullscreen");
     if (!resourceActive || !opened) return;
     inlineStatus = "";
@@ -1182,6 +1191,29 @@ async function returnToConversation({ preserveDraft = true, ownerSessionId = "" 
     toast("Codex 未能返回会话视图");
     return false;
   }
+  finishReturnToResult({ preserveDraft });
+  return true;
+}
+async function returnAfterHostRestoredInline() {
+  if (hostInlineReturnInFlight || !resourceActive || widgetRole !== "editor") return;
+  hostInlineReturnInFlight = true;
+  try {
+    discardInteraction(); closeGuidance.close();
+    const draftSaved = await sessionController.saveDraft({
+      annotations: editor.annotations,
+      prompt: editor.prompt,
+    });
+    if (!resourceActive || widgetRole !== "editor" || !draftSaved) return;
+    const returned = await displayModeController.request("inline");
+    if (!resourceActive || widgetRole !== "editor" || !returned) return;
+    await app.requestTeardown();
+  } catch {
+    if (resourceActive && widgetRole === "editor") toast("Codex 未能保存并关闭当前画布");
+  } finally {
+    hostInlineReturnInFlight = false;
+  }
+}
+function finishReturnToResult({ preserveDraft }) {
   if (preserveDraft) persistWorkingDraft();
   sessionController.stop();
   colorController.close({ update: false });
@@ -1193,7 +1225,6 @@ async function returnToConversation({ preserveDraft = true, ownerSessionId = "" 
   inlineStatusTone = "neutral";
   inlineStatusImageId = "";
   render();
-  return true;
 }
 function openDestroyConfirm(event) {
   destroyConfirmTrigger = event?.currentTarget?.closest?.("[data-action=destroy]")
@@ -1442,6 +1473,20 @@ function restoreWorkingDraft(baseEditor) {
   editor = normalizeMaskOperationState(normalizeEditorColorState(restored.editor));
   undoStack = restored.undoStack.map((snapshot) => normalizeMaskOperationState(normalizeEditorColorState(snapshot)));
   redoStack = restored.redoStack.map((snapshot) => normalizeMaskOperationState(normalizeEditorColorState(snapshot)));
+}
+
+function restoreTransferredDraft(draft) {
+  if (!draft) return;
+  editor = normalizeMaskOperationState(normalizeEditorColorState({
+    ...editor,
+    annotations: structuredClone(draft.annotations),
+    prompt: draft.prompt,
+    selectedAnnotationId: null,
+    editingTextAnnotationId: null,
+  }));
+  undoStack = [];
+  redoStack = [];
+  persistWorkingDraft();
 }
 
 function updateMaskSetting({ maskMode = editor.maskMode, maskOperation = editor.maskOperation, maskBrushRadius = editor.maskBrushRadius }) {

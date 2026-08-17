@@ -93,6 +93,40 @@ test("current Codex host stages annotations and prompt in one composer payload",
   }
 });
 
+test("returning before submission preserves the result without creating an edit", async () => {
+  const dom = new JSDOM(
+    '<!doctype html><html><body><main><p>正在加载图片...</p></main></body></html>',
+    { pretendToBeVisual: true, url: "https://widget.local/" },
+  );
+  const previous = installDomGlobals(dom.window);
+  const host = installHost(dom.window, {
+    toolName: "open_image_editor",
+    hostCapabilities: CODEX_COMPOSER_HOST_CAPABILITIES,
+  });
+
+  try {
+    await import(`../web/editor-runtime.mjs?cancel-before-submit=${Date.now()}`);
+    await waitFor(() => document.querySelector("[data-image]")?.hidden === false);
+    const prompt = document.querySelector("[data-prompt]");
+    prompt.value = "只在画布中暂存，随后取消";
+    prompt.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+
+    document.querySelector("[data-action=back]")?.click();
+    await waitFor(() => document.querySelector(".inline-result") !== null);
+
+    assert.equal(host.toolCalls.some(({ name }) => name === "prepare_image_edit_submission"), false);
+    assert.equal(host.toolCalls.some(({ name }) => name === "edit_image"), false);
+    assert.equal(document.querySelector("[data-draft-state]")?.textContent, "未提交");
+    assert.equal(document.querySelector("[data-action=open-editor]")?.textContent.trim(), "继续编辑");
+  } finally {
+    document.querySelector("[data-action=back]")?.click();
+    await waitFor(() => document.querySelector(".inline-result") !== null).catch(() => {});
+    host.dispose();
+    restoreDomGlobals(previous);
+    dom.window.close();
+  }
+});
+
 test("a late composer acknowledgement unlocks its exact updated draft", async () => {
   const dom = new JSDOM(
     '<!doctype html><html><body><main><p>正在加载图片...</p></main></body></html>',

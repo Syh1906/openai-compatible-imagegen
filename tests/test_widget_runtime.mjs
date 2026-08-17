@@ -647,6 +647,73 @@ test("result widget expands into the editor and returns to a reusable conversati
   }
 });
 
+test("host-restored inline mode asks the host to close the side-panel resource", async () => {
+  const dom = new JSDOM(
+    '<!doctype html><html><body><main><p>正在加载图片...</p></main></body></html>',
+    { pretendToBeVisual: true, url: "https://widget.local/" },
+  );
+  const previous = installDomGlobals(dom.window);
+  const host = installHost(dom.window, {
+    toolName: "render_image_results",
+    initialArtifacts: [{ id: IMAGE_ID, mimeType: "image/png", width: 1, height: 1, operation: "generate", parentIds: [], childIds: [] }],
+  });
+
+  try {
+    await import(`../web/editor-runtime.mjs?host-restored-inline=${Date.now()}`);
+    await waitFor(() => document.querySelector("[data-action=open-editor]")?.disabled === false);
+    document.querySelector("[data-action=open-editor]").click();
+    await waitFor(() => document.querySelector(".editor-app") !== null);
+    const prompt = document.querySelector("[data-prompt]");
+    prompt.value = "保留这条未发送的修改草稿";
+    prompt.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+
+    host.notifyHostContext("inline");
+
+    await waitFor(() => host.teardownRequests === 1);
+    assert.deepEqual(host.displayModeRequests, ["fullscreen"]);
+    assert.equal(document.querySelector(".inline-result"), null);
+    assert.notEqual(document.querySelector(".editor-app"), null);
+  } finally {
+    sendToApp(dom.window, { jsonrpc: "2.0", id: "host-restored-inline-teardown", method: "ui/resource-teardown", params: {} });
+    await waitFor(() => host.toolCalls.some(({ name }) => name === "finalize_image_editor_session")).catch(() => {});
+    host.dispose();
+    restoreDomGlobals(previous);
+    dom.window.close();
+  }
+});
+
+test("a failed host-handoff draft save keeps the editor open without closing its resource", async () => {
+  const dom = new JSDOM(
+    '<!doctype html><html><body><main><p>正在加载图片...</p></main></body></html>',
+    { pretendToBeVisual: true, url: "https://widget.local/" },
+  );
+  const previous = installDomGlobals(dom.window);
+  const host = installHost(dom.window, {
+    toolName: "render_image_results",
+    saveDraftIsError: true,
+    initialArtifacts: [{ id: IMAGE_ID, mimeType: "image/png", width: 1, height: 1, operation: "generate", parentIds: [], childIds: [] }],
+  });
+
+  try {
+    await import(`../web/editor-runtime.mjs?host-handoff-save-failure=${Date.now()}`);
+    await waitFor(() => document.querySelector("[data-action=open-editor]")?.disabled === false);
+    document.querySelector("[data-action=open-editor]").click();
+    await waitFor(() => document.querySelector(".editor-app") !== null);
+
+    host.notifyHostContext("inline");
+
+    await waitFor(() => document.querySelector("[data-toast]")?.textContent === "Codex 未能保存并关闭当前画布");
+    assert.equal(host.teardownRequests, 0);
+    assert.notEqual(document.querySelector(".editor-app"), null);
+  } finally {
+    sendToApp(dom.window, { jsonrpc: "2.0", id: "host-handoff-save-failure-teardown", method: "ui/resource-teardown", params: {} });
+    await waitFor(() => host.toolCalls.some(({ name }) => name === "finalize_image_editor_session")).catch(() => {});
+    host.dispose();
+    restoreDomGlobals(previous);
+    dom.window.close();
+  }
+});
+
 test("result image opens an independent fullscreen preview with local zoom and returns to the same card", async () => {
   const dom = new JSDOM(
     '<!doctype html><html><body><main><p>正在加载图片...</p></main></body></html>',

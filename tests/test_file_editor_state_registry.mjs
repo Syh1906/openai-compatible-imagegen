@@ -19,6 +19,10 @@ const IMAGE_ID = "img_01J00000000000000000000000";
 const OTHER_IMAGE_ID = "img_01J00000000000000000000001";
 const SESSION_ID = "eds_00000000000000000000000000000001";
 const OTHER_SESSION_ID = "eds_00000000000000000000000000000002";
+const DRAFT = {
+  annotations: [{ id: "arrow-1", type: "arrow", from: { x: 0.1, y: 0.2 }, to: { x: 0.7, y: 0.8 } }],
+  prompt: "保留未发送的修改草稿",
+};
 
 
 test("file editor state persists image-wide destruction and session finalization", async () => {
@@ -56,6 +60,75 @@ test("file editor state persists image-wide destruction and session finalization
 });
 
 
+test("file editor state hands a saved draft to the next canvas session exactly once", async () => {
+  await withArtifactRoot("draft-handoff", async (artifactRoot) => {
+    const first = createFileEditorStateRegistry({ idFactory: sequenceFactory([SESSION_ID]) });
+    const input = scope(artifactRoot);
+    await first.open({ ...input, imageId: IMAGE_ID });
+    await first.saveDraft({ ...input, editorSessionId: SESSION_ID, draft: DRAFT });
+    await first.finalize({ ...input, editorSessionId: SESSION_ID });
+
+    const second = createFileEditorStateRegistry({ idFactory: sequenceFactory([OTHER_SESSION_ID]) });
+    assert.deepEqual(await second.open({ ...input, imageId: IMAGE_ID }), {
+      id: OTHER_SESSION_ID,
+      imageId: IMAGE_ID,
+      status: "active",
+      draft: DRAFT,
+    });
+    await second.finalize({ ...input, editorSessionId: OTHER_SESSION_ID });
+
+    const thirdSessionId = "eds_00000000000000000000000000000003";
+    const third = createFileEditorStateRegistry({ idFactory: sequenceFactory([thirdSessionId]) });
+    assert.deepEqual(await third.open({ ...input, imageId: IMAGE_ID }), {
+      id: thirdSessionId,
+      imageId: IMAGE_ID,
+      status: "active",
+    });
+  });
+});
+
+
+test("file editor state rejects an invalid draft before publication", async () => {
+  await withArtifactRoot("invalid-draft-input", async (artifactRoot) => {
+    const registry = createFileEditorStateRegistry({ idFactory: () => SESSION_ID });
+    const input = scope(artifactRoot);
+    await registry.open({ ...input, imageId: IMAGE_ID });
+
+    await assert.rejects(
+      registry.saveDraft({
+        ...input,
+        editorSessionId: SESSION_ID,
+        draft: {
+          annotations: [{
+            id: "invalid-arrow",
+            type: "arrow",
+            from: { x: -0.1, y: 0.2 },
+            to: { x: 0.7, y: 0.8 },
+          }],
+          prompt: "非法草稿不得写入",
+        },
+      }),
+      errorWithCode("editor_state_invalid"),
+    );
+  });
+});
+
+
+test("file editor state rejects a late draft after the image canvas is destroyed", async () => {
+  await withArtifactRoot("destroyed-draft", async (artifactRoot) => {
+    const registry = createFileEditorStateRegistry({ idFactory: () => SESSION_ID });
+    const input = scope(artifactRoot);
+    await registry.open({ ...input, imageId: IMAGE_ID });
+    await registry.destroy({ ...input, editorSessionId: SESSION_ID });
+
+    await assert.rejects(
+      registry.saveDraft({ ...input, editorSessionId: SESSION_ID, draft: DRAFT }),
+      errorWithCode("image_canvas_destroyed"),
+    );
+  });
+});
+
+
 test("one binding lock serializes concurrent opens without losing sessions", async () => {
   await withArtifactRoot("concurrent", async (artifactRoot) => {
     const ids = Array.from({ length: 12 }, (_, index) => `eds_${(index + 1).toString(16).padStart(32, "0")}`);
@@ -87,6 +160,20 @@ test("file editor state fails closed for corrupt, mismatched, and duplicate reco
   await t.test("duplicate session ID", async () => {
     await assertInvalidMutation("duplicate", async (recordPath, record) => {
       record.images.push({ imageId: OTHER_IMAGE_ID, canvasStatus: "available", sessionIds: [SESSION_ID] });
+      await writeFile(recordPath, `${JSON.stringify(record)}\n`, "utf8");
+    });
+  });
+  await t.test("invalid persisted draft", async () => {
+    await assertInvalidMutation("invalid-draft-record", async (recordPath, record) => {
+      record.images[0].draft = {
+        annotations: [{
+          id: "invalid-arrow",
+          type: "arrow",
+          from: { x: -0.1, y: 0.2 },
+          to: { x: 0.7, y: 0.8 },
+        }],
+        prompt: "非法草稿不得恢复",
+      };
       await writeFile(recordPath, `${JSON.stringify(record)}\n`, "utf8");
     });
   });

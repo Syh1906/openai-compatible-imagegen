@@ -26,6 +26,11 @@ This file records user-visible changes for each release of `openai-compatible-im
 - Fix result cards that could remain blank or show `IMG-SCHEMA` after Codex projected a large image result. Cards now bind their ordered image IDs from the standard tool input and load each image once through the App-only data tool.
 - Reject artifact reads whose returned stable image ID differs from the requested ID before exposing image content or widget data.
 - Serialize same-process editor state mutations per project binding so concurrent canvas opens do not fail with `editor_state_unavailable` on slower Windows filesystems.
+- Preserve an unsent canvas draft when Codex restores the side panel to the inline result after switching tasks, so the same image can be reopened without rebuilding the edit.
+
+### Known limitations
+
+- After switching tasks, Codex may restore the side panel to the result card instead of the open canvas. Use **Continue editing** on that card to reopen the preserved draft.
 
 ### Security
 

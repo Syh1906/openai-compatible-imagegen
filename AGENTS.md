@@ -65,3 +65,5 @@
 
 - Use `<type>: <English summary>`.
 - Use one of: `feat`, `fix`, `docs`, `chore`, `refactor`, `build`, `style`, `perf`, `test`, or `ci`.
+- AI commits must include `Co-Authored-By: (the agent model's name and attribution byline)`.
+- Use the actual model ID and the provider's no-reply email domain; do not invent attribution.

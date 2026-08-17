@@ -324,6 +324,7 @@ class PluginSkeletonTests(unittest.TestCase):
                 "report_imagegen_host_observation",
                 "reveal_image_artifact",
                 "save_image_annotations",
+                "save_image_editor_draft",
             ],
         )
         self.assertEqual(
@@ -358,6 +359,7 @@ class PluginSkeletonTests(unittest.TestCase):
                 "report_imagegen_host_observation",
                 "reveal_image_artifact",
                 "save_image_annotations",
+                "save_image_editor_draft",
             ],
         )
         self.assertTrue(payload["missingImageIdRejected"])

@@ -1,5 +1,7 @@
 # Configuration
 
+> Parent: [User guides](./README.md)
+
 Configure only the package you installed. The Standalone Skill and Codex Plugin do not scan, merge, or fall back to each other's configuration.
 
 ## Configure the Standalone Skill

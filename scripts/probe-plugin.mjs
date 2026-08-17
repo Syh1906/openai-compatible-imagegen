@@ -25,6 +25,7 @@ const APP_ONLY_TOOLS = [
   "report_imagegen_host_observation",
   "reveal_image_artifact",
   "save_image_annotations",
+  "save_image_editor_draft",
 ];
 const REMOTE_SMOKE_GENERATE_PROMPT = "A single solid red circle centered on a plain white background, no text.";
 const REMOTE_SMOKE_EDIT_PROMPT = "Change the circle from red to blue. Keep the plain white background and add no text.";
@@ -361,6 +362,7 @@ async function main() {
     requireValue(tools.includes("finalize_image_editor_session"), "MCP server does not expose finalize_image_editor_session");
     requireValue(tools.includes("prepare_image_edit_submission"), "MCP server does not expose prepare_image_edit_submission");
     requireValue(tools.includes("save_image_annotations"), "MCP server does not expose save_image_annotations");
+    requireValue(tools.includes("save_image_editor_draft"), "MCP server does not expose save_image_editor_draft");
     requireValue(tools.includes("list_image_models"), "MCP server does not expose list_image_models");
     requireValue(tools.includes("bind_imagegen_project"), "MCP server does not expose bind_imagegen_project");
     requireValue(

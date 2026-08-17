@@ -3,15 +3,11 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
-
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-
 import { createImagegenServer } from "../mcp/create-server.mjs";
 import { readImageArtifact } from "../mcp/artifact-repository.mjs";
 import { createReleaseBundle, RELEASE_IDENTITY_PLACEHOLDER } from "../mcp/release-identity.mjs";
-
-
 const PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAEElEQVR4nGNgaPj/H4xhDABS0gn5PEa22gAAAABJRU5ErkJggg==";
 const TEST_RELEASE_IDENTITY = createReleaseBundle({
   pluginId: "openai-compatible-imagegen",
@@ -162,6 +158,7 @@ test("only the result renderer and focused editor bind app resources", async () 
       const resultUri = renderTool._meta.ui.resourceUri;
       const editorUri = tools.find((tool) => tool.name === "open_image_editor")._meta.ui.resourceUri;
       const sessionStateTool = tools.find((tool) => tool.name === "get_image_editor_session");
+      const draftTool = tools.find((tool) => tool.name === "save_image_editor_draft");
       const finalizeSessionTool = tools.find((tool) => tool.name === "finalize_image_editor_session");
       const annotationTool = tools.find((tool) => tool.name === "save_image_annotations");
       const imageDataTool = tools.find((tool) => tool.name === "read_image_artifact_data");
@@ -174,6 +171,7 @@ test("only the result renderer and focused editor bind app resources", async () 
       assert.notEqual(resultUri, editorUri);
       assert.deepEqual(tools.find((tool) => tool.name === "open_image_editor")._meta.ui.visibility, ["app"]);
       assert.deepEqual(sessionStateTool._meta.ui.visibility, ["app"]);
+      assert.deepEqual(draftTool._meta.ui.visibility, ["app"]);
       assert.deepEqual(finalizeSessionTool._meta.ui.visibility, ["app"]);
       assert.deepEqual(annotationTool._meta.ui.visibility, ["app"]);
       assert.deepEqual(imageDataTool._meta.ui.visibility, ["app"]);
@@ -229,6 +227,7 @@ test("all product tools declare precise structured output schemas", async () => 
         "open_image_editor",
         "prepare_image_edit_submission",
         "save_image_annotations",
+        "save_image_editor_draft",
         "get_image_editor_session",
         "destroy_image_editor",
         "finalize_image_editor_session",
@@ -309,7 +308,7 @@ test("all product tools declare precise structured output schemas", async () => 
         "revisionSha256",
       ]);
 
-      for (const name of ["get_image_editor_session", "destroy_image_editor", "finalize_image_editor_session"]) {
+      for (const name of ["save_image_editor_draft", "get_image_editor_session", "destroy_image_editor", "finalize_image_editor_session"]) {
         assert.deepEqual(schemas.get(name).required, ["editorSession"]);
         assert.deepEqual(schemas.get(name).properties.editorSession.required, ["id", "status"]);
       }
@@ -1099,6 +1098,16 @@ test("editor sessions can be opened, inspected, and destroyed", async () => {
         arguments: { editorSessionId },
       });
       assert.equal(afterDestroy.structuredContent.editorSession.status, "destroyed");
+
+      const lateDraft = await client.callTool({
+        name: "save_image_editor_draft",
+        arguments: {
+          editorSessionId,
+          draft: { annotations: [], prompt: "不得在销毁后重新写入" },
+        },
+      });
+      assert.equal(lateDraft.isError, true);
+      assertToolErrorCode(lateDraft, "image_canvas_destroyed");
 
       const artifactAfterDestroy = await client.callTool({
         name: "get_image_artifact",

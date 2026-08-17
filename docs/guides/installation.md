@@ -1,5 +1,7 @@
 # Installation
 
+> Parent: [User guides](./README.md)
+
 Choose one package. Both packages use the same image core, but they target different hosts and keep separate local configuration.
 
 ## Choose a package

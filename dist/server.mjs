@@ -51,7 +51,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 var define_RELEASE_IDENTITY_default;
 var init_define_RELEASE_IDENTITY = __esm({
   "<define:__RELEASE_IDENTITY__>"() {
-    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "0.4.0", serverBuildDigest: "3661cf3313e311bd7f16491b73a017642ec8fa5010d516dbefc3aadc295da727", widgetAssetDigest: "6755d829d948acc0aeb1abc6599a013901877324c4cf87b82f0e36123370d2b4", fingerprint: "4637204eeb0e866db239", resourceUris: { result: "ui://openai-compatible-imagegen/result.html", editor: "ui://openai-compatible-imagegen/editor.html" } };
+    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "1.0.0", serverBuildDigest: "46167c0925ed1fcae6a8b3afa6899b0d0e1b64fc6d2d448eb8542237b846f019", widgetAssetDigest: "f1bf1cff5296241e1f5f053042a5038ca0bceb9dec4cac9794f616aa96a44fde", fingerprint: "47f94e5607e0dfca7647", resourceUris: { result: "ui://openai-compatible-imagegen/result.html", editor: "ui://openai-compatible-imagegen/editor.html" } };
   }
 });
 
@@ -31423,6 +31423,42 @@ function createSubmissionId() {
   return `sub_${randomBytes2(16).toString("hex")}`;
 }
 
+// mcp/editor-draft-contract.mjs
+init_define_RELEASE_IDENTITY();
+var normalizedCoordinate = external_exports2.number().min(0).max(1);
+var normalizedPoint = external_exports2.object({ x: normalizedCoordinate, y: normalizedCoordinate });
+var annotationStyleSchema = {
+  color: external_exports2.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
+  strokeWidth: external_exports2.number().min(1).max(12).optional()
+};
+var annotationItemSchema = external_exports2.discriminatedUnion("type", [
+  external_exports2.object({ id: external_exports2.string().min(1), type: external_exports2.literal("pen"), points: external_exports2.array(normalizedPoint).min(2).max(4096), text: external_exports2.string().max(600).optional(), ...annotationStyleSchema }),
+  external_exports2.object({ id: external_exports2.string().min(1), type: external_exports2.literal("arrow"), from: normalizedPoint, to: normalizedPoint, text: external_exports2.string().max(600).optional(), ...annotationStyleSchema }),
+  external_exports2.object({ id: external_exports2.string().min(1), type: external_exports2.literal("rectangle"), x: normalizedCoordinate, y: normalizedCoordinate, width: normalizedCoordinate, height: normalizedCoordinate, text: external_exports2.string().max(600).optional(), ...annotationStyleSchema }),
+  external_exports2.object({ id: external_exports2.string().min(1), type: external_exports2.literal("text"), x: normalizedCoordinate, y: normalizedCoordinate, text: external_exports2.string().min(1).max(600), ...annotationStyleSchema }),
+  external_exports2.object({
+    id: external_exports2.string().min(1),
+    type: external_exports2.literal("mask"),
+    mode: external_exports2.enum(["edit", "protect"]),
+    operation: external_exports2.enum(["paint", "erase"]).default("paint"),
+    brushRadius: external_exports2.number().min(1e-3).max(0.5),
+    points: external_exports2.array(normalizedPoint).min(2).max(4096),
+    text: external_exports2.string().max(600).optional(),
+    color: annotationStyleSchema.color
+  })
+]);
+var editorDraftSchema = external_exports2.object({
+  annotations: external_exports2.array(annotationItemSchema).max(100),
+  prompt: external_exports2.string().max(600)
+}).strict();
+function parseEditorDraft(value, { allowNull = false } = {}) {
+  if (allowNull && value === null) return null;
+  const parsed = editorDraftSchema.safeParse(value);
+  if (!parsed.success) throw new TypeError("invalid editor draft");
+  if (parsed.data.annotations.length === 0 && parsed.data.prompt.trim() === "") return null;
+  return structuredClone(parsed.data);
+}
+
 // mcp/editor-state-registry.mjs
 init_define_RELEASE_IDENTITY();
 import { randomBytes as randomBytes3 } from "node:crypto";
@@ -31432,14 +31468,14 @@ var SESSION_ID_PATTERN = /^eds_[0-9a-f]{32}$/;
 function createEditorStateRegistry({ idFactory = createEditorSessionId } = {}) {
   if (typeof idFactory !== "function") throw new TypeError("idFactory must be a function");
   const records = /* @__PURE__ */ new Map();
-  return Object.freeze({ open: open4, getSession, destroy, finalize, getCanvasStatuses });
+  return Object.freeze({ open: open4, getSession, saveDraft, destroy, finalize, getCanvasStatuses });
   async function open4(input) {
     const { bindingKey, imageId } = normalizeImageInput(input);
     const images = imagesFor(records, bindingKey);
     let image = images.get(imageId);
     if (image?.canvasStatus === "destroyed") throw editorStateError("image_canvas_destroyed");
     if (!image) {
-      image = { canvasStatus: "available", sessionIds: /* @__PURE__ */ new Set() };
+      image = { canvasStatus: "available", sessionIds: /* @__PURE__ */ new Set(), draft: null };
       images.set(imageId, image);
     }
     const id = idFactory();
@@ -31447,18 +31483,31 @@ function createEditorStateRegistry({ idFactory = createEditorSessionId } = {}) {
       throw new TypeError("idFactory must return a unique eds_ ID with 32 lowercase hex characters");
     }
     image.sessionIds.add(id);
-    return sessionResult(id, imageId, "active");
+    const draft = image.draft;
+    image.draft = null;
+    return sessionResult(id, imageId, "active", draft);
   }
   async function getSession(input) {
     const { bindingKey, editorSessionId } = normalizeSessionInput(input);
     const found = findSession(records.get(bindingKey), editorSessionId);
     return found ? sessionResult(editorSessionId, found.imageId, found.image.canvasStatus === "destroyed" ? "destroyed" : "active") : null;
   }
+  async function saveDraft(input) {
+    const { bindingKey, editorSessionId } = normalizeSessionInput(input);
+    const found = findSession(records.get(bindingKey), editorSessionId);
+    if (!found) return null;
+    if (found.image.canvasStatus === "destroyed") {
+      throw editorStateError("image_canvas_destroyed", "\u5F53\u524D\u56FE\u7247\u7684\u753B\u5E03\u5DF2\u7ECF\u9500\u6BC1\u3002");
+    }
+    found.image.draft = normalizeDraft(input?.draft);
+    return sessionResult(editorSessionId, found.imageId, "active");
+  }
   async function destroy(input) {
     const { bindingKey, editorSessionId } = normalizeSessionInput(input);
     const found = findSession(records.get(bindingKey), editorSessionId);
     if (!found) return null;
     found.image.canvasStatus = "destroyed";
+    found.image.draft = null;
     return sessionResult(editorSessionId, found.imageId, "destroyed");
   }
   async function finalize(input) {
@@ -31467,7 +31516,7 @@ function createEditorStateRegistry({ idFactory = createEditorSessionId } = {}) {
     const found = findSession(images, editorSessionId);
     if (!found) return null;
     found.image.sessionIds.delete(editorSessionId);
-    if (found.image.canvasStatus === "available" && found.image.sessionIds.size === 0) {
+    if (found.image.canvasStatus === "available" && found.image.sessionIds.size === 0 && !found.image.draft) {
       images.delete(found.imageId);
       if (images.size === 0) records.delete(bindingKey);
     }
@@ -31522,8 +31571,15 @@ function findSession(images, editorSessionId) {
   }
   return null;
 }
-function sessionResult(id, imageId, status) {
-  return Object.freeze({ id, imageId, status });
+function sessionResult(id, imageId, status, draft = null) {
+  return Object.freeze({ id, imageId, status, ...draft ? { draft: structuredClone(draft) } : {} });
+}
+function normalizeDraft(value) {
+  try {
+    return parseEditorDraft(value);
+  } catch {
+    invalidState();
+  }
 }
 function invalidState() {
   throw editorStateError("editor_state_invalid", "\u753B\u5E03\u72B6\u6001\u65E0\u6548\u3002");
@@ -34694,28 +34750,6 @@ var legacyWidgetResourceFingerprints = [
 var editorSessionIdSchema = external_exports2.string().regex(/^eds_[0-9a-f]{32}$/).describe("\u5DF2\u6253\u5F00\u753B\u5E03\u7684\u4F1A\u8BDD ID");
 var projectBindingIdSchema = external_exports2.string().regex(/^pbind_[0-9a-f]{64}$/).describe("\u56FE\u7247\u9879\u76EE\u7ED1\u5B9A ID");
 var projectBindingInputSchema = { projectBindingId: projectBindingIdSchema };
-var normalizedCoordinate = external_exports2.number().min(0).max(1);
-var normalizedPoint = external_exports2.object({ x: normalizedCoordinate, y: normalizedCoordinate });
-var annotationStyleSchema = {
-  color: external_exports2.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
-  strokeWidth: external_exports2.number().min(1).max(12).optional()
-};
-var annotationItemSchema = external_exports2.discriminatedUnion("type", [
-  external_exports2.object({ id: external_exports2.string().min(1), type: external_exports2.literal("pen"), points: external_exports2.array(normalizedPoint).min(2).max(4096), text: external_exports2.string().max(600).optional(), ...annotationStyleSchema }),
-  external_exports2.object({ id: external_exports2.string().min(1), type: external_exports2.literal("arrow"), from: normalizedPoint, to: normalizedPoint, text: external_exports2.string().max(600).optional(), ...annotationStyleSchema }),
-  external_exports2.object({ id: external_exports2.string().min(1), type: external_exports2.literal("rectangle"), x: normalizedCoordinate, y: normalizedCoordinate, width: normalizedCoordinate, height: normalizedCoordinate, text: external_exports2.string().max(600).optional(), ...annotationStyleSchema }),
-  external_exports2.object({ id: external_exports2.string().min(1), type: external_exports2.literal("text"), x: normalizedCoordinate, y: normalizedCoordinate, text: external_exports2.string().min(1).max(600), ...annotationStyleSchema }),
-  external_exports2.object({
-    id: external_exports2.string().min(1),
-    type: external_exports2.literal("mask"),
-    mode: external_exports2.enum(["edit", "protect"]),
-    operation: external_exports2.enum(["paint", "erase"]).default("paint"),
-    brushRadius: external_exports2.number().min(1e-3).max(0.5),
-    points: external_exports2.array(normalizedPoint).min(2).max(4096),
-    text: external_exports2.string().max(600).optional(),
-    color: annotationStyleSchema.color
-  })
-]);
 var annotationIdSchema = external_exports2.string().regex(/^ann_[0-9A-HJKMNP-TV-Z]{26}$/);
 var submissionIdSchema = external_exports2.string().regex(/^sub_[0-9a-f]{32}$/);
 var deliveryReceiptIdPattern = /^delivery_[0-9a-f]{64}$/;
@@ -34781,7 +34815,8 @@ var maskPolicyOutputSchema = external_exports2.object({
 var openEditorSessionOutputSchema = external_exports2.object({
   id: editorSessionIdSchema,
   imageId: imageIdSchema,
-  status: external_exports2.literal("active")
+  status: external_exports2.literal("active"),
+  draft: editorDraftSchema.optional()
 }).strict();
 var annotationOutputSchema = external_exports2.object({
   id: annotationIdSchema,
@@ -35763,6 +35798,36 @@ function createImagegenServer({
     )
   );
   server2.registerTool(
+    "save_image_editor_draft",
+    {
+      title: "\u4FDD\u5B58\u753B\u5E03\u4E34\u65F6\u8349\u7A3F",
+      description: "\u5728\u5BBF\u4E3B\u5378\u8F7D\u5F53\u524D\u753B\u5E03\u524D\u4FDD\u5B58\u672A\u63D0\u4EA4\u7684\u6807\u6CE8\u548C\u8865\u5145\u8981\u6C42\uFF0C\u4F9B\u4E0B\u4E00\u6B21\u6253\u5F00\u540C\u4E00\u56FE\u7247\u753B\u5E03\u65F6\u6062\u590D\u4E00\u6B21\u3002",
+      inputSchema: {
+        ...projectBindingInputSchema,
+        editorSessionId: editorSessionIdSchema,
+        draft: editorDraftSchema
+      },
+      outputSchema: external_exports2.object({ editorSession: editorSessionOutputSchema }).strict(),
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false
+      },
+      _meta: { ui: { visibility: ["app"] } }
+    },
+    async ({ projectBindingId, editorSessionId, draft }) => await withBoundProject(
+      projectContext,
+      projectBindingId,
+      async (context) => editorSessionResult(await editorState.saveDraft({
+        artifactRoot: context.artifactRoot,
+        bindingKey: context.bindingKey,
+        editorSessionId,
+        draft
+      }))
+    )
+  );
+  server2.registerTool(
     "get_image_editor_session",
     {
       title: "\u8BFB\u53D6\u753B\u5E03\u4F1A\u8BDD\u72B6\u6001",
@@ -35858,7 +35923,8 @@ function editorSessionOutput(editorSession, status = editorSession.status) {
   return {
     id: editorSession.id,
     ...editorSession.imageId ? { imageId: editorSession.imageId } : {},
-    status
+    status,
+    ...editorSession.draft ? { draft: editorSession.draft } : {}
   };
 }
 async function executeImageTask(task, context, runTask, readArtifact, { onTaskCommitted } = {}) {
@@ -36397,7 +36463,7 @@ var MAX_SESSIONS = 4096;
 var mutationQueues = /* @__PURE__ */ new Map();
 function createFileEditorStateRegistry({ idFactory = createEditorSessionId } = {}) {
   if (typeof idFactory !== "function") throw new TypeError("idFactory must be a function");
-  return Object.freeze({ open: open4, getSession, destroy, finalize, getCanvasStatuses });
+  return Object.freeze({ open: open4, getSession, saveDraft, destroy, finalize, getCanvasStatuses });
   async function open4(input) {
     const request = normalizeImageInput(input);
     return await withRecord(input, async (record2, save) => {
@@ -36405,7 +36471,7 @@ function createFileEditorStateRegistry({ idFactory = createEditorSessionId } = {
       if (image?.canvasStatus === "destroyed") throw editorStateError("image_canvas_destroyed", "\u5F53\u524D\u56FE\u7247\u7684\u753B\u5E03\u5DF2\u7ECF\u9500\u6BC1\u3002");
       if (!image) {
         if (record2.images.length >= MAX_IMAGES) invalidState4();
-        image = { imageId: request.imageId, canvasStatus: "available", sessionIds: [] };
+        image = { imageId: request.imageId, canvasStatus: "available", sessionIds: [], draft: null };
         record2.images.push(image);
       }
       const id = idFactory();
@@ -36413,8 +36479,10 @@ function createFileEditorStateRegistry({ idFactory = createEditorSessionId } = {
         throw new TypeError("idFactory must return a unique eds_ ID with 32 lowercase hex characters");
       }
       image.sessionIds.push(id);
+      const draft = image.draft;
+      image.draft = null;
       await save(record2);
-      return sessionResult2(id, image.imageId, "active");
+      return sessionResult2(id, image.imageId, "active", draft);
     });
   }
   async function getSession(input) {
@@ -36423,6 +36491,20 @@ function createFileEditorStateRegistry({ idFactory = createEditorSessionId } = {
     const found = findSession2(record2, request.editorSessionId);
     return found ? sessionResult2(request.editorSessionId, found.image.imageId, found.image.canvasStatus === "destroyed" ? "destroyed" : "active") : null;
   }
+  async function saveDraft(input) {
+    const request = normalizeSessionInput(input);
+    const draft = normalizeDraft2(input?.draft);
+    return await withRecord(input, async (record2, save) => {
+      const found = findSession2(record2, request.editorSessionId);
+      if (!found) return null;
+      if (found.image.canvasStatus === "destroyed") {
+        throw editorStateError("image_canvas_destroyed", "\u5F53\u524D\u56FE\u7247\u7684\u753B\u5E03\u5DF2\u7ECF\u9500\u6BC1\u3002");
+      }
+      found.image.draft = draft;
+      await save(record2);
+      return sessionResult2(request.editorSessionId, found.image.imageId, "active");
+    });
+  }
   async function destroy(input) {
     const request = normalizeSessionInput(input);
     return await withRecord(input, async (record2, save) => {
@@ -36430,6 +36512,7 @@ function createFileEditorStateRegistry({ idFactory = createEditorSessionId } = {
       if (!found) return null;
       if (found.image.canvasStatus !== "destroyed") {
         found.image.canvasStatus = "destroyed";
+        found.image.draft = null;
         await save(record2);
       }
       return sessionResult2(request.editorSessionId, found.image.imageId, "destroyed");
@@ -36441,7 +36524,7 @@ function createFileEditorStateRegistry({ idFactory = createEditorSessionId } = {
       const found = findSession2(record2, request.editorSessionId);
       if (!found) return null;
       found.image.sessionIds.splice(found.sessionIndex, 1);
-      if (found.image.canvasStatus === "available" && found.image.sessionIds.length === 0) {
+      if (found.image.canvasStatus === "available" && found.image.sessionIds.length === 0 && !found.image.draft) {
         record2.images.splice(found.imageIndex, 1);
       }
       await save(record2);
@@ -36583,7 +36666,8 @@ function validateRecord2(value, bindingKey) {
   const imageIds = /* @__PURE__ */ new Set();
   const sessionIds = /* @__PURE__ */ new Set();
   for (const image of value.images) {
-    if (!plainObject2(image) || !exactKeys(image, ["canvasStatus", "imageId", "sessionIds"]) || !IMAGE_ID_PATTERN5.test(image.imageId) || !["available", "destroyed"].includes(image.canvasStatus) || !Array.isArray(image.sessionIds) || image.canvasStatus === "available" && image.sessionIds.length === 0 || imageIds.has(image.imageId)) invalidState4();
+    if (!plainObject2(image) || !exactKeys(image, image.draft === void 0 ? ["canvasStatus", "imageId", "sessionIds"] : ["canvasStatus", "draft", "imageId", "sessionIds"]) || !IMAGE_ID_PATTERN5.test(image.imageId) || !["available", "destroyed"].includes(image.canvasStatus) || !Array.isArray(image.sessionIds) || image.canvasStatus === "available" && image.sessionIds.length === 0 && !image.draft || imageIds.has(image.imageId)) invalidState4();
+    image.draft = image.draft === void 0 ? null : normalizeDraft2(image.draft, { allowNull: true });
     imageIds.add(image.imageId);
     for (const id of image.sessionIds) {
       if (!SESSION_ID_PATTERN2.test(id) || sessionIds.has(id)) invalidState4();
@@ -36634,8 +36718,15 @@ function findSession2(record2, editorSessionId) {
 function countSessions(record2) {
   return record2.images.reduce((count, image) => count + image.sessionIds.length, 0);
 }
-function sessionResult2(id, imageId, status) {
-  return Object.freeze({ id, imageId, status });
+function sessionResult2(id, imageId, status, draft = null) {
+  return Object.freeze({ id, imageId, status, ...draft ? { draft: structuredClone(draft) } : {} });
+}
+function normalizeDraft2(value, { allowNull = false } = {}) {
+  try {
+    return parseEditorDraft(value, { allowNull });
+  } catch {
+    invalidState4();
+  }
 }
 function exactKeys(value, expected) {
   return JSON.stringify(Object.keys(value).sort()) === JSON.stringify([...expected].sort());

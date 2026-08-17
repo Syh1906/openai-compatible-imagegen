@@ -1,5 +1,7 @@
 # Troubleshooting
 
+> Parent: [User guides](./README.md)
+
 Identify the failing layer before changing configuration. The project does not switch providers, models, endpoints, authentication, protocols, or install routes automatically.
 
 ## Installation problems
@@ -30,7 +32,8 @@ Identify the failing layer before changing configuration. The project does not s
 | --- | --- | --- |
 | Provider rejects the request | The configured service returned an API error | Review the safe error code and provider logs; do not switch route automatically |
 | Result card reports invalid data | Artifact metadata or bytes failed validation | Keep the original error and verify the installed Plugin version and build identity |
-| Canvas cannot open | The artifact, binding, or editor session is unavailable | Reopen from the same result in a new task only after checking runtime status |
+| Canvas cannot open | The artifact, binding, or editor session is unavailable | Return to the conversation and reopen the canvas from the same result; start a new task only when the task predates the current Plugin installation or update |
+| Side panel shows the result card after switching tasks | Codex restored the inline result instead of the open canvas | Select **Continue editing** on the same card; the Plugin restores the preserved unsent draft |
 | Transparency is unmet | The original succeeded but the selected delivery route did not meet its contract | Keep the original and choose a valid controlled plate or trusted mask |
 | Delivery is not ready | A transform or QA requirement failed | Inspect the delivery receipt; do not regenerate unless a new API request is intended |
 

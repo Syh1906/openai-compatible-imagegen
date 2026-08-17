@@ -1,6 +1,6 @@
 {
   "name": "openai-compatible-imagegen",
-  "version": "0.4.0",
+  "version": "1.0.0",
   "description": "\u5728 Codex App \u4e2d\u751f\u6210\u3001\u6807\u6ce8\u3001\u7f16\u8f91\u548c\u7ba1\u7406 OpenAI-compatible \u56fe\u7247\u4ea7\u7269\u3002",
   "author": {
     "name": "\u5c0f\u4e3a",

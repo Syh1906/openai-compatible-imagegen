@@ -89,6 +89,22 @@ export function createEditorSessionController({
       return { opened: true, result, session };
     },
 
+    async saveDraft(draft) {
+      if (!sessionId) return false;
+      const id = sessionId;
+      const generation = sessionGeneration;
+      const result = await app.callServerTool({
+        name: "save_image_editor_draft",
+        arguments: { editorSessionId: id, draft },
+      });
+      if (!isCurrentSession(id, generation)) return false;
+      const session = result.structuredContent?.editorSession;
+      if (result.isError || session?.id !== id || session.status !== "active") {
+        throw new Error("editor session draft save failed");
+      }
+      return true;
+    },
+
     async destroy() {
       if (!sessionId) return false;
       const id = sessionId;

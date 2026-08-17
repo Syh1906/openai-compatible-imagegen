@@ -11,7 +11,9 @@ export function createHostDisplayModeController({
   setStatus,
   render,
 }) {
-  return Object.freeze({ applyContext, request });
+  const pendingRequests = new Map();
+  const expectedContexts = new Map();
+  return Object.freeze({ applyContext, consumeRequestedContext, request });
 
   function applyContext(context, { initializeRole = false } = {}) {
     let changed = false;
@@ -49,9 +51,17 @@ export function createHostDisplayModeController({
       render();
       return false;
     }
+    if (getDisplayMode() === mode && !pendingRequests.has(mode)) {
+      setStatus("", "neutral");
+      return true;
+    }
+    setRequestPending(mode, 1);
+    setExpectedContext(mode, 1);
+    let requestSucceeded = false;
     try {
       const result = await app.requestDisplayMode({ mode });
       if (!isActive()) return false;
+      requestSucceeded = true;
       const matches = result.mode === mode;
       setDisplayMode(result.mode);
       setStatus(matches ? "" : "宿主未切换到请求的显示模式", matches ? "neutral" : "error");
@@ -62,7 +72,32 @@ export function createHostDisplayModeController({
       setStatus("画布显示模式切换失败", "error");
       render();
       return false;
+    } finally {
+      setRequestPending(mode, -1);
+      if (requestSucceeded) {
+        setTimeout(() => setExpectedContext(mode, -1), 0);
+      } else {
+        setExpectedContext(mode, -1);
+      }
     }
+  }
+
+  function consumeRequestedContext(mode) {
+    if ((expectedContexts.get(mode) || 0) < 1) return false;
+    setExpectedContext(mode, -1);
+    return true;
+  }
+
+  function setRequestPending(mode, delta) {
+    const next = (pendingRequests.get(mode) || 0) + delta;
+    if (next > 0) pendingRequests.set(mode, next);
+    else pendingRequests.delete(mode);
+  }
+
+  function setExpectedContext(mode, delta) {
+    const next = (expectedContexts.get(mode) || 0) + delta;
+    if (next > 0) expectedContexts.set(mode, next);
+    else expectedContexts.delete(mode);
   }
 }
 

@@ -51,6 +51,7 @@ const PROJECT_BOUND_TOOL_NAMES = [
   "render_image_results",
   "open_image_editor",
   "save_image_annotations",
+  "save_image_editor_draft",
   "prepare_image_edit_submission",
   "get_image_editor_session",
   "destroy_image_editor",
@@ -97,7 +98,7 @@ test("all project-bound tools require an explicit project binding ID", async () 
   await withProjectRoots(async ({ pluginRoot }) => {
     const server = createTestServer({ pluginRoot });
     try {
-      assert.equal(Object.keys(server._registeredTools).length, 20);
+      assert.equal(Object.keys(server._registeredTools).length, 21);
       for (const name of PROJECT_BOUND_TOOL_NAMES) {
         const schema = server._registeredTools[name]?.inputSchema;
         assert.notEqual(schema, undefined, `${name} input schema missing`);
@@ -500,6 +501,10 @@ test("all business and app-only tools fail closed before project binding", async
       ["save_image_annotations", {
         imageId: IMAGE_ID,
         items: [{ id: "rect", type: "rectangle", x: 0.1, y: 0.1, width: 0.5, height: 0.5 }],
+      }],
+      ["save_image_editor_draft", {
+        editorSessionId: EDITOR_SESSION_ID,
+        draft: { annotations: [], prompt: "keep draft" },
       }],
       ["get_image_editor_session", { editorSessionId: EDITOR_SESSION_ID }],
       ["destroy_image_editor", { editorSessionId: EDITOR_SESSION_ID }],

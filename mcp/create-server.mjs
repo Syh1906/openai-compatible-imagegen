@@ -3,6 +3,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
 import { createEditSubmissionRegistry } from "./edit-submission-registry.mjs";
+import { annotationItemSchema, editorDraftSchema } from "./editor-draft-contract.mjs";
 import { createEditorStateRegistry } from "./editor-state-registry.mjs";
 import { executeImageBatch } from "./batch-images.mjs";
 import { createImageAuditHandlers } from "./image-audit-handlers.mjs";
@@ -46,28 +47,6 @@ const legacyWidgetResourceFingerprints = [
 const editorSessionIdSchema = z.string().regex(/^eds_[0-9a-f]{32}$/).describe("已打开画布的会话 ID");
 const projectBindingIdSchema = z.string().regex(/^pbind_[0-9a-f]{64}$/).describe("图片项目绑定 ID");
 const projectBindingInputSchema = { projectBindingId: projectBindingIdSchema };
-const normalizedCoordinate = z.number().min(0).max(1);
-const normalizedPoint = z.object({ x: normalizedCoordinate, y: normalizedCoordinate });
-const annotationStyleSchema = {
-  color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
-  strokeWidth: z.number().min(1).max(12).optional(),
-};
-const annotationItemSchema = z.discriminatedUnion("type", [
-  z.object({ id: z.string().min(1), type: z.literal("pen"), points: z.array(normalizedPoint).min(2).max(4096), text: z.string().max(600).optional(), ...annotationStyleSchema }),
-  z.object({ id: z.string().min(1), type: z.literal("arrow"), from: normalizedPoint, to: normalizedPoint, text: z.string().max(600).optional(), ...annotationStyleSchema }),
-  z.object({ id: z.string().min(1), type: z.literal("rectangle"), x: normalizedCoordinate, y: normalizedCoordinate, width: normalizedCoordinate, height: normalizedCoordinate, text: z.string().max(600).optional(), ...annotationStyleSchema }),
-  z.object({ id: z.string().min(1), type: z.literal("text"), x: normalizedCoordinate, y: normalizedCoordinate, text: z.string().min(1).max(600), ...annotationStyleSchema }),
-  z.object({
-    id: z.string().min(1),
-    type: z.literal("mask"),
-    mode: z.enum(["edit", "protect"]),
-    operation: z.enum(["paint", "erase"]).default("paint"),
-    brushRadius: z.number().min(0.001).max(0.5),
-    points: z.array(normalizedPoint).min(2).max(4096),
-    text: z.string().max(600).optional(),
-    color: annotationStyleSchema.color,
-  }),
-]);
 const annotationIdSchema = z.string().regex(/^ann_[0-9A-HJKMNP-TV-Z]{26}$/);
 const submissionIdSchema = z.string().regex(/^sub_[0-9a-f]{32}$/);
 const deliveryReceiptIdPattern = /^delivery_[0-9a-f]{64}$/;
@@ -134,6 +113,7 @@ const openEditorSessionOutputSchema = z.object({
   id: editorSessionIdSchema,
   imageId: imageIdSchema,
   status: z.literal("active"),
+  draft: editorDraftSchema.optional(),
 }).strict();
 const annotationOutputSchema = z.object({
   id: annotationIdSchema,
@@ -1132,6 +1112,37 @@ export function createImagegenServer({
   );
 
   server.registerTool(
+    "save_image_editor_draft",
+    {
+      title: "保存画布临时草稿",
+      description: "在宿主卸载当前画布前保存未提交的标注和补充要求，供下一次打开同一图片画布时恢复一次。",
+      inputSchema: {
+        ...projectBindingInputSchema,
+        editorSessionId: editorSessionIdSchema,
+        draft: editorDraftSchema,
+      },
+      outputSchema: z.object({ editorSession: editorSessionOutputSchema }).strict(),
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+      _meta: { ui: { visibility: ["app"] } },
+    },
+    async ({ projectBindingId, editorSessionId, draft }) => await withBoundProject(
+      projectContext,
+      projectBindingId,
+      async (context) => editorSessionResult(await editorState.saveDraft({
+        artifactRoot: context.artifactRoot,
+        bindingKey: context.bindingKey,
+        editorSessionId,
+        draft,
+      })),
+    ),
+  );
+
+  server.registerTool(
     "get_image_editor_session",
     {
       title: "读取画布会话状态",
@@ -1235,6 +1246,7 @@ function editorSessionOutput(editorSession, status = editorSession.status) {
     id: editorSession.id,
     ...(editorSession.imageId ? { imageId: editorSession.imageId } : {}),
     status,
+    ...(editorSession.draft ? { draft: editorSession.draft } : {}),
   };
 }
 

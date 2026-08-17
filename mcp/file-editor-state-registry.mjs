@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { lstat, mkdir } from "node:fs/promises";
 import path from "node:path";
 
+import { parseEditorDraft } from "./editor-draft-contract.mjs";
 import { pathContainsSymbolicLink } from "./filesystem-path-safety.mjs";
 
 import {
@@ -32,7 +33,7 @@ const mutationQueues = new Map();
 export function createFileEditorStateRegistry({ idFactory = createEditorSessionId } = {}) {
   if (typeof idFactory !== "function") throw new TypeError("idFactory must be a function");
 
-  return Object.freeze({ open, getSession, destroy, finalize, getCanvasStatuses });
+  return Object.freeze({ open, getSession, saveDraft, destroy, finalize, getCanvasStatuses });
 
   async function open(input) {
     const request = normalizeImageInput(input);
@@ -41,7 +42,7 @@ export function createFileEditorStateRegistry({ idFactory = createEditorSessionI
       if (image?.canvasStatus === "destroyed") throw editorStateError("image_canvas_destroyed", "当前图片的画布已经销毁。");
       if (!image) {
         if (record.images.length >= MAX_IMAGES) invalidState();
-        image = { imageId: request.imageId, canvasStatus: "available", sessionIds: [] };
+        image = { imageId: request.imageId, canvasStatus: "available", sessionIds: [], draft: null };
         record.images.push(image);
       }
       const id = idFactory();
@@ -49,8 +50,10 @@ export function createFileEditorStateRegistry({ idFactory = createEditorSessionI
         throw new TypeError("idFactory must return a unique eds_ ID with 32 lowercase hex characters");
       }
       image.sessionIds.push(id);
+      const draft = image.draft;
+      image.draft = null;
       await save(record);
-      return sessionResult(id, image.imageId, "active");
+      return sessionResult(id, image.imageId, "active", draft);
     });
   }
 
@@ -63,6 +66,21 @@ export function createFileEditorStateRegistry({ idFactory = createEditorSessionI
       : null;
   }
 
+  async function saveDraft(input) {
+    const request = normalizeSessionInput(input);
+    const draft = normalizeDraft(input?.draft);
+    return await withRecord(input, async (record, save) => {
+      const found = findSession(record, request.editorSessionId);
+      if (!found) return null;
+      if (found.image.canvasStatus === "destroyed") {
+        throw editorStateError("image_canvas_destroyed", "当前图片的画布已经销毁。");
+      }
+      found.image.draft = draft;
+      await save(record);
+      return sessionResult(request.editorSessionId, found.image.imageId, "active");
+    });
+  }
+
   async function destroy(input) {
     const request = normalizeSessionInput(input);
     return await withRecord(input, async (record, save) => {
@@ -70,6 +88,7 @@ export function createFileEditorStateRegistry({ idFactory = createEditorSessionI
       if (!found) return null;
       if (found.image.canvasStatus !== "destroyed") {
         found.image.canvasStatus = "destroyed";
+        found.image.draft = null;
         await save(record);
       }
       return sessionResult(request.editorSessionId, found.image.imageId, "destroyed");
@@ -82,7 +101,7 @@ export function createFileEditorStateRegistry({ idFactory = createEditorSessionI
       const found = findSession(record, request.editorSessionId);
       if (!found) return null;
       found.image.sessionIds.splice(found.sessionIndex, 1);
-      if (found.image.canvasStatus === "available" && found.image.sessionIds.length === 0) {
+      if (found.image.canvasStatus === "available" && found.image.sessionIds.length === 0 && !found.image.draft) {
         record.images.splice(found.imageIndex, 1);
       }
       await save(record);
@@ -250,13 +269,16 @@ function validateRecord(value, bindingKey) {
   for (const image of value.images) {
     if (
       !plainObject(image)
-      || !exactKeys(image, ["canvasStatus", "imageId", "sessionIds"])
+      || !exactKeys(image, image.draft === undefined
+        ? ["canvasStatus", "imageId", "sessionIds"]
+        : ["canvasStatus", "draft", "imageId", "sessionIds"])
       || !IMAGE_ID_PATTERN.test(image.imageId)
       || !["available", "destroyed"].includes(image.canvasStatus)
       || !Array.isArray(image.sessionIds)
-      || (image.canvasStatus === "available" && image.sessionIds.length === 0)
+      || (image.canvasStatus === "available" && image.sessionIds.length === 0 && !image.draft)
       || imageIds.has(image.imageId)
     ) invalidState();
+    image.draft = image.draft === undefined ? null : normalizeDraft(image.draft, { allowNull: true });
     imageIds.add(image.imageId);
     for (const id of image.sessionIds) {
       if (!SESSION_ID_PATTERN.test(id) || sessionIds.has(id)) invalidState();
@@ -319,8 +341,16 @@ function countSessions(record) {
 }
 
 
-function sessionResult(id, imageId, status) {
-  return Object.freeze({ id, imageId, status });
+function sessionResult(id, imageId, status, draft = null) {
+  return Object.freeze({ id, imageId, status, ...(draft ? { draft: structuredClone(draft) } : {}) });
+}
+
+function normalizeDraft(value, { allowNull = false } = {}) {
+  try {
+    return parseEditorDraft(value, { allowNull });
+  } catch {
+    invalidState();
+  }
 }
 
 
