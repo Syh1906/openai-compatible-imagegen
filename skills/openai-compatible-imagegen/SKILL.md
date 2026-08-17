@@ -76,6 +76,8 @@ Plugin 只从以下两个固定路径解析配置：
 
 生效优先级为工具显式参数 > 项目白名单覆盖 > 用户级 defaults > 内建默认。缺少用户配置时停止图片操作，并提示用户基于 `references/config.example.json` 创建正式配置。旧 `auth.json` 和旧版 Plugin 配置不会被自动读取、复制、合并、删除或覆盖；迁移只能通过用户明确执行的迁移命令完成，且不会回显 API key。
 
+Plugin 配置可通过 MCP 工具闭环处理：缺少配置时调用 `initialize_image_config` 创建固定用户模板；如果传入项目根目录，该工具还会幂等更新项目 `.gitignore`，忽略项目配置文件；需要查看时调用 `inspect_image_config`；需要调整时调用 `update_image_config`。这些工具只返回脱敏配置，不接收或输出 `api_key`，项目作用域仍只能修改 size、quality、output_format 和 `storage.output_directory`。修改后应重新绑定图片项目。
+
 ### 显式迁移
 
 只在用户明确要求迁移并提供源文件路径与来源类型后执行。把当前 `SKILL.md` 所在目录向上两级作为 `<plugin-root>`；不得从 MCP `cwd`、项目 Git 根或其他安装缓存猜测插件根。

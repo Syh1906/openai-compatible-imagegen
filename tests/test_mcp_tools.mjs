@@ -13,6 +13,37 @@ import {
   withClient,
 } from "./support/mcp-tool-client.mjs";
 
+test("configuration MCP tools initialize, inspect, and update without exposing credentials", async () => {
+  const calls = [];
+  await withClient({
+    configManager: {
+      async initialize() {
+        calls.push(["initialize"]);
+        return { created: true, path: "user-config", config: { providers: { primary: { api_key_env: "IMAGE_API_KEY" } } }, gitignoreUpdated: false };
+      },
+      async inspect(input) {
+        calls.push(["inspect", input]);
+        return { user: { exists: true, config: {} }, project: { exists: false, config: null } };
+      },
+      async update(input) {
+        calls.push(["update", input]);
+        return { scope: input.scope, path: "user-config", config: input.changes };
+      },
+    },
+    runTask: async () => { throw new Error("not used"); },
+    readArtifact: async () => { throw new Error("not used"); },
+  }, async (client) => {
+    const initialized = await client.callTool({ name: "initialize_image_config", arguments: {} });
+    assert.equal(initialized.structuredContent.created, true);
+    const inspected = await client.callTool({ name: "inspect_image_config", arguments: {} });
+    assert.equal(inspected.structuredContent.user.exists, true);
+    const updated = await client.callTool({ name: "update_image_config", arguments: { changes: { defaults: { quality: "high" } } } });
+    assert.equal(updated.structuredContent.scope, "user");
+  });
+  assert.deepEqual(calls.map(([name]) => name), ["initialize", "inspect", "update"]);
+  assert.equal(JSON.stringify(calls).includes('"api_key":"'), false);
+});
+
 test("widget resources read the current bundle for each request", async () => {
   let widgetHtml = "<html>first</html>";
   await withClient(

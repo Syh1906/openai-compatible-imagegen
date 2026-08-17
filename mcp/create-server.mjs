@@ -40,6 +40,8 @@ import {
 } from "./host-observation-contract.mjs";
 import { createInMemoryHostObservationStore } from "./host-observation-store.mjs";
 import { isStableToolErrorCode, stableToolErrorMessages } from "./tool-errors.mjs";
+import { registerConfigTools } from "./config-tools.mjs";
+import { initializeImageConfig, inspectImageConfig, updateImageConfig } from "./config-resolution.mjs";
 const legacyWidgetResourceFingerprints = [
   "43c3a69a85db10633692",
   "9caad8c28a921a55611b",
@@ -206,6 +208,7 @@ export function createImagegenServer({
   readAnnotation,
   saveAnnotations,
   deleteAnnotation,
+  configManager = { initialize: initializeImageConfig, inspect: inspectImageConfig, update: updateImageConfig },
 }) {
   requireReleaseIdentity(releaseIdentity);
   requireLaunchContext(launchContext);
@@ -227,6 +230,7 @@ export function createImagegenServer({
     },
   );
   const imageAuditHandlers = createImageAuditHandlers({ runTask, readArtifact });
+  registerConfigTools(server, configManager, toolError);
 
   registerWidgetResource(server, {
     name: "image-result",

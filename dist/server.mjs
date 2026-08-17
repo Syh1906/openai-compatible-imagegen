@@ -51,7 +51,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 var define_RELEASE_IDENTITY_default;
 var init_define_RELEASE_IDENTITY = __esm({
   "<define:__RELEASE_IDENTITY__>"() {
-    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "1.0.0", serverBuildDigest: "8f921cac9aa362a2d991d9edec92e6fac406db27728f2c1faa195f7a052e57ee", widgetAssetDigest: "bfb17111a5ed68160dd61ba2d710b5a1d1d9766a71175428f771a2f000ec2505", fingerprint: "fba76d89fb89111b392f", resourceUris: { result: "ui://openai-compatible-imagegen/result-fba76d89fb89111b392f.html", editor: "ui://openai-compatible-imagegen/editor-fba76d89fb89111b392f.html" } };
+    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "1.0.0", serverBuildDigest: "5bdf93ba9987f9d758e87d35694b7a7323c5707fe82cd83bcc38c3ecdb2aad15", widgetAssetDigest: "aee72af7d4935876dd9fbc6e8d63945f585c3263fccc7a4488ca721501237c33", fingerprint: "19e2f2ee1fa3d5e40dc1", resourceUris: { result: "ui://openai-compatible-imagegen/result-19e2f2ee1fa3d5e40dc1.html", editor: "ui://openai-compatible-imagegen/editor-19e2f2ee1fa3d5e40dc1.html" } };
   }
 });
 
@@ -19193,8 +19193,8 @@ var require_graceful_fs = __commonJS({
         }
       }
       var fs$writeFile = fs3.writeFile;
-      fs3.writeFile = writeFile;
-      function writeFile(path15, data, options, cb) {
+      fs3.writeFile = writeFile2;
+      function writeFile2(path15, data, options, cb) {
         if (typeof options === "function")
           cb = options, options = null;
         return go$writeFile(path15, data, options, cb);
@@ -19211,8 +19211,8 @@ var require_graceful_fs = __commonJS({
       }
       var fs$appendFile = fs3.appendFile;
       if (fs$appendFile)
-        fs3.appendFile = appendFile;
-      function appendFile(path15, data, options, cb) {
+        fs3.appendFile = appendFile2;
+      function appendFile2(path15, data, options, cb) {
         if (typeof options === "function")
           cb = options, options = null;
         return go$appendFile(path15, data, options, cb);
@@ -31627,6 +31627,11 @@ var STABLE_TOOL_ERROR_ENTRIES = [
   ["image_config_changed", "\u56FE\u7247\u914D\u7F6E\u5728\u9879\u76EE\u7ED1\u5B9A\u540E\u53D1\u751F\u53D8\u5316\uFF0C\u8BF7\u91CD\u65B0\u663E\u5F0F\u7ED1\u5B9A\u5F53\u524D\u56FE\u7247\u9879\u76EE\u3002"],
   ["image_config_invalid", "\u7528\u6237\u56FE\u7247\u914D\u7F6E\u6587\u4EF6\u65E0\u6548\u6216\u4E0D\u53EF\u5B89\u5168\u8BFB\u53D6\u3002"],
   ["image_config_missing", "\u7528\u6237\u56FE\u7247\u914D\u7F6E\u7F3A\u5931\u3002\u8BF7\u521B\u5EFA ~/.codex/openai-compatible-imagegen/config.json\u3002"],
+  ["image_config_exists", "\u7528\u6237\u56FE\u7247\u914D\u7F6E\u5DF2\u7ECF\u5B58\u5728\uFF0C\u521D\u59CB\u5316\u4E0D\u4F1A\u8986\u76D6\u73B0\u6709\u6587\u4EF6\u3002"],
+  ["image_config_write_failed", "\u65E0\u6CD5\u5B89\u5168\u5199\u5165\u56FE\u7247\u914D\u7F6E\u3002"],
+  ["image_config_update_invalid", "\u56FE\u7247\u914D\u7F6E\u4FEE\u6539\u5185\u5BB9\u65E0\u6548\u3002"],
+  ["image_config_update_forbidden", "\u56FE\u7247\u914D\u7F6E\u4FEE\u6539\u5305\u542B\u4E0D\u5141\u8BB8\u7684\u5B57\u6BB5\u3002"],
+  ["project_config_missing", "\u9879\u76EE\u56FE\u7247\u914D\u7F6E\u4E0D\u5B58\u5728\uFF0C\u8BF7\u5148\u521D\u59CB\u5316\u6216\u521B\u5EFA\u9879\u76EE\u8986\u76D6\u6587\u4EF6\u3002"],
   ["output_directory_invalid", "\u8F93\u51FA\u76EE\u5F55\u5FC5\u987B\u662F\u56FE\u7247\u9879\u76EE\u5185\u7684\u5B89\u5168\u76EE\u5F55\u3002"],
   ["project_config_forbidden", "\u9879\u76EE\u56FE\u7247\u914D\u7F6E\u5305\u542B\u4E0D\u5141\u8BB8\u8986\u76D6\u7684\u5B57\u6BB5\u3002"],
   ["project_config_invalid", "\u9879\u76EE\u56FE\u7247\u914D\u7F6E\u6587\u4EF6\u65E0\u6548\u6216\u4E0D\u53EF\u5B89\u5168\u8BFB\u53D6\u3002"]
@@ -32924,10 +32929,33 @@ async function pathContainsSymbolicLink(targetPath) {
 
 // mcp/config-resolution.mjs
 init_define_RELEASE_IDENTITY();
-import { createHash as createHash4 } from "node:crypto";
-import { lstat as lstat2, readFile } from "node:fs/promises";
+import { createHash as createHash4, randomUUID } from "node:crypto";
+import { appendFile, lstat as lstat2, mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path7 from "node:path";
+
+// mcp/atomic-file-replace.mjs
+init_define_RELEASE_IDENTITY();
+import { rename } from "node:fs/promises";
+import { setTimeout as delay } from "node:timers/promises";
+var WINDOWS_SHARING_ERRORS = /* @__PURE__ */ new Set(["EACCES", "EBUSY", "EPERM"]);
+async function replaceFileAtomically(sourcePath, destinationPath) {
+  const attempts = process.platform === "win32" ? 80 : 1;
+  let lastError;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      await rename(sourcePath, destinationPath);
+      return;
+    } catch (error40) {
+      lastError = error40;
+      if (!WINDOWS_SHARING_ERRORS.has(error40?.code) || attempt === attempts - 1) throw error40;
+      await delay(1);
+    }
+  }
+  throw lastError;
+}
+
+// mcp/config-resolution.mjs
 var CONFIG_DIRECTORY = "openai-compatible-imagegen";
 var DEFAULT_OUTPUT_DIRECTORY = path7.join("output", "imagegen");
 var ACTIVE_PROFILE = "primary/gpt-image-2";
@@ -32963,6 +32991,34 @@ var MODEL_KEYS = /* @__PURE__ */ new Set(["provider", "model", "capabilities"]);
 var CAPABILITY_KEYS = /* @__PURE__ */ new Set(["generate", "edit", "mask", "multi_reference"]);
 var DEFAULT_TIMEOUT_SECONDS = 600;
 var DEFAULT_CONCURRENCY = 3;
+var USER_UPDATE_KEYS = /* @__PURE__ */ new Set(["providers", "models", "defaults", "postprocess", "transparency", "storage"]);
+var PROJECT_UPDATE_KEYS = /* @__PURE__ */ new Set(["defaults", "storage"]);
+var CONFIG_TEMPLATE = Object.freeze({
+  config_version: 1,
+  active_profile: ACTIVE_PROFILE,
+  providers: { primary: {
+    protocol: "openai-compatible",
+    base_url: "https://example.com/v1",
+    api_key_env: "IMAGE_API_KEY",
+    user_agent: "OpenAI-Compatible-Images/1.0",
+    url_download: { proxy_mode: "environment" }
+  } },
+  models: { [ACTIVE_PROFILE]: {
+    provider: "primary",
+    model: "gpt-image-2",
+    capabilities: { generate: true, edit: true, mask: true, multi_reference: true }
+  } },
+  defaults: { size: "1536x1024", quality: "auto", output_format: "png" },
+  postprocess: { enabled: true },
+  transparency: { default_route: "chroma-matting", prompt_only_allow: [], llm_assisted: {
+    enabled: false,
+    max_attempts: 2,
+    allow_parameter_tuning: true,
+    allow_route_change: true,
+    allow_api_retry: false
+  } },
+  storage: { output_directory: DEFAULT_OUTPUT_DIRECTORY }
+});
 var ImageConfigResolutionError = class extends Error {
   constructor(code = "image_config_missing", message = "\u56FE\u7247\u914D\u7F6E\u7F3A\u5931\u3002\u8BF7\u521B\u5EFA\u7528\u6237\u914D\u7F6E ~/.codex/openai-compatible-imagegen/config.json\u3002") {
     super(message);
@@ -32976,6 +33032,59 @@ function userConfigPath(userHome = os.homedir()) {
 function projectConfigPath(projectRoot) {
   return path7.resolve(projectRoot, ".codex", CONFIG_DIRECTORY, "config.json");
 }
+async function initializeImageConfig({ userHome = os.homedir(), projectRoot } = {}) {
+  const resolvedProjectRoot = projectRoot ? requireAbsoluteProjectRoot(projectRoot) : null;
+  const target = userConfigPath(userHome);
+  try {
+    const metadata = await lstat2(target);
+    if (metadata.isSymbolicLink() || !metadata.isFile()) throw new ImageConfigManagementError("image_config_exists");
+    throw new ImageConfigManagementError("image_config_exists");
+  } catch (error40) {
+    if (error40 instanceof ImageConfigManagementError) throw error40;
+    if (error40?.code !== "ENOENT") throw new ImageConfigManagementError("image_config_write_failed");
+  }
+  await mkdir(path7.dirname(target), { recursive: true });
+  if (await pathContainsSymbolicLink(path7.dirname(target))) throw new ImageConfigManagementError("image_config_write_failed");
+  try {
+    await writeFile(target, `${JSON.stringify(CONFIG_TEMPLATE, null, 2)}
+`, { encoding: "utf8", flag: "wx" });
+  } catch (error40) {
+    if (error40?.code === "EEXIST") throw new ImageConfigManagementError("image_config_exists");
+    throw new ImageConfigManagementError("image_config_write_failed");
+  }
+  if (resolvedProjectRoot) await ensureProjectConfigIgnored(resolvedProjectRoot);
+  return { created: true, path: target, config: redactConfig(CONFIG_TEMPLATE), gitignoreUpdated: Boolean(resolvedProjectRoot) };
+}
+async function inspectImageConfig({ userHome = os.homedir(), projectRoot } = {}) {
+  const userPath = userConfigPath(userHome);
+  const user = await readManagedConfig(userPath, "image_config_invalid", false);
+  const project = projectRoot ? await readManagedConfig(projectConfigPath(projectRoot), "project_config_invalid", true) : null;
+  return {
+    user: { path: userPath, exists: Boolean(user), config: user ? redactConfig(user) : null },
+    project: { path: projectRoot ? projectConfigPath(projectRoot) : null, exists: Boolean(project), config: project ? redactConfig(project) : null }
+  };
+}
+async function updateImageConfig({ userHome = os.homedir(), projectRoot, scope = "user", changes }) {
+  const target = scope === "project" ? projectConfigPath(requireAbsoluteProjectRoot(projectRoot)) : userConfigPath(userHome);
+  const current = await readManagedConfig(target, scope === "project" ? "project_config_invalid" : "image_config_invalid", false);
+  if (!current) throw new ImageConfigResolutionError(scope === "project" ? "project_config_missing" : "image_config_missing");
+  if (!isRecord2(changes)) throw new ImageConfigManagementError("image_config_update_invalid");
+  const allowed = scope === "project" ? PROJECT_UPDATE_KEYS : USER_UPDATE_KEYS;
+  if (unknownKeys(changes, allowed).length) throw new ImageConfigManagementError("image_config_update_forbidden");
+  if (containsApiKey(changes)) throw new ImageConfigManagementError("image_config_update_forbidden");
+  const next = mergeConfigChanges(current, changes);
+  if (scope === "project") validateProjectConfig(next);
+  else validateUserConfig(next);
+  await writeManagedConfig(target, next);
+  return { scope, path: target, config: redactConfig(next) };
+}
+var ImageConfigManagementError = class extends Error {
+  constructor(code) {
+    super(code);
+    this.name = "ImageConfigManagementError";
+    this.code = code;
+  }
+};
 async function resolveImageConfigBinding({
   projectRoot,
   userHome = os.homedir(),
@@ -33068,6 +33177,71 @@ async function readConfigSnapshot(configPath, {
     if (error40 instanceof ImageConfigResolutionError) throw error40;
     throw new ImageConfigResolutionError(invalidCode, "\u56FE\u7247\u914D\u7F6E\u6587\u4EF6\u65E0\u6548\u6216\u4E0D\u53EF\u5B89\u5168\u8BFB\u53D6\u3002");
   }
+}
+async function readManagedConfig(configPath, invalidCode, optional2) {
+  const bytes = await readConfigSnapshot(configPath, {
+    required: !optional2,
+    invalidCode,
+    missingCode: optional2 ? "image_config_missing" : invalidCode
+  });
+  return bytes === null ? null : parseConfigSnapshot(bytes, invalidCode);
+}
+function redactConfig(config2) {
+  const copy = structuredClone(config2);
+  for (const provider of Object.values(copy.providers || {})) {
+    if (isRecord2(provider)) delete provider.api_key;
+  }
+  return copy;
+}
+function mergeConfigChanges(current, changes) {
+  const result = structuredClone(current);
+  for (const [key, value] of Object.entries(changes)) {
+    if (!isRecord2(value)) throw new ImageConfigManagementError("image_config_update_invalid");
+    result[key] = mergeRecords(result[key], value);
+  }
+  return result;
+}
+function mergeRecords(current, changes) {
+  const result = isRecord2(current) ? structuredClone(current) : {};
+  for (const [key, value] of Object.entries(changes)) {
+    result[key] = isRecord2(value) ? mergeRecords(result[key], value) : value;
+  }
+  return result;
+}
+function containsApiKey(value) {
+  if (!isRecord2(value)) return false;
+  return Object.entries(value).some(([key, item]) => key === "api_key" || isRecord2(item) && containsApiKey(item));
+}
+async function writeManagedConfig(target, config2) {
+  if (await pathContainsSymbolicLink(path7.dirname(target))) throw new ImageConfigManagementError("image_config_write_failed");
+  const metadata = await lstat2(target).catch((error40) => {
+    if (error40?.code === "ENOENT") return null;
+    throw error40;
+  });
+  if (metadata && (metadata.isSymbolicLink() || !metadata.isFile())) throw new ImageConfigManagementError("image_config_write_failed");
+  const temporary = `${target}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(temporary, `${JSON.stringify(config2, null, 2)}
+`, { encoding: "utf8", flag: "wx" });
+    await replaceFileAtomically(temporary, target);
+  } catch {
+    throw new ImageConfigManagementError("image_config_write_failed");
+  }
+}
+async function ensureProjectConfigIgnored(projectRoot) {
+  const gitignorePath = path7.join(projectRoot, ".gitignore");
+  const entry = ".codex/openai-compatible-imagegen/config.json";
+  let content = "";
+  try {
+    content = await readFile(gitignorePath, "utf8");
+  } catch (error40) {
+    if (error40?.code !== "ENOENT") throw new ImageConfigManagementError("image_config_write_failed");
+  }
+  const lines = content.split(/\r?\n/);
+  if (lines.some((line) => line.trim() === entry)) return;
+  const prefix = content && !content.endsWith("\n") ? "\n" : "";
+  await appendFile(gitignorePath, `${prefix}${entry}
+`, "utf8");
 }
 function parseConfigSnapshot(configBytes, errorCode) {
   try {
@@ -33328,7 +33502,7 @@ function samePath(left, right) {
 
 // mcp/project-binding-store.mjs
 init_define_RELEASE_IDENTITY();
-import { lstat as lstat5, mkdir as mkdir2 } from "node:fs/promises";
+import { lstat as lstat5, mkdir as mkdir3 } from "node:fs/promises";
 import path9 from "node:path";
 
 // mcp/file-lock-ownership.mjs
@@ -33338,7 +33512,7 @@ import fs from "node:fs";
 import { randomBytes as randomBytes4 } from "node:crypto";
 import {
   lstat as lstat4,
-  mkdir,
+  mkdir as mkdir2,
   open as open2,
   readdir,
   rename as rename2,
@@ -33346,27 +33520,6 @@ import {
   unlink
 } from "node:fs/promises";
 import path8 from "node:path";
-
-// mcp/atomic-file-replace.mjs
-init_define_RELEASE_IDENTITY();
-import { rename } from "node:fs/promises";
-import { setTimeout as delay } from "node:timers/promises";
-var WINDOWS_SHARING_ERRORS = /* @__PURE__ */ new Set(["EACCES", "EBUSY", "EPERM"]);
-async function replaceFileAtomically(sourcePath, destinationPath) {
-  const attempts = process.platform === "win32" ? 80 : 1;
-  let lastError;
-  for (let attempt = 0; attempt < attempts; attempt += 1) {
-    try {
-      await rename(sourcePath, destinationPath);
-      return;
-    } catch (error40) {
-      lastError = error40;
-      if (!WINDOWS_SHARING_ERRORS.has(error40?.code) || attempt === attempts - 1) throw error40;
-      await delay(1);
-    }
-  }
-  throw lastError;
-}
 
 // mcp/stable-file-snapshot.mjs
 init_define_RELEASE_IDENTITY();
@@ -33647,8 +33800,8 @@ async function installOwnedLock(context) {
     const ownerPath = path8.join(candidatePath, token);
     let installed = false;
     try {
-      await mkdir(candidatePath, { mode: 448 });
-      await mkdir(ownerPath, { mode: 448 });
+      await mkdir2(candidatePath, { mode: 448 });
+      await mkdir2(ownerPath, { mode: 448 });
       await writeExclusiveFile(
         path8.join(ownerPath, "epoch.json"),
         Buffer.from(`${JSON.stringify(epochMetadata(generation, token))}
@@ -34038,7 +34191,7 @@ async function requireInitializationMarker(markerPath, { allowMissing = false } 
 async function requireCanonicalDirectory(directory, { create, allowMissing = false }) {
   try {
     if (create) {
-      await mkdir(directory, { mode: 448 }).catch((error40) => {
+      await mkdir2(directory, { mode: 448 }).catch((error40) => {
         if (error40?.code !== "EEXIST") throw error40;
       });
     }
@@ -34264,7 +34417,7 @@ function recordScope(bindingsRoot, bindingHash) {
 }
 async function ensureCanonicalDirectory(directory) {
   try {
-    await mkdir2(directory, { recursive: false, mode: 448 }).catch((error40) => {
+    await mkdir3(directory, { recursive: false, mode: 448 }).catch((error40) => {
       if (error40?.code !== "EEXIST") throw error40;
     });
     const metadata = await lstat5(directory);
@@ -34590,7 +34743,7 @@ function parseHostObservationReport(value) {
 // mcp/host-observation-store.mjs
 init_define_RELEASE_IDENTITY();
 import { randomBytes as randomBytes6 } from "node:crypto";
-import { lstat as lstat7, mkdir as mkdir3, open as open3, unlink as unlink2 } from "node:fs/promises";
+import { lstat as lstat7, mkdir as mkdir4, open as open3, unlink as unlink2 } from "node:fs/promises";
 import path11 from "node:path";
 var SCHEMA_VERSION2 = "host-observation.v1";
 var BINDING_KEY_PATTERN2 = /^[0-9a-f]{64}$/;
@@ -34709,7 +34862,7 @@ async function requireCanonicalDirectory2(directory, { create }) {
   try {
     if (create) {
       try {
-        await mkdir3(directory, { mode: 448 });
+        await mkdir4(directory, { mode: 448 });
       } catch (error40) {
         if (error40?.code !== "EEXIST") throw error40;
       }
@@ -34740,6 +34893,53 @@ function observationError(code) {
   const error40 = new Error(code);
   error40.code = code;
   return error40;
+}
+
+// mcp/config-tools.mjs
+init_define_RELEASE_IDENTITY();
+function registerConfigTools(server2, configManager, toolError2) {
+  server2.registerTool("initialize_image_config", {
+    title: "\u521D\u59CB\u5316\u56FE\u7247\u914D\u7F6E",
+    description: "\u5728\u56FA\u5B9A\u7528\u6237\u8DEF\u5F84\u521B\u5EFA\u4E00\u6B21\u56FE\u7247\u914D\u7F6E\u6A21\u677F\u3002\u4E0D\u4F1A\u8BFB\u53D6\u3001\u63A5\u6536\u6216\u5199\u5165 API key\uFF1B\u5DF2\u6709\u914D\u7F6E\u4E0D\u4F1A\u88AB\u8986\u76D6\u3002\u4F20\u5165\u9879\u76EE\u6839\u76EE\u5F55\u65F6\u4F1A\u5E42\u7B49\u66F4\u65B0\u9879\u76EE .gitignore\u3002",
+    inputSchema: { projectRoot: external_exports2.string().min(1).optional() },
+    outputSchema: external_exports2.object({ created: external_exports2.literal(true), path: external_exports2.string().min(1), config: external_exports2.record(external_exports2.any()), gitignoreUpdated: external_exports2.boolean() }).strict(),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }
+  }, async ({ projectRoot }) => {
+    try {
+      const result = await configManager.initialize({ projectRoot });
+      return { content: [{ type: "text", text: "\u5DF2\u521B\u5EFA\u56FE\u7247\u914D\u7F6E\u6A21\u677F\u3002\u8BF7\u7F16\u8F91\u56FA\u5B9A\u7528\u6237\u914D\u7F6E\u6587\u4EF6\u5E76\u8BBE\u7F6E\u5BF9\u5E94\u73AF\u5883\u53D8\u91CF\u540E\u91CD\u65B0\u7ED1\u5B9A\u9879\u76EE\u3002" }], structuredContent: result };
+    } catch (error40) {
+      return toolError2(error40);
+    }
+  });
+  server2.registerTool("inspect_image_config", {
+    title: "\u67E5\u8BE2\u56FE\u7247\u914D\u7F6E",
+    description: "\u67E5\u8BE2\u7528\u6237\u914D\u7F6E\u53CA\u53EF\u9009\u9879\u76EE\u8986\u76D6\u7684\u8131\u654F\u5185\u5BB9\u548C\u56FA\u5B9A\u8DEF\u5F84\uFF0C\u4E0D\u8FD4\u56DE api_key \u6216\u5176\u4ED6\u51ED\u636E\u3002",
+    inputSchema: { projectRoot: external_exports2.string().min(1).optional() },
+    outputSchema: external_exports2.object({ user: external_exports2.record(external_exports2.any()), project: external_exports2.record(external_exports2.any()) }).strict(),
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
+  }, async ({ projectRoot }) => {
+    try {
+      const result = await configManager.inspect({ projectRoot });
+      return { content: [{ type: "text", text: "\u5DF2\u8BFB\u53D6\u8131\u654F\u56FE\u7247\u914D\u7F6E\u3002" }], structuredContent: result };
+    } catch (error40) {
+      return toolError2(error40);
+    }
+  });
+  server2.registerTool("update_image_config", {
+    title: "\u4FEE\u6539\u56FE\u7247\u914D\u7F6E",
+    description: "\u6309\u914D\u7F6E\u767D\u540D\u5355\u4FEE\u6539\u7528\u6237\u914D\u7F6E\u6216\u9879\u76EE\u8986\u76D6\u3002\u7981\u6B62\u5199\u5165 API key\uFF0C\u9879\u76EE\u4F5C\u7528\u57DF\u53EA\u80FD\u4FEE\u6539\u5B89\u5168\u8986\u76D6\u5B57\u6BB5\uFF1B\u4FEE\u6539\u540E\u9700\u91CD\u65B0\u7ED1\u5B9A\u9879\u76EE\u3002",
+    inputSchema: { scope: external_exports2.enum(["user", "project"]).default("user"), projectRoot: external_exports2.string().min(1).optional(), changes: external_exports2.record(external_exports2.any()) },
+    outputSchema: external_exports2.object({ scope: external_exports2.enum(["user", "project"]), path: external_exports2.string().min(1), config: external_exports2.record(external_exports2.any()) }).strict(),
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }
+  }, async ({ scope, projectRoot, changes }) => {
+    try {
+      const result = await configManager.update({ scope, projectRoot, changes });
+      return { content: [{ type: "text", text: "\u5DF2\u66F4\u65B0\u56FE\u7247\u914D\u7F6E\u3002\u8BF7\u91CD\u65B0\u7ED1\u5B9A\u9879\u76EE\u540E\u7EE7\u7EED\u56FE\u7247\u4EFB\u52A1\u3002" }], structuredContent: result };
+    } catch (error40) {
+      return toolError2(error40);
+    }
+  });
 }
 
 // mcp/create-server.mjs
@@ -34940,7 +35140,8 @@ function createImagegenServer({
   revealArtifact,
   readAnnotation,
   saveAnnotations,
-  deleteAnnotation
+  deleteAnnotation,
+  configManager = { initialize: initializeImageConfig, inspect: inspectImageConfig, update: updateImageConfig }
 }) {
   requireReleaseIdentity(releaseIdentity);
   requireLaunchContext(launchContext);
@@ -34962,6 +35163,7 @@ function createImagegenServer({
     }
   );
   const imageAuditHandlers = createImageAuditHandlers({ runTask, readArtifact });
+  registerConfigTools(server2, configManager, toolError);
   registerWidgetResource(server2, {
     name: "image-result",
     uri: resultWidgetUri,
@@ -36106,7 +36308,7 @@ function writeAnnotations() {
 // mcp/file-edit-submission-registry.mjs
 init_define_RELEASE_IDENTITY();
 import { createHash as createHash6 } from "node:crypto";
-import { lstat as lstat8, mkdir as mkdir4 } from "node:fs/promises";
+import { lstat as lstat8, mkdir as mkdir5 } from "node:fs/promises";
 import path12 from "node:path";
 var SCHEMA_VERSION3 = "edit-submissions.v1";
 var BINDING_KEY_PATTERN3 = /^[0-9a-f]{64}$/;
@@ -36436,7 +36638,7 @@ function validateSubmission(value) {
 async function ensureCanonicalDirectory2(directory, { create }) {
   try {
     if (create) {
-      await mkdir4(directory, { recursive: false, mode: 448 }).catch((error40) => {
+      await mkdir5(directory, { recursive: false, mode: 448 }).catch((error40) => {
         if (error40?.code !== "EEXIST") throw error40;
       });
     }
@@ -36468,7 +36670,7 @@ function invalidStateError() {
 // mcp/file-editor-state-registry.mjs
 init_define_RELEASE_IDENTITY();
 import { createHash as createHash7 } from "node:crypto";
-import { lstat as lstat9, mkdir as mkdir5 } from "node:fs/promises";
+import { lstat as lstat9, mkdir as mkdir6 } from "node:fs/promises";
 import path13 from "node:path";
 var SCHEMA_VERSION4 = "editor-state.v1";
 var SESSION_ID_PATTERN2 = /^eds_[0-9a-f]{32}$/;
@@ -36695,7 +36897,7 @@ function validateRecord2(value, bindingKey) {
 }
 async function requireCanonicalDirectory3(directory, { create, allowMissing = false }) {
   try {
-    if (create) await mkdir5(directory, { recursive: false, mode: 448 }).catch((error40) => {
+    if (create) await mkdir6(directory, { recursive: false, mode: 448 }).catch((error40) => {
       if (error40?.code !== "EEXIST") throw error40;
     });
     const metadata = await lstat9(directory);

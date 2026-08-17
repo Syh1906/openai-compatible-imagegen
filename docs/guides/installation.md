@@ -44,6 +44,8 @@ codex plugin add openai-compatible-imagegen@openai-compatible-imagegen
 5. Start a new task after installation.
 6. Continue with [Plugin configuration](./configuration.md#configure-the-codex-plugin).
 
+The first configuration can also be created from a new task by asking the Agent to call `initialize_image_config`. Use `inspect_image_config` to review the redacted result and `update_image_config` for supported changes; the Plugin installation directory and Skill directory do not contain the user configuration.
+
 ### Agent handoff
 
 Give an Agent this task when you want it to prepare the supported install without changing global runtimes:

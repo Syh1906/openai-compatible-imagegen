@@ -13,6 +13,7 @@ This file records user-visible changes for each release of `openai-compatible-im
 - Add a Git-backed Codex marketplace with a prebuilt MCP server, widget, and Python runtime so Plugin installation does not require a source build or local web server.
 - Add task-focused installation, configuration, migration, rollback, troubleshooting, architecture, contribution, security, and Agent guidance.
 - Add deterministic `SHA256SUMS` for both package archives and shared-core evidence.
+- Add MCP tools to initialize, inspect, and safely update Plugin configuration without locating the installed Plugin directory.
 
 ### Changed
 
@@ -38,6 +39,7 @@ This file records user-visible changes for each release of `openai-compatible-im
 
 - Reject project configuration that attempts to change the active profile, model, provider, endpoint, authentication source, credential environment variable, timeout, concurrency, or route permissions.
 - Require project output directories and migration targets to pass path, reparse-point, non-overwrite, and source-integrity checks before writing.
+- Keep API keys outside configuration tool inputs and outputs, and add the project configuration path to `.gitignore` during project-aware initialization.
 
 ## [0.3.0] - 2026-08-13
 

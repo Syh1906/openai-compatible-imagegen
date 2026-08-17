@@ -1,9 +1,10 @@
-import { createHash } from "node:crypto";
-import { lstat, readFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { appendFile, lstat, mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
 import { pathContainsSymbolicLink } from "./filesystem-path-safety.mjs";
+import { replaceFileAtomically } from "./atomic-file-replace.mjs";
 
 
 const CONFIG_DIRECTORY = "openai-compatible-imagegen";
@@ -41,6 +42,30 @@ const MODEL_KEYS = new Set(["provider", "model", "capabilities"]);
 const CAPABILITY_KEYS = new Set(["generate", "edit", "mask", "multi_reference"]);
 const DEFAULT_TIMEOUT_SECONDS = 600;
 const DEFAULT_CONCURRENCY = 3;
+const USER_UPDATE_KEYS = new Set(["providers", "models", "defaults", "postprocess", "transparency", "storage"]);
+const PROJECT_UPDATE_KEYS = new Set(["defaults", "storage"]);
+const CONFIG_TEMPLATE = Object.freeze({
+  config_version: 1,
+  active_profile: ACTIVE_PROFILE,
+  providers: { primary: {
+    protocol: "openai-compatible",
+    base_url: "https://example.com/v1",
+    api_key_env: "IMAGE_API_KEY",
+    user_agent: "OpenAI-Compatible-Images/1.0",
+    url_download: { proxy_mode: "environment" },
+  } },
+  models: { [ACTIVE_PROFILE]: {
+    provider: "primary", model: "gpt-image-2",
+    capabilities: { generate: true, edit: true, mask: true, multi_reference: true },
+  } },
+  defaults: { size: "1536x1024", quality: "auto", output_format: "png" },
+  postprocess: { enabled: true },
+  transparency: { default_route: "chroma-matting", prompt_only_allow: [], llm_assisted: {
+    enabled: false, max_attempts: 2, allow_parameter_tuning: true,
+    allow_route_change: true, allow_api_retry: false,
+  } },
+  storage: { output_directory: DEFAULT_OUTPUT_DIRECTORY },
+});
 
 
 export class ImageConfigResolutionError extends Error {
@@ -62,6 +87,59 @@ export function userConfigPath(userHome = os.homedir()) {
 
 export function projectConfigPath(projectRoot) {
   return path.resolve(projectRoot, ".codex", CONFIG_DIRECTORY, "config.json");
+}
+
+export async function initializeImageConfig({ userHome = os.homedir(), projectRoot } = {}) {
+  const resolvedProjectRoot = projectRoot ? requireAbsoluteProjectRoot(projectRoot) : null;
+  const target = userConfigPath(userHome);
+  try {
+    const metadata = await lstat(target);
+    if (metadata.isSymbolicLink() || !metadata.isFile()) throw new ImageConfigManagementError("image_config_exists");
+    throw new ImageConfigManagementError("image_config_exists");
+  } catch (error) {
+    if (error instanceof ImageConfigManagementError) throw error;
+    if (error?.code !== "ENOENT") throw new ImageConfigManagementError("image_config_write_failed");
+  }
+  await mkdir(path.dirname(target), { recursive: true });
+  if (await pathContainsSymbolicLink(path.dirname(target))) throw new ImageConfigManagementError("image_config_write_failed");
+  try {
+    await writeFile(target, `${JSON.stringify(CONFIG_TEMPLATE, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
+  } catch (error) {
+    if (error?.code === "EEXIST") throw new ImageConfigManagementError("image_config_exists");
+    throw new ImageConfigManagementError("image_config_write_failed");
+  }
+  if (resolvedProjectRoot) await ensureProjectConfigIgnored(resolvedProjectRoot);
+  return { created: true, path: target, config: redactConfig(CONFIG_TEMPLATE), gitignoreUpdated: Boolean(resolvedProjectRoot) };
+}
+
+export async function inspectImageConfig({ userHome = os.homedir(), projectRoot } = {}) {
+  const userPath = userConfigPath(userHome);
+  const user = await readManagedConfig(userPath, "image_config_invalid", false);
+  const project = projectRoot
+    ? await readManagedConfig(projectConfigPath(projectRoot), "project_config_invalid", true)
+    : null;
+  return {
+    user: { path: userPath, exists: Boolean(user), config: user ? redactConfig(user) : null },
+    project: { path: projectRoot ? projectConfigPath(projectRoot) : null, exists: Boolean(project), config: project ? redactConfig(project) : null },
+  };
+}
+
+export async function updateImageConfig({ userHome = os.homedir(), projectRoot, scope = "user", changes }) {
+  const target = scope === "project" ? projectConfigPath(requireAbsoluteProjectRoot(projectRoot)) : userConfigPath(userHome);
+  const current = await readManagedConfig(target, scope === "project" ? "project_config_invalid" : "image_config_invalid", false);
+  if (!current) throw new ImageConfigResolutionError(scope === "project" ? "project_config_missing" : "image_config_missing");
+  if (!isRecord(changes)) throw new ImageConfigManagementError("image_config_update_invalid");
+  const allowed = scope === "project" ? PROJECT_UPDATE_KEYS : USER_UPDATE_KEYS;
+  if (unknownKeys(changes, allowed).length) throw new ImageConfigManagementError("image_config_update_forbidden");
+  if (containsApiKey(changes)) throw new ImageConfigManagementError("image_config_update_forbidden");
+  const next = mergeConfigChanges(current, changes);
+  if (scope === "project") validateProjectConfig(next); else validateUserConfig(next);
+  await writeManagedConfig(target, next);
+  return { scope, path: target, config: redactConfig(next) };
+}
+
+export class ImageConfigManagementError extends Error {
+  constructor(code) { super(code); this.name = "ImageConfigManagementError"; this.code = code; }
 }
 
 
@@ -168,6 +246,76 @@ async function readConfigSnapshot(configPath, {
     if (error instanceof ImageConfigResolutionError) throw error;
     throw new ImageConfigResolutionError(invalidCode, "图片配置文件无效或不可安全读取。");
   }
+}
+
+async function readManagedConfig(configPath, invalidCode, optional) {
+  const bytes = await readConfigSnapshot(configPath, {
+    required: !optional,
+    invalidCode,
+    missingCode: optional ? "image_config_missing" : invalidCode,
+  });
+  return bytes === null ? null : parseConfigSnapshot(bytes, invalidCode);
+}
+
+function redactConfig(config) {
+  const copy = structuredClone(config);
+  for (const provider of Object.values(copy.providers || {})) {
+    if (isRecord(provider)) delete provider.api_key;
+  }
+  return copy;
+}
+
+function mergeConfigChanges(current, changes) {
+  const result = structuredClone(current);
+  for (const [key, value] of Object.entries(changes)) {
+    if (!isRecord(value)) throw new ImageConfigManagementError("image_config_update_invalid");
+    result[key] = mergeRecords(result[key], value);
+  }
+  return result;
+}
+
+function mergeRecords(current, changes) {
+  const result = isRecord(current) ? structuredClone(current) : {};
+  for (const [key, value] of Object.entries(changes)) {
+    result[key] = isRecord(value) ? mergeRecords(result[key], value) : value;
+  }
+  return result;
+}
+
+function containsApiKey(value) {
+  if (!isRecord(value)) return false;
+  return Object.entries(value).some(([key, item]) => key === "api_key" || (isRecord(item) && containsApiKey(item)));
+}
+
+async function writeManagedConfig(target, config) {
+  if (await pathContainsSymbolicLink(path.dirname(target))) throw new ImageConfigManagementError("image_config_write_failed");
+  const metadata = await lstat(target).catch((error) => {
+    if (error?.code === "ENOENT") return null;
+    throw error;
+  });
+  if (metadata && (metadata.isSymbolicLink() || !metadata.isFile())) throw new ImageConfigManagementError("image_config_write_failed");
+  const temporary = `${target}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(temporary, `${JSON.stringify(config, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
+    await replaceFileAtomically(temporary, target);
+  } catch {
+    throw new ImageConfigManagementError("image_config_write_failed");
+  }
+}
+
+async function ensureProjectConfigIgnored(projectRoot) {
+  const gitignorePath = path.join(projectRoot, ".gitignore");
+  const entry = ".codex/openai-compatible-imagegen/config.json";
+  let content = "";
+  try {
+    content = await readFile(gitignorePath, "utf8");
+  } catch (error) {
+    if (error?.code !== "ENOENT") throw new ImageConfigManagementError("image_config_write_failed");
+  }
+  const lines = content.split(/\r?\n/);
+  if (lines.some((line) => line.trim() === entry)) return;
+  const prefix = content && !content.endsWith("\n") ? "\n" : "";
+  await appendFile(gitignorePath, `${prefix}${entry}\n`, "utf8");
 }
 
 

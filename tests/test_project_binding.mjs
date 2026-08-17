@@ -98,7 +98,7 @@ test("all project-bound tools require an explicit project binding ID", async () 
   await withProjectRoots(async ({ pluginRoot }) => {
     const server = createTestServer({ pluginRoot });
     try {
-      assert.equal(Object.keys(server._registeredTools).length, 21);
+      assert.equal(Object.keys(server._registeredTools).length, 24);
       for (const name of PROJECT_BOUND_TOOL_NAMES) {
         const schema = server._registeredTools[name]?.inputSchema;
         assert.notEqual(schema, undefined, `${name} input schema missing`);
@@ -107,6 +107,9 @@ test("all project-bound tools require an explicit project binding ID", async () 
       }
       assert.equal(server._registeredTools.inspect_imagegen_runtime.inputSchema.shape.projectBindingId.isOptional(), true);
       assert.equal(server._registeredTools.bind_imagegen_project.inputSchema.shape.projectBindingId.isOptional(), true);
+      for (const name of ["initialize_image_config", "inspect_image_config", "update_image_config"]) {
+        assert.equal(server._registeredTools[name].inputSchema.shape.projectBindingId, undefined);
+      }
     } finally {
       await server.close();
     }

@@ -319,6 +319,8 @@ class PluginSkeletonTests(unittest.TestCase):
                 "get_image_batch_manifest",
                 "get_image_delivery_receipt",
                 "get_image_editor_session",
+                "initialize_image_config",
+                "inspect_image_config",
                 "inspect_imagegen_runtime",
                 "list_image_models",
                 "open_image_editor",
@@ -329,6 +331,7 @@ class PluginSkeletonTests(unittest.TestCase):
                 "reveal_image_artifact",
                 "save_image_annotations",
                 "save_image_editor_draft",
+                "update_image_config",
             ],
         )
         self.assertEqual(

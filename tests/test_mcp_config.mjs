@@ -6,10 +6,63 @@ import test from "node:test";
 
 import {
   assertImageConfigBindingCurrent,
+  initializeImageConfig,
+  inspectImageConfig,
+  updateImageConfig,
   projectConfigPath,
   resolveImageConfigBinding,
   userConfigPath,
 } from "../mcp/config-resolution.mjs";
+
+test("configuration management initializes, redacts, and updates the fixed user file", async () => {
+  await withConfigRoots(async ({ projectRoot, userHome }) => {
+    const initialized = await initializeImageConfig({ userHome });
+    assert.equal(initialized.created, true);
+    assert.equal(initialized.path, userConfigPath(userHome));
+    assert.equal(initialized.config.providers.primary.api_key, undefined);
+    assert.equal(initialized.config.providers.primary.api_key_env, "IMAGE_API_KEY");
+
+    const inspected = await inspectImageConfig({ userHome, projectRoot });
+    assert.equal(inspected.user.exists, true);
+    assert.equal(inspected.user.config.providers.primary.api_key, undefined);
+    assert.equal(inspected.project.exists, false);
+
+    const updated = await updateImageConfig({
+      userHome,
+      scope: "user",
+      changes: {
+        providers: { primary: { base_url: "https://images.example.test/v1", api_key_env: "NEW_IMAGE_KEY" } },
+        defaults: { quality: "high" },
+      },
+    });
+    assert.equal(updated.config.defaults.quality, "high");
+    assert.equal(updated.config.providers.primary.base_url, "https://images.example.test/v1");
+    assert.equal(updated.config.providers.primary.api_key_env, "NEW_IMAGE_KEY");
+    await assert.rejects(
+      updateImageConfig({ userHome, scope: "user", changes: { providers: { primary: { api_key: "secret" } } } }),
+      { code: "image_config_update_forbidden" },
+    );
+  });
+});
+
+test("initialization adds the project config to gitignore when a project is supplied", async () => {
+  await withConfigRoots(async ({ projectRoot, userHome }) => {
+    await initializeImageConfig({ userHome, projectRoot });
+    const gitignore = await readFile(path.join(projectRoot, ".gitignore"), "utf8");
+    assert.match(gitignore, /^\.codex\/openai-compatible-imagegen\/config\.json$/m);
+    await initializeImageConfig({ userHome, projectRoot }).catch((error) => assert.equal(error.code, "image_config_exists"));
+    assert.equal((await readFile(path.join(projectRoot, ".gitignore"), "utf8")).match(/openai-compatible-imagegen\/config\.json/g).length, 1);
+  });
+});
+
+test("configuration initialization never overwrites an existing file", async () => {
+  await withConfigRoots(async ({ userHome }) => {
+    const configPath = userConfigPath(userHome);
+    await writeJson(configPath, { preserved: true });
+    await assert.rejects(initializeImageConfig({ userHome }), { code: "image_config_exists" });
+    assert.deepEqual(JSON.parse(await readFile(configPath, "utf8")), { preserved: true });
+  });
+});
 
 
 test("final config paths use the unified technical slug", async () => {
