@@ -21,7 +21,19 @@ OpenAI-Compatible Images ships one image core in two installation shapes. Use th
 | **Standalone Skill** | Codex CLI, Claude Code, OpenCode, and other Agent Skills clients | Generation, editing, JSONL batches, transparency, delivery, and QA |
 | **Codex Plugin** | Codex App users who want the complete image workflow | All shared capabilities plus MCP tools, result cards, canvas editing, artifacts, and versions |
 
-Install one or both. They share code and versions but keep separate local configuration and artifact directories.
+Choose one installation shape for each environment. The packages share code and versions but keep separate local configuration and artifact directories. Follow the [migration guide](docs/guides/migration.md) when moving an existing configuration to the Codex Plugin.
+
+## Codex App workflow
+
+Generate an image in the conversation, then open its focused canvas to mark regions and add instructions for each change.
+
+**Conversation result**
+
+![OpenAI-Compatible Images result card in Codex App](docs/images/codex-result-card.png)
+
+**Focused editing canvas**
+
+![Theme-aware image canvas with region and arrow annotations](docs/images/codex-editing-canvas.png)
 
 ## Install the Codex Plugin
 

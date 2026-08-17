@@ -25,8 +25,8 @@ export function createReleaseBundle({ pluginId, pluginVersion, serverBuildInputs
     widgetAssetDigest,
   ])).slice(0, 20);
   const resourceUris = Object.freeze({
-    result: `ui://${pluginId}/result.html`,
-    editor: `ui://${pluginId}/editor.html`,
+    result: `ui://${pluginId}/result-${fingerprint}.html`,
+    editor: `ui://${pluginId}/editor-${fingerprint}.html`,
   });
   const releaseIdentity = Object.freeze({
     pluginId,

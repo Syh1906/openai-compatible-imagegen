@@ -21,7 +21,19 @@ OpenAI 兼容图片把同一套图片核心发布为两种安装形态。Standal
 | **Standalone Skill** | Codex CLI、Claude Code、OpenCode 和其他 Agent Skills 客户端 | 生成、编辑、JSONL 批处理、透明处理、交付和 QA |
 | **Codex Plugin** | 需要完整图片工作流的 Codex App 用户 | 共享能力，以及 MCP 工具、结果卡、画布编辑、产物和版本 |
 
-你可以安装其中一种，也可以都安装。两者共享代码和版本，但使用各自的本地配置与产物目录。
+每个使用环境选择一种安装形态。两者共享代码和版本，但使用各自的本地配置与产物目录。将已有配置迁移到 Codex Plugin 时，请按[迁移指南](docs/guides/migration.md)操作。
+
+## Codex App 工作流
+
+在会话中生成图片，再打开聚焦画布标记区域，并为每处修改添加说明。
+
+**会话图片结果**
+
+![Codex App 中的 OpenAI 兼容图片结果卡](docs/images/codex-result-card.png)
+
+**聚焦编辑画布**
+
+![跟随宿主主题并带有区域和箭头标注的图片画布](docs/images/codex-editing-canvas.png)
 
 ## 安装 Codex Plugin
 

@@ -33,6 +33,10 @@ const LEGACY_WIDGET_RESOURCE_FINGERPRINTS = [
   "43c3a69a85db10633692",
   "9caad8c28a921a55611b",
 ];
+const LEGACY_STABLE_WIDGET_RESOURCE_URIS = [
+  "ui://openai-compatible-imagegen/result.html",
+  "ui://openai-compatible-imagegen/editor.html",
+];
 const RELEASE_IDENTITY_PLACEHOLDER = "    <!-- RELEASE_IDENTITY -->";
 const PNG_BYTES = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFgAI/ScL1WQAAAABJRU5ErkJggg==",
@@ -84,7 +88,7 @@ test("plugin probe carries one explicit project binding ID without host session 
 });
 
 
-test("widget resource URIs remain stable across compatible releases", async () => {
+test("widget resource URIs are content-bound while historical URIs remain readable", async () => {
   const previousRelease = createReleaseBundle({
     pluginId: "openai-compatible-imagegen",
     pluginVersion: "0.1.0-test",
@@ -98,7 +102,15 @@ test("widget resource URIs remain stable across compatible releases", async () =
     widgetHtml: `<html><head>${RELEASE_IDENTITY_PLACEHOLDER}</head><body>current widget</body></html>`,
   }).releaseIdentity;
 
-  assert.deepEqual(previousRelease.resourceUris, currentRelease.resourceUris);
+  assert.notDeepEqual(previousRelease.resourceUris, currentRelease.resourceUris);
+  assert.equal(
+    currentRelease.resourceUris.result,
+    `ui://openai-compatible-imagegen/result-${currentRelease.fingerprint}.html`,
+  );
+  assert.equal(
+    currentRelease.resourceUris.editor,
+    `ui://openai-compatible-imagegen/editor-${currentRelease.fingerprint}.html`,
+  );
 
   await withReleaseClient(currentRelease, async (client) => {
     const cachePolicy = client.getServerCapabilities()?.experimental?.["codex/tool-catalog-cache"];
@@ -107,6 +119,10 @@ test("widget resource URIs remain stable across compatible releases", async () =
     const resource = await client.readResource({ uri: resourceUri });
     assert.equal(resource.contents[0].uri, currentRelease.resourceUris.result);
     assert.deepEqual(cachePolicy, { cacheable: false });
+    for (const legacyUri of LEGACY_STABLE_WIDGET_RESOURCE_URIS) {
+      const legacyResource = await client.readResource({ uri: legacyUri });
+      assert.equal(legacyResource.contents[0].uri, legacyUri);
+    }
     for (const fingerprint of LEGACY_WIDGET_RESOURCE_FINGERPRINTS) {
       for (const view of ["result", "editor"]) {
         const legacyUri = `ui://openai-compatible-imagegen/${view}-${fingerprint}.html`;
@@ -225,15 +241,27 @@ test("the built plugin exposes one content-bound release identity", async () => 
     assert.equal(client.getServerCapabilities()?.resources?.listChanged, true);
 
     const { resources } = await client.listResources();
+    const legacyStableResourceUris = [
+      `ui://${releaseIdentity.pluginId}/result.html`,
+      `ui://${releaseIdentity.pluginId}/editor.html`,
+    ];
     const legacyResourceUris = LEGACY_WIDGET_RESOURCE_FINGERPRINTS.flatMap((fingerprint) => [
       `ui://${releaseIdentity.pluginId}/result-${fingerprint}.html`,
       `ui://${releaseIdentity.pluginId}/editor-${fingerprint}.html`,
     ]);
     assert.deepEqual(
       resources.map((resource) => resource.uri).sort(),
-      [...Object.values(releaseIdentity.resourceUris), ...legacyResourceUris].sort(),
+      [
+        ...Object.values(releaseIdentity.resourceUris),
+        ...legacyStableResourceUris,
+        ...legacyResourceUris,
+      ].sort(),
     );
-    for (const uri of [...Object.values(releaseIdentity.resourceUris), ...legacyResourceUris]) {
+    for (const uri of [
+      ...Object.values(releaseIdentity.resourceUris),
+      ...legacyStableResourceUris,
+      ...legacyResourceUris,
+    ]) {
       const resource = await client.readResource({ uri });
       assert.equal(resource.contents[0].uri, uri);
       assert.deepEqual(resource.contents[0]._meta.releaseIdentity, releaseIdentity);
@@ -370,8 +398,8 @@ function assertReleaseIdentity(releaseIdentity, manifest) {
   assert.match(releaseIdentity.serverBuildDigest, /^[a-f0-9]{64}$/);
   assert.match(releaseIdentity.widgetAssetDigest, /^[a-f0-9]{64}$/);
   assert.deepEqual(releaseIdentity.resourceUris, {
-    result: `ui://${manifest.name}/result.html`,
-    editor: `ui://${manifest.name}/editor.html`,
+    result: `ui://${manifest.name}/result-${releaseIdentity.fingerprint}.html`,
+    editor: `ui://${manifest.name}/editor-${releaseIdentity.fingerprint}.html`,
   });
 }
 

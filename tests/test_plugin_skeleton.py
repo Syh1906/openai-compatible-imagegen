@@ -335,8 +335,10 @@ class PluginSkeletonTests(unittest.TestCase):
             payload["resources"],
             sorted([
                 *payload["releaseIdentity"]["resourceUris"].values(),
+                "ui://openai-compatible-imagegen/editor.html",
                 "ui://openai-compatible-imagegen/editor-43c3a69a85db10633692.html",
                 "ui://openai-compatible-imagegen/editor-9caad8c28a921a55611b.html",
+                "ui://openai-compatible-imagegen/result.html",
                 "ui://openai-compatible-imagegen/result-43c3a69a85db10633692.html",
                 "ui://openai-compatible-imagegen/result-9caad8c28a921a55611b.html",
             ]),

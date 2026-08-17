@@ -42,10 +42,12 @@ import { ArtifactHydrationError, artifactLineage, artifactLineageImageIds, extra
 import { artifactLoadFailure, resultFailureCode } from "./result-errors.mjs";
 import { createResultFileRevealController, createResultPreviewSession } from "./result-preview.mjs";
 import { createHostDisplayModeController } from "./editor-host-display.mjs";
+import { applyHostTheme } from "./host-theme.mjs";
 import { bindScopedClicks } from "./editor-ui-listeners.mjs";
 import { createEditorDisclosureController } from "./editor-disclosure-controller.mjs";
 import { isNativeEditingTarget } from "./editor-keyboard-annotation.mjs";
 import { createEditorKeyboardController } from "./editor-keyboard-controller.mjs";
+import { createEditorConfirmationController } from "./editor-confirmation-controller.mjs";
 import { App, PostMessageTransport } from "@modelcontextprotocol/ext-apps";
 import { createBoundToolClient } from "./bound-tool-client.mjs";
 const defaultImage = {
@@ -95,10 +97,6 @@ let openingImageId = "";
 let hostInlineReturnInFlight = false;
 let intentPanelOpen = false;
 let intentPanelTrigger = null;
-let destroyConfirmOpen = false;
-let destroyConfirmTrigger = null;
-let clearConfirmOpen = false;
-let clearConfirmTrigger = null;
 let destroyInFlight = false;
 let artifactLoadSequence = 0;
 let artifactLoadInFlight = false;
@@ -152,6 +150,21 @@ const colorController = createEditorColorController({
   clearStatus: clearSubmissionStatus,
   discardInteraction,
   pushHistory: (before) => { undoStack.push(before); redoStack = []; },
+});
+const destroyConfirmation = createEditorConfirmationController({
+  root,
+  dialogSelector: "[data-destroy-confirm]",
+  triggerSelector: "[data-action=destroy]",
+  cancelSelector: "[data-action=cancel-destroy]",
+  render,
+  focusLastWhenMissing: true,
+});
+const clearConfirmation = createEditorConfirmationController({
+  root,
+  dialogSelector: "[data-clear-confirm]",
+  triggerSelector: "[data-action=clear]",
+  cancelSelector: "[data-action=cancel-clear]",
+  render,
 });
 const app = new App({ name: "openai-compatible-imagegen-editor", version: "0.1.0" }, {});
 const boundToolClient = createBoundToolClient(app);
@@ -312,18 +325,7 @@ function handleIntentFieldFocus(event) {
 
 function handleEditorKeyDown(event) {
   if (!resourceActive || widgetRole !== "editor") return;
-  if (destroyConfirmOpen) {
-    if (event.key === "Escape") closeDestroyConfirm();
-    else if (event.key === "Tab") moveDestroyConfirmFocus(event.shiftKey ? -1 : 1);
-    if (event.key === "Escape" || event.key === "Tab") event.preventDefault();
-    return;
-  }
-  if (clearConfirmOpen) {
-    if (event.key === "Escape") closeClearConfirm();
-    else if (event.key === "Tab") moveClearConfirmFocus(event.shiftKey ? -1 : 1);
-    if (event.key === "Escape" || event.key === "Tab") event.preventDefault();
-    return;
-  }
+  if (destroyConfirmation.handleKeyDown(event) || clearConfirmation.handleKeyDown(event)) return;
   if (event.key === "Escape" && colorController.isOpen()) {
     colorController.close({ restoreFocus: true });
     event.preventDefault();
@@ -376,6 +378,7 @@ async function connectHost() {
   };
   app.onhostcontextchanged = (params) => {
     if (!resourceActive) return;
+    applyHostTheme(app.getHostContext());
     const requestedContext = displayModeController.consumeRequestedContext(params?.displayMode);
     const changed = displayModeController.applyContext(params);
     if (params?.displayMode === "inline"
@@ -408,7 +411,9 @@ async function connectHost() {
   try {
     await app.connect(new PostMessageTransport(window.parent, window.parent));
     if (!resourceActive) return;
-    displayModeController.applyContext(app.getHostContext(), { initializeRole: true });
+    const initialHostContext = app.getHostContext();
+    applyHostTheme(initialHostContext);
+    displayModeController.applyContext(initialHostContext, { initializeRole: true });
     hostReady = true;
     applyResultBootstrapEffects(resultBootstrap.observe({ type: "host-ready" }));
     render();
@@ -1063,7 +1068,7 @@ function handleAction(action, event) {
     clearSubmissionStatus();
   } else if (action === "clear") {
     if (!editor.annotations.length && !editor.prompt.trim()) return;
-    openClearConfirm(event);
+    clearConfirmation.open(event);
   } else if (action === "toggle-annotations") {
     editor = { ...editor, annotationVisible: !editor.annotationVisible };
   } else if (action === "toggle-intents") {
@@ -1099,24 +1104,24 @@ function handleAction(action, event) {
     submitChanges();
     return;
   } else if (action === "destroy") {
-    openDestroyConfirm(event);
+    destroyConfirmation.open(event);
     return;
   } else if (action === "cancel-destroy") {
-    closeDestroyConfirm();
+    destroyConfirmation.close();
     return;
   } else if (action === "cancel-clear") {
-    closeClearConfirm();
+    clearConfirmation.close();
     return;
   } else if (action === "confirm-destroy") {
     discardInteraction();
-    destroyConfirmOpen = false;
+    destroyConfirmation.close({ renderNow: false, restoreFocus: false, clearTrigger: false });
     destroyInFlight = true; artifactLoadSequence += 1; artifactLoadInFlight = false;
     render();
     void destroyEditor();
     return;
   } else if (action === "confirm-clear") {
-    if (!clearConfirmOpen) return;
-    clearConfirmOpen = false;
+    if (!clearConfirmation.isOpen()) return;
+    clearConfirmation.close({ renderNow: false, restoreFocus: false, clearTrigger: false });
     discardInteraction();
     undoStack.push(editor);
     redoStack = [];
@@ -1124,9 +1129,7 @@ function handleAction(action, event) {
     editor = normalizeMaskOperationState({ ...editor, annotations: [], selectedAnnotationId: null, prompt: "" });
     clearSubmissionStatus();
     render();
-    const trigger = clearConfirmTrigger?.isConnected ? clearConfirmTrigger : root.querySelector("[data-action=clear]");
-    clearConfirmTrigger = null;
-    trigger?.focus();
+    clearConfirmation.restoreTriggerFocus();
     return;
   } else if (action === "remove-annotation") {
     const id = event.target.closest("[data-action=remove-annotation]")?.dataset.annotationTarget;
@@ -1168,11 +1171,7 @@ async function destroyEditor() {
     destroyInFlight = false;
     if (widgetRole === "editor") {
       render();
-      const trigger = destroyConfirmTrigger?.isConnected
-        ? destroyConfirmTrigger
-        : root.querySelector("[data-action=destroy]");
-      destroyConfirmTrigger = null;
-      trigger?.focus();
+      destroyConfirmation.restoreTriggerFocus();
     }
   }
 }
@@ -1218,63 +1217,12 @@ function finishReturnToResult({ preserveDraft }) {
   sessionController.stop();
   colorController.close({ update: false });
   intentPanelTrigger = null;
-  destroyConfirmOpen = false;
-  destroyConfirmTrigger = null;
+  destroyConfirmation.close({ renderNow: false, restoreFocus: false });
   widgetRole = "result";
   inlineStatus = "";
   inlineStatusTone = "neutral";
   inlineStatusImageId = "";
   render();
-}
-function openDestroyConfirm(event) {
-  destroyConfirmTrigger = event?.currentTarget?.closest?.("[data-action=destroy]")
-    || event?.target?.closest?.("[data-action=destroy]")
-    || root.querySelector("[data-action=destroy]");
-  destroyConfirmOpen = true;
-  render();
-  root.querySelector("[data-action=cancel-destroy]")?.focus();
-}
-function closeDestroyConfirm() {
-  destroyConfirmOpen = false;
-  render();
-  const trigger = destroyConfirmTrigger?.isConnected
-    ? destroyConfirmTrigger
-    : root.querySelector("[data-action=destroy]");
-  destroyConfirmTrigger = null;
-  trigger?.focus();
-}
-function moveDestroyConfirmFocus(direction) {
-  const controls = [...root.querySelectorAll("[data-destroy-confirm] button:not(:disabled)")];
-  if (!controls.length) return;
-  const current = controls.indexOf(document.activeElement);
-  const next = current < 0
-    ? (direction > 0 ? 0 : controls.length - 1)
-    : (current + direction + controls.length) % controls.length;
-  controls[next].focus();
-}
-function openClearConfirm(event) {
-  clearConfirmTrigger = event?.currentTarget?.closest?.("[data-action=clear]")
-    || event?.target?.closest?.("[data-action=clear]")
-    || root.querySelector("[data-action=clear]");
-  clearConfirmOpen = true;
-  render();
-  root.querySelector("[data-action=cancel-clear]")?.focus();
-}
-function closeClearConfirm() {
-  clearConfirmOpen = false;
-  render();
-  const trigger = clearConfirmTrigger?.isConnected
-    ? clearConfirmTrigger
-    : root.querySelector("[data-action=clear]");
-  clearConfirmTrigger = null;
-  trigger?.focus();
-}
-function moveClearConfirmFocus(direction) {
-  const controls = [...root.querySelectorAll("[data-clear-confirm] button:not(:disabled)")];
-  if (!controls.length) return;
-  const current = controls.indexOf(document.activeElement);
-  const next = current < 0 ? 0 : (current + direction + controls.length) % controls.length;
-  controls[next].focus();
 }
 async function teardownDestroyedEditor(destroyedSession) {
   const ownsUi = destroyedSession.isUiOwner;
@@ -1429,8 +1377,8 @@ function render() {
     redoCount: redoStack.length,
     modelCapabilities,
     intentPanelOpen,
-    destroyConfirmOpen,
-    clearConfirmOpen,
+    destroyConfirmOpen: destroyConfirmation.isOpen(),
+    clearConfirmOpen: clearConfirmation.isOpen(),
     ...colorController.state(),
     draftState: draftRegistry.status(editor.image.id, editor),
     submissionStatus: submissionStatus || draftStatusMessage(draftRegistry.status(editor.image.id, editor)),

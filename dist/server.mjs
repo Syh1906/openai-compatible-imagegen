@@ -51,7 +51,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 var define_RELEASE_IDENTITY_default;
 var init_define_RELEASE_IDENTITY = __esm({
   "<define:__RELEASE_IDENTITY__>"() {
-    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "1.0.0", serverBuildDigest: "46167c0925ed1fcae6a8b3afa6899b0d0e1b64fc6d2d448eb8542237b846f019", widgetAssetDigest: "f1bf1cff5296241e1f5f053042a5038ca0bceb9dec4cac9794f616aa96a44fde", fingerprint: "47f94e5607e0dfca7647", resourceUris: { result: "ui://openai-compatible-imagegen/result.html", editor: "ui://openai-compatible-imagegen/editor.html" } };
+    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "1.0.0", serverBuildDigest: "8f921cac9aa362a2d991d9edec92e6fac406db27728f2c1faa195f7a052e57ee", widgetAssetDigest: "bfb17111a5ed68160dd61ba2d710b5a1d1d9766a71175428f771a2f000ec2505", fingerprint: "fba76d89fb89111b392f", resourceUris: { result: "ui://openai-compatible-imagegen/result-fba76d89fb89111b392f.html", editor: "ui://openai-compatible-imagegen/editor-fba76d89fb89111b392f.html" } };
   }
 });
 
@@ -34973,6 +34973,22 @@ function createImagegenServer({
   registerWidgetResource(server2, {
     name: "image-editor",
     uri: editorWidgetUri,
+    title: "\u56FE\u7247\u7F16\u8F91\u753B\u5E03",
+    description: "\u4E3A\u4F1A\u8BDD\u56FE\u7247\u7ED3\u679C\u5C55\u5F00\u4E0E\u7A33\u5B9A\u56FE\u7247 ID \u7ED1\u5B9A\u7684\u805A\u7126\u753B\u5E03\u3002",
+    releaseIdentity,
+    readWidgetHtml
+  });
+  registerWidgetResource(server2, {
+    name: "image-result-legacy-stable",
+    uri: `ui://${releaseIdentity.pluginId}/result.html`,
+    title: "\u56FE\u7247\u7ED3\u679C",
+    description: "\u5728\u4F1A\u8BDD\u7ED3\u679C\u4E2D\u6301\u7EED\u663E\u793A\u56FE\u7247\uFF0C\u5E76\u63D0\u4F9B\u5728\u540C\u4E00\u5BBF\u4E3B\u5B9E\u4F8B\u5C55\u5F00\u805A\u7126\u753B\u5E03\u7684\u5165\u53E3\u3002",
+    releaseIdentity,
+    readWidgetHtml
+  });
+  registerWidgetResource(server2, {
+    name: "image-editor-legacy-stable",
+    uri: `ui://${releaseIdentity.pluginId}/editor.html`,
     title: "\u56FE\u7247\u7F16\u8F91\u753B\u5E03",
     description: "\u4E3A\u4F1A\u8BDD\u56FE\u7247\u7ED3\u679C\u5C55\u5F00\u4E0E\u7A33\u5B9A\u56FE\u7247 ID \u7ED1\u5B9A\u7684\u805A\u7126\u753B\u5E03\u3002",
     releaseIdentity,

@@ -244,6 +244,22 @@ export function createImagegenServer({
     releaseIdentity,
     readWidgetHtml,
   });
+  registerWidgetResource(server, {
+    name: "image-result-legacy-stable",
+    uri: `ui://${releaseIdentity.pluginId}/result.html`,
+    title: "图片结果",
+    description: "在会话结果中持续显示图片，并提供在同一宿主实例展开聚焦画布的入口。",
+    releaseIdentity,
+    readWidgetHtml,
+  });
+  registerWidgetResource(server, {
+    name: "image-editor-legacy-stable",
+    uri: `ui://${releaseIdentity.pluginId}/editor.html`,
+    title: "图片编辑画布",
+    description: "为会话图片结果展开与稳定图片 ID 绑定的聚焦画布。",
+    releaseIdentity,
+    readWidgetHtml,
+  });
   for (const fingerprint of legacyWidgetResourceFingerprints) {
     registerWidgetResource(server, {
       name: `image-result-legacy-${fingerprint}`,

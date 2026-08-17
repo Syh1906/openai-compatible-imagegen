@@ -99,16 +99,13 @@ test("close guidance stays focusable and reveals its explanation without relying
   assert.match(html, /\.close-guidance-tooltip \{[^}]*position: absolute;[^}]*visibility: hidden/);
 });
 
-test("white-text primary actions use the strong accent with sufficient contrast", async () => {
+test("primary actions use the host inverse surface and text tokens", async () => {
   const html = await readFile(new URL("../web/index.html", import.meta.url), "utf8");
-  const strongAccent = html.match(/--accent-strong:\s*(#[0-9a-f]{6})/i)?.[1];
 
-  assert.equal(strongAccent?.toLowerCase(), "#0c7959");
-  assert.ok(contrastRatio(strongAccent, "#ffffff") >= 4.5);
   for (const selector of [".open-editor-button", ".color-apply-button", ".submit-button"]) {
     const rule = cssRule(html, selector);
-    assert.match(rule, /background:\s*var\(--accent-strong\)/);
-    assert.match(rule, /color:\s*(?:white|#fff)/);
+    assert.match(rule, /background:\s*var\(--action-bg\)/);
+    assert.match(rule, /color:\s*var\(--action-text\)/);
   }
 });
 
@@ -123,15 +120,4 @@ test("result context menu preserves a visible keyboard focus ring", async () => 
 function cssRule(html, selector) {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return html.match(new RegExp(`${escaped}\\s*\\{(?<body>[^}]*)\\}`))?.groups?.body || "";
-}
-
-function contrastRatio(first, second) {
-  const luminance = (hex) => {
-    const channels = hex.slice(1).match(/.{2}/g).map((value) => Number.parseInt(value, 16) / 255);
-    const linear = channels.map((value) => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4);
-    return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2];
-  };
-  const lighter = Math.max(luminance(first), luminance(second));
-  const darker = Math.min(luminance(first), luminance(second));
-  return (lighter + 0.05) / (darker + 0.05);
 }
