@@ -124,7 +124,11 @@ class PluginSkeletonTests(unittest.TestCase):
 
         self.assertEqual(manifest["name"], PLUGIN_ID)
         self.assertEqual(manifest["interface"]["displayName"], "OpenAI-Compatible Images")
-        self.assertEqual(manifest["interface"]["developerName"], PLUGIN_ID)
+        self.assertEqual(manifest["interface"]["developerName"], "Syh1906")
+        self.assertEqual(
+            manifest["interface"]["websiteURL"],
+            "https://github.com/Syh1906/openai-compatible-imagegen",
+        )
         self.assertEqual(manifest["interface"]["composerIcon"], "./assets/icon.png")
         self.assertEqual(manifest["interface"]["logo"], "./assets/icon.png")
         self.assertTrue((ROOT / "assets" / "icon.png").is_file())
