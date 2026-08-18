@@ -20,7 +20,7 @@ Identify the failing layer before changing configuration. The project does not s
 
 | Symptom | Check | Action |
 | --- | --- | --- |
-| User configuration missing | Plugin user config path exists | Create it from the bundled example |
+| User configuration missing | Plugin user config path exists | Ask the Agent to call `initialize_image_config`, or create it from the bundled example |
 | Credential missing | Configured environment variable exists in the Codex process | Set the variable without pasting its value into chat |
 | Project override rejected | Project file changes only four allowed fields | Remove provider, model, endpoint, auth, timeout, concurrency, and route fields |
 | Output directory rejected | Value is a safe project-relative directory | Use a relative child such as `output/imagegen/` |
