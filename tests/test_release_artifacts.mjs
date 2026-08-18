@@ -93,6 +93,8 @@ test("package scripts expose the release artifact builder", async () => {
 test("release workflow publishes an exact version-titled release from an annotated tag", async () => {
   const workflow = await readFile(releaseWorkflow, "utf8");
   assert.match(workflow, /workflow_dispatch:/);
+  assert.match(workflow, /runs-on:\s*windows-latest/);
+  assert.doesNotMatch(workflow, /runs-on:\s*ubuntu-latest/);
   assert.match(workflow, /environment:\s*release/);
   assert.match(workflow, /permissions:\s*\n\s*contents:\s*write/);
   assert.match(workflow, /ref:\s*\$\{\{\s*inputs\.release_ref\s*\}\}/);
@@ -110,6 +112,7 @@ test("release workflow publishes an exact version-titled release from an annotat
   assert.match(workflow, /plugin\.json[^\n]+\.version/);
   assert.match(workflow, /actions\/upload-artifact@v4/);
   assert.match(workflow, /gh release create/);
+  assert.match(workflow, /name:\s*Create the GitHub Release[\s\S]*?shell:\s*bash[\s\S]*?gh release create/);
   assert.match(workflow, /--verify-tag/);
   assert.match(workflow, /--title "\$RELEASE_TAG"/);
   assert.match(workflow, /release\/\*/);
