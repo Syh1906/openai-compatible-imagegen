@@ -12,6 +12,8 @@ import {
 import { hitTestAnnotation, maskColor } from "./editor-annotation-view.mjs";
 import { createSubmissionCoordinator } from "./editor-submission.mjs";
 import { createEditorSessionController } from "./editor-session-controller.mjs";
+import { createEditorDraftLifecycle } from "./editor-draft-lifecycle.mjs";
+import { createWidgetI18n } from "./widget-i18n.mjs";
 import { createEditorToast } from "./editor-toast.mjs";
 import { createEditorRenderer } from "./editor-renderer.mjs";
 import { createEditorDraftRegistry, draftStatusMessage } from "./editor-drafts.mjs";
@@ -59,7 +61,8 @@ const defaultImage = {
   parentIds: [],
 };
 const root = document.querySelector("main");
-const renderer = createEditorRenderer(root);
+const widgetI18n = createWidgetI18n();
+const renderer = createEditorRenderer(root, { i18n: widgetI18n });
 const draftRegistry = createEditorDraftRegistry();
 const canvasResize = createDeferredResizeObserver({
   requestFrame: window.requestAnimationFrame.bind(window),
@@ -198,7 +201,7 @@ const hostObservationReporter = createHostObservationReporter({
   releaseFingerprint: document.querySelector('meta[name="openai-compatible-imagegen-release"]')?.content || "",
 });
 const submissionCoordinator = createSubmissionCoordinator({ app: boundToolClient, isActive: () => resourceActive });
-const toastController = createEditorToast({ root, window, isActive: () => resourceActive, onFallback: (message) => { inlineStatus = message; inlineStatusTone = "error"; render(); } });
+const toastController = createEditorToast({ root, window, isActive: () => resourceActive, localize: widgetI18n.localizeText, onFallback: (message) => { inlineStatus = message; inlineStatusTone = "error"; render(); } });
 const toast = toastController.show;
 const sessionController = createEditorSessionController({
   app: boundToolClient,
@@ -207,9 +210,18 @@ const sessionController = createEditorSessionController({
   onDestroyed: teardownDestroyedEditor,
   onError: () => toast("无法确认画布会话状态"),
 });
+const draftLifecycle = createEditorDraftLifecycle({
+  window, document, sessionController, draftRegistry,
+  getEditor: () => editor, setEditor: (value) => { editor = value; },
+  getUndoStack: () => undoStack, setUndoStack: (value) => { undoStack = value; },
+  getRedoStack: () => redoStack, setRedoStack: (value) => { redoStack = value; },
+  isEligible: () => resourceActive && widgetRole === "editor" && Boolean(sessionController.id) && !editorDestroyed(),
+  onError: () => { if (resourceActive && widgetRole === "editor") toast("Codex 未能自动保存当前画布"); },
+});
 render();
 connectHost();
 document.addEventListener("keydown", handleEditorKeyDown);
+draftLifecycle.bind(resourceAbortController.signal);
 function bindUi() {
   uiCleanup?.();
   uiCleanup = null;
@@ -286,6 +298,7 @@ function bindUi() {
     if (!field) return;
     editor = updateEditorAnnotation(editor, field.dataset.annotationText, { text: field.value });
     clearSubmissionStatus();
+    draftLifecycle.track();
     const count = field.closest("[data-annotation-id]")?.querySelector("[data-annotation-count]");
     if (count) count.textContent = `${field.value.length}/600`;
     renderer.renderAnnotationLayer(editor);
@@ -298,6 +311,7 @@ function bindUi() {
   root.querySelector("[data-prompt]").addEventListener("input", (event) => {
     editor = { ...editor, prompt: event.target.value };
     clearSubmissionStatus();
+    draftLifecycle.track();
     root.querySelector("[data-prompt-count]").textContent = `${event.target.value.length}/600`;
     root.querySelector("[data-action=clear]").disabled = submissionInFlight || (!editor.annotations.length && !editor.prompt.trim());
   }, listenerOptions);
@@ -307,14 +321,12 @@ function bindUi() {
   canvas.addEventListener("pointercancel", cancelAnnotation, listenerOptions);
   canvas.addEventListener("pointermove", queueAnnotationUpdate, listenerOptions);
 }
-
 function bindDynamicUi() {
   bindScopedClicks(root, [
     { selector: "[data-action=apply-foreground-color], [data-action=remove-annotation]", handle: (button, event) => handleAction(button.dataset.action, event) },
     { selector: "[data-version-id]", handle: (button) => selectVersion(button.dataset.versionId) },
   ], uiAbortController?.signal);
 }
-
 function handleIntentFieldFocus(event) {
   const field = event.target.closest("[data-annotation-text]");
   if (!field || editor.selectedAnnotationId === field.dataset.annotationText) return;
@@ -322,7 +334,6 @@ function handleIntentFieldFocus(event) {
   intentPanelOpen = true;
   renderer.updateSelection({ editor, modelCapabilities, intentPanelOpen, ...colorController.state() });
 }
-
 function handleEditorKeyDown(event) {
   if (!resourceActive || widgetRole !== "editor") return;
   if (destroyConfirmation.handleKeyDown(event) || clearConfirmation.handleKeyDown(event)) return;
@@ -378,7 +389,9 @@ async function connectHost() {
   };
   app.onhostcontextchanged = (params) => {
     if (!resourceActive) return;
-    applyHostTheme(app.getHostContext());
+    const hostContext = app.getHostContext();
+    const localeChanged = widgetI18n.setLocale(hostContext?.locale);
+    applyHostTheme(hostContext);
     const requestedContext = displayModeController.consumeRequestedContext(params?.displayMode);
     const changed = displayModeController.applyContext(params);
     if (params?.displayMode === "inline"
@@ -387,9 +400,17 @@ async function connectHost() {
       void returnAfterHostRestoredInline();
       return;
     }
-    if (widgetRole === "result") resultPreview.syncHostContext(params?.displayMode); else if (changed) render();
+    if (widgetRole === "result") resultPreview.syncHostContext(params?.displayMode); else if (changed || localeChanged) render();
   };
   app.onteardown = async () => {
+    let draftSaveError = null;
+    if (resourceActive && widgetRole === "editor" && sessionController.id) {
+      try {
+        await draftLifecycle.flush();
+      } catch (error) {
+        draftSaveError = error;
+      }
+    }
     resourceActive = false;
     applyResultBootstrapEffects(resultBootstrap.observe({ type: "dispose" }));
     toastController.dispose();
@@ -406,12 +427,14 @@ async function connectHost() {
     pendingArtifactRecords = [];
     sessionController.stop();
     await sessionController.finalize();
+    if (draftSaveError) throw draftSaveError;
     return {};
   };
   try {
     await app.connect(new PostMessageTransport(window.parent, window.parent));
     if (!resourceActive) return;
     const initialHostContext = app.getHostContext();
+    widgetI18n.setLocale(initialHostContext?.locale);
     applyHostTheme(initialHostContext);
     displayModeController.applyContext(initialHostContext, { initializeRole: true });
     hostReady = true;
@@ -430,7 +453,6 @@ async function connectHost() {
     render();
   }
 }
-
 async function loadModelCapabilities() {
   if (modelCapabilities !== null) return;
   modelCapabilities = {};
@@ -462,8 +484,8 @@ async function requestOpenEditor(imageId = editor.image.id) {
   }
   const selectedCandidate = resultCandidates.find((item) => item.id === imageId);
   if (selectedCandidate && selectedCandidate.id !== editor.image.id) {
-    persistWorkingDraft();
-    restoreWorkingDraft(createEditorState({ image: selectedCandidate, ...artifactLineage(selectedCandidate) }));
+    draftLifecycle.saveWorking();
+    draftLifecycle.restoreWorking(createEditorState({ image: selectedCandidate, ...artifactLineage(selectedCandidate) }));
     imageUrl = toImageUrl(selectedCandidate);
     submissionCoordinator.reset();
   }
@@ -481,17 +503,30 @@ async function requestOpenEditor(imageId = editor.image.id) {
     render();
     return;
   }
-  inlineStatus = "正在打开画布...";
-  inlineStatusTone = "progress";
-  inlineStatusImageId = editor.image.id;
-  openingInFlight = true;
-  openingImageId = editor.image.id;
+  inlineStatus = "正在打开画布..."; inlineStatusTone = "progress"; inlineStatusImageId = editor.image.id;
+  openingInFlight = true; openingImageId = editor.image.id;
   render();
   try {
-    const ensured = await ensureEditorSession();
-    if (!resourceActive || !ensured?.session) return;
-    restoreTransferredDraft(ensured.session.draft);
-    const opened = await displayModeController.request("fullscreen");
+    const sessionPromise = ensureEditorSession();
+    const opened = await new Promise((resolve) => {
+      // Give the host one event-loop turn to cancel a resource that is being torn down.
+      window.setTimeout(() => {
+        if (!resourceActive) return resolve(false);
+        void displayModeController.request("fullscreen").then(resolve);
+      }, 16);
+    });
+    const ensured = await sessionPromise;
+    if (!resourceActive) return;
+    if (!ensured?.session) {
+      const failedImageId = openingImageId || editor.image.id;
+      if (opened) await displayModeController.request("inline");
+      if (resourceActive) {
+        inlineStatus = "Codex 未能打开画布"; inlineStatusTone = "error"; inlineStatusImageId = failedImageId;
+        render();
+      }
+      return;
+    }
+    draftLifecycle.restoreTransferred(ensured.session.draft);
     if (!resourceActive || !opened) return;
     inlineStatus = "";
     inlineStatusTone = "neutral";
@@ -547,7 +582,6 @@ function ingestToolInput(input) {
   if (bindingObserved && hostReady && widgetRole === "editor") loadModelCapabilities();
   render();
 }
-
 async function loadArtifacts(imageIds, { includeLineage = false, selectedImageId = "" } = {}) {
   if (!hostReady) return;
   const requestedImageIds = uniqueImageIds(imageIds);
@@ -657,7 +691,6 @@ async function loadArtifacts(imageIds, { includeLineage = false, selectedImageId
     toast(submissionStatus);
   }
 }
-
 async function hydrateArtifacts(metadata, { selectedImageId = metadata.find((artifact) => artifact?.id)?.id || "" } = {}) {
   if (!hostReady) {
     pendingArtifactRecords = metadata;
@@ -756,6 +789,7 @@ function ingestToolResult(result) {
     const newUiOwner = !sessionController.isUiOwner(editorSession.id);
     if (!sessionController.adopt(editorSession)) return;
     if (newUiOwner) destroyInFlight = false;
+    if (newUiOwner && editorSession.draft) draftLifecycle.restoreTransferred(editorSession.draft);
     if (editorSession.status === "destroyed" && editorSession.imageId) {
       destroyedCanvasImageIds.add(editorSession.imageId);
     }
@@ -802,7 +836,6 @@ function ingestToolResult(result) {
   }
   void hydrateArtifacts(artifacts);
 }
-
 function applyResultBootstrapEffects(effects) {
   for (const effect of effects) {
     if (effect.type === "bind") {
@@ -821,7 +854,6 @@ function applyResultBootstrapEffects(effects) {
     }
   }
 }
-
 function applyArtifacts(artifacts, { candidates = artifacts, selectedImageId = "" } = {}) {
   const draftStatusBefore = new Map(
     candidates.map((candidate) => [candidate?.id, draftRegistry.status(candidate?.id)]),
@@ -881,20 +913,19 @@ function applyArtifacts(artifacts, { candidates = artifacts, selectedImageId = "
   const imageIdentityChanged = Boolean(editor.image.id && editor.image.id !== image.id);
   if (imageIdentityChanged) { discardInteraction(); colorController.close({ update: false }); }
   if (widgetRole === "result") resultCandidates = candidates;
-  if (imageIdentityChanged && !completedDraftImageIds.has(editor.image.id)) persistWorkingDraft();
+  if (imageIdentityChanged && !completedDraftImageIds.has(editor.image.id)) draftLifecycle.saveWorking();
   const lineage = artifactLineage(image, artifactRecordCache);
   const previousLineage = editor.lineage;
   const baseEditor = createEditorState({ image, ...lineage });
   if (preserveActiveEditor) {
     editor = { ...editor, image, lineage: mergeLineageRecords(previousLineage || [], baseEditor.lineage, image.id) };
   } else {
-    restoreWorkingDraft(baseEditor);
+    draftLifecycle.restoreWorking(baseEditor);
     if (previousLineage?.length && baseEditor.lineage.length) editor = { ...editor, lineage: mergeLineageRecords(previousLineage, baseEditor.lineage, image.id) };
   }
   imageUrl = toImageUrl(image);
   render();
 }
-
 function captureLateArtifactResult(imageId, result, metadata = null, attempt = null) {
   if (!attempt) return;
   const { accepted, candidate } = artifactRecordCache.captureAttempt(attempt, result, metadata);
@@ -904,7 +935,6 @@ function captureLateArtifactResult(imageId, result, metadata = null, attempt = n
   editor = { ...editor, lineage: mergeLineageRecords(editor.lineage, [candidate], editor.image.id) };
   render();
 }
-
 function beginAnnotation(event) {
   if (interactionLocked() || !editor.image.id) return;
   if (event.isPrimary === false || event.button !== 0) return;
@@ -1048,7 +1078,6 @@ function discardInteraction() {
     pending.target.releasePointerCapture(pending.pointerId);
   }
 }
-
 function handleAction(action, event) {
   if (editorDestroyed() && action !== "back") return;
   if (destroyInFlight) return;
@@ -1142,7 +1171,6 @@ function handleAction(action, event) {
   }
   render();
 }
-
 function restoreHistoryEditor(snapshot) {
   const palette = { color: editor.color, colorSlots: editor.colorSlots, activeColorSlot: editor.activeColorSlot };
   return normalizeMaskOperationState(normalizeEditorColorState({ ...snapshot, ...palette }));
@@ -1160,6 +1188,8 @@ async function destroyEditor() {
       toast("当前画布会话尚未准备好");
       return;
     }
+    draftLifecycle.discardServerDraft();
+    try { await draftLifecycle.whenIdle(); } catch {}
     ownerSessionId = sessionController.id;
     const destroyedImageId = sessionController.imageId || editor.image.id;
     const destroyed = await sessionController.destroy();
@@ -1183,6 +1213,12 @@ async function returnToConversation({ preserveDraft = true, ownerSessionId = "" 
     toast("宿主尚未连接，暂时无法返回会话");
     return false;
   }
+  try {
+    await draftLifecycle.flush();
+  } catch {
+    toast("Codex 未能保存当前画布");
+    return false;
+  }
   const returned = await displayModeController.request("inline");
   if (!resourceActive) return false;
   if (!ownsUi()) { if (widgetRole === "editor") await displayModeController.request("fullscreen"); return false; }
@@ -1198,11 +1234,8 @@ async function returnAfterHostRestoredInline() {
   hostInlineReturnInFlight = true;
   try {
     discardInteraction(); closeGuidance.close();
-    const draftSaved = await sessionController.saveDraft({
-      annotations: editor.annotations,
-      prompt: editor.prompt,
-    });
-    if (!resourceActive || widgetRole !== "editor" || !draftSaved) return;
+    await draftLifecycle.flush();
+    if (!resourceActive || widgetRole !== "editor") return;
     const returned = await displayModeController.request("inline");
     if (!resourceActive || widgetRole !== "editor" || !returned) return;
     await app.requestTeardown();
@@ -1213,7 +1246,7 @@ async function returnAfterHostRestoredInline() {
   }
 }
 function finishReturnToResult({ preserveDraft }) {
-  if (preserveDraft) persistWorkingDraft();
+  if (preserveDraft) draftLifecycle.saveWorking();
   sessionController.stop();
   colorController.close({ update: false });
   intentPanelTrigger = null;
@@ -1243,7 +1276,6 @@ async function teardownDestroyedEditor(destroyedSession) {
     if (resourceActive && widgetRole === "editor") render();
   }
 }
-
 function selectVersion(id) {
   if (interactionLocked()) return;
   const selected = editor.lineage.find((item) => item.id === id);
@@ -1286,7 +1318,7 @@ async function submitChanges() {
     submissionStatus = composerStatus;
     submissionStatusTone = composerAcknowledged ? "success" : "error";
     if (result.delivery === "composer") {
-      persistWorkingDraft();
+      draftLifecycle.saveWorking();
       draftRegistry.markPending(editor.image.id, {
         submissionId: result.submissionId,
         annotationId: result.annotationId,
@@ -1327,7 +1359,6 @@ async function submitChanges() {
     render();
   }
 }
-
 function resetDraft() {
   discardInteraction();
   editor = normalizeMaskOperationState({ ...editor, annotations: [], selectedAnnotationId: null, editingTextAnnotationId: null, prompt: "" });
@@ -1335,11 +1366,10 @@ function resetDraft() {
   redoStack = [];
   submissionCoordinator.reset();
 }
-
 function render() {
   document.body.dataset.view = widgetRole;
   if (widgetRole === "result") {
-    if (resultPreview.isActive()) { resultPreview.reconcile(); return; }
+    if (resultPreview.isActive()) { resultPreview.reconcile(); widgetI18n.localizeTree(root); return; }
     uiCleanup?.();
     canvasResize.disconnect();
     renderer.renderInline({
@@ -1358,6 +1388,7 @@ function render() {
       signal: resourceAbortController.signal,
     });
     resultPreview.reconcile();
+    widgetI18n.localizeTree(root);
     return;
   }
   if (!renderer.isEditorMounted()) {
@@ -1387,6 +1418,8 @@ function render() {
   keyboardController.renderLayer();
   bindDynamicUi();
   colorController.position();
+  widgetI18n.localizeTree(root);
+  draftLifecycle.track();
 }
 function selectAnnotation(id) {
   if (interactionLocked()) return;
@@ -1411,32 +1444,6 @@ function activateTool(tool) {
   editor = normalizeMaskOperationState({ ...editor, activeTool, editingTextAnnotationId: null, selectedAnnotationId: activeTool === "select" ? editor.selectedAnnotationId : null });
   render();
 }
-function persistWorkingDraft() {
-  if (!editor.image.id) return;
-  draftRegistry.saveWorking(editor, { undoStack, redoStack });
-}
-
-function restoreWorkingDraft(baseEditor) {
-  const restored = draftRegistry.restore(baseEditor);
-  editor = normalizeMaskOperationState(normalizeEditorColorState(restored.editor));
-  undoStack = restored.undoStack.map((snapshot) => normalizeMaskOperationState(normalizeEditorColorState(snapshot)));
-  redoStack = restored.redoStack.map((snapshot) => normalizeMaskOperationState(normalizeEditorColorState(snapshot)));
-}
-
-function restoreTransferredDraft(draft) {
-  if (!draft) return;
-  editor = normalizeMaskOperationState(normalizeEditorColorState({
-    ...editor,
-    annotations: structuredClone(draft.annotations),
-    prompt: draft.prompt,
-    selectedAnnotationId: null,
-    editingTextAnnotationId: null,
-  }));
-  undoStack = [];
-  redoStack = [];
-  persistWorkingDraft();
-}
-
 function updateMaskSetting({ maskMode = editor.maskMode, maskOperation = editor.maskOperation, maskBrushRadius = editor.maskBrushRadius }) {
   if (interactionLocked()) return;
   discardInteraction();

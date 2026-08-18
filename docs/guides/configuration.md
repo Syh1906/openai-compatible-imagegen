@@ -1,6 +1,9 @@
+<!-- updated: 2026-08-19 -->
 # Configuration
 
 > Parent: [User guides](./README.md)
+
+Language: [简体中文](./configuration.zh-CN.md)
 
 Configure only the package you installed. The Standalone Skill and Codex Plugin do not scan, merge, or fall back to each other's configuration.
 

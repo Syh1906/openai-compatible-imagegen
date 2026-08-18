@@ -1,8 +1,8 @@
 import { z } from "zod";
 
 
-export const imageIdSchema = z.string().regex(/^img_[0-9A-HJKMNP-TV-Z]{26}$/).describe("项目产物仓库中的稳定图片 ID");
-export const batchIdSchema = z.string().regex(/^batch_[0-9A-HJKMNP-TV-Z]{26}$/).describe("不可变批处理 manifest ID");
+export const imageIdSchema = z.string().regex(/^img_[0-9A-HJKMNP-TV-Z]{26}$/).describe("Stable image ID in the project artifact repository");
+export const batchIdSchema = z.string().regex(/^batch_[0-9A-HJKMNP-TV-Z]{26}$/).describe("Immutable batch manifest ID");
 export const deliveryReceiptIdSchema = z.string().regex(/^delivery_[0-9a-f]{64}$/);
 export const outputSchema = {
   size: z.string().optional(),

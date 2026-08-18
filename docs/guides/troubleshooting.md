@@ -1,6 +1,9 @@
+<!-- updated: 2026-08-19 -->
 # Troubleshooting
 
 > Parent: [User guides](./README.md)
+
+Language: [简体中文](./troubleshooting.zh-CN.md)
 
 Identify the failing layer before changing configuration. The project does not switch providers, models, endpoints, authentication, protocols, or install routes automatically.
 
@@ -15,6 +18,8 @@ Identify the failing layer before changing configuration. The project does not s
 | MCP server cannot start | `node --version` is 20 or later | Install or select a supported Node runtime outside the Plugin |
 | Python helper cannot start | `python --version` reports 3.12 | Install or select Python 3.12 outside the Plugin |
 | Standalone Skill is not detected | `SKILL.md` is at the installed package root | Fix the extraction level and start a new session |
+| Skills CLI update finds no project Skill | The install source in `skills-lock.json` is a local extracted directory | Keep the current install and use a new versioned ZIP directory; local copied installs are not updated by `skills update` |
+| Skills CLI removal remains listed | `skills remove` reported success for a copied local Skill | Treat the CLI route as first-install only; preserve `auth.json` and use the versioned ZIP rollback flow |
 
 ## Configuration problems
 

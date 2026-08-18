@@ -137,7 +137,7 @@ test("widget resource URIs are content-bound while historical URIs remain readab
 test("release identity ignores checkout line-ending differences in text build inputs", () => {
   const baseInput = {
     pluginId: "openai-compatible-imagegen",
-    pluginVersion: "1.0.1",
+    pluginVersion: "1.0.2",
     widgetHtml: `<html><head>${RELEASE_IDENTITY_PLACEHOLDER}</head></html>`,
   };
   const lfRelease = createReleaseBundle({

@@ -1,6 +1,9 @@
+<!-- updated: 2026-08-19 -->
 # Rollback
 
 > Parent: [User guides](./README.md)
+
+Language: [简体中文](./rollback.zh-CN.md)
 
 Rollback changes the installed package version. It does not downgrade or rewrite your image-service configuration automatically.
 
@@ -43,7 +46,7 @@ Do not use an unreleased commit as a rollback target. A Plugin version can read 
 4. Switch the client to the restored Skill directory.
 5. Start a new task or session.
 
-Do not copy newer configuration fields into the older package unless that release documents them.
+Do not use `skills update`, repeated `skills add`, or `skills remove` as a configuration-preserving version switch for a local copied install. Do not copy newer configuration fields into the older package unless that release documents them.
 
 ## Rollback result
 

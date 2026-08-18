@@ -60,6 +60,21 @@ test("release notes reject a version that remains only under Unreleased", async 
 });
 
 
+test("release notes reject pre-publication workflow status", async (t) => {
+  const root = await createReleaseFixture(t, {
+    notes: validNotes.replace(
+      "Follow the [v1.0.1 installation guide]",
+      "This release is prepared but not published. After release approval, follow the [v1.0.1 installation guide]",
+    ),
+  });
+
+  await assert.rejects(
+    validateReleaseNotes({ projectRoot: root, releaseTag: "v1.0.1" }),
+    /pre-publication|published release/i,
+  );
+});
+
+
 test("release artifact comparison accepts byte-identical candidate directories", async (t) => {
   const { left, right } = await createArtifactFixture(t);
 

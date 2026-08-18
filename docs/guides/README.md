@@ -2,6 +2,8 @@
 
 > Parent: [Documentation](../README.md)
 
+Language: [简体中文](./README.zh-CN.md)
+
 Choose the guide that matches the task you need to complete.
 
 | Task | Guide |

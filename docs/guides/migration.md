@@ -1,6 +1,9 @@
+<!-- updated: 2026-08-19 -->
 # Migration
 
 > Parent: [User guides](./README.md)
+
+Language: [简体中文](./migration.zh-CN.md)
 
 Migration to the Codex Plugin is explicit. The Plugin does not scan, copy, merge, delete, or overwrite an older Standalone or Plugin configuration.
 

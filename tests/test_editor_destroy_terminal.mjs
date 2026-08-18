@@ -108,8 +108,10 @@ test("a destroy acknowledgement stays terminal when session cleanup fails", { ti
   try {
     await import(`../web/editor-runtime.mjs?destroy-finalize-refused=${Date.now()}`);
     await waitFor(() => document.querySelector(".editor-app") !== null);
+    await waitFor(() => host.toolCalls.some(({ name }) => name === "get_image_editor_session"));
     await waitFor(() => document.querySelector("[data-action=destroy]")?.disabled === false);
     document.querySelector("[data-action=destroy]").click();
+    await waitFor(() => document.querySelector("[data-destroy-confirm]")?.hidden === false);
     document.querySelector("[data-action=confirm-destroy]").click();
     await waitFor(() => host.toolCalls.some(({ name }) => name === "finalize_image_editor_session"), 3000);
     await waitFor(() => document.querySelector('[data-destroyed-terminal="true"]') !== null, 3000);

@@ -63,6 +63,9 @@ function validateNotesBody(notes, releaseTag) {
   if (/(?:^|[\s("'])[A-Za-z]:[\\/]|(?:^|[\s("'])\/(?:home|Users)\//m.test(normalized)) {
     throw new Error("release notes must not contain local absolute paths");
   }
+  if (/\b(?:prepared but not published|after release approval|waiting for (?:release )?approval|not yet published|will be published)\b/i.test(normalized)) {
+    throw new Error("release notes must describe the published release and must not contain pre-publication workflow status");
+  }
 }
 
 

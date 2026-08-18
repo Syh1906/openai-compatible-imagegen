@@ -2,8 +2,8 @@ import { z } from "zod";
 
 export function registerConfigTools(server, configManager, toolError) {
   server.registerTool("initialize_image_config", {
-    title: "初始化图片配置",
-    description: "在固定用户路径创建一次图片配置模板；已有配置不会被覆盖。用户配置目录始终创建只含 * 的本地 .gitignore；传入项目根目录时也保护项目配置目录。模板首选 api_key_env。",
+    title: "Initialize image configuration",
+    description: "Create an image configuration template at the fixed user path without overwriting an existing file. Protect user and optional project configuration directories with a local .gitignore containing only *, and prefer api_key_env in the template.",
     inputSchema: { projectRoot: z.string().min(1).optional() },
     outputSchema: z.object({ created: z.literal(true), path: z.string().min(1), config: z.record(z.any()), gitignoreUpdated: z.boolean() }).strict(),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
@@ -15,8 +15,8 @@ export function registerConfigTools(server, configManager, toolError) {
   });
 
   server.registerTool("inspect_image_config", {
-    title: "查询图片配置",
-    description: "查询用户配置及可选项目覆盖的脱敏内容和固定路径，不返回 api_key 或其他凭据。",
+    title: "Inspect image configuration",
+    description: "Return redacted user configuration, optional project overrides, and fixed paths without returning api_key or other credentials.",
     inputSchema: { projectRoot: z.string().min(1).optional() },
     outputSchema: z.object({ user: z.record(z.any()), project: z.record(z.any()) }).strict(),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
@@ -28,8 +28,8 @@ export function registerConfigTools(server, configManager, toolError) {
   });
 
   server.registerTool("update_image_config", {
-    title: "修改图片配置",
-    description: "按配置白名单修改用户配置或项目覆盖，并确保目标配置目录包含只含 * 的本地 .gitignore。用户明确要求时可写入用户级 api_key，但结果始终脱敏；项目作用域禁止密钥且只能修改安全覆盖字段。修改后需重新绑定项目。",
+    title: "Update image configuration",
+    description: "Update allowlisted user or project configuration fields and protect the target configuration directory with a local .gitignore containing only *. User-level api_key writes require an explicit request and remain redacted; project scope rejects credentials and non-allowlisted fields. Rebind the project after an update.",
     inputSchema: { scope: z.enum(["user", "project"]).default("user"), projectRoot: z.string().min(1).optional(), changes: z.record(z.any()) },
     outputSchema: z.object({ scope: z.enum(["user", "project"]), path: z.string().min(1), config: z.record(z.any()) }).strict(),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },

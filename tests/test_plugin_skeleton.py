@@ -70,13 +70,16 @@ DIST_RUNTIME_PATHS = [
 
 class PluginSkeletonTests(unittest.TestCase):
     def test_public_docs_route_package_installation_configuration_and_migration(self) -> None:
-        for path in (README_PATH, README_ZH_PATH):
+        for path, installation_path in (
+            (README_PATH, "docs/guides/installation.md"),
+            (README_ZH_PATH, "docs/guides/installation.zh-CN.md"),
+        ):
             text = path.read_text(encoding="utf-8")
             self.assertIn("OpenAI-Compatible Images", text)
             self.assertIn("Standalone Skill", text)
             self.assertIn("Codex Plugin", text)
             self.assertIn("codex plugin marketplace add Syh1906/openai-compatible-imagegen", text)
-            self.assertIn("docs/guides/installation.md", text)
+            self.assertIn(installation_path, text)
             self.assertNotIn("openai-compatible-imagegen-v2", text)
 
         public_text = "\n".join(
@@ -148,15 +151,15 @@ class PluginSkeletonTests(unittest.TestCase):
             ]
         )
 
-        self.assertIn("会话", manifest_copy)
-        self.assertIn("聚焦画布", manifest_copy)
-        self.assertNotIn("独立画布", manifest_copy)
-        self.assertNotIn("图片工作台", manifest_copy)
+        self.assertIn("conversation", manifest_copy)
+        self.assertIn("focused canvas", manifest_copy)
+        self.assertNotIn("standalone canvas", manifest_copy)
+        self.assertNotIn("image workspace", manifest_copy)
 
         server_text = (ROOT / "mcp" / "create-server.mjs").read_text(encoding="utf-8")
-        self.assertIn("会话结果", server_text)
-        self.assertIn("同一宿主", server_text)
-        self.assertNotIn("独立画布的入口", server_text)
+        self.assertIn("conversation result", server_text)
+        self.assertIn("same host instance", server_text)
+        self.assertNotIn("standalone canvas entry", server_text)
 
     def test_plugin_and_node_package_identity_match(self) -> None:
         manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
@@ -211,13 +214,13 @@ class PluginSkeletonTests(unittest.TestCase):
     def test_skill_freezes_the_explicit_project_binding_flow(self) -> None:
         text = SKILL_PATH.read_text(encoding="utf-8")
 
-        self.assertIn("首次调用任何项目相关工具前", text)
+        self.assertIn("Before calling any project-scoped tool", text)
         self.assertIn("bind_imagegen_project", text)
-        self.assertIn("保存返回的 `projectBindingId`", text)
-        self.assertIn("首次不带 ID 的绑定会签发新的随机绑定", text)
-        self.assertIn("同一 `projectBindingId` 可跨 MCP 进程和 server 重启恢复", text)
-        self.assertIn("不得用 transport `sessionId`", text)
-        self.assertIn("不得从插件安装目录、MCP `cwd`、roots、Git 搜索", text)
+        self.assertIn("Preserve the returned `projectBindingId`", text)
+        self.assertIn("The first bind without an ID issues a new random binding", text)
+        self.assertIn("A `projectBindingId` survives MCP process and server restarts", text)
+        self.assertIn("transport `sessionId`", text)
+        self.assertIn("never from the Plugin installation directory, MCP `cwd`, roots, Git discovery", text)
 
     def test_skill_documents_the_explicit_config_migration_gate(self) -> None:
         text = SKILL_PATH.read_text(encoding="utf-8")
@@ -246,12 +249,12 @@ class PluginSkeletonTests(unittest.TestCase):
 
     def test_skill_routes_canvas_submissions_back_to_edit_image(self) -> None:
         text = SKILL_PATH.read_text(encoding="utf-8")
-        self.assertIn("画布提交消息", text)
+        self.assertIn("On a canvas submission message", text)
         self.assertIn("prepare_image_edit_submission", text)
         self.assertIn("edit_image.submissionId", text)
         self.assertIn("annotationId", text)
         self.assertIn("MASK_GUARD_V2_BY_STRATEGY", text)
-        self.assertIn("完整目标图片", text)
+        self.assertIn("complete target image", text)
 
     def test_skill_routes_local_delivery_and_presents_only_published_derivatives(self) -> None:
         text = SKILL_PATH.read_text(encoding="utf-8")
@@ -266,11 +269,11 @@ class PluginSkeletonTests(unittest.TestCase):
         text = SKILL_PATH.read_text(encoding="utf-8")
 
         self.assertIn("batch_images", text)
-        self.assertIn("一次 `batch_images`", text)
-        self.assertIn("只调用一次 `render_image_results`", text)
-        self.assertIn("不重试失败项", text)
-        self.assertIn("mask 或画布提交", text)
-        self.assertIn("单独一次 `edit_image`", text)
+        self.assertIn("call `batch_images` once", text)
+        self.assertIn("call `render_image_results` once", text)
+        self.assertIn("Report item failures without retrying them", text)
+        self.assertIn("Mask or canvas submissions", text)
+        self.assertIn("one separate `edit_image` call", text)
 
     def test_static_widget_is_packaged(self) -> None:
         self.assertTrue(WIDGET_PATH.is_file())

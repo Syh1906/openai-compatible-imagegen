@@ -5,7 +5,7 @@ export const PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQ
 export const FULL_MESSAGE_HOST_CAPABILITIES = { message: { text: {}, image: {} }, updateModelContext: { structuredContent: {} } };
 export const CODEX_COMPOSER_HOST_CAPABILITIES = { message: {}, updateModelContext: { text: {}, image: {}, structuredContent: {} } };
 
-export function installHost(window, { toolName, editorSessionStatus = "active", destroySessionStatus = "destroyed", canvasStatus = "available", initialDisplayMode = "inline", initialHostContext = {}, deferModelContext = false, deferDisplayModeRequests = false, deferOpenImageEditor = false, deferDestroyImageEditor = false, deferArtifactDataImageIds = [], children = [], maskCapability = true, failMessageOnce = false, failOpenImageId = null, artifactOverride = null, initialEditorDraft = null, initialEditorResultIncludesArtifact = true, initialArtifacts = null, initialResultIncludesToolInput = true, initialResultToolInputArguments = null, initialResultText = null, initialResultNotificationOrder = "result-first", initialResultIsError = false, initialResultIncludesImages = true, initialResultIncludesStructuredContent = true, initialResultIncludesWidgetImages = false, rejectModelCatalog = false, rejectDisplayMode = null, rejectFinalizeImageEditor = false, saveDraftIsError = false, uniqueEditorSessionIds = false, artifactDataIsError = false, revealArtifactIsError = false, failArtifactDataImageId = null, failArtifactDataImageIds = [], artifactDataPayloadInvalid = false, hostCapabilities = FULL_MESSAGE_HOST_CAPABILITIES }) {
+export function installHost(window, { toolName, editorSessionStatus = "active", destroySessionStatus = "destroyed", canvasStatus = "available", initialDisplayMode = "inline", initialHostContext = { locale: "zh-CN" }, deferModelContext = false, deferDisplayModeRequests = false, deferOpenImageEditor = false, deferDestroyImageEditor = false, deferArtifactDataImageIds = [], children = [], maskCapability = true, failMessageOnce = false, failOpenImageId = null, artifactOverride = null, initialEditorDraft = null, initialEditorResultIncludesArtifact = true, initialArtifacts = null, initialResultIncludesToolInput = true, initialResultToolInputArguments = null, initialResultText = null, initialResultNotificationOrder = "result-first", initialResultIsError = false, initialResultIncludesImages = true, initialResultIncludesStructuredContent = true, initialResultIncludesWidgetImages = false, rejectModelCatalog = false, rejectDisplayMode = null, rejectFinalizeImageEditor = false, saveDraftIsError = false, uniqueEditorSessionIds = false, artifactDataIsError = false, revealArtifactIsError = false, failArtifactDataImageId = null, failArtifactDataImageIds = [], artifactDataPayloadInvalid = false, hostCapabilities = FULL_MESSAGE_HOST_CAPABILITIES }) {
   const toolCalls = [];
   const resourceReads = [];
   const displayModeRequests = [];
@@ -22,7 +22,7 @@ export function installHost(window, { toolName, editorSessionStatus = "active", 
   let currentEditorSessionStatus = editorSessionStatus;
   let openEditorCount = 0;
   let activeEditorSessionId = EDITOR_SESSION_ID;
-  let editorDraft = initialEditorDraft ? structuredClone(initialEditorDraft) : null;
+  const editorDrafts = new Map(initialEditorDraft ? [[IMAGE_ID, structuredClone(initialEditorDraft)]] : []);
   const editorSessionImages = new Map([[EDITOR_SESSION_ID, IMAGE_ID]]);
   const initialArtifactRecords = initialArtifacts?.map((item) => ({ ...item })) || null;
   const runtimeArtifacts = new Map((initialArtifactRecords || []).map((item) => [item.id, item]));
@@ -115,7 +115,12 @@ export function installHost(window, { toolName, editorSessionStatus = "active", 
           params: {
             content: [],
             structuredContent: {
-              editorSession: { id: EDITOR_SESSION_ID, imageId: IMAGE_ID, status: "active" },
+              editorSession: {
+                id: EDITOR_SESSION_ID,
+                imageId: IMAGE_ID,
+                status: "active",
+                ...(editorDrafts.has(IMAGE_ID) ? { draft: structuredClone(editorDrafts.get(IMAGE_ID)) } : {}),
+              },
               ...(initialEditorResultIncludesArtifact ? { artifact: initialArtifact } : {}),
             },
           },
@@ -134,7 +139,10 @@ export function installHost(window, { toolName, editorSessionStatus = "active", 
       toolCalls.push(message.params);
       const toolName = message.params.name;
       if (toolName === "save_image_editor_draft" && !saveDraftIsError) {
-        editorDraft = structuredClone(message.params.arguments.draft);
+        const draftImageId = editorSessionImages.get(message.params.arguments.editorSessionId);
+        const draft = structuredClone(message.params.arguments.draft);
+        if (draft.annotations.length || draft.prompt.trim()) editorDrafts.set(draftImageId, draft);
+        else editorDrafts.delete(draftImageId);
       }
       if (toolName === "list_image_models" && rejectModelCatalog) {
         sendToApp(window, {
@@ -285,7 +293,7 @@ export function installHost(window, { toolName, editorSessionStatus = "active", 
                     id: activeEditorSessionId,
                     imageId: editorSessionImageId,
                     status: "active",
-                    ...(editorDraft ? { draft: structuredClone(editorDraft) } : {}),
+                    ...(editorDrafts.has(editorSessionImageId) ? { draft: structuredClone(editorDrafts.get(editorSessionImageId)) } : {}),
                   },
                   artifact: defaultArtifact(editorSessionImageId),
                 },
@@ -311,7 +319,7 @@ export function installHost(window, { toolName, editorSessionStatus = "active", 
                   canvasStatus: artifactFor(message.params.arguments.imageId || IMAGE_ID).canvasStatus || canvasStatus,
                 },
               };
-      if (toolName === "open_image_editor" && !result.isError) editorDraft = null;
+      if (toolName === "open_image_editor" && !result.isError) editorDrafts.delete(editorSessionImageId);
       sendToApp(window, {
         jsonrpc: "2.0",
         id: message.id,

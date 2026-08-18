@@ -1,6 +1,9 @@
+<!-- updated: 2026-08-19 -->
 # Installation
 
 > Parent: [User guides](./README.md)
+
+Language: [简体中文](./installation.zh-CN.md)
 
 Choose one package. Both packages use the same image core, but they target different hosts and keep separate local configuration.
 
@@ -118,14 +121,40 @@ Do not install global dependencies or build the repository. Stop before entering
 4. Start a new task or session so the client reloads skills.
 5. Continue with [Standalone configuration](./configuration.md#configure-the-standalone-skill).
 
-### Agent handoff
+### Install with the third-party Skills CLI
+
+The `skills` package is a third-party Agent Skills CLI, not an OpenAI or Codex command. Use it only with the extracted Standalone archive. Choose the installation scope before running it:
+
+| Scope | Availability | Installed copy |
+| --- | --- | --- |
+| Project (default) | Current project | `<project>/.agents/skills/openai-compatible-imagegen` |
+| User (`--global`) | Current user across projects | `~/.agents/skills/openai-compatible-imagegen` |
+
+For a project installation, run the command from the target project:
 
 ```text
-Install the OpenAI-Compatible Images Standalone Skill from the requested GitHub Release.
-Place the extracted openai-compatible-imagegen directory in this client's supported skills directory
-with SKILL.md at the package root. Do not overwrite an existing installation or move credentials.
-Report the installed version and final skill path.
+npx --yes skills@latest add /path/to/openai-compatible-imagegen --agent codex --skill openai-compatible-imagegen --copy --yes
 ```
+
+For a user installation, add `--global`:
+
+```text
+npx --yes skills@latest add /path/to/openai-compatible-imagegen --global --agent codex --skill openai-compatible-imagegen --copy --yes
+```
+
+The source directory must contain `SKILL.md` at its root together with `scripts/`, `references/`, `examples/`, and `agents/`. Do not pass the repository root. A repository-root install copies Plugin, MCP, Widget, test, and documentation files into the Skill target.
+
+Both commands use `skills@latest` so new installations receive the current CLI. The `1.0.2` release verification covered copied installation and discovery at both project and user scope. Project installation creates a project `skills-lock.json`; user installation does not create that project lock file.
+
+Use this CLI route only for the first installation. Local copied installs have these maintenance limits:
+
+- `skills update` does not update a Skill copied from a local extracted directory at either scope.
+- Running `skills add` again replaces the installed directory and removes its local `auth.json`.
+- Project-level `skills remove` can report success while leaving the copied directory, project lock entry, and list result in place.
+- User-level `skills remove --global` removed the copied directory and list entry during the `1.0.2` verification.
+- Output files outside the installed Skill directory are not managed by these CLI operations.
+
+For an update or rollback, preserve the current installation and `auth.json`, extract the target version to a new directory, and follow the [Standalone rollback flow](./rollback.md#roll-back-the-standalone-skill). Keep generated outputs outside the installed Skill directory.
 
 ## Installation result
 

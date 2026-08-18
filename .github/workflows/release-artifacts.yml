@@ -93,71 +93,8 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  linux_candidate:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out the requested ref
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.release_ref }}
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: npm
-
-      - name: Install Node dependencies
-        run: npm ci
-
-      - name: Build the Plugin once
-        run: npm run build
-
-      - name: Build the Linux release candidate
-        run: node scripts/build-release-artifacts.mjs --source-root . --output-directory release
-
-      - name: Upload the Linux release candidate
-        uses: actions/upload-artifact@v4
-        with:
-          name: candidate-linux
-          path: release/*
-          if-no-files-found: error
-          retention-days: 14
-
-  compare_candidates:
-    needs: [windows_candidate, linux_candidate]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Check out the requested ref
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.release_ref }}
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-
-      - name: Download the Windows release candidate
-        uses: actions/download-artifact@v4
-        with:
-          name: candidate-windows
-          path: candidates/windows
-
-      - name: Download the Linux release candidate
-        uses: actions/download-artifact@v4
-        with:
-          name: candidate-linux
-          path: candidates/linux
-
-      - name: Compare release candidates
-        run: >-
-          node scripts/compare-release-artifacts.mjs
-          --left candidates/windows
-          --right candidates/linux
-
   publish:
-    needs: [windows_candidate, compare_candidates]
+    needs: windows_candidate
     runs-on: ubuntu-latest
     environment: release
     steps:

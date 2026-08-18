@@ -1,4 +1,4 @@
-export function createEditorToast({ root, window, isActive, onFallback }) {
+export function createEditorToast({ root, window, isActive, onFallback, localize = (value) => value }) {
   let dismissalTimer = null;
 
   function show(message) {
@@ -7,7 +7,7 @@ export function createEditorToast({ root, window, isActive, onFallback }) {
       onFallback(message);
       return;
     }
-    element.textContent = message;
+    element.textContent = localize(message);
     element.classList.add("visible");
     if (dismissalTimer !== null) window.clearTimeout(dismissalTimer);
     dismissalTimer = window.setTimeout(() => {

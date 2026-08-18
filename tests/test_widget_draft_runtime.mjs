@@ -13,6 +13,80 @@ import {
   waitFor,
 } from "./support/widget-runtime-host.mjs";
 
+test("editor changes are saved automatically after the debounce window", { timeout: 5000 }, async () => {
+  const dom = new JSDOM(
+    '<!doctype html><html><body><main><p>正在加载图片...</p></main></body></html>',
+    { pretendToBeVisual: true, url: "https://widget.local/" },
+  );
+  const previous = installDomGlobals(dom.window);
+  const host = installHost(dom.window, { toolName: "open_image_editor" });
+
+  try {
+    await import(`../web/editor-runtime.mjs?draft-autosave=${Date.now()}`);
+    await waitFor(() => document.querySelector("[data-image]")?.hidden === false);
+    const prompt = document.querySelector("[data-prompt]");
+    prompt.value = "防抖后自动保存";
+    prompt.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+
+    assert.equal(host.toolCalls.some(({ name }) => name === "save_image_editor_draft"), false);
+    await waitFor(() => host.toolCalls.some(({ name }) => name === "save_image_editor_draft"), 1500);
+    const saves = host.toolCalls.filter(({ name }) => name === "save_image_editor_draft");
+    assert.equal(saves.length, 1);
+    assert.deepEqual(saves[0].arguments.draft, { annotations: [], prompt: "防抖后自动保存" });
+  } finally {
+    host.dispose();
+    restoreDomGlobals(previous);
+    dom.window.close();
+  }
+});
+
+test("a new editor widget restores the draft returned by open_image_editor", async () => {
+  const draft = {
+    annotations: [{
+      id: "rectangle_1",
+      type: "rectangle",
+      x: 0.1,
+      y: 0.2,
+      width: 0.3,
+      height: 0.4,
+      color: "#22c55e",
+      strokeWidth: 3,
+      text: "保留这个矩形区域",
+    }],
+    prompt: "背景改为浅灰色",
+  };
+  const dom = new JSDOM(
+    '<!doctype html><html><body><main><p>正在加载图片...</p></main></body></html>',
+    { pretendToBeVisual: true, url: "https://widget.local/" },
+  );
+  const previous = installDomGlobals(dom.window);
+  const host = installHost(dom.window, { toolName: "open_image_editor", initialEditorDraft: draft });
+
+  try {
+    await import(`../web/editor-runtime.mjs?draft-restore=${Date.now()}`);
+    await waitFor(() => document.querySelector("[data-image]")?.hidden === false);
+
+    const restored = document.querySelector("[data-annotation-id='rectangle_1']");
+    assert.ok(restored);
+    assert.equal(restored.querySelector("textarea")?.value, "保留这个矩形区域");
+    assert.equal(document.querySelector("[data-prompt]")?.value, "背景改为浅灰色");
+    assert.equal(document.querySelector("[data-layer] rect")?.getAttribute("stroke-width"), "3");
+    assert.deepEqual(
+      [
+        document.querySelector("[data-layer] rect")?.getAttribute("x"),
+        document.querySelector("[data-layer] rect")?.getAttribute("y"),
+        document.querySelector("[data-layer] rect")?.getAttribute("width"),
+        document.querySelector("[data-layer] rect")?.getAttribute("height"),
+      ],
+      ["100", "200", "300", "400"],
+    );
+  } finally {
+    host.dispose();
+    restoreDomGlobals(previous);
+    dom.window.close();
+  }
+});
+
 test("current Codex host stages annotations and prompt in one composer payload", async () => {
   const dom = new JSDOM(
     '<!doctype html><html><body><main><p>正在加载图片...</p></main></body></html>',

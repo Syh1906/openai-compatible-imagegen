@@ -1,5 +1,7 @@
 # Documentation
 
+Language: [简体中文](./README.zh-CN.md)
+
 Use these guides to install, configure, migrate, restore, or troubleshoot OpenAI-Compatible Images.
 
 ## User guides

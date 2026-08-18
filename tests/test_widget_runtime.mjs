@@ -21,7 +21,6 @@ import {
 
 
 
-
 test("the render result opens the selected candidate after server-backed artifact reads", async () => {
   const secondId = "img_01J00000000000000000000001";
   const dom = new JSDOM(
@@ -519,10 +518,14 @@ test("a failed host-handoff draft save keeps the editor open without closing its
     await waitFor(() => document.querySelector("[data-action=open-editor]")?.disabled === false);
     document.querySelector("[data-action=open-editor]").click();
     await waitFor(() => document.querySelector(".editor-app") !== null);
+    const prompt = document.querySelector("[data-prompt]");
+    prompt.value = "Keep the subject unchanged";
+    prompt.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
 
     host.notifyHostContext("inline");
 
-    await waitFor(() => document.querySelector("[data-toast]")?.textContent === "Codex 未能保存并关闭当前画布");
+    await waitFor(() => document.querySelector("[data-toast]")?.classList.contains("visible"));
+    assert.equal(document.querySelector("[data-toast]")?.textContent, "Codex 未能保存并关闭当前画布");
     assert.equal(host.teardownRequests, 0);
     assert.notEqual(document.querySelector(".editor-app"), null);
   } finally {

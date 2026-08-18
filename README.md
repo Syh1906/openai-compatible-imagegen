@@ -56,6 +56,20 @@ To install a versioned Plugin ZIP from GitHub Releases, follow the [local Plugin
 
 Download `openai-compatible-imagegen-skill-<version>.zip` from [GitHub Releases](https://github.com/Syh1906/openai-compatible-imagegen/releases). Extract it into your client's skills directory so `SKILL.md` is at the package root, then start a new session.
 
+For the third-party [`skills`](https://www.npmjs.com/package/skills) CLI, extract the Standalone ZIP first and pass the extracted `openai-compatible-imagegen` directory as the package source. Install it for the current project by default:
+
+```text
+npx --yes skills@latest add /path/to/openai-compatible-imagegen --agent codex --skill openai-compatible-imagegen --copy --yes
+```
+
+Add `--global` to make the Skill available to the current user across projects:
+
+```text
+npx --yes skills@latest add /path/to/openai-compatible-imagegen --global --agent codex --skill openai-compatible-imagegen --copy --yes
+```
+
+Do not pass this repository root to the CLI. Use the Skills CLI only for the first installation of an extracted Standalone archive. For scope, updates, rollback, and removal behavior, follow the [Standalone installation guide](docs/guides/installation.md#install-with-the-third-party-skills-cli).
+
 [Standalone installation paths and setup](docs/guides/installation.md#install-the-standalone-skill)
 
 ## What it does
@@ -85,28 +99,7 @@ The Plugin presents results and canvas actions in Codex App. The Standalone Skil
 
 ## Documentation
 
-| Task | Guide |
-| --- | --- |
-| Choose and install a package | [Installation](docs/guides/installation.md) |
-| Connect a provider and model | [Configuration](docs/guides/configuration.md) |
-| Move from an older installation | [Migration](docs/guides/migration.md) |
-| Restore a released version | [Rollback](docs/guides/rollback.md) |
-| Diagnose install or runtime errors | [Troubleshooting](docs/guides/troubleshooting.md) |
-| Understand repository boundaries | [Architecture](docs/arch.md) |
-| Browse all public docs | [Documentation index](docs/README.md) |
-
-## For AI agents
-
-- Installing for a user: read [the installation guide](docs/guides/installation.md), then stop before handling credentials.
-- Configuring an installed package: read [the configuration guide](docs/guides/configuration.md).
-- Maintaining this repository: read [AGENTS.md](AGENTS.md) before changing code or docs.
-- Running image work: use the installed package's `SKILL.md`; it is the runtime tool-routing contract.
-
-Raw installation guide for Agent handoff:
-
-```text
-https://raw.githubusercontent.com/Syh1906/openai-compatible-imagegen/main/docs/guides/installation.md
-```
+Use the [documentation index](docs/README.md) to find installation, configuration, migration, rollback, troubleshooting, and architecture guides.
 
 ## Security
 

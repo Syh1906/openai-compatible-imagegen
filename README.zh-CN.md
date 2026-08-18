@@ -21,7 +21,7 @@ OpenAI 兼容图片把同一套图片核心发布为两种安装形态。Standal
 | **Standalone Skill** | Codex CLI、Claude Code、OpenCode 和其他 Agent Skills 客户端 | 生成、编辑、JSONL 批处理、透明处理、交付和 QA |
 | **Codex Plugin** | 需要完整图片工作流的 Codex App 用户 | 共享能力，以及 MCP 工具、结果卡、画布编辑、产物和版本 |
 
-每个使用环境选择一种安装形态。两者共享代码和版本，但使用各自的本地配置与产物目录。将已有配置迁移到 Codex Plugin 时，请按[迁移指南](docs/guides/migration.md)操作。
+每个使用环境选择一种安装形态。两者共享代码和版本，但使用各自的本地配置与产物目录。将已有配置迁移到 Codex Plugin 时，请按[迁移指南](docs/guides/migration.zh-CN.md)操作。
 
 ## Codex App 工作流
 
@@ -48,15 +48,29 @@ codex plugin add openai-compatible-imagegen@openai-compatible-imagegen
 
 Git-backed 安装已经包含 MCP server 和 widget，不需要构建仓库或启动本地 Web 服务。
 
-需要从 GitHub Releases 安装指定版本的 Plugin ZIP 时，请按[本地 Plugin ZIP 安装流程](docs/guides/installation.md#install-from-the-plugin-zip)操作。
+需要从 GitHub Releases 安装指定版本的 Plugin ZIP 时，请按[本地 Plugin ZIP 安装流程](docs/guides/installation.zh-CN.md#从-plugin-zip-安装)操作。
 
-[Plugin 安装与配置](docs/guides/installation.md#install-the-codex-plugin)
+[Plugin 安装与配置](docs/guides/installation.zh-CN.md#安装-codex-plugin)
 
 ## 安装 Standalone Skill
 
 从 [GitHub Releases](https://github.com/Syh1906/openai-compatible-imagegen/releases) 下载 `openai-compatible-imagegen-skill-<version>.zip`。解压到客户端的 skills 目录，确保包根存在 `SKILL.md`，再启动新会话。
 
-[Standalone 安装路径与设置](docs/guides/installation.md#install-the-standalone-skill)
+如果使用第三方 [`skills`](https://www.npmjs.com/package/skills) CLI，请先解压 Standalone ZIP，再把解压后的 `openai-compatible-imagegen` 目录作为包源。默认安装到当前项目：
+
+```text
+npx --yes skills@latest add /path/to/openai-compatible-imagegen --agent codex --skill openai-compatible-imagegen --copy --yes
+```
+
+增加 `--global` 可安装到当前用户，在多个项目中使用：
+
+```text
+npx --yes skills@latest add /path/to/openai-compatible-imagegen --global --agent codex --skill openai-compatible-imagegen --copy --yes
+```
+
+不要把本仓库根目录直接交给 CLI。Skills CLI 只用于首次安装已解压的 Standalone 压缩包。作用域、更新、回滚和卸载行为见 [Standalone 安装指南](docs/guides/installation.zh-CN.md#使用第三方-skills-cli-安装)。
+
+[Standalone 安装路径与设置](docs/guides/installation.zh-CN.md#安装-standalone-skill)
 
 ## 能做什么
 
@@ -85,28 +99,7 @@ Codex Plugin 在 App 中显示结果与画布操作。Standalone Skill 调用包
 
 ## 文档
 
-| 任务 | 指南 |
-| --- | --- |
-| 选择并安装 | [安装指南](docs/guides/installation.md) |
-| 连接 provider 和 model | [配置指南](docs/guides/configuration.md) |
-| 从旧版安装迁移 | [迁移指南](docs/guides/migration.md) |
-| 恢复已发布版本 | [回滚指南](docs/guides/rollback.md) |
-| 排查安装和运行错误 | [故障排查](docs/guides/troubleshooting.md) |
-| 理解仓库边界 | [架构说明](docs/arch.md) |
-| 浏览全部公开文档 | [文档导航](docs/README.md) |
-
-## 给 Agent 的入口
-
-- 替用户安装：读取 [安装指南](docs/guides/installation.md)，处理凭据前停止并交还用户。
-- 配置已安装包：读取 [配置指南](docs/guides/configuration.md)。
-- 维护仓库：修改代码或文档前读取 [AGENTS.md](AGENTS.md)。
-- 执行图片任务：使用已安装包中的 `SKILL.md`，它是运行时工具路由契约。
-
-可直接交给 Agent 的原始安装指南：
-
-```text
-https://raw.githubusercontent.com/Syh1906/openai-compatible-imagegen/main/docs/guides/installation.md
-```
+通过[文档导航](docs/README.zh-CN.md)查找安装、配置、迁移、回滚、故障排查和架构说明。
 
 ## 安全
 

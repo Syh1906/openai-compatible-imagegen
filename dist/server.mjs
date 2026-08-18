@@ -51,7 +51,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 var define_RELEASE_IDENTITY_default;
 var init_define_RELEASE_IDENTITY = __esm({
   "<define:__RELEASE_IDENTITY__>"() {
-    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "1.0.1", serverBuildDigest: "79976ef4d588aa9f9ff063f02a224ba41f6cd9c4c983a1cfba8e8155ca396bd5", widgetAssetDigest: "a83b84f2d69c8879c8a3b78950873da104ba1526e4475a9259c94ee0bc4da522", fingerprint: "42626c31e3ae31545f3b", resourceUris: { result: "ui://openai-compatible-imagegen/result-42626c31e3ae31545f3b.html", editor: "ui://openai-compatible-imagegen/editor-42626c31e3ae31545f3b.html" } };
+    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "1.0.2", serverBuildDigest: "8179c0e31f42c47fe139cc6452dbd77b9a7cc39a5530e160b0319a45890662d7", widgetAssetDigest: "2462240903056504eb47eeab00934805bc7f635b5afc2d8f6d6587a6db8151dd", fingerprint: "0979feecd94659a6ef2f", resourceUris: { result: "ui://openai-compatible-imagegen/result-0979feecd94659a6ef2f.html", editor: "ui://openai-compatible-imagegen/editor-0979feecd94659a6ef2f.html" } };
   }
 });
 
@@ -32480,8 +32480,8 @@ init_define_RELEASE_IDENTITY();
 
 // mcp/image-tool-schemas.mjs
 init_define_RELEASE_IDENTITY();
-var imageIdSchema = external_exports2.string().regex(/^img_[0-9A-HJKMNP-TV-Z]{26}$/).describe("\u9879\u76EE\u4EA7\u7269\u4ED3\u5E93\u4E2D\u7684\u7A33\u5B9A\u56FE\u7247 ID");
-var batchIdSchema = external_exports2.string().regex(/^batch_[0-9A-HJKMNP-TV-Z]{26}$/).describe("\u4E0D\u53EF\u53D8\u6279\u5904\u7406 manifest ID");
+var imageIdSchema = external_exports2.string().regex(/^img_[0-9A-HJKMNP-TV-Z]{26}$/).describe("Stable image ID in the project artifact repository");
+var batchIdSchema = external_exports2.string().regex(/^batch_[0-9A-HJKMNP-TV-Z]{26}$/).describe("Immutable batch manifest ID");
 var deliveryReceiptIdSchema = external_exports2.string().regex(/^delivery_[0-9a-f]{64}$/);
 var outputSchema = {
   size: external_exports2.string().optional(),
@@ -34942,8 +34942,8 @@ function observationError(code) {
 init_define_RELEASE_IDENTITY();
 function registerConfigTools(server2, configManager, toolError2) {
   server2.registerTool("initialize_image_config", {
-    title: "\u521D\u59CB\u5316\u56FE\u7247\u914D\u7F6E",
-    description: "\u5728\u56FA\u5B9A\u7528\u6237\u8DEF\u5F84\u521B\u5EFA\u4E00\u6B21\u56FE\u7247\u914D\u7F6E\u6A21\u677F\uFF1B\u5DF2\u6709\u914D\u7F6E\u4E0D\u4F1A\u88AB\u8986\u76D6\u3002\u7528\u6237\u914D\u7F6E\u76EE\u5F55\u59CB\u7EC8\u521B\u5EFA\u53EA\u542B * \u7684\u672C\u5730 .gitignore\uFF1B\u4F20\u5165\u9879\u76EE\u6839\u76EE\u5F55\u65F6\u4E5F\u4FDD\u62A4\u9879\u76EE\u914D\u7F6E\u76EE\u5F55\u3002\u6A21\u677F\u9996\u9009 api_key_env\u3002",
+    title: "Initialize image configuration",
+    description: "Create an image configuration template at the fixed user path without overwriting an existing file. Protect user and optional project configuration directories with a local .gitignore containing only *, and prefer api_key_env in the template.",
     inputSchema: { projectRoot: external_exports2.string().min(1).optional() },
     outputSchema: external_exports2.object({ created: external_exports2.literal(true), path: external_exports2.string().min(1), config: external_exports2.record(external_exports2.any()), gitignoreUpdated: external_exports2.boolean() }).strict(),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }
@@ -34956,8 +34956,8 @@ function registerConfigTools(server2, configManager, toolError2) {
     }
   });
   server2.registerTool("inspect_image_config", {
-    title: "\u67E5\u8BE2\u56FE\u7247\u914D\u7F6E",
-    description: "\u67E5\u8BE2\u7528\u6237\u914D\u7F6E\u53CA\u53EF\u9009\u9879\u76EE\u8986\u76D6\u7684\u8131\u654F\u5185\u5BB9\u548C\u56FA\u5B9A\u8DEF\u5F84\uFF0C\u4E0D\u8FD4\u56DE api_key \u6216\u5176\u4ED6\u51ED\u636E\u3002",
+    title: "Inspect image configuration",
+    description: "Return redacted user configuration, optional project overrides, and fixed paths without returning api_key or other credentials.",
     inputSchema: { projectRoot: external_exports2.string().min(1).optional() },
     outputSchema: external_exports2.object({ user: external_exports2.record(external_exports2.any()), project: external_exports2.record(external_exports2.any()) }).strict(),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
@@ -34970,8 +34970,8 @@ function registerConfigTools(server2, configManager, toolError2) {
     }
   });
   server2.registerTool("update_image_config", {
-    title: "\u4FEE\u6539\u56FE\u7247\u914D\u7F6E",
-    description: "\u6309\u914D\u7F6E\u767D\u540D\u5355\u4FEE\u6539\u7528\u6237\u914D\u7F6E\u6216\u9879\u76EE\u8986\u76D6\uFF0C\u5E76\u786E\u4FDD\u76EE\u6807\u914D\u7F6E\u76EE\u5F55\u5305\u542B\u53EA\u542B * \u7684\u672C\u5730 .gitignore\u3002\u7528\u6237\u660E\u786E\u8981\u6C42\u65F6\u53EF\u5199\u5165\u7528\u6237\u7EA7 api_key\uFF0C\u4F46\u7ED3\u679C\u59CB\u7EC8\u8131\u654F\uFF1B\u9879\u76EE\u4F5C\u7528\u57DF\u7981\u6B62\u5BC6\u94A5\u4E14\u53EA\u80FD\u4FEE\u6539\u5B89\u5168\u8986\u76D6\u5B57\u6BB5\u3002\u4FEE\u6539\u540E\u9700\u91CD\u65B0\u7ED1\u5B9A\u9879\u76EE\u3002",
+    title: "Update image configuration",
+    description: "Update allowlisted user or project configuration fields and protect the target configuration directory with a local .gitignore containing only *. User-level api_key writes require an explicit request and remain redacted; project scope rejects credentials and non-allowlisted fields. Rebind the project after an update.",
     inputSchema: { scope: external_exports2.enum(["user", "project"]).default("user"), projectRoot: external_exports2.string().min(1).optional(), changes: external_exports2.record(external_exports2.any()) },
     outputSchema: external_exports2.object({ scope: external_exports2.enum(["user", "project"]), path: external_exports2.string().min(1), config: external_exports2.record(external_exports2.any()) }).strict(),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }
@@ -34990,8 +34990,8 @@ var legacyWidgetResourceFingerprints = [
   "43c3a69a85db10633692",
   "9caad8c28a921a55611b"
 ];
-var editorSessionIdSchema = external_exports2.string().regex(/^eds_[0-9a-f]{32}$/).describe("\u5DF2\u6253\u5F00\u753B\u5E03\u7684\u4F1A\u8BDD ID");
-var projectBindingIdSchema = external_exports2.string().regex(/^pbind_[0-9a-f]{64}$/).describe("\u56FE\u7247\u9879\u76EE\u7ED1\u5B9A ID");
+var editorSessionIdSchema = external_exports2.string().regex(/^eds_[0-9a-f]{32}$/).describe("Open canvas session ID");
+var projectBindingIdSchema = external_exports2.string().regex(/^pbind_[0-9a-f]{64}$/).describe("Image project binding ID");
 var projectBindingInputSchema = { projectBindingId: projectBindingIdSchema };
 var annotationIdSchema = external_exports2.string().regex(/^ann_[0-9A-HJKMNP-TV-Z]{26}$/);
 var submissionIdSchema = external_exports2.string().regex(/^sub_[0-9a-f]{32}$/);
@@ -35210,32 +35210,32 @@ function createImagegenServer({
   registerWidgetResource(server2, {
     name: "image-result",
     uri: resultWidgetUri,
-    title: "\u56FE\u7247\u7ED3\u679C",
-    description: "\u5728\u4F1A\u8BDD\u7ED3\u679C\u4E2D\u6301\u7EED\u663E\u793A\u56FE\u7247\uFF0C\u5E76\u63D0\u4F9B\u5728\u540C\u4E00\u5BBF\u4E3B\u5B9E\u4F8B\u5C55\u5F00\u805A\u7126\u753B\u5E03\u7684\u5165\u53E3\u3002",
+    title: "Image results",
+    description: "Keep images visible in the conversation result and provide an entry point to the focused canvas in the same host instance.",
     releaseIdentity,
     readWidgetHtml
   });
   registerWidgetResource(server2, {
     name: "image-editor",
     uri: editorWidgetUri,
-    title: "\u56FE\u7247\u7F16\u8F91\u753B\u5E03",
-    description: "\u4E3A\u4F1A\u8BDD\u56FE\u7247\u7ED3\u679C\u5C55\u5F00\u4E0E\u7A33\u5B9A\u56FE\u7247 ID \u7ED1\u5B9A\u7684\u805A\u7126\u753B\u5E03\u3002",
+    title: "Image editing canvas",
+    description: "Open a focused canvas bound to a stable image ID from a conversation result.",
     releaseIdentity,
     readWidgetHtml
   });
   registerWidgetResource(server2, {
     name: "image-result-legacy-stable",
     uri: `ui://${releaseIdentity.pluginId}/result.html`,
-    title: "\u56FE\u7247\u7ED3\u679C",
-    description: "\u5728\u4F1A\u8BDD\u7ED3\u679C\u4E2D\u6301\u7EED\u663E\u793A\u56FE\u7247\uFF0C\u5E76\u63D0\u4F9B\u5728\u540C\u4E00\u5BBF\u4E3B\u5B9E\u4F8B\u5C55\u5F00\u805A\u7126\u753B\u5E03\u7684\u5165\u53E3\u3002",
+    title: "Image results",
+    description: "Keep images visible in the conversation result and provide an entry point to the focused canvas in the same host instance.",
     releaseIdentity,
     readWidgetHtml
   });
   registerWidgetResource(server2, {
     name: "image-editor-legacy-stable",
     uri: `ui://${releaseIdentity.pluginId}/editor.html`,
-    title: "\u56FE\u7247\u7F16\u8F91\u753B\u5E03",
-    description: "\u4E3A\u4F1A\u8BDD\u56FE\u7247\u7ED3\u679C\u5C55\u5F00\u4E0E\u7A33\u5B9A\u56FE\u7247 ID \u7ED1\u5B9A\u7684\u805A\u7126\u753B\u5E03\u3002",
+    title: "Image editing canvas",
+    description: "Open a focused canvas bound to a stable image ID from a conversation result.",
     releaseIdentity,
     readWidgetHtml
   });
@@ -35243,16 +35243,16 @@ function createImagegenServer({
     registerWidgetResource(server2, {
       name: `image-result-legacy-${fingerprint}`,
       uri: `ui://${releaseIdentity.pluginId}/result-${fingerprint}.html`,
-      title: "\u56FE\u7247\u7ED3\u679C",
-      description: "\u5728\u4F1A\u8BDD\u7ED3\u679C\u4E2D\u6301\u7EED\u663E\u793A\u56FE\u7247\uFF0C\u5E76\u63D0\u4F9B\u5728\u540C\u4E00\u5BBF\u4E3B\u5B9E\u4F8B\u5C55\u5F00\u805A\u7126\u753B\u5E03\u7684\u5165\u53E3\u3002",
+      title: "Image results",
+      description: "Keep images visible in the conversation result and provide an entry point to the focused canvas in the same host instance.",
       releaseIdentity,
       readWidgetHtml
     });
     registerWidgetResource(server2, {
       name: `image-editor-legacy-${fingerprint}`,
       uri: `ui://${releaseIdentity.pluginId}/editor-${fingerprint}.html`,
-      title: "\u56FE\u7247\u7F16\u8F91\u753B\u5E03",
-      description: "\u4E3A\u4F1A\u8BDD\u56FE\u7247\u7ED3\u679C\u5C55\u5F00\u4E0E\u7A33\u5B9A\u56FE\u7247 ID \u7ED1\u5B9A\u7684\u805A\u7126\u753B\u5E03\u3002",
+      title: "Image editing canvas",
+      description: "Open a focused canvas bound to a stable image ID from a conversation result.",
       releaseIdentity,
       readWidgetHtml
     });
@@ -35260,8 +35260,8 @@ function createImagegenServer({
   server2.registerTool(
     "bind_imagegen_project",
     {
-      title: "\u7ED1\u5B9A\u56FE\u7247\u9879\u76EE",
-      description: "\u628A\u5F53\u524D\u4EFB\u52A1\u7ED1\u5B9A\u5230\u4E00\u4E2A\u5DF2\u5B58\u5728\u7684\u7EDD\u5BF9\u9879\u76EE\u6839\u76EE\u5F55\uFF0C\u786E\u4FDD\u5B9E\u9645\u56FE\u7247\u4EA7\u7269\u76EE\u5F55\u5305\u542B\u53EA\u542B * \u7684\u672C\u5730 .gitignore\uFF0C\u5E76\u8FD4\u56DE\u4F9B\u540E\u7EED\u6A21\u578B\u4E0E App-only \u5DE5\u5177\u8DE8 MCP \u8FDB\u7A0B\u4F7F\u7528\u7684\u56FE\u7247\u9879\u76EE\u7ED1\u5B9A ID\u3002\u914D\u7F6E\u53D8\u5316\u540E\u643A\u5E26\u540C\u4E00\u7ED1\u5B9A ID \u518D\u6B21\u7ED1\u5B9A\u53EF\u66F4\u65B0\u914D\u7F6E\u6458\u8981\u3002",
+      title: "Bind image project",
+      description: "Bind the current task to an existing absolute project root, protect the resolved artifact directory with a local .gitignore containing only *, and return an image project binding ID for later model and app-only tools across MCP processes. Rebind with the same ID after configuration changes.",
       inputSchema: {
         projectRoot: external_exports2.string().min(1),
         projectBindingId: projectBindingIdSchema.optional()
@@ -35293,8 +35293,8 @@ function createImagegenServer({
   server2.registerTool(
     "inspect_imagegen_runtime",
     {
-      title: "\u68C0\u67E5\u56FE\u7247\u8FD0\u884C\u73AF\u5883",
-      description: "\u8FD4\u56DE\u5F53\u524D MCP server\u3001\u542F\u52A8\u6839\u5173\u7CFB\u548C\u5BA2\u6237\u7AEF roots \u80FD\u529B\u7684\u8131\u654F\u8BCA\u65AD\u4FE1\u606F\uFF0C\u4E0D\u8FD4\u56DE\u672C\u673A\u8DEF\u5F84\u6216 root URI\u3002",
+      title: "Inspect image runtime",
+      description: "Return redacted diagnostics for the MCP server, startup-root relationships, and client roots capability without returning local paths or root URIs.",
       inputSchema: { projectBindingId: projectBindingIdSchema.optional() },
       outputSchema: {
         hostObservationReport: hostObservationReportOutputSchema,
@@ -35344,8 +35344,8 @@ function createImagegenServer({
   server2.registerTool(
     "report_imagegen_host_observation",
     {
-      title: "\u8BB0\u5F55\u56FE\u7247\u5DE5\u4F5C\u53F0\u5BBF\u4E3B\u5F62\u72B6",
-      description: "\u8BB0\u5F55\u5F53\u524D\u53D1\u5E03\u7248\u672C\u4E0B\u4E24\u7C7B\u6807\u51C6\u5BBF\u4E3B\u7ED3\u679C\u7684\u8131\u654F\u7ED3\u6784\u3002\u8BE5\u62A5\u544A\u53EA\u80FD\u6807\u8BB0\u4E3A\u672A\u9A8C\u8BC1\u7684 widget \u4E0A\u62A5\uFF0C\u4E0D\u662F\u5BBF\u4E3B\u6765\u6E90\u8BC1\u660E\uFF1B\u4E0D\u8BB0\u5F55\u56FE\u7247\u3001\u6587\u672C\u503C\u3001\u672C\u673A\u8DEF\u5F84\u6216\u5BA2\u6237\u7AEF\u8EAB\u4EFD\u3002",
+      title: "Report image host observation",
+      description: "Record redacted structure for the two standard host results in the current release. The report remains an unverified widget observation, not proof of host provenance, and excludes images, text values, local paths, and client identity.",
       inputSchema: {
         ...projectBindingInputSchema,
         releaseFingerprint: fingerprintSchema,
@@ -35401,8 +35401,8 @@ function createImagegenServer({
   server2.registerTool(
     "list_image_models",
     {
-      title: "\u8BFB\u53D6\u56FE\u7247\u6A21\u578B",
-      description: "\u8FD4\u56DE\u5F53\u524D\u56FE\u7247\u914D\u7F6E\u4E2D\u53EF\u7528\u7684\u56FE\u7247\u6A21\u578B\u53CA\u5B89\u5168\u80FD\u529B\u58F0\u660E\u3002",
+      title: "List image models",
+      description: "Return image models and safe capability declarations from the current image configuration.",
       inputSchema: { ...projectBindingInputSchema },
       outputSchema: external_exports2.object({ models: external_exports2.array(imageModelOutputSchema) }).strict(),
       annotations: readAnnotations()
@@ -35427,8 +35427,8 @@ function createImagegenServer({
   server2.registerTool(
     "generate_image",
     {
-      title: "\u751F\u6210\u56FE\u7247",
-      description: "\u4F7F\u7528\u5DF2\u914D\u7F6E\u7684 gpt-image-2 \u751F\u6210\u4E00\u5F20\u6216\u591A\u5F20\u72EC\u7ACB\u5019\u9009\u56FE\u7247\u3002\u591A\u5019\u9009\u7531\u8FD0\u884C\u65F6\u6309\u987A\u5E8F\u6267\u884C\u7B49\u91CF\u5355\u56FE\u8BF7\u6C42\uFF0C\u5168\u90E8\u6210\u529F\u540E\u624D\u8FD4\u56DE\u6574\u7EC4\u3002",
+      title: "Generate images",
+      description: "Generate one or more independent candidate images with the configured gpt-image-2 model. Multiple candidates run as ordered single-image requests and return only after the full group succeeds.",
       inputSchema: {
         ...projectBindingInputSchema,
         prompt: external_exports2.string().min(1),
@@ -35457,8 +35457,8 @@ function createImagegenServer({
   server2.registerTool(
     "edit_image",
     {
-      title: "\u7F16\u8F91\u56FE\u7247",
-      description: "\u57FA\u4E8E\u7236\u56FE\u7247\u548C\u63D0\u793A\u521B\u5EFA\u65B0\u7684\u4E0D\u53EF\u53D8\u56FE\u7247\u7248\u672C\u3002",
+      title: "Edit image",
+      description: "Create a new immutable image version from a parent image and prompt.",
       inputSchema: {
         ...projectBindingInputSchema,
         parentImageId: imageIdSchema,
@@ -35595,8 +35595,8 @@ function createImagegenServer({
   server2.registerTool(
     "batch_images",
     {
-      title: "\u6279\u91CF\u5904\u7406\u56FE\u7247",
-      description: "\u6267\u884C\u4E00\u7EC4\u76F8\u4E92\u72EC\u7ACB\u7684\u751F\u6210\u548C\u666E\u901A\u7F16\u8F91\u4EFB\u52A1\uFF1B\u7ED3\u679C\u6309\u8F93\u5165\u987A\u5E8F\u9010\u9879\u8FD4\u56DE\uFF0C\u5141\u8BB8\u90E8\u5206\u6210\u529F\uFF0C\u4E0D\u81EA\u52A8\u5C55\u793A\u56FE\u7247\u3002",
+      title: "Batch image tasks",
+      description: "Run independent generation and standard edit tasks, return ordered per-item results with partial success, and do not display images automatically.",
       inputSchema: {
         ...projectBindingInputSchema,
         items: batchItemsSchema,
@@ -35643,8 +35643,8 @@ function createImagegenServer({
   server2.registerTool(
     "get_image_batch_manifest",
     {
-      title: "\u8BFB\u53D6\u6279\u5904\u7406\u8BB0\u5F55",
-      description: "\u6309\u7A33\u5B9A\u6279\u6B21 ID \u8BFB\u53D6\u4E0D\u53EF\u53D8\u6279\u5904\u7406 manifest\uFF1B\u8FD4\u56DE\u9010\u9879\u539F\u56FE\u3001\u4EA4\u4ED8\u6536\u636E\u548C\u9519\u8BEF\u72B6\u6001\uFF0C\u4E0D\u81EA\u52A8\u5C55\u793A\u56FE\u7247\u3002",
+      title: "Get image batch manifest",
+      description: "Read an immutable batch manifest by stable batch ID, including per-item originals, delivery receipts, and errors, without displaying images automatically.",
       inputSchema: { ...projectBindingInputSchema, batchId: batchIdSchema },
       outputSchema: batchManifestOutputSchema,
       annotations: readAnnotations()
@@ -35654,8 +35654,8 @@ function createImagegenServer({
   server2.registerTool(
     "get_image_delivery_receipt",
     {
-      title: "\u8BFB\u53D6\u56FE\u7247\u4EA4\u4ED8\u8BB0\u5F55",
-      description: "\u6309\u7A33\u5B9A\u4EA4\u4ED8\u6536\u636E ID \u8BFB\u53D6\u4E0D\u53EF\u53D8\u6D3E\u751F\u4EA7\u7269\u548C QA \u6458\u8981\uFF1B\u4E0D\u81EA\u52A8\u5C55\u793A\u56FE\u7247\u3002",
+      title: "Get image delivery receipt",
+      description: "Read immutable derived artifacts and QA summaries by stable delivery receipt ID without displaying images automatically.",
       inputSchema: { ...projectBindingInputSchema, deliveryReceiptId: deliveryReceiptIdSchema },
       outputSchema: imageDeliveryOutputSchema,
       annotations: readAnnotations()
@@ -35665,8 +35665,8 @@ function createImagegenServer({
   server2.registerTool(
     "deliver_image",
     {
-      title: "\u4EA4\u4ED8\u56FE\u7247",
-      description: "\u57FA\u4E8E\u7A33\u5B9A\u56FE\u7247 ID \u6267\u884C\u672C\u5730\u7CBE\u786E\u5C3A\u5BF8\u3001\u7F51\u683C\u3001\u9884\u89C8\u677F\u548C QA \u4EA4\u4ED8\uFF1B\u539F\u56FE\u4FDD\u6301\u4E0D\u53D8\uFF0C\u6D3E\u751F\u56FE\u5355\u72EC\u5B58\u50A8\uFF0C\u7ED3\u679C\u4E0D\u4F1A\u81EA\u52A8\u6302\u8F7D\u56FE\u7247\u753B\u5E03\u3002",
+      title: "Deliver image",
+      description: "Run local exact-size, grid, preview-board, and QA delivery for a stable image ID. Keep the original immutable, store derivatives separately, and do not attach a canvas automatically.",
       inputSchema: {
         ...projectBindingInputSchema,
         imageId: imageIdSchema,
@@ -35730,8 +35730,8 @@ function createImagegenServer({
   server2.registerTool(
     "get_image_artifact",
     {
-      title: "\u8BFB\u53D6\u56FE\u7247\u4EA7\u7269",
-      description: "\u6309\u7A33\u5B9A\u56FE\u7247 ID \u8BFB\u53D6\u56FE\u7247\u5185\u5BB9\u3001\u5B89\u5168\u5143\u6570\u636E\u548C\u5F53\u524D\u753B\u5E03\u53EF\u7528\u72B6\u6001\u3002",
+      title: "Get image artifact",
+      description: "Read image content, safe metadata, and current canvas availability by stable image ID.",
       inputSchema: { ...projectBindingInputSchema, imageId: imageIdSchema },
       outputSchema: external_exports2.object({
         artifact: imageArtifactOutputSchema,
@@ -35762,8 +35762,8 @@ function createImagegenServer({
   server2.registerTool(
     "read_image_artifact_data",
     {
-      title: "\u8BFB\u53D6\u5DE5\u4F5C\u53F0\u56FE\u7247\u6570\u636E",
-      description: "\u4F9B\u56FE\u7247\u5DE5\u4F5C\u53F0\u6309\u7A33\u5B9A\u56FE\u7247 ID \u8BFB\u53D6\u56FE\u7247\u50CF\u7D20\u6570\u636E\u3002\u8BE5\u5DE5\u5177\u53EA\u5BF9 app/widget \u53EF\u89C1\u3002",
+      title: "Read image artifact data",
+      description: "Read image pixel data by stable image ID for the image workspace. This tool is visible only to the app/widget.",
       inputSchema: { ...projectBindingInputSchema, imageId: imageIdSchema },
       outputSchema: external_exports2.object({
         artifact: imageArtifactOutputSchema,
@@ -35808,8 +35808,8 @@ function createImagegenServer({
   server2.registerTool(
     "reveal_image_artifact",
     {
-      title: "\u5728\u6587\u4EF6\u5939\u4E2D\u663E\u793A\u56FE\u7247",
-      description: "\u6309\u7A33\u5B9A\u56FE\u7247 ID \u5728\u7CFB\u7EDF\u6587\u4EF6\u7BA1\u7406\u5668\u4E2D\u663E\u793A\u5E76\u9009\u4E2D\u5BF9\u5E94\u7684\u672C\u673A\u56FE\u7247\u6587\u4EF6\u3002\u8BE5\u5DE5\u5177\u53EA\u5BF9\u56FE\u7247\u5DE5\u4F5C\u53F0\u53EF\u89C1\uFF0C\u4E0D\u8FD4\u56DE\u672C\u673A\u8DEF\u5F84\u3002",
+      title: "Show image in folder",
+      description: "Reveal and select the local image file in the system file manager by stable image ID. This workspace-only tool does not return the local path.",
       inputSchema: { ...projectBindingInputSchema, imageId: imageIdSchema },
       outputSchema: external_exports2.object({
         status: external_exports2.literal("revealed"),
@@ -35844,8 +35844,8 @@ function createImagegenServer({
   server2.registerTool(
     "render_image_results",
     {
-      title: "\u663E\u793A\u56FE\u7247\u7ED3\u679C",
-      description: "\u5728\u4E00\u4E2A\u4F1A\u8BDD\u7ED3\u679C\u5BB9\u5668\u4E2D\u6309\u987A\u5E8F\u663E\u793A\u4E00\u5F20\u6216\u591A\u5F20\u5DF2\u521B\u5EFA\u56FE\u7247\uFF0C\u5E76\u4E3A\u6BCF\u5F20\u56FE\u7247\u63D0\u4F9B\u72EC\u7ACB\u753B\u5E03\u5165\u53E3\u3002\u751F\u6210\u6216\u7F16\u8F91\u6210\u529F\u540E\u53EA\u8C03\u7528\u4E00\u6B21\u3002",
+      title: "Render image results",
+      description: "Display one or more created images in order within one conversation result and provide an independent canvas entry for each image. Call once after generation or editing succeeds.",
       inputSchema: { ...projectBindingInputSchema, imageIds: external_exports2.array(imageIdSchema).min(1).max(10) },
       outputSchema: external_exports2.object({
         imageIds: external_exports2.array(imageIdSchema).min(1).max(10),
@@ -35901,8 +35901,8 @@ function createImagegenServer({
   server2.registerTool(
     "open_image_editor",
     {
-      title: "\u6253\u5F00\u56FE\u7247\u753B\u5E03",
-      description: "\u6309\u7A33\u5B9A\u56FE\u7247 ID \u6253\u5F00\u5BF9\u5E94\u7684\u805A\u7126\u56FE\u7247\u753B\u5E03\uFF1B\u5DF2\u5728\u5F53\u524D\u56FE\u7247\u9879\u76EE\u7ED1\u5B9A\u4E2D\u663E\u5F0F\u9500\u6BC1\u7684\u56FE\u7247\u753B\u5E03\u4E0D\u80FD\u518D\u6B21\u6253\u5F00\u3002",
+      title: "Open image editor",
+      description: "Open the focused canvas for a stable image ID. A canvas explicitly destroyed in the current project binding cannot be reopened.",
       inputSchema: { ...projectBindingInputSchema, imageId: imageIdSchema },
       outputSchema: external_exports2.object({
         editorSession: openEditorSessionOutputSchema,
@@ -35953,8 +35953,8 @@ function createImagegenServer({
   server2.registerTool(
     "save_image_annotations",
     {
-      title: "\u4FDD\u5B58\u56FE\u7247\u6807\u6CE8",
-      description: "\u4E00\u6B21\u4FDD\u5B58\u5F53\u524D\u56FE\u7247\u4E0A\u7684\u591A\u6761\u72EC\u7ACB\u5F52\u4E00\u5316\u6807\u6CE8\uFF0C\u5E76\u8FD4\u56DE\u7A33\u5B9A\u6807\u6CE8 ID\u3002",
+      title: "Save image annotations",
+      description: "Save multiple independent normalized annotations for the current image and return a stable annotation ID.",
       inputSchema: {
         ...projectBindingInputSchema,
         imageId: imageIdSchema,
@@ -35980,8 +35980,8 @@ function createImagegenServer({
   server2.registerTool(
     "prepare_image_edit_submission",
     {
-      title: "\u51C6\u5907\u56FE\u7247\u4FEE\u6539\u63D0\u4EA4",
-      description: "\u4FDD\u5B58\u5F53\u524D\u753B\u5E03\u4FEE\u8BA2\u5E76\u7B7E\u53D1\u4E00\u6B21\u670D\u52A1\u7AEF\u63D0\u4EA4 ID\uFF0C\u4F7F\u540E\u7EED edit_image \u53EA\u80FD\u4F7F\u7528\u540C\u4E00\u7236\u56FE\u3001\u6807\u6CE8\u548C mask \u7B56\u7565\u3002",
+      title: "Prepare image edit submission",
+      description: "Save the current canvas revision and issue a server submission ID that binds the next edit_image call to the same parent image, annotations, and mask policy.",
       inputSchema: {
         ...projectBindingInputSchema,
         parentImageId: imageIdSchema,
@@ -36061,8 +36061,8 @@ function createImagegenServer({
   server2.registerTool(
     "save_image_editor_draft",
     {
-      title: "\u4FDD\u5B58\u753B\u5E03\u4E34\u65F6\u8349\u7A3F",
-      description: "\u5728\u5BBF\u4E3B\u5378\u8F7D\u5F53\u524D\u753B\u5E03\u524D\u4FDD\u5B58\u672A\u63D0\u4EA4\u7684\u6807\u6CE8\u548C\u8865\u5145\u8981\u6C42\uFF0C\u4F9B\u4E0B\u4E00\u6B21\u6253\u5F00\u540C\u4E00\u56FE\u7247\u753B\u5E03\u65F6\u6062\u590D\u4E00\u6B21\u3002",
+      title: "Save image editor draft",
+      description: "Save unsent annotations and additional instructions before the host unloads the current canvas so the next canvas for the same image can restore them once.",
       inputSchema: {
         ...projectBindingInputSchema,
         editorSessionId: editorSessionIdSchema,
@@ -36091,8 +36091,8 @@ function createImagegenServer({
   server2.registerTool(
     "get_image_editor_session",
     {
-      title: "\u8BFB\u53D6\u753B\u5E03\u4F1A\u8BDD\u72B6\u6001",
-      description: "\u4F9B\u56FE\u7247\u753B\u5E03\u68C0\u67E5\u81EA\u8EAB\u662F\u5426\u4ECD\u5904\u4E8E\u6D3B\u52A8\u72B6\u6001\u3002",
+      title: "Get image editor session",
+      description: "Let the image canvas check whether its own session is still active.",
       inputSchema: { ...projectBindingInputSchema, editorSessionId: editorSessionIdSchema },
       outputSchema: external_exports2.object({ editorSession: editorSessionOutputSchema }).strict(),
       annotations: readAnnotations(),
@@ -36111,8 +36111,8 @@ function createImagegenServer({
   server2.registerTool(
     "destroy_image_editor",
     {
-      title: "\u9500\u6BC1\u56FE\u7247\u753B\u5E03",
-      description: "\u7ED3\u675F\u5E76\u91CA\u653E\u6307\u5B9A\u56FE\u7247\u5728\u5F53\u524D\u56FE\u7247\u9879\u76EE\u7ED1\u5B9A\u4E2D\u7684\u5168\u90E8\u6D3B\u52A8\u753B\u5E03\u4F1A\u8BDD\uFF0C\u5E76\u7EC8\u6B62\u8BE5\u56FE\u7247\u5728\u6B64\u7ED1\u5B9A\u4E2D\u7684\u91CD\u65B0\u6253\u5F00\u5165\u53E3\u3002\u4EC5\u5728\u7528\u6237\u660E\u786E\u8981\u6C42\u9500\u6BC1\uFF0C\u6216\u4EFB\u52A1\u5DF2\u660E\u786E\u8F6C\u79FB\u4E14\u5F53\u524D\u56FE\u7247\u4E0D\u518D\u9700\u8981\u7EE7\u7EED\u67E5\u770B\u3001\u6807\u6CE8\u6216\u4FEE\u6539\u65F6\u8C03\u7528\uFF1B\u666E\u901A\u9690\u85CF\u3001\u5173\u95ED\u53F3\u680F\u6216\u6682\u65F6\u8BA8\u8BBA\u5176\u4ED6\u5185\u5BB9\u65F6\u4E0D\u8981\u8C03\u7528\u3002",
+      title: "Destroy image editor",
+      description: "End all active canvas sessions for the selected image in the current project binding and remove its reopen entry point. Call only when the user explicitly requests destruction or the task has moved away and the image no longer needs viewing, annotation, or editing; do not call for ordinary hiding, panel closure, or temporary discussion.",
       inputSchema: { ...projectBindingInputSchema, editorSessionId: editorSessionIdSchema },
       outputSchema: external_exports2.object({ editorSession: editorSessionOutputSchema }).strict(),
       annotations: {
@@ -36135,8 +36135,8 @@ function createImagegenServer({
   server2.registerTool(
     "finalize_image_editor_session",
     {
-      title: "\u91CA\u653E\u753B\u5E03\u4F1A\u8BDD\u72B6\u6001",
-      description: "\u4F9B\u56FE\u7247\u753B\u5E03\u5728\u5BBF\u4E3B\u5378\u8F7D\u524D\u91CA\u653E\u81EA\u8EAB\u7684\u4E34\u65F6\u4F1A\u8BDD\u72B6\u6001\u3002",
+      title: "Finalize image editor session",
+      description: "Release the image canvas temporary session state before the host unloads it.",
       inputSchema: { ...projectBindingInputSchema, editorSessionId: editorSessionIdSchema },
       outputSchema: external_exports2.object({ editorSession: editorSessionOutputSchema }).strict(),
       annotations: {

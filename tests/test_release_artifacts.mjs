@@ -112,12 +112,14 @@ test("release workflow publishes an exact version-titled release from an annotat
   assert.match(workflow, /plugin\.json[^\n]+\.version/);
   assert.match(workflow, /actions\/upload-artifact@v4/);
   assert.match(workflow, /validate-release-notes\.mjs/);
-  assert.match(workflow, /compare-release-artifacts\.mjs/);
   assert.match(workflow, /candidate-windows/);
-  assert.match(workflow, /candidate-linux/);
+  assert.doesNotMatch(workflow, /^\s{2}linux_candidate:/m);
+  assert.doesNotMatch(workflow, /^\s{2}compare_candidates:/m);
+  assert.doesNotMatch(workflow, /compare-release-artifacts\.mjs/);
+  assert.doesNotMatch(workflow, /candidate-linux/);
   assert.match(
     workflow,
-    /compare_candidates:[\s\S]*?compare-release-artifacts\.mjs[\s\S]*?publish:[\s\S]*?environment:\s*release/,
+    /publish:\s*\n\s+needs:\s*windows_candidate[\s\S]*?environment:\s*release/,
   );
   assert.match(workflow, /gh release create/);
   assert.match(workflow, /name:\s*Create the GitHub Release[\s\S]*?shell:\s*bash[\s\S]*?gh release create/);
@@ -138,7 +140,7 @@ test("shared prompting guidance keeps API retry permission Standalone-only", asy
   assert.match(prompting, /Standalone adapter/i);
   assert.match(prompting, /Plugin adapter/i);
   assert.match(prompting, /never[^.]*second[^.]*API request/i);
-  assert.match(pluginSkill, /即使策略中出现 `allow_api_retry`，也不要重新请求图片 API/);
+  assert.match(pluginSkill, /Even if policy contains `allow_api_retry`, do not request the image API again/);
 });
 
 
@@ -231,18 +233,18 @@ test("release mode rejects baseline metadata and publishes clean artifacts for t
 });
 
 
-test("the release source builds the current v1.0.1 patch artifact set", async (t) => {
+test("the release source builds the current v1.0.2 patch artifact set", async (t) => {
   const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "imagegen-release-candidate-"));
   t.after(() => rm(outputDirectory, { recursive: true, force: true }));
 
   const result = await runBuild(outputDirectory);
 
-  assert.equal(result.version, "1.0.1");
+  assert.equal(result.version, "1.0.2");
   assert.deepEqual(result.files, [
     "SHA256SUMS",
-    "openai-compatible-imagegen-codex-plugin-1.0.1.zip",
-    "openai-compatible-imagegen-shared-python-sha256-1.0.1.json",
-    "openai-compatible-imagegen-skill-1.0.1.zip",
+    "openai-compatible-imagegen-codex-plugin-1.0.2.zip",
+    "openai-compatible-imagegen-shared-python-sha256-1.0.2.json",
+    "openai-compatible-imagegen-skill-1.0.2.zip",
   ]);
   assert.deepEqual((await readdir(outputDirectory)).sort(), result.files);
 });

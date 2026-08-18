@@ -4,9 +4,29 @@ This file records user-visible changes for each release of `openai-compatible-im
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-08-19
+
+### Added
+
+- Localize the Plugin result cards, focused canvas, accessibility labels, tooltips, confirmations, status messages, and runtime toasts in English and Chinese.
+- Preserve focused-canvas drafts when users switch tasks, return to the conversation, or reopen the same image.
+- Add Simplified Chinese mirrors for the public guides and architecture documentation, with language-matched navigation.
+- Document first-time Standalone installation from the versioned archive with the third-party `skills@latest` CLI.
+
+### Changed
+
+- Use English for both Standalone and Codex Plugin runtime Skill instructions and for public Plugin and MCP metadata.
+- Treat every Chinese locale variant as one Chinese Widget locale; missing and non-Chinese locales use English.
+
 ### Fixed
 
-- Normalize text build-input line endings before deriving the Plugin release identity so equivalent checkouts produce the same versioned widget resource URIs.
+- Restore each image candidate's latest canvas draft without allowing an older save to replace newer edits.
+- Open and resume the focused canvas without the unnecessary delay introduced by sequential startup work and repeated localization passes.
+- Keep versioned Widget resource identities stable when equivalent source checkouts use different text line endings.
+
+### Known limitations
+
+- The third-party `skills@latest` CLI supports first-time project and user installation from the extracted Standalone archive, but it does not update local copied sources and repeating `add` removes the installed `auth.json`. Project-level `remove` can leave the installation registered; the verified user-level `remove --global` completed cleanly. Use versioned ZIP directories for updates and rollback.
 
 ## [1.0.1] - 2026-08-18
 
@@ -178,7 +198,8 @@ This file records user-visible changes for each release of `openai-compatible-im
 - Publish the initial Agent Skills-compatible image generation workflow.
 - Support OpenAI-compatible image generation, image editing, local authentication, transparent asset intent, and JSONL batches.
 
-[Unreleased]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v1.0.2...HEAD
+[1.0.2]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v0.3.0...v1.0.0
 [0.3.0]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v0.2.0...v0.3.0

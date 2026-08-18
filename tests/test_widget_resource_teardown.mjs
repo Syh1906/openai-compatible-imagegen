@@ -12,6 +12,65 @@ import {
   waitFor,
 } from "./support/widget-runtime-host.mjs";
 
+test("resource teardown saves the latest editor draft before finalizing the session", { timeout: 5000 }, async () => {
+  const dom = new JSDOM(
+    '<!doctype html><html><body><main><p>正在加载图片...</p></main></body></html>',
+    { pretendToBeVisual: true, url: "https://widget.local/" },
+  );
+  const previous = installDomGlobals(dom.window);
+  const host = installHost(dom.window, { toolName: "open_image_editor" });
+
+  try {
+    await import(`../web/editor-runtime.mjs?teardown-draft-save=${Date.now()}`);
+    await waitFor(() => document.querySelector(".editor-app") !== null);
+    await waitFor(() => document.querySelector("[data-image]")?.hidden === false);
+
+    const canvas = document.querySelector("[data-canvas]");
+    canvas.getBoundingClientRect = () => ({ left: 0, top: 0, width: 1000, height: 1000 });
+    document.querySelector("[data-tool=rectangle]").click();
+    canvas.dispatchEvent(pointerEvent(dom.window, "pointerdown", { clientX: 100, clientY: 200, pointerId: 1 }));
+    canvas.dispatchEvent(pointerEvent(dom.window, "pointerup", { clientX: 400, clientY: 600, pointerId: 1 }));
+
+    const annotation = document.querySelector("[data-annotation-id]");
+    assert.ok(annotation);
+    annotation.click();
+    document.querySelector("[data-stroke='3']").click();
+    const description = document.querySelector("[data-annotation-id] textarea");
+    description.value = "保留这个矩形区域";
+    description.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+    const prompt = document.querySelector("[data-prompt]");
+    prompt.value = "背景改为浅灰色";
+    prompt.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+
+    sendToApp(dom.window, {
+      jsonrpc: "2.0",
+      id: "teardown-draft-save",
+      method: "ui/resource-teardown",
+      params: {},
+    });
+    await waitFor(() => host.toolCalls.some(({ name }) => name === "finalize_image_editor_session"));
+
+    const saveIndex = host.toolCalls.findIndex(({ name }) => name === "save_image_editor_draft");
+    const finalizeIndex = host.toolCalls.findIndex(({ name }) => name === "finalize_image_editor_session");
+    assert.ok(saveIndex >= 0, "teardown must save the current draft");
+    assert.ok(saveIndex < finalizeIndex, "draft save must finish before session finalization starts");
+    const draft = host.toolCalls[saveIndex].arguments.draft;
+    assert.equal(draft.prompt, "背景改为浅灰色");
+    assert.equal(draft.annotations.length, 1);
+    assert.equal(draft.annotations[0].type, "rectangle");
+    assert.equal(draft.annotations[0].strokeWidth, 3);
+    assert.equal(draft.annotations[0].text, "保留这个矩形区域");
+    assert.deepEqual(
+      [draft.annotations[0].x, draft.annotations[0].y, draft.annotations[0].width, draft.annotations[0].height],
+      [0.1, 0.2, 0.3, 0.4],
+    );
+  } finally {
+    host.dispose();
+    restoreDomGlobals(previous);
+    dom.window.close();
+  }
+});
+
 test("resource teardown detaches editor input handlers", { timeout: 5000 }, async () => {
   const dom = new JSDOM(
     '<!doctype html><html><body><main><p>正在加载图片...</p></main></body></html>',

@@ -70,7 +70,8 @@ async function createFixture() {
   const projectRoot = path.join(root, "project");
   const artifactRoot = path.join(projectRoot, "output", "imagegen");
   const stateRoot = path.join(root, "user-state");
-  await Promise.all([mkdir(pluginRoot), mkdir(projectRoot), mkdir(artifactRoot, { recursive: true })]);
+  await mkdir(pluginRoot);
+  await mkdir(artifactRoot, { recursive: true });
   const releaseIdentity = createReleaseBundle({
     pluginId: "openai-compatible-imagegen",
     pluginVersion: "0.1.0-editor-state-test",

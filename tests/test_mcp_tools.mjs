@@ -77,9 +77,13 @@ test("configuration and project binding tool descriptions declare local ignore p
     async (client) => {
       const { tools } = await client.listTools();
       const descriptions = new Map(tools.map((tool) => [tool.name, tool.description]));
-      assert.match(descriptions.get("initialize_image_config"), /用户配置目录.*项目配置目录/);
-      assert.match(descriptions.get("update_image_config"), /目标配置目录.*\.gitignore/);
-      assert.match(descriptions.get("bind_imagegen_project"), /图片产物目录.*\.gitignore/);
+      assert.match(descriptions.get("initialize_image_config"), /user.*project.*\.gitignore/i);
+      assert.match(descriptions.get("update_image_config"), /target configuration directory.*\.gitignore/i);
+      assert.match(descriptions.get("bind_imagegen_project"), /artifact directory.*\.gitignore/i);
+      for (const tool of tools) {
+        assert.doesNotMatch(tool.title || "", /\p{Script=Han}/u, `${tool.name} title`);
+        assert.doesNotMatch(tool.description || "", /\p{Script=Han}/u, `${tool.name} description`);
+      }
     },
   );
 });

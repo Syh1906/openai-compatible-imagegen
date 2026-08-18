@@ -179,7 +179,7 @@ test("widget binds standard tool input when the host projects image results", as
     });
     await host.settle();
     assert.equal(document.querySelector("[data-image-id]")?.textContent, IMAGE_ID);
-    assert.equal(document.querySelector("[data-action=open-editor]")?.textContent.trim(), "打开画布");
+    assert.equal(document.querySelector("[data-action=open-editor]")?.textContent.trim(), "Open canvas");
     assert.equal(document.querySelector("[data-image]")?.src, `data:image/png;base64,${PNG_BASE64}`);
     assert.equal(host.pendingToolCallCount, 0);
     assert.equal(host.failedToolCalls.length, 0);

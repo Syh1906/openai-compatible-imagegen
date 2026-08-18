@@ -27,6 +27,7 @@ import { annotationLayerMarkup, annotationViewBox, escapeHtml, isUserFacingAnnot
 import { hexToHsv, hexToRgb, normalizeHexColor } from "./editor-color.mjs";
 import { computeCanvasGeometry } from "./editor-layout.mjs";
 import { DEFAULT_ANNOTATION_COLOR_SLOTS, hasMaskPaintStroke } from "./editor-state.mjs";
+import { createWidgetI18n } from "./widget-i18n.mjs";
 
 
 const toolDefinitions = [
@@ -60,7 +61,7 @@ function colorEditorMarkup() {
     </section>
   </div>`;
 }
-export function createEditorRenderer(root) {
+export function createEditorRenderer(root, { i18n = createWidgetI18n("zh-CN") } = {}) {
   let lastSelectedAnnotationId = null;
   return {
     isEditorMounted() {
@@ -82,10 +83,10 @@ export function createEditorRenderer(root) {
               ${hasImage ? `<button class="inline-preview-trigger" data-action="preview-image" data-preview-image-id="${escapeHtml(candidate.id)}" type="button" aria-label="放大预览候选图片 ${index + 1}" aria-haspopup="dialog" aria-controls="result-image-preview" title="放大预览"><img class="source-image" data-image src="${candidate.imageUrl}" alt="候选图片 ${index + 1}" draggable="false"><span class="inline-preview-affordance" aria-hidden="true"><i data-lucide="zoom-in"></i></span></button>` : `<div class="${candidate.loadError ? "inline-error" : "inline-loading"}">${candidate.loadError ? "图片读取失败" : candidate.id ? "正在读取图片..." : "正在等待会话图片..."}</div>`}
             </div>
             <div class="inline-details">
-              <div class="inline-copy"><span class="eyebrow">${items.length > 1 ? `候选 ${index + 1}` : "图片结果"}</span><strong>${hasImage ? (candidate.name || `图片 ${candidate.id.slice(-6)}`) : candidate.loadError ? "无法显示图片" : "准备画布"}</strong><span data-image-id>${candidate.id || "尚未绑定图片"}</span></div>${draftLabel ? `<span class="inline-draft-state" data-draft-state="${draftKind}">${draftLabel}</span>` : ""}
+              <div class="inline-copy"><span class="eyebrow">${items.length > 1 ? `候选 ${index + 1}` : i18n.t("result.imageResult")}</span><strong>${hasImage ? (candidate.name || `图片 ${candidate.id.slice(-6)}`) : candidate.loadError ? "无法显示图片" : "准备画布"}</strong><span data-image-id>${candidate.id || "尚未绑定图片"}</span></div>${draftLabel ? `<span class="inline-draft-state" data-draft-state="${draftKind}">${draftLabel}</span>` : ""}
               ${canvasDestroyed
                 ? '<span class="canvas-destroyed-status" role="status">画布已销毁</span>'
-                : `<button class="open-editor-button" data-action="open-editor" data-image-id="${escapeHtml(candidate.id || "")}" ${hasImage && !openingImageId ? "" : "disabled"}>${opening ? "正在打开..." : draftLabel ? "继续编辑" : "打开画布"}</button>`}
+                : `<button class="open-editor-button" data-action="open-editor" data-image-id="${escapeHtml(candidate.id || "")}" ${hasImage && !openingImageId ? "" : "disabled"}>${opening ? "正在打开..." : draftLabel ? "继续编辑" : i18n.t("result.openCanvas")}</button>`}
               <p class="inline-status" data-inline-status data-status-tone="${candidate.loadError ? "error" : inlineStatusTone}" role="status" aria-live="polite">${candidate.loadError ? escapeHtml(candidate.loadError) : opening || candidate.id === inlineStatusImageId || items.length === 1 ? inlineStatus : ""}</p>
             </div>
           </article>`;

@@ -46,8 +46,8 @@ const legacyWidgetResourceFingerprints = [
   "43c3a69a85db10633692",
   "9caad8c28a921a55611b",
 ];
-const editorSessionIdSchema = z.string().regex(/^eds_[0-9a-f]{32}$/).describe("已打开画布的会话 ID");
-const projectBindingIdSchema = z.string().regex(/^pbind_[0-9a-f]{64}$/).describe("图片项目绑定 ID");
+const editorSessionIdSchema = z.string().regex(/^eds_[0-9a-f]{32}$/).describe("Open canvas session ID");
+const projectBindingIdSchema = z.string().regex(/^pbind_[0-9a-f]{64}$/).describe("Image project binding ID");
 const projectBindingInputSchema = { projectBindingId: projectBindingIdSchema };
 const annotationIdSchema = z.string().regex(/^ann_[0-9A-HJKMNP-TV-Z]{26}$/);
 const submissionIdSchema = z.string().regex(/^sub_[0-9a-f]{32}$/);
@@ -235,32 +235,32 @@ export function createImagegenServer({
   registerWidgetResource(server, {
     name: "image-result",
     uri: resultWidgetUri,
-    title: "图片结果",
-    description: "在会话结果中持续显示图片，并提供在同一宿主实例展开聚焦画布的入口。",
+    title: "Image results",
+    description: "Keep images visible in the conversation result and provide an entry point to the focused canvas in the same host instance.",
     releaseIdentity,
     readWidgetHtml,
   });
   registerWidgetResource(server, {
     name: "image-editor",
     uri: editorWidgetUri,
-    title: "图片编辑画布",
-    description: "为会话图片结果展开与稳定图片 ID 绑定的聚焦画布。",
+    title: "Image editing canvas",
+    description: "Open a focused canvas bound to a stable image ID from a conversation result.",
     releaseIdentity,
     readWidgetHtml,
   });
   registerWidgetResource(server, {
     name: "image-result-legacy-stable",
     uri: `ui://${releaseIdentity.pluginId}/result.html`,
-    title: "图片结果",
-    description: "在会话结果中持续显示图片，并提供在同一宿主实例展开聚焦画布的入口。",
+    title: "Image results",
+    description: "Keep images visible in the conversation result and provide an entry point to the focused canvas in the same host instance.",
     releaseIdentity,
     readWidgetHtml,
   });
   registerWidgetResource(server, {
     name: "image-editor-legacy-stable",
     uri: `ui://${releaseIdentity.pluginId}/editor.html`,
-    title: "图片编辑画布",
-    description: "为会话图片结果展开与稳定图片 ID 绑定的聚焦画布。",
+    title: "Image editing canvas",
+    description: "Open a focused canvas bound to a stable image ID from a conversation result.",
     releaseIdentity,
     readWidgetHtml,
   });
@@ -268,16 +268,16 @@ export function createImagegenServer({
     registerWidgetResource(server, {
       name: `image-result-legacy-${fingerprint}`,
       uri: `ui://${releaseIdentity.pluginId}/result-${fingerprint}.html`,
-      title: "图片结果",
-      description: "在会话结果中持续显示图片，并提供在同一宿主实例展开聚焦画布的入口。",
+      title: "Image results",
+      description: "Keep images visible in the conversation result and provide an entry point to the focused canvas in the same host instance.",
       releaseIdentity,
       readWidgetHtml,
     });
     registerWidgetResource(server, {
       name: `image-editor-legacy-${fingerprint}`,
       uri: `ui://${releaseIdentity.pluginId}/editor-${fingerprint}.html`,
-      title: "图片编辑画布",
-      description: "为会话图片结果展开与稳定图片 ID 绑定的聚焦画布。",
+      title: "Image editing canvas",
+      description: "Open a focused canvas bound to a stable image ID from a conversation result.",
       releaseIdentity,
       readWidgetHtml,
     });
@@ -286,8 +286,8 @@ export function createImagegenServer({
   server.registerTool(
     "bind_imagegen_project",
     {
-      title: "绑定图片项目",
-      description: "把当前任务绑定到一个已存在的绝对项目根目录，确保实际图片产物目录包含只含 * 的本地 .gitignore，并返回供后续模型与 App-only 工具跨 MCP 进程使用的图片项目绑定 ID。配置变化后携带同一绑定 ID 再次绑定可更新配置摘要。",
+      title: "Bind image project",
+      description: "Bind the current task to an existing absolute project root, protect the resolved artifact directory with a local .gitignore containing only *, and return an image project binding ID for later model and app-only tools across MCP processes. Rebind with the same ID after configuration changes.",
       inputSchema: {
         projectRoot: z.string().min(1),
         projectBindingId: projectBindingIdSchema.optional(),
@@ -324,8 +324,8 @@ export function createImagegenServer({
   server.registerTool(
     "inspect_imagegen_runtime",
     {
-      title: "检查图片运行环境",
-      description: "返回当前 MCP server、启动根关系和客户端 roots 能力的脱敏诊断信息，不返回本机路径或 root URI。",
+      title: "Inspect image runtime",
+      description: "Return redacted diagnostics for the MCP server, startup-root relationships, and client roots capability without returning local paths or root URIs.",
       inputSchema: { projectBindingId: projectBindingIdSchema.optional() },
       outputSchema: {
         hostObservationReport: hostObservationReportOutputSchema,
@@ -378,8 +378,8 @@ export function createImagegenServer({
   server.registerTool(
     "report_imagegen_host_observation",
     {
-      title: "记录图片工作台宿主形状",
-      description: "记录当前发布版本下两类标准宿主结果的脱敏结构。该报告只能标记为未验证的 widget 上报，不是宿主来源证明；不记录图片、文本值、本机路径或客户端身份。",
+      title: "Report image host observation",
+      description: "Record redacted structure for the two standard host results in the current release. The report remains an unverified widget observation, not proof of host provenance, and excludes images, text values, local paths, and client identity.",
       inputSchema: {
         ...projectBindingInputSchema,
         releaseFingerprint: fingerprintSchema,
@@ -436,8 +436,8 @@ export function createImagegenServer({
   server.registerTool(
     "list_image_models",
     {
-      title: "读取图片模型",
-      description: "返回当前图片配置中可用的图片模型及安全能力声明。",
+      title: "List image models",
+      description: "Return image models and safe capability declarations from the current image configuration.",
       inputSchema: { ...projectBindingInputSchema },
       outputSchema: z.object({ models: z.array(imageModelOutputSchema) }).strict(),
       annotations: readAnnotations(),
@@ -463,8 +463,8 @@ export function createImagegenServer({
   server.registerTool(
     "generate_image",
     {
-      title: "生成图片",
-      description: "使用已配置的 gpt-image-2 生成一张或多张独立候选图片。多候选由运行时按顺序执行等量单图请求，全部成功后才返回整组。",
+      title: "Generate images",
+      description: "Generate one or more independent candidate images with the configured gpt-image-2 model. Multiple candidates run as ordered single-image requests and return only after the full group succeeds.",
       inputSchema: {
         ...projectBindingInputSchema,
         prompt: z.string().min(1),
@@ -495,8 +495,8 @@ export function createImagegenServer({
   server.registerTool(
     "edit_image",
     {
-      title: "编辑图片",
-      description: "基于父图片和提示创建新的不可变图片版本。",
+      title: "Edit image",
+      description: "Create a new immutable image version from a parent image and prompt.",
       inputSchema: {
         ...projectBindingInputSchema,
         parentImageId: imageIdSchema,
@@ -645,8 +645,8 @@ export function createImagegenServer({
   server.registerTool(
     "batch_images",
     {
-      title: "批量处理图片",
-      description: "执行一组相互独立的生成和普通编辑任务；结果按输入顺序逐项返回，允许部分成功，不自动展示图片。",
+      title: "Batch image tasks",
+      description: "Run independent generation and standard edit tasks, return ordered per-item results with partial success, and do not display images automatically.",
       inputSchema: {
         ...projectBindingInputSchema,
         items: batchItemsSchema,
@@ -695,8 +695,8 @@ export function createImagegenServer({
   server.registerTool(
     "get_image_batch_manifest",
     {
-      title: "读取批处理记录",
-      description: "按稳定批次 ID 读取不可变批处理 manifest；返回逐项原图、交付收据和错误状态，不自动展示图片。",
+      title: "Get image batch manifest",
+      description: "Read an immutable batch manifest by stable batch ID, including per-item originals, delivery receipts, and errors, without displaying images automatically.",
       inputSchema: { ...projectBindingInputSchema, batchId: batchIdSchema },
       outputSchema: batchManifestOutputSchema,
       annotations: readAnnotations(),
@@ -709,8 +709,8 @@ export function createImagegenServer({
   server.registerTool(
     "get_image_delivery_receipt",
     {
-      title: "读取图片交付记录",
-      description: "按稳定交付收据 ID 读取不可变派生产物和 QA 摘要；不自动展示图片。",
+      title: "Get image delivery receipt",
+      description: "Read immutable derived artifacts and QA summaries by stable delivery receipt ID without displaying images automatically.",
       inputSchema: { ...projectBindingInputSchema, deliveryReceiptId: deliveryReceiptIdSchema },
       outputSchema: imageDeliveryOutputSchema,
       annotations: readAnnotations(),
@@ -723,8 +723,8 @@ export function createImagegenServer({
   server.registerTool(
     "deliver_image",
     {
-      title: "交付图片",
-      description: "基于稳定图片 ID 执行本地精确尺寸、网格、预览板和 QA 交付；原图保持不变，派生图单独存储，结果不会自动挂载图片画布。",
+      title: "Deliver image",
+      description: "Run local exact-size, grid, preview-board, and QA delivery for a stable image ID. Keep the original immutable, store derivatives separately, and do not attach a canvas automatically.",
       inputSchema: {
         ...projectBindingInputSchema,
         imageId: imageIdSchema,
@@ -794,8 +794,8 @@ export function createImagegenServer({
   server.registerTool(
     "get_image_artifact",
     {
-      title: "读取图片产物",
-      description: "按稳定图片 ID 读取图片内容、安全元数据和当前画布可用状态。",
+      title: "Get image artifact",
+      description: "Read image content, safe metadata, and current canvas availability by stable image ID.",
       inputSchema: { ...projectBindingInputSchema, imageId: imageIdSchema },
       outputSchema: z.object({
         artifact: imageArtifactOutputSchema,
@@ -827,8 +827,8 @@ export function createImagegenServer({
   server.registerTool(
     "read_image_artifact_data",
     {
-      title: "读取工作台图片数据",
-      description: "供图片工作台按稳定图片 ID 读取图片像素数据。该工具只对 app/widget 可见。",
+      title: "Read image artifact data",
+      description: "Read image pixel data by stable image ID for the image workspace. This tool is visible only to the app/widget.",
       inputSchema: { ...projectBindingInputSchema, imageId: imageIdSchema },
       outputSchema: z.object({
         artifact: imageArtifactOutputSchema,
@@ -874,8 +874,8 @@ export function createImagegenServer({
   server.registerTool(
     "reveal_image_artifact",
     {
-      title: "在文件夹中显示图片",
-      description: "按稳定图片 ID 在系统文件管理器中显示并选中对应的本机图片文件。该工具只对图片工作台可见，不返回本机路径。",
+      title: "Show image in folder",
+      description: "Reveal and select the local image file in the system file manager by stable image ID. This workspace-only tool does not return the local path.",
       inputSchema: { ...projectBindingInputSchema, imageId: imageIdSchema },
       outputSchema: z.object({
         status: z.literal("revealed"),
@@ -911,8 +911,8 @@ export function createImagegenServer({
   server.registerTool(
     "render_image_results",
     {
-      title: "显示图片结果",
-      description: "在一个会话结果容器中按顺序显示一张或多张已创建图片，并为每张图片提供独立画布入口。生成或编辑成功后只调用一次。",
+      title: "Render image results",
+      description: "Display one or more created images in order within one conversation result and provide an independent canvas entry for each image. Call once after generation or editing succeeds.",
       inputSchema: { ...projectBindingInputSchema, imageIds: z.array(imageIdSchema).min(1).max(10) },
       outputSchema: z.object({
         imageIds: z.array(imageIdSchema).min(1).max(10),
@@ -969,8 +969,8 @@ export function createImagegenServer({
   server.registerTool(
     "open_image_editor",
     {
-      title: "打开图片画布",
-      description: "按稳定图片 ID 打开对应的聚焦图片画布；已在当前图片项目绑定中显式销毁的图片画布不能再次打开。",
+      title: "Open image editor",
+      description: "Open the focused canvas for a stable image ID. A canvas explicitly destroyed in the current project binding cannot be reopened.",
       inputSchema: { ...projectBindingInputSchema, imageId: imageIdSchema },
       outputSchema: z.object({
         editorSession: openEditorSessionOutputSchema,
@@ -1022,8 +1022,8 @@ export function createImagegenServer({
   server.registerTool(
     "save_image_annotations",
     {
-      title: "保存图片标注",
-      description: "一次保存当前图片上的多条独立归一化标注，并返回稳定标注 ID。",
+      title: "Save image annotations",
+      description: "Save multiple independent normalized annotations for the current image and return a stable annotation ID.",
       inputSchema: {
         ...projectBindingInputSchema,
         imageId: imageIdSchema,
@@ -1050,8 +1050,8 @@ export function createImagegenServer({
   server.registerTool(
     "prepare_image_edit_submission",
     {
-      title: "准备图片修改提交",
-      description: "保存当前画布修订并签发一次服务端提交 ID，使后续 edit_image 只能使用同一父图、标注和 mask 策略。",
+      title: "Prepare image edit submission",
+      description: "Save the current canvas revision and issue a server submission ID that binds the next edit_image call to the same parent image, annotations, and mask policy.",
       inputSchema: {
         ...projectBindingInputSchema,
         parentImageId: imageIdSchema,
@@ -1134,8 +1134,8 @@ export function createImagegenServer({
   server.registerTool(
     "save_image_editor_draft",
     {
-      title: "保存画布临时草稿",
-      description: "在宿主卸载当前画布前保存未提交的标注和补充要求，供下一次打开同一图片画布时恢复一次。",
+      title: "Save image editor draft",
+      description: "Save unsent annotations and additional instructions before the host unloads the current canvas so the next canvas for the same image can restore them once.",
       inputSchema: {
         ...projectBindingInputSchema,
         editorSessionId: editorSessionIdSchema,
@@ -1165,8 +1165,8 @@ export function createImagegenServer({
   server.registerTool(
     "get_image_editor_session",
     {
-      title: "读取画布会话状态",
-      description: "供图片画布检查自身是否仍处于活动状态。",
+      title: "Get image editor session",
+      description: "Let the image canvas check whether its own session is still active.",
       inputSchema: { ...projectBindingInputSchema, editorSessionId: editorSessionIdSchema },
       outputSchema: z.object({ editorSession: editorSessionOutputSchema }).strict(),
       annotations: readAnnotations(),
@@ -1186,8 +1186,8 @@ export function createImagegenServer({
   server.registerTool(
     "destroy_image_editor",
     {
-      title: "销毁图片画布",
-      description: "结束并释放指定图片在当前图片项目绑定中的全部活动画布会话，并终止该图片在此绑定中的重新打开入口。仅在用户明确要求销毁，或任务已明确转移且当前图片不再需要继续查看、标注或修改时调用；普通隐藏、关闭右栏或暂时讨论其他内容时不要调用。",
+      title: "Destroy image editor",
+      description: "End all active canvas sessions for the selected image in the current project binding and remove its reopen entry point. Call only when the user explicitly requests destruction or the task has moved away and the image no longer needs viewing, annotation, or editing; do not call for ordinary hiding, panel closure, or temporary discussion.",
       inputSchema: { ...projectBindingInputSchema, editorSessionId: editorSessionIdSchema },
       outputSchema: z.object({ editorSession: editorSessionOutputSchema }).strict(),
       annotations: {
@@ -1211,8 +1211,8 @@ export function createImagegenServer({
   server.registerTool(
     "finalize_image_editor_session",
     {
-      title: "释放画布会话状态",
-      description: "供图片画布在宿主卸载前释放自身的临时会话状态。",
+      title: "Finalize image editor session",
+      description: "Release the image canvas temporary session state before the host unloads it.",
       inputSchema: { ...projectBindingInputSchema, editorSessionId: editorSessionIdSchema },
       outputSchema: z.object({ editorSession: editorSessionOutputSchema }).strict(),
       annotations: {
