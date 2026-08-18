@@ -52,7 +52,7 @@ function digestBuildInputs(inputs) {
     }
     requireText(input.path, "serverBuildInputs[].path");
     const content = typeof input.content === "string"
-      ? Buffer.from(input.content, "utf8")
+      ? Buffer.from(input.content.replaceAll("\r\n", "\n"), "utf8")
       : Buffer.from(input.content ?? []);
     return { path: input.path.replaceAll("\\", "/"), content };
   }).sort((left, right) => left.path.localeCompare(right.path));

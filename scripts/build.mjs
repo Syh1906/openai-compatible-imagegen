@@ -63,7 +63,7 @@ const { releaseIdentity, widgetHtml: releaseWidgetHtml } = createReleaseBundle({
   pluginVersion: pluginManifest.version,
   serverBuildInputs: await Promise.all(serverBuildPaths.map(async ({ path, url }) => ({
     path,
-    content: await readFile(fileURLToPath(url)),
+    content: await readFile(fileURLToPath(url), "utf8"),
   }))),
   widgetHtml: assembledWidgetHtml,
 });

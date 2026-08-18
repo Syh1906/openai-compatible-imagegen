@@ -134,6 +134,25 @@ test("widget resource URIs are content-bound while historical URIs remain readab
 });
 
 
+test("release identity ignores checkout line-ending differences in text build inputs", () => {
+  const baseInput = {
+    pluginId: "openai-compatible-imagegen",
+    pluginVersion: "1.0.1",
+    widgetHtml: `<html><head>${RELEASE_IDENTITY_PLACEHOLDER}</head></html>`,
+  };
+  const lfRelease = createReleaseBundle({
+    ...baseInput,
+    serverBuildInputs: [{ path: "mcp/server.mjs", content: "first\nsecond\n" }],
+  });
+  const crlfRelease = createReleaseBundle({
+    ...baseInput,
+    serverBuildInputs: [{ path: "mcp/server.mjs", content: "first\r\nsecond\r\n" }],
+  });
+
+  assert.deepEqual(crlfRelease.releaseIdentity, lfRelease.releaseIdentity);
+});
+
+
 test("the built plugin exposes one content-bound release identity", async () => {
   const { RELEASE_IDENTITY_META_NAME } = await import("../mcp/release-identity.mjs");
   const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
