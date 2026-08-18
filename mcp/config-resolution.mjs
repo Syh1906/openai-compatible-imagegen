@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { appendFile, lstat, mkdir, readFile, writeFile } from "node:fs/promises";
+import { lstat, mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -91,6 +91,7 @@ export function projectConfigPath(projectRoot) {
 
 export async function initializeImageConfig({ userHome = os.homedir(), projectRoot } = {}) {
   const resolvedProjectRoot = projectRoot ? requireAbsoluteProjectRoot(projectRoot) : null;
+  if (resolvedProjectRoot) await ensureProjectConfigIgnored(resolvedProjectRoot);
   const target = userConfigPath(userHome);
   try {
     const metadata = await lstat(target);
@@ -108,7 +109,6 @@ export async function initializeImageConfig({ userHome = os.homedir(), projectRo
     if (error?.code === "EEXIST") throw new ImageConfigManagementError("image_config_exists");
     throw new ImageConfigManagementError("image_config_write_failed");
   }
-  if (resolvedProjectRoot) await ensureProjectConfigIgnored(resolvedProjectRoot);
   return { created: true, path: target, config: redactConfig(CONFIG_TEMPLATE), gitignoreUpdated: Boolean(resolvedProjectRoot) };
 }
 
@@ -131,7 +131,6 @@ export async function updateImageConfig({ userHome = os.homedir(), projectRoot, 
   if (!isRecord(changes)) throw new ImageConfigManagementError("image_config_update_invalid");
   const allowed = scope === "project" ? PROJECT_UPDATE_KEYS : USER_UPDATE_KEYS;
   if (unknownKeys(changes, allowed).length) throw new ImageConfigManagementError("image_config_update_forbidden");
-  if (containsApiKey(changes)) throw new ImageConfigManagementError("image_config_update_forbidden");
   const next = mergeConfigChanges(current, changes);
   if (scope === "project") validateProjectConfig(next); else validateUserConfig(next);
   await writeManagedConfig(target, next);
@@ -282,11 +281,6 @@ function mergeRecords(current, changes) {
   return result;
 }
 
-function containsApiKey(value) {
-  if (!isRecord(value)) return false;
-  return Object.entries(value).some(([key, item]) => key === "api_key" || (isRecord(item) && containsApiKey(item)));
-}
-
 async function writeManagedConfig(target, config) {
   if (await pathContainsSymbolicLink(path.dirname(target))) throw new ImageConfigManagementError("image_config_write_failed");
   const metadata = await lstat(target).catch((error) => {
@@ -304,18 +298,24 @@ async function writeManagedConfig(target, config) {
 }
 
 async function ensureProjectConfigIgnored(projectRoot) {
-  const gitignorePath = path.join(projectRoot, ".gitignore");
-  const entry = ".codex/openai-compatible-imagegen/config.json";
-  let content = "";
+  const configDirectory = path.dirname(projectConfigPath(projectRoot));
+  const gitignorePath = path.join(configDirectory, ".gitignore");
+  await mkdir(configDirectory, { recursive: true });
+  if (await pathContainsSymbolicLink(configDirectory)) throw new ImageConfigManagementError("image_config_write_failed");
   try {
-    content = await readFile(gitignorePath, "utf8");
+    const content = await readFile(gitignorePath, "utf8");
+    if (content !== "*\n") throw new ImageConfigManagementError("image_config_write_failed");
+    return;
   } catch (error) {
+    if (error instanceof ImageConfigManagementError) throw error;
     if (error?.code !== "ENOENT") throw new ImageConfigManagementError("image_config_write_failed");
   }
-  const lines = content.split(/\r?\n/);
-  if (lines.some((line) => line.trim() === entry)) return;
-  const prefix = content && !content.endsWith("\n") ? "\n" : "";
-  await appendFile(gitignorePath, `${prefix}${entry}\n`, "utf8");
+  try {
+    await writeFile(gitignorePath, "*\n", { encoding: "utf8", flag: "wx" });
+  } catch (error) {
+    if (error?.code !== "EEXIST") throw new ImageConfigManagementError("image_config_write_failed");
+    if (await readFile(gitignorePath, "utf8") !== "*\n") throw new ImageConfigManagementError("image_config_write_failed");
+  }
 }
 
 

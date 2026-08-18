@@ -3,7 +3,7 @@ import { z } from "zod";
 export function registerConfigTools(server, configManager, toolError) {
   server.registerTool("initialize_image_config", {
     title: "初始化图片配置",
-    description: "在固定用户路径创建一次图片配置模板。不会读取、接收或写入 API key；已有配置不会被覆盖。传入项目根目录时会幂等更新项目 .gitignore。",
+    description: "在固定用户路径创建一次图片配置模板；已有配置不会被覆盖。传入项目根目录时会在项目配置目录创建只含 * 的本地 .gitignore。模板首选 api_key_env。",
     inputSchema: { projectRoot: z.string().min(1).optional() },
     outputSchema: z.object({ created: z.literal(true), path: z.string().min(1), config: z.record(z.any()), gitignoreUpdated: z.boolean() }).strict(),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
@@ -29,7 +29,7 @@ export function registerConfigTools(server, configManager, toolError) {
 
   server.registerTool("update_image_config", {
     title: "修改图片配置",
-    description: "按配置白名单修改用户配置或项目覆盖。禁止写入 API key，项目作用域只能修改安全覆盖字段；修改后需重新绑定项目。",
+    description: "按配置白名单修改用户配置或项目覆盖。用户明确要求时可写入用户级 api_key，但结果始终脱敏；项目作用域禁止密钥且只能修改安全覆盖字段。修改后需重新绑定项目。",
     inputSchema: { scope: z.enum(["user", "project"]).default("user"), projectRoot: z.string().min(1).optional(), changes: z.record(z.any()) },
     outputSchema: z.object({ scope: z.enum(["user", "project"]), path: z.string().min(1), config: z.record(z.any()) }).strict(),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },

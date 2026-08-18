@@ -39,7 +39,7 @@ This file records user-visible changes for each release of `openai-compatible-im
 
 - Reject project configuration that attempts to change the active profile, model, provider, endpoint, authentication source, credential environment variable, timeout, concurrency, or route permissions.
 - Require project output directories and migration targets to pass path, reparse-point, non-overwrite, and source-integrity checks before writing.
-- Keep API keys outside configuration tool inputs and outputs, and add the project configuration path to `.gitignore` during project-aware initialization.
+- Keep API keys out of configuration tool outputs, prefer environment-variable credentials, and allow explicit user-level plaintext storage when requested. Project-aware initialization creates a local `*` ignore rule inside the project configuration directory without changing the root `.gitignore`.
 
 ## [0.3.0] - 2026-08-13
 

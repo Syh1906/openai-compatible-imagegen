@@ -51,7 +51,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 var define_RELEASE_IDENTITY_default;
 var init_define_RELEASE_IDENTITY = __esm({
   "<define:__RELEASE_IDENTITY__>"() {
-    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "1.0.0", serverBuildDigest: "5bdf93ba9987f9d758e87d35694b7a7323c5707fe82cd83bcc38c3ecdb2aad15", widgetAssetDigest: "aee72af7d4935876dd9fbc6e8d63945f585c3263fccc7a4488ca721501237c33", fingerprint: "19e2f2ee1fa3d5e40dc1", resourceUris: { result: "ui://openai-compatible-imagegen/result-19e2f2ee1fa3d5e40dc1.html", editor: "ui://openai-compatible-imagegen/editor-19e2f2ee1fa3d5e40dc1.html" } };
+    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "1.0.0", serverBuildDigest: "f7794c357ba10a25bcceac853d8cf169acfaf3cff116f7f683df170c8669876c", widgetAssetDigest: "aee72af7d4935876dd9fbc6e8d63945f585c3263fccc7a4488ca721501237c33", fingerprint: "53c69230218ec9130b7a", resourceUris: { result: "ui://openai-compatible-imagegen/result-53c69230218ec9130b7a.html", editor: "ui://openai-compatible-imagegen/editor-53c69230218ec9130b7a.html" } };
   }
 });
 
@@ -19211,8 +19211,8 @@ var require_graceful_fs = __commonJS({
       }
       var fs$appendFile = fs3.appendFile;
       if (fs$appendFile)
-        fs3.appendFile = appendFile2;
-      function appendFile2(path15, data, options, cb) {
+        fs3.appendFile = appendFile;
+      function appendFile(path15, data, options, cb) {
         if (typeof options === "function")
           cb = options, options = null;
         return go$appendFile(path15, data, options, cb);
@@ -32930,7 +32930,7 @@ async function pathContainsSymbolicLink(targetPath) {
 // mcp/config-resolution.mjs
 init_define_RELEASE_IDENTITY();
 import { createHash as createHash4, randomUUID } from "node:crypto";
-import { appendFile, lstat as lstat2, mkdir, readFile, writeFile } from "node:fs/promises";
+import { lstat as lstat2, mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path7 from "node:path";
 
@@ -33034,6 +33034,7 @@ function projectConfigPath(projectRoot) {
 }
 async function initializeImageConfig({ userHome = os.homedir(), projectRoot } = {}) {
   const resolvedProjectRoot = projectRoot ? requireAbsoluteProjectRoot(projectRoot) : null;
+  if (resolvedProjectRoot) await ensureProjectConfigIgnored(resolvedProjectRoot);
   const target = userConfigPath(userHome);
   try {
     const metadata = await lstat2(target);
@@ -33052,7 +33053,6 @@ async function initializeImageConfig({ userHome = os.homedir(), projectRoot } = 
     if (error40?.code === "EEXIST") throw new ImageConfigManagementError("image_config_exists");
     throw new ImageConfigManagementError("image_config_write_failed");
   }
-  if (resolvedProjectRoot) await ensureProjectConfigIgnored(resolvedProjectRoot);
   return { created: true, path: target, config: redactConfig(CONFIG_TEMPLATE), gitignoreUpdated: Boolean(resolvedProjectRoot) };
 }
 async function inspectImageConfig({ userHome = os.homedir(), projectRoot } = {}) {
@@ -33071,7 +33071,6 @@ async function updateImageConfig({ userHome = os.homedir(), projectRoot, scope =
   if (!isRecord2(changes)) throw new ImageConfigManagementError("image_config_update_invalid");
   const allowed = scope === "project" ? PROJECT_UPDATE_KEYS : USER_UPDATE_KEYS;
   if (unknownKeys(changes, allowed).length) throw new ImageConfigManagementError("image_config_update_forbidden");
-  if (containsApiKey(changes)) throw new ImageConfigManagementError("image_config_update_forbidden");
   const next = mergeConfigChanges(current, changes);
   if (scope === "project") validateProjectConfig(next);
   else validateUserConfig(next);
@@ -33208,10 +33207,6 @@ function mergeRecords(current, changes) {
   }
   return result;
 }
-function containsApiKey(value) {
-  if (!isRecord2(value)) return false;
-  return Object.entries(value).some(([key, item]) => key === "api_key" || isRecord2(item) && containsApiKey(item));
-}
 async function writeManagedConfig(target, config2) {
   if (await pathContainsSymbolicLink(path7.dirname(target))) throw new ImageConfigManagementError("image_config_write_failed");
   const metadata = await lstat2(target).catch((error40) => {
@@ -33229,19 +33224,24 @@ async function writeManagedConfig(target, config2) {
   }
 }
 async function ensureProjectConfigIgnored(projectRoot) {
-  const gitignorePath = path7.join(projectRoot, ".gitignore");
-  const entry = ".codex/openai-compatible-imagegen/config.json";
-  let content = "";
+  const configDirectory = path7.dirname(projectConfigPath(projectRoot));
+  const gitignorePath = path7.join(configDirectory, ".gitignore");
+  await mkdir(configDirectory, { recursive: true });
+  if (await pathContainsSymbolicLink(configDirectory)) throw new ImageConfigManagementError("image_config_write_failed");
   try {
-    content = await readFile(gitignorePath, "utf8");
+    const content = await readFile(gitignorePath, "utf8");
+    if (content !== "*\n") throw new ImageConfigManagementError("image_config_write_failed");
+    return;
   } catch (error40) {
+    if (error40 instanceof ImageConfigManagementError) throw error40;
     if (error40?.code !== "ENOENT") throw new ImageConfigManagementError("image_config_write_failed");
   }
-  const lines = content.split(/\r?\n/);
-  if (lines.some((line) => line.trim() === entry)) return;
-  const prefix = content && !content.endsWith("\n") ? "\n" : "";
-  await appendFile(gitignorePath, `${prefix}${entry}
-`, "utf8");
+  try {
+    await writeFile(gitignorePath, "*\n", { encoding: "utf8", flag: "wx" });
+  } catch (error40) {
+    if (error40?.code !== "EEXIST") throw new ImageConfigManagementError("image_config_write_failed");
+    if (await readFile(gitignorePath, "utf8") !== "*\n") throw new ImageConfigManagementError("image_config_write_failed");
+  }
 }
 function parseConfigSnapshot(configBytes, errorCode) {
   try {
@@ -34900,7 +34900,7 @@ init_define_RELEASE_IDENTITY();
 function registerConfigTools(server2, configManager, toolError2) {
   server2.registerTool("initialize_image_config", {
     title: "\u521D\u59CB\u5316\u56FE\u7247\u914D\u7F6E",
-    description: "\u5728\u56FA\u5B9A\u7528\u6237\u8DEF\u5F84\u521B\u5EFA\u4E00\u6B21\u56FE\u7247\u914D\u7F6E\u6A21\u677F\u3002\u4E0D\u4F1A\u8BFB\u53D6\u3001\u63A5\u6536\u6216\u5199\u5165 API key\uFF1B\u5DF2\u6709\u914D\u7F6E\u4E0D\u4F1A\u88AB\u8986\u76D6\u3002\u4F20\u5165\u9879\u76EE\u6839\u76EE\u5F55\u65F6\u4F1A\u5E42\u7B49\u66F4\u65B0\u9879\u76EE .gitignore\u3002",
+    description: "\u5728\u56FA\u5B9A\u7528\u6237\u8DEF\u5F84\u521B\u5EFA\u4E00\u6B21\u56FE\u7247\u914D\u7F6E\u6A21\u677F\uFF1B\u5DF2\u6709\u914D\u7F6E\u4E0D\u4F1A\u88AB\u8986\u76D6\u3002\u4F20\u5165\u9879\u76EE\u6839\u76EE\u5F55\u65F6\u4F1A\u5728\u9879\u76EE\u914D\u7F6E\u76EE\u5F55\u521B\u5EFA\u53EA\u542B * \u7684\u672C\u5730 .gitignore\u3002\u6A21\u677F\u9996\u9009 api_key_env\u3002",
     inputSchema: { projectRoot: external_exports2.string().min(1).optional() },
     outputSchema: external_exports2.object({ created: external_exports2.literal(true), path: external_exports2.string().min(1), config: external_exports2.record(external_exports2.any()), gitignoreUpdated: external_exports2.boolean() }).strict(),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }
@@ -34928,7 +34928,7 @@ function registerConfigTools(server2, configManager, toolError2) {
   });
   server2.registerTool("update_image_config", {
     title: "\u4FEE\u6539\u56FE\u7247\u914D\u7F6E",
-    description: "\u6309\u914D\u7F6E\u767D\u540D\u5355\u4FEE\u6539\u7528\u6237\u914D\u7F6E\u6216\u9879\u76EE\u8986\u76D6\u3002\u7981\u6B62\u5199\u5165 API key\uFF0C\u9879\u76EE\u4F5C\u7528\u57DF\u53EA\u80FD\u4FEE\u6539\u5B89\u5168\u8986\u76D6\u5B57\u6BB5\uFF1B\u4FEE\u6539\u540E\u9700\u91CD\u65B0\u7ED1\u5B9A\u9879\u76EE\u3002",
+    description: "\u6309\u914D\u7F6E\u767D\u540D\u5355\u4FEE\u6539\u7528\u6237\u914D\u7F6E\u6216\u9879\u76EE\u8986\u76D6\u3002\u7528\u6237\u660E\u786E\u8981\u6C42\u65F6\u53EF\u5199\u5165\u7528\u6237\u7EA7 api_key\uFF0C\u4F46\u7ED3\u679C\u59CB\u7EC8\u8131\u654F\uFF1B\u9879\u76EE\u4F5C\u7528\u57DF\u7981\u6B62\u5BC6\u94A5\u4E14\u53EA\u80FD\u4FEE\u6539\u5B89\u5168\u8986\u76D6\u5B57\u6BB5\u3002\u4FEE\u6539\u540E\u9700\u91CD\u65B0\u7ED1\u5B9A\u9879\u76EE\u3002",
     inputSchema: { scope: external_exports2.enum(["user", "project"]).default("user"), projectRoot: external_exports2.string().min(1).optional(), changes: external_exports2.record(external_exports2.any()) },
     outputSchema: external_exports2.object({ scope: external_exports2.enum(["user", "project"]), path: external_exports2.string().min(1), config: external_exports2.record(external_exports2.any()) }).strict(),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }

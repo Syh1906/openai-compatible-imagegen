@@ -38,20 +38,39 @@ test("configuration management initializes, redacts, and updates the fixed user 
     assert.equal(updated.config.defaults.quality, "high");
     assert.equal(updated.config.providers.primary.base_url, "https://images.example.test/v1");
     assert.equal(updated.config.providers.primary.api_key_env, "NEW_IMAGE_KEY");
-    await assert.rejects(
-      updateImageConfig({ userHome, scope: "user", changes: { providers: { primary: { api_key: "secret" } } } }),
-      { code: "image_config_update_forbidden" },
-    );
   });
 });
 
-test("initialization adds the project config to gitignore when a project is supplied", async () => {
+test("initialization keeps local config ignored inside its own project directory", async () => {
+  await withConfigRoots(async ({ projectRoot, userHome }) => {
+    await writeFile(path.join(projectRoot, ".gitignore"), "existing-rule\n", "utf8");
+    await initializeImageConfig({ userHome, projectRoot });
+    assert.equal(await readFile(path.join(projectRoot, ".gitignore"), "utf8"), "existing-rule\n");
+    const localIgnore = path.join(projectRoot, ".codex", "openai-compatible-imagegen", ".gitignore");
+    assert.equal(await readFile(localIgnore, "utf8"), "*\n");
+    await initializeImageConfig({ userHome, projectRoot }).catch((error) => assert.equal(error.code, "image_config_exists"));
+    assert.equal(await readFile(localIgnore, "utf8"), "*\n");
+  });
+});
+
+test("an explicit user api_key update is stored but never returned", async () => {
   await withConfigRoots(async ({ projectRoot, userHome }) => {
     await initializeImageConfig({ userHome, projectRoot });
-    const gitignore = await readFile(path.join(projectRoot, ".gitignore"), "utf8");
-    assert.match(gitignore, /^\.codex\/openai-compatible-imagegen\/config\.json$/m);
-    await initializeImageConfig({ userHome, projectRoot }).catch((error) => assert.equal(error.code, "image_config_exists"));
-    assert.equal((await readFile(path.join(projectRoot, ".gitignore"), "utf8")).match(/openai-compatible-imagegen\/config\.json/g).length, 1);
+    const updated = await updateImageConfig({
+      userHome,
+      scope: "user",
+      changes: { providers: { primary: { api_key: "test-secret-value" } } },
+    });
+    assert.equal(JSON.stringify(updated).includes("test-secret-value"), false);
+    const stored = JSON.parse(await readFile(userConfigPath(userHome), "utf8"));
+    assert.equal(stored.providers.primary.api_key, "test-secret-value");
+    const inspected = await inspectImageConfig({ userHome, projectRoot });
+    assert.equal(JSON.stringify(inspected).includes("test-secret-value"), false);
+    await writeJson(projectConfigPath(projectRoot), projectConfig());
+    await assert.rejects(
+      updateImageConfig({ projectRoot, scope: "project", changes: { api_key: "test-secret-value" } }),
+      { code: "image_config_update_forbidden" },
+    );
   });
 });
 
