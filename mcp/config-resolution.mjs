@@ -1,10 +1,11 @@
 import { createHash, randomUUID } from "node:crypto";
-import { lstat, mkdir, readFile, writeFile } from "node:fs/promises";
+import { lstat, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
 import { pathContainsSymbolicLink } from "./filesystem-path-safety.mjs";
 import { replaceFileAtomically } from "./atomic-file-replace.mjs";
+import { ensureLocalIgnore, LocalIgnoreGuardError } from "./local-ignore-guard.mjs";
 
 
 const CONFIG_DIRECTORY = "openai-compatible-imagegen";
@@ -91,8 +92,9 @@ export function projectConfigPath(projectRoot) {
 
 export async function initializeImageConfig({ userHome = os.homedir(), projectRoot } = {}) {
   const resolvedProjectRoot = projectRoot ? requireAbsoluteProjectRoot(projectRoot) : null;
-  if (resolvedProjectRoot) await ensureProjectConfigIgnored(resolvedProjectRoot);
   const target = userConfigPath(userHome);
+  await ensureConfigIgnored(target);
+  if (resolvedProjectRoot) await ensureConfigIgnored(projectConfigPath(resolvedProjectRoot));
   try {
     const metadata = await lstat(target);
     if (metadata.isSymbolicLink() || !metadata.isFile()) throw new ImageConfigManagementError("image_config_exists");
@@ -101,15 +103,13 @@ export async function initializeImageConfig({ userHome = os.homedir(), projectRo
     if (error instanceof ImageConfigManagementError) throw error;
     if (error?.code !== "ENOENT") throw new ImageConfigManagementError("image_config_write_failed");
   }
-  await mkdir(path.dirname(target), { recursive: true });
-  if (await pathContainsSymbolicLink(path.dirname(target))) throw new ImageConfigManagementError("image_config_write_failed");
   try {
     await writeFile(target, `${JSON.stringify(CONFIG_TEMPLATE, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
   } catch (error) {
     if (error?.code === "EEXIST") throw new ImageConfigManagementError("image_config_exists");
     throw new ImageConfigManagementError("image_config_write_failed");
   }
-  return { created: true, path: target, config: redactConfig(CONFIG_TEMPLATE), gitignoreUpdated: Boolean(resolvedProjectRoot) };
+  return { created: true, path: target, config: redactConfig(CONFIG_TEMPLATE), gitignoreUpdated: true };
 }
 
 export async function inspectImageConfig({ userHome = os.homedir(), projectRoot } = {}) {
@@ -133,6 +133,7 @@ export async function updateImageConfig({ userHome = os.homedir(), projectRoot, 
   if (unknownKeys(changes, allowed).length) throw new ImageConfigManagementError("image_config_update_forbidden");
   const next = mergeConfigChanges(current, changes);
   if (scope === "project") validateProjectConfig(next); else validateUserConfig(next);
+  await ensureConfigIgnored(target);
   await writeManagedConfig(target, next);
   return { scope, path: target, config: redactConfig(next) };
 }
@@ -297,24 +298,14 @@ async function writeManagedConfig(target, config) {
   }
 }
 
-async function ensureProjectConfigIgnored(projectRoot) {
-  const configDirectory = path.dirname(projectConfigPath(projectRoot));
-  const gitignorePath = path.join(configDirectory, ".gitignore");
-  await mkdir(configDirectory, { recursive: true });
-  if (await pathContainsSymbolicLink(configDirectory)) throw new ImageConfigManagementError("image_config_write_failed");
+async function ensureConfigIgnored(configPath) {
   try {
-    const content = await readFile(gitignorePath, "utf8");
-    if (content !== "*\n") throw new ImageConfigManagementError("image_config_write_failed");
-    return;
+    await ensureLocalIgnore(path.dirname(configPath));
   } catch (error) {
-    if (error instanceof ImageConfigManagementError) throw error;
-    if (error?.code !== "ENOENT") throw new ImageConfigManagementError("image_config_write_failed");
-  }
-  try {
-    await writeFile(gitignorePath, "*\n", { encoding: "utf8", flag: "wx" });
-  } catch (error) {
-    if (error?.code !== "EEXIST") throw new ImageConfigManagementError("image_config_write_failed");
-    if (await readFile(gitignorePath, "utf8") !== "*\n") throw new ImageConfigManagementError("image_config_write_failed");
+    if (error instanceof LocalIgnoreGuardError) {
+      throw new ImageConfigManagementError("image_config_write_failed");
+    }
+    throw error;
   }
 }
 

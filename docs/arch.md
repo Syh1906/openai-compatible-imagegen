@@ -61,6 +61,7 @@ Standalone Skill -> Standalone adapter -> shared image core -> provider
 - Generated, edited, and delivered images are immutable artifacts with stable IDs.
 - Edit annotations are normalized to source-image coordinates and stored as editing intent.
 - A `projectBindingId` binds model and widget calls to one project across MCP processes.
+- Configuration writes protect their target configuration directory, while project binding protects the resolved artifact directory; both require a local `.gitignore` containing only `*` and stop on incompatible existing rules.
 - Cross-process registries use atomic file replacement and owned locks; stale writers cannot publish over a replacement owner.
 
 ## Release model

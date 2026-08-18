@@ -76,7 +76,7 @@ Plugin 只从以下两个固定路径解析配置：
 
 生效优先级为工具显式参数 > 项目白名单覆盖 > 用户级 defaults > 内建默认。缺少用户配置时停止图片操作，并提示用户基于 `references/config.example.json` 创建正式配置。旧 `auth.json` 和旧版 Plugin 配置不会被自动读取、复制、合并、删除或覆盖；迁移只能通过用户明确执行的迁移命令完成，且不会回显 API key。
 
-Plugin 配置可通过 MCP 工具闭环处理：缺少配置时调用 `initialize_image_config` 创建固定用户模板；如果传入项目根目录，该工具会在项目配置目录创建只含 `*` 的 `.gitignore`，不修改项目根 `.gitignore`；需要查看时调用 `inspect_image_config`；需要调整时调用 `update_image_config`。首推 `api_key_env`；用户明确要求本地明文凭据时，可写入用户级 `api_key`，但查询和修改结果不得回显它。项目作用域禁止凭据，仍只能修改 size、quality、output_format 和 `storage.output_directory`。修改后应重新绑定图片项目。
+Plugin 配置可通过 MCP 工具闭环处理：缺少配置时调用 `initialize_image_config` 创建固定用户模板；该工具始终在用户配置目录创建只含 `*` 的 `.gitignore`，传入项目根目录时也保护项目配置目录，且不修改项目根 `.gitignore`；需要查看时调用 `inspect_image_config`；需要调整时调用 `update_image_config`，写入前会补齐对应配置目录的相同保护。首推 `api_key_env`；用户明确要求本地明文凭据时，可写入用户级 `api_key`，但查询和修改结果不得回显它。项目作用域禁止凭据，仍只能修改 size、quality、output_format 和 `storage.output_directory`。修改后应重新绑定图片项目。
 
 ### 显式迁移
 
@@ -98,7 +98,7 @@ python "<plugin-root>/dist/scripts/migrate_image_config.py" --source "<legacy-co
 
 `readyToWrite=false` 且提示明文 key 授权时停止；只有用户另行明确批准迁移明文 key，才在 write 命令追加 `--allow-plaintext-api-key`。摘要 SHA 不匹配、目标已存在、schema 不兼容或写入失败时报告原始迁移错误并停止，不改换源文件、目标、配置路线或认证方式。迁移成功后保留源文件；不要自动删除或改名。
 
-可选的 `storage.output_directory` 必须是项目内安全相对目录；缺失时使用 `<项目根>/output/imagegen/`。项目根本身、项目外路径、文件、符号链接、junction 或其他重解析点会被拒绝。配置在项目绑定时冻结；修改后需对同一项目根再次显式绑定才生效。
+可选的 `storage.output_directory` 必须是项目内安全相对目录；缺失时使用 `<项目根>/output/imagegen/`。项目根本身、项目外路径、文件、符号链接、junction 或其他重解析点会被拒绝。项目绑定会在实际产物目录创建或验证内容只含 `*` 的 `.gitignore`；规则缺失时补齐，规则错误或路径不安全时停止绑定且不覆盖。配置在项目绑定时冻结；修改后需对同一项目根再次显式绑定才生效。
 
 产物根只决定一个活动仓库。配置覆盖生效后，图片、版本、标注、mask、提交恢复和“在文件夹中显示”都只读取该目录；不会扫描、合并、迁移或复制默认目录中的旧产物。移除覆盖并重启绑定后，默认目录中的旧产物仍可继续访问。
 

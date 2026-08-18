@@ -71,6 +71,7 @@ DEVELOPMENT_PLUGIN_KEYS = {
     "storage",
 }
 REPARSE_POINT_ATTRIBUTE = 0x400
+LOCAL_IGNORE_CONTENT = b"*\n"
 
 
 class ConfigMigrationError(ValueError):
@@ -196,6 +197,8 @@ def write_migration(plan: ConfigMigrationPlan) -> dict[str, Any]:
     try:
         for target, _value in targets:
             leases[target] = prepare_target_directory(target)
+        for target, _value in targets:
+            ensure_target_directory_ignored(target, leases[target])
         assert_source_unchanged(plan)
         for target, value in targets:
             publish_json_new(target, value, leases[target])
@@ -605,6 +608,42 @@ def publish_json_new(
     encoded = (json.dumps(value, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
     absolute_target = Path(target).absolute()
     publish_new_file_safely(directory_lease, absolute_target.name, encoded)
+
+
+def ensure_target_directory_ignored(target: Path, directory_lease: DirectoryLease) -> None:
+    def read_existing() -> bytes:
+        with directory_lease.open_file(".gitignore", protect_from_rename=True) as verified:
+            return verified.read_bytes()
+
+    try:
+        existing = read_existing()
+    except FileNotFoundError:
+        try:
+            publish_new_file_safely(directory_lease, ".gitignore", LOCAL_IGNORE_CONTENT)
+            return
+        except FileExistsError:
+            try:
+                existing = read_existing()
+            except OSError as exc:
+                raise ConfigMigrationError(
+                    "migration_write_failed",
+                    "migration target ignore guard could not be verified",
+                ) from exc
+        except OSError as exc:
+            raise ConfigMigrationError(
+                "migration_write_failed",
+                "migration target ignore guard could not be written",
+            ) from exc
+    except OSError as exc:
+        raise ConfigMigrationError(
+            "migration_write_failed",
+            "migration target ignore guard could not be read",
+        ) from exc
+    if existing != LOCAL_IGNORE_CONTENT:
+        raise ConfigMigrationError(
+            "migration_write_failed",
+            "migration target ignore guard must contain only *",
+        )
 
 
 def rollback_published_target(target: Path, directory_lease: DirectoryLease) -> None:

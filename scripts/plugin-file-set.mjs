@@ -103,6 +103,7 @@ export const standaloneReleaseFiles = Object.freeze([
 ].sort());
 
 export const pluginReleaseFiles = Object.freeze([
+  ".agents/plugins/marketplace.json",
   ".codex-plugin/plugin.json",
   ".mcp.json",
   "LICENSE",

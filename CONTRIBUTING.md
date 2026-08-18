@@ -46,9 +46,9 @@ python -m unittest tests.<module>
 - Update affected public docs for behavior, configuration, installation, or release changes.
 - Never include credentials, private provider URLs, generated images, caches, or test output.
 
-## Release candidates
+## Publishing a release
 
-The `Build release artifacts` workflow is manually triggered for an exact commit or tag and uses the protected `release` environment. It builds and uploads the two archives, shared-core evidence, and `SHA256SUMS`; it does not create tags or GitHub Releases.
+The `Publish release` workflow is manually triggered with an existing annotated version tag and uses the protected `release` environment. It requires the tag to match the Plugin manifest version, runs the release checks, builds the two archives, shared-core evidence, and `SHA256SUMS`, and uploads the same files to a GitHub Release. The Release title is the exact tag, such as `v1.0.1`. The workflow does not create, move, or push tags and does not replace an existing Release.
 
 ## Commit format
 

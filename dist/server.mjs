@@ -51,7 +51,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 var define_RELEASE_IDENTITY_default;
 var init_define_RELEASE_IDENTITY = __esm({
   "<define:__RELEASE_IDENTITY__>"() {
-    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "1.0.0", serverBuildDigest: "f7794c357ba10a25bcceac853d8cf169acfaf3cff116f7f683df170c8669876c", widgetAssetDigest: "aee72af7d4935876dd9fbc6e8d63945f585c3263fccc7a4488ca721501237c33", fingerprint: "53c69230218ec9130b7a", resourceUris: { result: "ui://openai-compatible-imagegen/result-53c69230218ec9130b7a.html", editor: "ui://openai-compatible-imagegen/editor-53c69230218ec9130b7a.html" } };
+    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "1.0.1", serverBuildDigest: "382b57ef43342728c8dd7b0a0f08c1372c5da5fbddc0434f3215de95fdfe753d", widgetAssetDigest: "a83b84f2d69c8879c8a3b78950873da104ba1526e4475a9259c94ee0bc4da522", fingerprint: "2831b6775eeac7a4bfcf", resourceUris: { result: "ui://openai-compatible-imagegen/result-2831b6775eeac7a4bfcf.html", editor: "ui://openai-compatible-imagegen/editor-2831b6775eeac7a4bfcf.html" } };
   }
 });
 
@@ -257,10 +257,10 @@ function assignProp(target, prop, value) {
     configurable: true
   });
 }
-function getElementAtPath(obj, path15) {
-  if (!path15)
+function getElementAtPath(obj, path16) {
+  if (!path16)
     return obj;
-  return path15.reduce((acc, key) => acc?.[key], obj);
+  return path16.reduce((acc, key) => acc?.[key], obj);
 }
 function promiseAllObject(promisesObj) {
   const keys = Object.keys(promisesObj);
@@ -509,11 +509,11 @@ function aborted(x, startIndex = 0) {
   }
   return false;
 }
-function prefixIssues(path15, issues) {
+function prefixIssues(path16, issues) {
   return issues.map((iss) => {
     var _a;
     (_a = iss).path ?? (_a.path = []);
-    iss.path.unshift(path15);
+    iss.path.unshift(path16);
     return iss;
   });
 }
@@ -703,7 +703,7 @@ function treeifyError(error40, _mapper) {
     return issue2.message;
   };
   const result = { errors: [] };
-  const processError = (error41, path15 = []) => {
+  const processError = (error41, path16 = []) => {
     var _a, _b;
     for (const issue2 of error41.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
@@ -713,7 +713,7 @@ function treeifyError(error40, _mapper) {
       } else if (issue2.code === "invalid_element") {
         processError({ issues: issue2.issues }, issue2.path);
       } else {
-        const fullpath = [...path15, ...issue2.path];
+        const fullpath = [...path16, ...issue2.path];
         if (fullpath.length === 0) {
           result.errors.push(mapper(issue2));
           continue;
@@ -743,9 +743,9 @@ function treeifyError(error40, _mapper) {
   processError(error40);
   return result;
 }
-function toDotPath(path15) {
+function toDotPath(path16) {
   const segs = [];
-  for (const seg of path15) {
+  for (const seg of path16) {
     if (typeof seg === "number")
       segs.push(`[${seg}]`);
     else if (typeof seg === "symbol")
@@ -14947,8 +14947,8 @@ var require_utils = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path15) {
-      let input = path15;
+    function removeDotSegments(path16) {
+      let input = path16;
       const output = [];
       let nextSlash = -1;
       let len = 0;
@@ -15201,8 +15201,8 @@ var require_schemes = __commonJS({
         wsComponent.secure = void 0;
       }
       if (wsComponent.resourceName) {
-        const [path15, query] = wsComponent.resourceName.split("?");
-        wsComponent.path = path15 && path15 !== "/" ? path15 : void 0;
+        const [path16, query] = wsComponent.resourceName.split("?");
+        wsComponent.path = path16 && path16 !== "/" ? path16 : void 0;
         wsComponent.query = query;
         wsComponent.resourceName = void 0;
       }
@@ -18733,14 +18733,14 @@ var require_polyfills = __commonJS({
       fs2.fstatSync = statFixSync(fs2.fstatSync);
       fs2.lstatSync = statFixSync(fs2.lstatSync);
       if (fs2.chmod && !fs2.lchmod) {
-        fs2.lchmod = function(path15, mode, cb) {
+        fs2.lchmod = function(path16, mode, cb) {
           if (cb) process.nextTick(cb);
         };
         fs2.lchmodSync = function() {
         };
       }
       if (fs2.chown && !fs2.lchown) {
-        fs2.lchown = function(path15, uid, gid, cb) {
+        fs2.lchown = function(path16, uid, gid, cb) {
           if (cb) process.nextTick(cb);
         };
         fs2.lchownSync = function() {
@@ -18807,9 +18807,9 @@ var require_polyfills = __commonJS({
         };
       })(fs2.readSync);
       function patchLchmod(fs3) {
-        fs3.lchmod = function(path15, mode, callback) {
+        fs3.lchmod = function(path16, mode, callback) {
           fs3.open(
-            path15,
+            path16,
             constants2.O_WRONLY | constants2.O_SYMLINK,
             mode,
             function(err, fd) {
@@ -18825,8 +18825,8 @@ var require_polyfills = __commonJS({
             }
           );
         };
-        fs3.lchmodSync = function(path15, mode) {
-          var fd = fs3.openSync(path15, constants2.O_WRONLY | constants2.O_SYMLINK, mode);
+        fs3.lchmodSync = function(path16, mode) {
+          var fd = fs3.openSync(path16, constants2.O_WRONLY | constants2.O_SYMLINK, mode);
           var threw = true;
           var ret;
           try {
@@ -18847,8 +18847,8 @@ var require_polyfills = __commonJS({
       }
       function patchLutimes(fs3) {
         if (constants2.hasOwnProperty("O_SYMLINK") && fs3.futimes) {
-          fs3.lutimes = function(path15, at, mt, cb) {
-            fs3.open(path15, constants2.O_SYMLINK, function(er, fd) {
+          fs3.lutimes = function(path16, at, mt, cb) {
+            fs3.open(path16, constants2.O_SYMLINK, function(er, fd) {
               if (er) {
                 if (cb) cb(er);
                 return;
@@ -18860,8 +18860,8 @@ var require_polyfills = __commonJS({
               });
             });
           };
-          fs3.lutimesSync = function(path15, at, mt) {
-            var fd = fs3.openSync(path15, constants2.O_SYMLINK);
+          fs3.lutimesSync = function(path16, at, mt) {
+            var fd = fs3.openSync(path16, constants2.O_SYMLINK);
             var ret;
             var threw = true;
             try {
@@ -18980,11 +18980,11 @@ var require_legacy_streams = __commonJS({
         ReadStream,
         WriteStream
       };
-      function ReadStream(path15, options) {
-        if (!(this instanceof ReadStream)) return new ReadStream(path15, options);
+      function ReadStream(path16, options) {
+        if (!(this instanceof ReadStream)) return new ReadStream(path16, options);
         Stream.call(this);
         var self = this;
-        this.path = path15;
+        this.path = path16;
         this.fd = null;
         this.readable = true;
         this.paused = false;
@@ -19029,10 +19029,10 @@ var require_legacy_streams = __commonJS({
           self._read();
         });
       }
-      function WriteStream(path15, options) {
-        if (!(this instanceof WriteStream)) return new WriteStream(path15, options);
+      function WriteStream(path16, options) {
+        if (!(this instanceof WriteStream)) return new WriteStream(path16, options);
         Stream.call(this);
-        this.path = path15;
+        this.path = path16;
         this.fd = null;
         this.writable = true;
         this.flags = "w";
@@ -19176,15 +19176,15 @@ var require_graceful_fs = __commonJS({
       fs3.createReadStream = createReadStream;
       fs3.createWriteStream = createWriteStream;
       var fs$readFile = fs3.readFile;
-      fs3.readFile = readFile3;
-      function readFile3(path15, options, cb) {
+      fs3.readFile = readFile4;
+      function readFile4(path16, options, cb) {
         if (typeof options === "function")
           cb = options, options = null;
-        return go$readFile(path15, options, cb);
-        function go$readFile(path16, options2, cb2, startTime) {
-          return fs$readFile(path16, options2, function(err) {
+        return go$readFile(path16, options, cb);
+        function go$readFile(path17, options2, cb2, startTime) {
+          return fs$readFile(path17, options2, function(err) {
             if (err && (err.code === "EMFILE" || err.code === "ENFILE"))
-              enqueue([go$readFile, [path16, options2, cb2], err, startTime || Date.now(), Date.now()]);
+              enqueue([go$readFile, [path17, options2, cb2], err, startTime || Date.now(), Date.now()]);
             else {
               if (typeof cb2 === "function")
                 cb2.apply(this, arguments);
@@ -19193,15 +19193,15 @@ var require_graceful_fs = __commonJS({
         }
       }
       var fs$writeFile = fs3.writeFile;
-      fs3.writeFile = writeFile2;
-      function writeFile2(path15, data, options, cb) {
+      fs3.writeFile = writeFile3;
+      function writeFile3(path16, data, options, cb) {
         if (typeof options === "function")
           cb = options, options = null;
-        return go$writeFile(path15, data, options, cb);
-        function go$writeFile(path16, data2, options2, cb2, startTime) {
-          return fs$writeFile(path16, data2, options2, function(err) {
+        return go$writeFile(path16, data, options, cb);
+        function go$writeFile(path17, data2, options2, cb2, startTime) {
+          return fs$writeFile(path17, data2, options2, function(err) {
             if (err && (err.code === "EMFILE" || err.code === "ENFILE"))
-              enqueue([go$writeFile, [path16, data2, options2, cb2], err, startTime || Date.now(), Date.now()]);
+              enqueue([go$writeFile, [path17, data2, options2, cb2], err, startTime || Date.now(), Date.now()]);
             else {
               if (typeof cb2 === "function")
                 cb2.apply(this, arguments);
@@ -19212,14 +19212,14 @@ var require_graceful_fs = __commonJS({
       var fs$appendFile = fs3.appendFile;
       if (fs$appendFile)
         fs3.appendFile = appendFile;
-      function appendFile(path15, data, options, cb) {
+      function appendFile(path16, data, options, cb) {
         if (typeof options === "function")
           cb = options, options = null;
-        return go$appendFile(path15, data, options, cb);
-        function go$appendFile(path16, data2, options2, cb2, startTime) {
-          return fs$appendFile(path16, data2, options2, function(err) {
+        return go$appendFile(path16, data, options, cb);
+        function go$appendFile(path17, data2, options2, cb2, startTime) {
+          return fs$appendFile(path17, data2, options2, function(err) {
             if (err && (err.code === "EMFILE" || err.code === "ENFILE"))
-              enqueue([go$appendFile, [path16, data2, options2, cb2], err, startTime || Date.now(), Date.now()]);
+              enqueue([go$appendFile, [path17, data2, options2, cb2], err, startTime || Date.now(), Date.now()]);
             else {
               if (typeof cb2 === "function")
                 cb2.apply(this, arguments);
@@ -19250,31 +19250,31 @@ var require_graceful_fs = __commonJS({
       var fs$readdir = fs3.readdir;
       fs3.readdir = readdir2;
       var noReaddirOptionVersions = /^v[0-5]\./;
-      function readdir2(path15, options, cb) {
+      function readdir2(path16, options, cb) {
         if (typeof options === "function")
           cb = options, options = null;
-        var go$readdir = noReaddirOptionVersions.test(process.version) ? function go$readdir2(path16, options2, cb2, startTime) {
-          return fs$readdir(path16, fs$readdirCallback(
-            path16,
+        var go$readdir = noReaddirOptionVersions.test(process.version) ? function go$readdir2(path17, options2, cb2, startTime) {
+          return fs$readdir(path17, fs$readdirCallback(
+            path17,
             options2,
             cb2,
             startTime
           ));
-        } : function go$readdir2(path16, options2, cb2, startTime) {
-          return fs$readdir(path16, options2, fs$readdirCallback(
-            path16,
+        } : function go$readdir2(path17, options2, cb2, startTime) {
+          return fs$readdir(path17, options2, fs$readdirCallback(
+            path17,
             options2,
             cb2,
             startTime
           ));
         };
-        return go$readdir(path15, options, cb);
-        function fs$readdirCallback(path16, options2, cb2, startTime) {
+        return go$readdir(path16, options, cb);
+        function fs$readdirCallback(path17, options2, cb2, startTime) {
           return function(err, files) {
             if (err && (err.code === "EMFILE" || err.code === "ENFILE"))
               enqueue([
                 go$readdir,
-                [path16, options2, cb2],
+                [path17, options2, cb2],
                 err,
                 startTime || Date.now(),
                 Date.now()
@@ -19345,7 +19345,7 @@ var require_graceful_fs = __commonJS({
         enumerable: true,
         configurable: true
       });
-      function ReadStream(path15, options) {
+      function ReadStream(path16, options) {
         if (this instanceof ReadStream)
           return fs$ReadStream.apply(this, arguments), this;
         else
@@ -19365,7 +19365,7 @@ var require_graceful_fs = __commonJS({
           }
         });
       }
-      function WriteStream(path15, options) {
+      function WriteStream(path16, options) {
         if (this instanceof WriteStream)
           return fs$WriteStream.apply(this, arguments), this;
         else
@@ -19383,22 +19383,22 @@ var require_graceful_fs = __commonJS({
           }
         });
       }
-      function createReadStream(path15, options) {
-        return new fs3.ReadStream(path15, options);
+      function createReadStream(path16, options) {
+        return new fs3.ReadStream(path16, options);
       }
-      function createWriteStream(path15, options) {
-        return new fs3.WriteStream(path15, options);
+      function createWriteStream(path16, options) {
+        return new fs3.WriteStream(path16, options);
       }
       var fs$open = fs3.open;
       fs3.open = open4;
-      function open4(path15, flags, mode, cb) {
+      function open4(path16, flags, mode, cb) {
         if (typeof mode === "function")
           cb = mode, mode = null;
-        return go$open(path15, flags, mode, cb);
-        function go$open(path16, flags2, mode2, cb2, startTime) {
-          return fs$open(path16, flags2, mode2, function(err, fd) {
+        return go$open(path16, flags, mode, cb);
+        function go$open(path17, flags2, mode2, cb2, startTime) {
+          return fs$open(path17, flags2, mode2, function(err, fd) {
             if (err && (err.code === "EMFILE" || err.code === "ENFILE"))
-              enqueue([go$open, [path16, flags2, mode2, cb2], err, startTime || Date.now(), Date.now()]);
+              enqueue([go$open, [path17, flags2, mode2, cb2], err, startTime || Date.now(), Date.now()]);
             else {
               if (typeof cb2 === "function")
                 cb2.apply(this, arguments);
@@ -19934,7 +19934,7 @@ var require_lockfile = __commonJS({
   "node_modules/proper-lockfile/lib/lockfile.js"(exports, module) {
     "use strict";
     init_define_RELEASE_IDENTITY();
-    var path15 = __require("path");
+    var path16 = __require("path");
     var fs2 = require_graceful_fs();
     var retry = require_retry2();
     var onExit = require_signal_exit();
@@ -19945,7 +19945,7 @@ var require_lockfile = __commonJS({
     }
     function resolveCanonicalPath(file2, options, callback) {
       if (!options.realpath) {
-        return callback(null, path15.resolve(file2));
+        return callback(null, path16.resolve(file2));
       }
       options.fs.realpath(file2, callback);
     }
@@ -20272,7 +20272,7 @@ var require_proper_lockfile = __commonJS({
 
 // mcp/server.mjs
 init_define_RELEASE_IDENTITY();
-import { readFile as readFile2 } from "node:fs/promises";
+import { readFile as readFile3 } from "node:fs/promises";
 import { fileURLToPath as fileURLToPath5 } from "node:url";
 
 // node_modules/@modelcontextprotocol/sdk/dist/esm/server/stdio.js
@@ -23366,8 +23366,8 @@ function getErrorMap2() {
 // node_modules/zod/v3/helpers/parseUtil.js
 init_define_RELEASE_IDENTITY();
 var makeIssue = (params) => {
-  const { data, path: path15, errorMaps, issueData } = params;
-  const fullPath = [...path15, ...issueData.path || []];
+  const { data, path: path16, errorMaps, issueData } = params;
+  const fullPath = [...path16, ...issueData.path || []];
   const fullIssue = {
     ...issueData,
     path: fullPath
@@ -23487,11 +23487,11 @@ var errorUtil;
 
 // node_modules/zod/v3/types.js
 var ParseInputLazyPath = class {
-  constructor(parent, value, path15, key) {
+  constructor(parent, value, path16, key) {
     this._cachedPath = [];
     this.parent = parent;
     this.data = value;
-    this._path = path15;
+    this._path = path16;
     this._key = key;
   }
   get path() {
@@ -27078,11 +27078,11 @@ function normalizeObjectSchema(schema) {
   }
   return void 0;
 }
-function getDotPath(path15) {
-  if (path15.length === 0) {
+function getDotPath(path16) {
+  if (path16.length === 0) {
     return "object root";
   }
-  return path15.reduce((acc, seg, index) => {
+  return path16.reduce((acc, seg, index) => {
     if (index === 0) {
       return String(seg);
     }
@@ -31595,6 +31595,7 @@ var STABLE_TOOL_ERROR_ENTRIES = [
   ["annotation_not_found", "\u672A\u627E\u5230\u6307\u5B9A\u6807\u6CE8\u3002"],
   ["annotation_save_failed", "\u4FDD\u5B58\u56FE\u7247\u6807\u6CE8\u5931\u8D25\u3002"],
   ["artifact_not_found", "\u672A\u627E\u5230\u6307\u5B9A\u56FE\u7247\u4EA7\u7269\u3002"],
+  ["artifact_ignore_write_failed", "\u65E0\u6CD5\u5B89\u5168\u4FDD\u62A4\u56FE\u7247\u4EA7\u7269\u76EE\u5F55\u3002"],
   ["artifact_read_failed", "\u8BFB\u53D6\u56FE\u7247\u4EA7\u7269\u5931\u8D25\u3002"],
   ["artifact_reveal_failed", "\u65E0\u6CD5\u5728\u6587\u4EF6\u5939\u4E2D\u663E\u793A\u56FE\u7247\u3002"],
   ["editor_session_not_found", "\u753B\u5E03\u4F1A\u8BDD\u4E0D\u5B58\u5728\u6216\u5DF2\u7ECF\u91CA\u653E\u3002"],
@@ -32908,8 +32909,8 @@ function uriScheme(uri) {
 init_define_RELEASE_IDENTITY();
 import { createHash as createHash5, randomBytes as randomBytes5 } from "node:crypto";
 import { constants } from "node:fs";
-import { access, lstat as lstat6 } from "node:fs/promises";
-import path10 from "node:path";
+import { access, lstat as lstat7 } from "node:fs/promises";
+import path11 from "node:path";
 
 // mcp/filesystem-path-safety.mjs
 init_define_RELEASE_IDENTITY();
@@ -32930,9 +32931,9 @@ async function pathContainsSymbolicLink(targetPath) {
 // mcp/config-resolution.mjs
 init_define_RELEASE_IDENTITY();
 import { createHash as createHash4, randomUUID } from "node:crypto";
-import { lstat as lstat2, mkdir, readFile, writeFile } from "node:fs/promises";
+import { lstat as lstat3, readFile as readFile2, writeFile as writeFile2 } from "node:fs/promises";
 import os from "node:os";
-import path7 from "node:path";
+import path8 from "node:path";
 
 // mcp/atomic-file-replace.mjs
 init_define_RELEASE_IDENTITY();
@@ -32955,9 +32956,52 @@ async function replaceFileAtomically(sourcePath, destinationPath) {
   throw lastError;
 }
 
+// mcp/local-ignore-guard.mjs
+init_define_RELEASE_IDENTITY();
+import { lstat as lstat2, mkdir, readFile, writeFile } from "node:fs/promises";
+import path7 from "node:path";
+var LOCAL_IGNORE_CONTENT = "*\n";
+var LocalIgnoreGuardError = class extends Error {
+  constructor() {
+    super("local_ignore_guard_failed");
+    this.name = "LocalIgnoreGuardError";
+    this.code = "local_ignore_guard_failed";
+  }
+};
+async function ensureLocalIgnore(directory) {
+  const resolvedDirectory = path7.resolve(directory);
+  try {
+    await mkdir(resolvedDirectory, { recursive: true });
+    if (await pathContainsSymbolicLink(resolvedDirectory)) throw new LocalIgnoreGuardError();
+    const ignorePath = path7.join(resolvedDirectory, ".gitignore");
+    const existing = await lstat2(ignorePath).catch((error40) => {
+      if (error40?.code === "ENOENT") return null;
+      throw error40;
+    });
+    if (existing) {
+      if (!existing.isFile() || existing.isSymbolicLink()) throw new LocalIgnoreGuardError();
+      if (await readFile(ignorePath, "utf8") !== LOCAL_IGNORE_CONTENT) throw new LocalIgnoreGuardError();
+      return { path: ignorePath, created: false };
+    }
+    try {
+      await writeFile(ignorePath, LOCAL_IGNORE_CONTENT, { encoding: "utf8", flag: "wx" });
+      return { path: ignorePath, created: true };
+    } catch (error40) {
+      if (error40?.code !== "EEXIST") throw error40;
+      const metadata = await lstat2(ignorePath);
+      if (!metadata.isFile() || metadata.isSymbolicLink()) throw new LocalIgnoreGuardError();
+      if (await readFile(ignorePath, "utf8") !== LOCAL_IGNORE_CONTENT) throw new LocalIgnoreGuardError();
+      return { path: ignorePath, created: false };
+    }
+  } catch (error40) {
+    if (error40 instanceof LocalIgnoreGuardError) throw error40;
+    throw new LocalIgnoreGuardError();
+  }
+}
+
 // mcp/config-resolution.mjs
 var CONFIG_DIRECTORY = "openai-compatible-imagegen";
-var DEFAULT_OUTPUT_DIRECTORY = path7.join("output", "imagegen");
+var DEFAULT_OUTPUT_DIRECTORY = path8.join("output", "imagegen");
 var ACTIVE_PROFILE = "primary/gpt-image-2";
 var USER_TOP_LEVEL_KEYS = /* @__PURE__ */ new Set([
   "config_version",
@@ -33027,33 +33071,32 @@ var ImageConfigResolutionError = class extends Error {
   }
 };
 function userConfigPath(userHome = os.homedir()) {
-  return path7.resolve(userHome, ".codex", CONFIG_DIRECTORY, "config.json");
+  return path8.resolve(userHome, ".codex", CONFIG_DIRECTORY, "config.json");
 }
 function projectConfigPath(projectRoot) {
-  return path7.resolve(projectRoot, ".codex", CONFIG_DIRECTORY, "config.json");
+  return path8.resolve(projectRoot, ".codex", CONFIG_DIRECTORY, "config.json");
 }
 async function initializeImageConfig({ userHome = os.homedir(), projectRoot } = {}) {
   const resolvedProjectRoot = projectRoot ? requireAbsoluteProjectRoot(projectRoot) : null;
-  if (resolvedProjectRoot) await ensureProjectConfigIgnored(resolvedProjectRoot);
   const target = userConfigPath(userHome);
+  await ensureConfigIgnored(target);
+  if (resolvedProjectRoot) await ensureConfigIgnored(projectConfigPath(resolvedProjectRoot));
   try {
-    const metadata = await lstat2(target);
+    const metadata = await lstat3(target);
     if (metadata.isSymbolicLink() || !metadata.isFile()) throw new ImageConfigManagementError("image_config_exists");
     throw new ImageConfigManagementError("image_config_exists");
   } catch (error40) {
     if (error40 instanceof ImageConfigManagementError) throw error40;
     if (error40?.code !== "ENOENT") throw new ImageConfigManagementError("image_config_write_failed");
   }
-  await mkdir(path7.dirname(target), { recursive: true });
-  if (await pathContainsSymbolicLink(path7.dirname(target))) throw new ImageConfigManagementError("image_config_write_failed");
   try {
-    await writeFile(target, `${JSON.stringify(CONFIG_TEMPLATE, null, 2)}
+    await writeFile2(target, `${JSON.stringify(CONFIG_TEMPLATE, null, 2)}
 `, { encoding: "utf8", flag: "wx" });
   } catch (error40) {
     if (error40?.code === "EEXIST") throw new ImageConfigManagementError("image_config_exists");
     throw new ImageConfigManagementError("image_config_write_failed");
   }
-  return { created: true, path: target, config: redactConfig(CONFIG_TEMPLATE), gitignoreUpdated: Boolean(resolvedProjectRoot) };
+  return { created: true, path: target, config: redactConfig(CONFIG_TEMPLATE), gitignoreUpdated: true };
 }
 async function inspectImageConfig({ userHome = os.homedir(), projectRoot } = {}) {
   const userPath = userConfigPath(userHome);
@@ -33074,6 +33117,7 @@ async function updateImageConfig({ userHome = os.homedir(), projectRoot, scope =
   const next = mergeConfigChanges(current, changes);
   if (scope === "project") validateProjectConfig(next);
   else validateUserConfig(next);
+  await ensureConfigIgnored(target);
   await writeManagedConfig(target, next);
   return { scope, path: target, config: redactConfig(next) };
 }
@@ -33164,10 +33208,10 @@ async function readConfigSnapshot(configPath, {
   invalidCode = "image_config_invalid"
 }) {
   try {
-    const metadata = await lstat2(configPath);
+    const metadata = await lstat3(configPath);
     if (!metadata.isFile() || metadata.isSymbolicLink()) throw new Error("unsafe config file");
     if (await pathContainsSymbolicLink(configPath)) throw new Error("unsafe config file");
-    return await readFile(configPath);
+    return await readFile2(configPath);
   } catch (error40) {
     if (error40?.code === "ENOENT") {
       if (!required2) return null;
@@ -33208,39 +33252,29 @@ function mergeRecords(current, changes) {
   return result;
 }
 async function writeManagedConfig(target, config2) {
-  if (await pathContainsSymbolicLink(path7.dirname(target))) throw new ImageConfigManagementError("image_config_write_failed");
-  const metadata = await lstat2(target).catch((error40) => {
+  if (await pathContainsSymbolicLink(path8.dirname(target))) throw new ImageConfigManagementError("image_config_write_failed");
+  const metadata = await lstat3(target).catch((error40) => {
     if (error40?.code === "ENOENT") return null;
     throw error40;
   });
   if (metadata && (metadata.isSymbolicLink() || !metadata.isFile())) throw new ImageConfigManagementError("image_config_write_failed");
   const temporary = `${target}.${randomUUID()}.tmp`;
   try {
-    await writeFile(temporary, `${JSON.stringify(config2, null, 2)}
+    await writeFile2(temporary, `${JSON.stringify(config2, null, 2)}
 `, { encoding: "utf8", flag: "wx" });
     await replaceFileAtomically(temporary, target);
   } catch {
     throw new ImageConfigManagementError("image_config_write_failed");
   }
 }
-async function ensureProjectConfigIgnored(projectRoot) {
-  const configDirectory = path7.dirname(projectConfigPath(projectRoot));
-  const gitignorePath = path7.join(configDirectory, ".gitignore");
-  await mkdir(configDirectory, { recursive: true });
-  if (await pathContainsSymbolicLink(configDirectory)) throw new ImageConfigManagementError("image_config_write_failed");
+async function ensureConfigIgnored(configPath) {
   try {
-    const content = await readFile(gitignorePath, "utf8");
-    if (content !== "*\n") throw new ImageConfigManagementError("image_config_write_failed");
-    return;
+    await ensureLocalIgnore(path8.dirname(configPath));
   } catch (error40) {
-    if (error40 instanceof ImageConfigManagementError) throw error40;
-    if (error40?.code !== "ENOENT") throw new ImageConfigManagementError("image_config_write_failed");
-  }
-  try {
-    await writeFile(gitignorePath, "*\n", { encoding: "utf8", flag: "wx" });
-  } catch (error40) {
-    if (error40?.code !== "EEXIST") throw new ImageConfigManagementError("image_config_write_failed");
-    if (await readFile(gitignorePath, "utf8") !== "*\n") throw new ImageConfigManagementError("image_config_write_failed");
+    if (error40 instanceof LocalIgnoreGuardError) {
+      throw new ImageConfigManagementError("image_config_write_failed");
+    }
+    throw error40;
   }
 }
 function parseConfigSnapshot(configBytes, errorCode) {
@@ -33403,21 +33437,21 @@ function mergeEffectiveConfig(userConfig, projectConfig) {
 }
 function resolveArtifactRoot(config2, projectRoot) {
   const configured = config2.storage?.output_directory ?? DEFAULT_OUTPUT_DIRECTORY;
-  if (typeof configured !== "string" || path7.isAbsolute(configured)) throw outputDirectoryError();
+  if (typeof configured !== "string" || path8.isAbsolute(configured)) throw outputDirectoryError();
   try {
-    return path7.resolve(projectRoot, configured);
+    return path8.resolve(projectRoot, configured);
   } catch {
     throw outputDirectoryError();
   }
 }
 async function validateArtifactRoot(artifactRoot, projectRoot) {
-  const relative = path7.relative(projectRoot, artifactRoot);
-  if (!relative || relative.startsWith("..") || path7.isAbsolute(relative)) throw outputDirectoryError();
+  const relative = path8.relative(projectRoot, artifactRoot);
+  if (!relative || relative.startsWith("..") || path8.isAbsolute(relative)) throw outputDirectoryError();
   let current = projectRoot;
-  for (const segment of relative.split(path7.sep).filter(Boolean)) {
-    current = path7.join(current, segment);
+  for (const segment of relative.split(path8.sep).filter(Boolean)) {
+    current = path8.join(current, segment);
     try {
-      const metadata = await lstat2(current);
+      const metadata = await lstat3(current);
       if (metadata.isSymbolicLink() || !metadata.isDirectory()) throw outputDirectoryError();
       if (await pathContainsSymbolicLink(current)) throw outputDirectoryError();
     } catch (error40) {
@@ -33428,8 +33462,8 @@ async function validateArtifactRoot(artifactRoot, projectRoot) {
   }
 }
 function requireAbsoluteProjectRoot(projectRoot) {
-  if (typeof projectRoot !== "string" || !path7.isAbsolute(projectRoot)) throw outputDirectoryError();
-  return path7.resolve(projectRoot);
+  if (typeof projectRoot !== "string" || !path8.isAbsolute(projectRoot)) throw outputDirectoryError();
+  return path8.resolve(projectRoot);
 }
 function requireExactKeys(value, allowed, errorCode) {
   if (unknownKeys(value, allowed).length) throw configError(errorCode);
@@ -33494,7 +33528,7 @@ function isRecord2(value) {
 }
 function samePath(left, right) {
   if (typeof left !== "string" || typeof right !== "string") return false;
-  const normalize = (value) => path7.resolve(value).replaceAll("\\", "/");
+  const normalize = (value) => path8.resolve(value).replaceAll("\\", "/");
   const normalizedLeft = normalize(left);
   const normalizedRight = normalize(right);
   return process.platform === "win32" ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase() : normalizedLeft === normalizedRight;
@@ -33502,8 +33536,8 @@ function samePath(left, right) {
 
 // mcp/project-binding-store.mjs
 init_define_RELEASE_IDENTITY();
-import { lstat as lstat5, mkdir as mkdir3 } from "node:fs/promises";
-import path9 from "node:path";
+import { lstat as lstat6, mkdir as mkdir3 } from "node:fs/promises";
+import path10 from "node:path";
 
 // mcp/file-lock-ownership.mjs
 init_define_RELEASE_IDENTITY();
@@ -33511,7 +33545,7 @@ var import_proper_lockfile = __toESM(require_proper_lockfile(), 1);
 import fs from "node:fs";
 import { randomBytes as randomBytes4 } from "node:crypto";
 import {
-  lstat as lstat4,
+  lstat as lstat5,
   mkdir as mkdir2,
   open as open2,
   readdir,
@@ -33519,11 +33553,11 @@ import {
   rmdir,
   unlink
 } from "node:fs/promises";
-import path8 from "node:path";
+import path9 from "node:path";
 
 // mcp/stable-file-snapshot.mjs
 init_define_RELEASE_IDENTITY();
-import { lstat as lstat3, open } from "node:fs/promises";
+import { lstat as lstat4, open } from "node:fs/promises";
 var RETRY = /* @__PURE__ */ Symbol("retry");
 var MISSING = /* @__PURE__ */ Symbol("missing");
 var StableFileSnapshotError = class extends Error {
@@ -33559,7 +33593,7 @@ async function readSnapshotOnce(filePath, maxBytes) {
   } catch (error40) {
     if (error40?.code === "ENOENT") {
       try {
-        const metadata = await lstat3(filePath);
+        const metadata = await lstat4(filePath);
         if (metadata.isSymbolicLink() || !metadata.isFile()) {
           throw new StableFileSnapshotError("invalid");
         }
@@ -33574,7 +33608,7 @@ async function readSnapshotOnce(filePath, maxBytes) {
   }
   try {
     const [pathMetadata, handleMetadata] = await Promise.all([
-      lstat3(filePath),
+      lstat4(filePath),
       handle.stat()
     ]);
     if (!pathMetadata.isFile() || pathMetadata.isSymbolicLink() || !handleMetadata.isFile() || handleMetadata.size <= 0 || handleMetadata.size > maxBytes) {
@@ -33625,8 +33659,8 @@ async function acquireFileLockOwnership({
 }) {
   requireOptions({ recordPath, lockPath, maxRecordBytes, unavailableError, invalidError });
   const context = {
-    recordPath: path8.resolve(recordPath),
-    lockPath: path8.resolve(lockPath),
+    recordPath: path9.resolve(recordPath),
+    lockPath: path9.resolve(lockPath),
     maxRecordBytes,
     unavailableError,
     invalidError,
@@ -33652,7 +33686,7 @@ async function acquireFileLockOwnership({
     });
     context.ownershipReady = true;
     await assertOwned(context);
-    const ownerRecordPath = path8.join(context.installed.ownerPath, "record.json");
+    const ownerRecordPath = path9.join(context.installed.ownerPath, "record.json");
     return Object.freeze({
       assertOwned: async () => await assertOwned(context),
       readSnapshot: async () => await readStableFileSnapshot(ownerRecordPath, {
@@ -33673,13 +33707,13 @@ async function acquireFileLockOwnership({
   }
 }
 async function readLatestFencedFileSnapshot(recordPath, { maxBytes }) {
-  if (typeof recordPath !== "string" || !path8.isAbsolute(recordPath)) {
+  if (typeof recordPath !== "string" || !path9.isAbsolute(recordPath)) {
     throw new TypeError("recordPath must be an absolute path");
   }
   if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) {
     throw new TypeError("maxBytes must be a positive safe integer");
   }
-  const resolvedRecordPath = path8.resolve(recordPath);
+  const resolvedRecordPath = path9.resolve(recordPath);
   const storage = storagePaths(resolvedRecordPath);
   const storageExists = await requireCanonicalDirectory(storage.root, {
     allowMissing: true,
@@ -33724,11 +33758,11 @@ async function replaceOwnedSnapshot(context, bytes) {
     throw new TypeError("bytes must be a non-empty Buffer within maxRecordBytes");
   }
   await assertOwned(context);
-  const temporaryPath = path8.join(
+  const temporaryPath = path9.join(
     context.installed.ownerPath,
     `.record-${process.pid}-${randomBytes4(8).toString("hex")}.tmp`
   );
-  const destinationPath = path8.join(context.installed.ownerPath, "record.json");
+  const destinationPath = path9.join(context.installed.ownerPath, "record.json");
   try {
     const handle = await open2(temporaryPath, "wx", 384);
     try {
@@ -33796,14 +33830,14 @@ async function installOwnedLock(context) {
     await pruneCommittedEpochs(storage.committed);
     const generation = await reserveGeneration(storage);
     const token = randomBytes4(16).toString("hex");
-    const candidatePath = path8.join(path8.dirname(context.lockPath), `.candidate-${token}`);
-    const ownerPath = path8.join(candidatePath, token);
+    const candidatePath = path9.join(path9.dirname(context.lockPath), `.candidate-${token}`);
+    const ownerPath = path9.join(candidatePath, token);
     let installed = false;
     try {
       await mkdir2(candidatePath, { mode: 448 });
       await mkdir2(ownerPath, { mode: 448 });
       await writeExclusiveFile(
-        path8.join(ownerPath, "epoch.json"),
+        path9.join(ownerPath, "epoch.json"),
         Buffer.from(`${JSON.stringify(epochMetadata(generation, token))}
 `, "utf8")
       );
@@ -33811,7 +33845,7 @@ async function installOwnedLock(context) {
         maxBytes: context.maxRecordBytes
       });
       if (current !== null) {
-        await writeExclusiveFile(path8.join(ownerPath, "record.json"), current);
+        await writeExclusiveFile(path9.join(ownerPath, "record.json"), current);
       }
       await requireCurrentGeneration(storage, generation);
       await rename2(candidatePath, context.lockPath);
@@ -33819,7 +33853,7 @@ async function installOwnedLock(context) {
       context.installed = Object.freeze({
         generation,
         token,
-        ownerPath: path8.join(context.lockPath, token)
+        ownerPath: path9.join(context.lockPath, token)
       });
     } catch (error40) {
       if (await isExistingCanonicalLock(context.lockPath)) {
@@ -33878,7 +33912,7 @@ async function closeInstalledLock(context) {
 async function closeStaleLock(context) {
   const storage = storagePaths(context.recordPath);
   await prepareStorage(storage);
-  const closingPath = path8.join(storage.closing, `c-${randomBytes4(16).toString("hex")}`);
+  const closingPath = path9.join(storage.closing, `c-${randomBytes4(16).toString("hex")}`);
   try {
     await rename2(context.lockPath, closingPath);
   } catch (error40) {
@@ -33892,7 +33926,7 @@ async function recoverClosingEpochs(storage) {
     if (!entry.isDirectory() || entry.isSymbolicLink() || !CLOSING_PATTERN.test(entry.name)) {
       throw new StableFileSnapshotError("invalid");
     }
-    await recoverClosingEpoch(path8.join(storage.closing, entry.name), storage.committed);
+    await recoverClosingEpoch(path9.join(storage.closing, entry.name), storage.committed);
   }
 }
 async function recoverClosingEpoch(closingPath, committedRoot) {
@@ -33909,7 +33943,7 @@ async function recoverClosingEpoch(closingPath, committedRoot) {
     if (!entry.isDirectory() || entry.isSymbolicLink() || !TOKEN_PATTERN.test(entry.name)) {
       throw new StableFileSnapshotError("invalid");
     }
-    await commitOwnerDirectory(path8.join(closingPath, entry.name), committedRoot);
+    await commitOwnerDirectory(path9.join(closingPath, entry.name), committedRoot);
   }
   try {
     await rmdir(closingPath);
@@ -33926,11 +33960,11 @@ async function commitOwnerDirectory(ownerPath, committedRoot) {
     throw error40;
   }
   await removeOwnedTemporaryFiles(ownerPath);
-  const destinationPath = path8.join(
+  const destinationPath = path9.join(
     committedRoot,
     committedName(metadata.generation, metadata.token)
   );
-  await createInitializationMarker(path8.join(path8.dirname(committedRoot), "initialized"));
+  await createInitializationMarker(path9.join(path9.dirname(committedRoot), "initialized"));
   try {
     await rename2(ownerPath, destinationPath);
   } catch (error40) {
@@ -33958,7 +33992,7 @@ async function assertOwned(context) {
 }
 async function readOwnerMetadata(ownerPath) {
   await requireCanonicalDirectory(ownerPath, { create: false });
-  const bytes = await readStableFileSnapshot(path8.join(ownerPath, "epoch.json"), {
+  const bytes = await readStableFileSnapshot(path9.join(ownerPath, "epoch.json"), {
     maxBytes: MAX_EPOCH_METADATA_BYTES
   });
   if (bytes === null) throw new StableFileSnapshotError("invalid");
@@ -33988,7 +34022,7 @@ async function readEpochRecord(epochPath, expected, maxBytes) {
       throw new StableFileSnapshotError("invalid");
     }
   }
-  return await readStableFileSnapshot(path8.join(epochPath, "record.json"), { maxBytes });
+  return await readStableFileSnapshot(path9.join(epochPath, "record.json"), { maxBytes });
 }
 async function listCommittedEpochs(committedRoot) {
   const entries = await safeReadDirectory(committedRoot);
@@ -34005,7 +34039,7 @@ async function listCommittedEpochs(committedRoot) {
     epochs.push({
       generation,
       token: match[2],
-      path: path8.join(committedRoot, entry.name)
+      path: path9.join(committedRoot, entry.name)
     });
   }
   return epochs;
@@ -34029,7 +34063,7 @@ async function pruneCommittedEpochs(committedRoot) {
 async function removeCommittedEpoch(epochPath, expected) {
   await readEpochRecord(epochPath, expected, Number.MAX_SAFE_INTEGER);
   const entries = await safeReadDirectory(epochPath);
-  for (const entry of entries) await unlink(path8.join(epochPath, entry.name));
+  for (const entry of entries) await unlink(path9.join(epochPath, entry.name));
   await rmdir(epochPath);
 }
 async function reserveGeneration(storage) {
@@ -34041,7 +34075,7 @@ async function reserveGeneration(storage) {
     for (const epoch of committed) if (epoch.generation > maximum) maximum = epoch.generation;
     if (maximum >= MAX_GENERATION) throw new StableFileSnapshotError("invalid");
     const generation = maximum + 1n;
-    const reservationPath = path8.join(storage.reservations, reservationName(generation));
+    const reservationPath = path9.join(storage.reservations, reservationName(generation));
     try {
       const handle = await open2(reservationPath, "wx", 384);
       try {
@@ -34090,7 +34124,7 @@ async function pruneReservations(reservationsRoot, keepFrom) {
       throw new StableFileSnapshotError("invalid");
     }
     if (BigInt(`0x${match[1]}`) < keepFrom) {
-      await unlink(path8.join(reservationsRoot, entry.name));
+      await unlink(path9.join(reservationsRoot, entry.name));
     }
   }
 }
@@ -34102,7 +34136,7 @@ async function removeOwnedTemporaryFiles(ownerPath) {
     }
     if (["epoch.json", "record.json"].includes(entry.name)) continue;
     if (!RECORD_TEMP_PATTERN.test(entry.name)) throw new StableFileSnapshotError("invalid");
-    await unlink(path8.join(ownerPath, entry.name));
+    await unlink(path9.join(ownerPath, entry.name));
   }
 }
 async function removeCandidateDirectory(candidatePath) {
@@ -34128,7 +34162,7 @@ async function removeCandidateDirectory(candidatePath) {
   }
 }
 async function removeCandidateOwner(rootPath, token, { removeRoot }) {
-  const ownerPath = path8.join(rootPath, token);
+  const ownerPath = path9.join(rootPath, token);
   let entries;
   try {
     entries = await safeReadDirectory(ownerPath);
@@ -34140,7 +34174,7 @@ async function removeCandidateOwner(rootPath, token, { removeRoot }) {
     if (entry.isSymbolicLink() || !entry.isFile() || !["epoch.json", "record.json"].includes(entry.name) && !RECORD_TEMP_PATTERN.test(entry.name)) {
       throw new StableFileSnapshotError("invalid");
     }
-    await unlink(path8.join(ownerPath, entry.name));
+    await unlink(path9.join(ownerPath, entry.name));
   }
   await rmdir(ownerPath);
   if (removeRoot) {
@@ -34152,7 +34186,7 @@ async function removeCandidateOwner(rootPath, token, { removeRoot }) {
   }
 }
 async function prepareStorage(storage) {
-  await requireCanonicalDirectory(path8.dirname(storage.root), { create: false });
+  await requireCanonicalDirectory(path9.dirname(storage.root), { create: false });
   await requireCanonicalDirectory(storage.root, { create: true });
   await requireCanonicalDirectory(storage.committed, { create: true });
   await requireCanonicalDirectory(storage.reservations, { create: true });
@@ -34173,7 +34207,7 @@ async function createInitializationMarker(markerPath) {
 }
 async function requireInitializationMarker(markerPath, { allowMissing = false } = {}) {
   try {
-    const metadata = await lstat4(markerPath);
+    const metadata = await lstat5(markerPath);
     if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.size !== 0) {
       throw new StableFileSnapshotError("invalid");
     }
@@ -34195,7 +34229,7 @@ async function requireCanonicalDirectory(directory, { create, allowMissing = fal
         if (error40?.code !== "EEXIST") throw error40;
       });
     }
-    const metadata = await lstat4(directory);
+    const metadata = await lstat5(directory);
     if (!metadata.isDirectory() || metadata.isSymbolicLink() || await pathContainsSymbolicLink(directory)) {
       throw new StableFileSnapshotError("invalid");
     }
@@ -34236,7 +34270,7 @@ async function epochMatches(epochPath, expected) {
 }
 async function isExistingCanonicalLock(lockPath) {
   try {
-    const metadata = await lstat4(lockPath);
+    const metadata = await lstat5(lockPath);
     return metadata.isDirectory() && !metadata.isSymbolicLink() && !await pathContainsSymbolicLink(lockPath);
   } catch {
     return false;
@@ -34246,11 +34280,11 @@ function storagePaths(recordPath) {
   const root = `${recordPath}.epochs`;
   return {
     root,
-    committed: path8.join(root, "committed"),
-    reservations: path8.join(root, "reservations"),
-    closing: path8.join(root, "closing"),
-    allocator: path8.join(root, "allocator.lock"),
-    initialized: path8.join(root, "initialized")
+    committed: path9.join(root, "committed"),
+    reservations: path9.join(root, "reservations"),
+    closing: path9.join(root, "closing"),
+    allocator: path9.join(root, "allocator.lock"),
+    initialized: path9.join(root, "initialized")
   };
 }
 function epochMetadata(generation, token) {
@@ -34270,10 +34304,10 @@ function generationHex(generation) {
   return generation.toString(16).padStart(16, "0");
 }
 function requireOptions({ recordPath, lockPath, maxRecordBytes, unavailableError, invalidError }) {
-  if (typeof recordPath !== "string" || !path8.isAbsolute(recordPath)) {
+  if (typeof recordPath !== "string" || !path9.isAbsolute(recordPath)) {
     throw new TypeError("recordPath must be an absolute path");
   }
-  if (typeof lockPath !== "string" || !path8.isAbsolute(lockPath)) {
+  if (typeof lockPath !== "string" || !path9.isAbsolute(lockPath)) {
     throw new TypeError("lockPath must be an absolute path");
   }
   if (!Number.isSafeInteger(maxRecordBytes) || maxRecordBytes <= 0) {
@@ -34294,8 +34328,8 @@ function plainObject(value) {
   return Boolean(value) && Object.getPrototypeOf(value) === Object.prototype;
 }
 function samePath2(left, right) {
-  const normalizedLeft = path8.resolve(left).replaceAll("\\", "/");
-  const normalizedRight = path8.resolve(right).replaceAll("\\", "/");
+  const normalizedLeft = path9.resolve(left).replaceAll("\\", "/");
+  const normalizedRight = path9.resolve(right).replaceAll("\\", "/");
   return process.platform === "win32" ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase() : normalizedLeft === normalizedRight;
 }
 function delay2(milliseconds) {
@@ -34315,11 +34349,11 @@ var ProjectBindingStoreError = class extends Error {
   }
 };
 function createProjectBindingStore({ stateRoot }) {
-  if (typeof stateRoot !== "string" || !path9.isAbsolute(stateRoot)) {
+  if (typeof stateRoot !== "string" || !path10.isAbsolute(stateRoot)) {
     throw new TypeError("stateRoot must be an absolute path");
   }
-  const resolvedStateRoot = path9.resolve(stateRoot);
-  const bindingsRoot = path9.join(resolvedStateRoot, "project-bindings");
+  const resolvedStateRoot = path10.resolve(stateRoot);
+  const bindingsRoot = path10.join(resolvedStateRoot, "project-bindings");
   return Object.freeze({ bind, require: requireBinding });
   async function bind(value) {
     const requested = normalizeRecord(value);
@@ -34384,7 +34418,7 @@ async function withRecordLock(scope, callback) {
 }
 async function requireSafeLockPath(lockPath) {
   try {
-    const metadata = await lstat5(lockPath);
+    const metadata = await lstat6(lockPath);
     if (!metadata.isDirectory() || metadata.isSymbolicLink() || await pathContainsSymbolicLink(lockPath)) {
       throw stateError("project_binding_state_invalid");
     }
@@ -34402,17 +34436,17 @@ function invalidState2() {
 }
 async function prepareRecordScope(bindingsRoot, bindingHash) {
   requireBindingHash(bindingHash);
-  await ensureCanonicalDirectory(path9.dirname(bindingsRoot));
+  await ensureCanonicalDirectory(path10.dirname(bindingsRoot));
   await ensureCanonicalDirectory(bindingsRoot);
-  const bindingDirectory = path9.join(bindingsRoot, bindingHash);
+  const bindingDirectory = path10.join(bindingsRoot, bindingHash);
   await ensureCanonicalDirectory(bindingDirectory);
   return recordScope(bindingsRoot, bindingHash);
 }
 function recordScope(bindingsRoot, bindingHash) {
-  const bindingDirectory = path9.join(bindingsRoot, bindingHash);
+  const bindingDirectory = path10.join(bindingsRoot, bindingHash);
   return {
-    recordPath: path9.join(bindingDirectory, "binding.json"),
-    lockPath: path9.join(bindingDirectory, "binding.lock")
+    recordPath: path10.join(bindingDirectory, "binding.json"),
+    lockPath: path10.join(bindingDirectory, "binding.lock")
   };
 }
 async function ensureCanonicalDirectory(directory) {
@@ -34420,7 +34454,7 @@ async function ensureCanonicalDirectory(directory) {
     await mkdir3(directory, { recursive: false, mode: 448 }).catch((error40) => {
       if (error40?.code !== "EEXIST") throw error40;
     });
-    const metadata = await lstat5(directory);
+    const metadata = await lstat6(directory);
     if (!metadata.isDirectory() || metadata.isSymbolicLink()) {
       throw stateError("project_binding_state_invalid");
     }
@@ -34496,13 +34530,13 @@ function normalizeRecord(value) {
   if (JSON.stringify(keys) !== JSON.stringify(expectedKeys)) {
     throw stateError("project_binding_state_invalid");
   }
-  if (value.schemaVersion !== SCHEMA_VERSION || !BINDING_HASH_PATTERN.test(value.bindingHash) || typeof value.projectRoot !== "string" || !path9.isAbsolute(value.projectRoot) || !SHA256_PATTERN2.test(value.userConfigSha256) || value.projectConfigSha256 !== null && !SHA256_PATTERN2.test(value.projectConfigSha256)) {
+  if (value.schemaVersion !== SCHEMA_VERSION || !BINDING_HASH_PATTERN.test(value.bindingHash) || typeof value.projectRoot !== "string" || !path10.isAbsolute(value.projectRoot) || !SHA256_PATTERN2.test(value.userConfigSha256) || value.projectConfigSha256 !== null && !SHA256_PATTERN2.test(value.projectConfigSha256)) {
     throw stateError("project_binding_state_invalid");
   }
   return Object.freeze({
     schemaVersion: SCHEMA_VERSION,
     bindingHash: value.bindingHash,
-    projectRoot: path9.resolve(value.projectRoot),
+    projectRoot: path10.resolve(value.projectRoot),
     userConfigSha256: value.userConfigSha256,
     projectConfigSha256: value.projectConfigSha256
   });
@@ -34528,7 +34562,7 @@ function samePath3(left, right) {
   return normalizedLeft === normalizedRight;
 }
 function normalizePath2(value) {
-  const normalized = path9.resolve(value).replaceAll("\\", "/");
+  const normalized = path10.resolve(value).replaceAll("\\", "/");
   return process.platform === "win32" ? normalized.toLowerCase() : normalized;
 }
 
@@ -34544,14 +34578,15 @@ var ProjectContextError = class extends Error {
 };
 function createProjectContext({
   pluginRoot: pluginRoot2,
-  stateRoot = path10.join(path10.dirname(userConfigPath()), "state"),
+  stateRoot = path11.join(path11.dirname(userConfigPath()), "state"),
   resolveConfigBinding = resolveImageConfigBinding,
-  verifyConfigBinding = assertImageConfigBindingCurrent
+  verifyConfigBinding = assertImageConfigBindingCurrent,
+  prepareArtifactRoot = ensureLocalIgnore
 }) {
-  if (typeof pluginRoot2 !== "string" || !path10.isAbsolute(pluginRoot2)) {
+  if (typeof pluginRoot2 !== "string" || !path11.isAbsolute(pluginRoot2)) {
     throw new Error("pluginRoot must be an absolute path");
   }
-  const resolvedPluginRoot = path10.resolve(pluginRoot2);
+  const resolvedPluginRoot = path11.resolve(pluginRoot2);
   const bindingStore = createProjectBindingStore({ stateRoot });
   const pendingBindingOperations = /* @__PURE__ */ new Map();
   async function serializeBinding(bindingKey, operation) {
@@ -34582,11 +34617,19 @@ function createProjectContext({
             throw new ProjectContextError("project_binding_required");
           }
         }
-        if (existing && (typeof projectRoot !== "string" || !path10.isAbsolute(projectRoot) || !samePath4(existing.projectRoot, projectRoot))) {
+        if (existing && (typeof projectRoot !== "string" || !path11.isAbsolute(projectRoot) || !samePath4(existing.projectRoot, projectRoot))) {
           throw new ProjectContextError("project_binding_conflict");
         }
         const resolvedProjectRoot = await validateProjectRoot(projectRoot, resolvedPluginRoot);
         const configBinding = await resolveConfigBinding({ projectRoot: resolvedProjectRoot });
+        try {
+          await prepareArtifactRoot(configBinding.artifactRoot);
+        } catch (error40) {
+          if (error40 instanceof LocalIgnoreGuardError || error40?.code === "local_ignore_guard_failed") {
+            throw new ProjectContextError("artifact_ignore_write_failed");
+          }
+          throw error40;
+        }
         let stored;
         try {
           stored = await bindingStore.bind({
@@ -34659,10 +34702,10 @@ function mapBindingStoreError(error40) {
   return new ProjectContextError("project_binding_unavailable");
 }
 async function validateProjectRoot(projectRoot, pluginRoot2) {
-  if (typeof projectRoot !== "string" || !path10.isAbsolute(projectRoot)) {
+  if (typeof projectRoot !== "string" || !path11.isAbsolute(projectRoot)) {
     throw new ProjectContextError("project_root_invalid");
   }
-  const resolvedProjectRoot = path10.resolve(projectRoot);
+  const resolvedProjectRoot = path11.resolve(projectRoot);
   if (isSameOrDescendant(resolvedProjectRoot, pluginRoot2)) {
     throw new ProjectContextError("project_root_is_plugin_root");
   }
@@ -34670,7 +34713,7 @@ async function validateProjectRoot(projectRoot, pluginRoot2) {
     if (await pathContainsSymbolicLink(resolvedProjectRoot)) {
       throw new ProjectContextError("project_root_invalid");
     }
-    const metadata = await lstat6(resolvedProjectRoot);
+    const metadata = await lstat7(resolvedProjectRoot);
     if (!metadata.isDirectory() || metadata.isSymbolicLink()) {
       throw new ProjectContextError("project_root_invalid");
     }
@@ -34682,14 +34725,14 @@ async function validateProjectRoot(projectRoot, pluginRoot2) {
   return resolvedProjectRoot;
 }
 function isSameOrDescendant(candidate, parent) {
-  const relative = path10.relative(parent, candidate);
-  return relative === "" || !relative.startsWith("..") && !path10.isAbsolute(relative);
+  const relative = path11.relative(parent, candidate);
+  return relative === "" || !relative.startsWith("..") && !path11.isAbsolute(relative);
 }
 function samePath4(left, right) {
   return normalizePath3(left) === normalizePath3(right);
 }
 function normalizePath3(value) {
-  const normalized = path10.resolve(value).replaceAll("\\", "/");
+  const normalized = path11.resolve(value).replaceAll("\\", "/");
   return process.platform === "win32" ? normalized.toLowerCase() : normalized;
 }
 
@@ -34743,8 +34786,8 @@ function parseHostObservationReport(value) {
 // mcp/host-observation-store.mjs
 init_define_RELEASE_IDENTITY();
 import { randomBytes as randomBytes6 } from "node:crypto";
-import { lstat as lstat7, mkdir as mkdir4, open as open3, unlink as unlink2 } from "node:fs/promises";
-import path11 from "node:path";
+import { lstat as lstat8, mkdir as mkdir4, open as open3, unlink as unlink2 } from "node:fs/promises";
+import path12 from "node:path";
 var SCHEMA_VERSION2 = "host-observation.v1";
 var BINDING_KEY_PATTERN2 = /^[0-9a-f]{64}$/;
 var RELEASE_FINGERPRINT_PATTERN = /^[0-9a-f]{20}$/;
@@ -34800,8 +34843,8 @@ function createFileHostObservationStore() {
     if (bytes.length > MAX_RECORD_BYTES2) {
       throw observationError("host_observation_state_invalid");
     }
-    const temporaryPath = path11.join(
-      path11.dirname(recordPath),
+    const temporaryPath = path12.join(
+      path12.dirname(recordPath),
       `.observation-${process.pid}-${randomBytes6(8).toString("hex")}.tmp`
     );
     try {
@@ -34839,15 +34882,15 @@ function createInMemoryHostObservationStore() {
   });
 }
 async function resolveRecordPath(context, releaseFingerprint, { create }) {
-  if (typeof context?.artifactRoot !== "string" || !path11.isAbsolute(context.artifactRoot) || !BINDING_KEY_PATTERN2.test(context.bindingKey) || !RELEASE_FINGERPRINT_PATTERN.test(releaseFingerprint)) {
+  if (typeof context?.artifactRoot !== "string" || !path12.isAbsolute(context.artifactRoot) || !BINDING_KEY_PATTERN2.test(context.bindingKey) || !RELEASE_FINGERPRINT_PATTERN.test(releaseFingerprint)) {
     throw observationError("host_observation_state_invalid");
   }
-  const artifactRoot = path11.resolve(context.artifactRoot);
+  const artifactRoot = path12.resolve(context.artifactRoot);
   const directories = [
     artifactRoot,
-    path11.join(artifactRoot, ".runtime"),
-    path11.join(artifactRoot, ".runtime", "host-observations"),
-    path11.join(artifactRoot, ".runtime", "host-observations", context.bindingKey)
+    path12.join(artifactRoot, ".runtime"),
+    path12.join(artifactRoot, ".runtime", "host-observations"),
+    path12.join(artifactRoot, ".runtime", "host-observations", context.bindingKey)
   ];
   for (let index = 0; index < directories.length; index += 1) {
     const available = await requireCanonicalDirectory2(directories[index], {
@@ -34856,7 +34899,7 @@ async function resolveRecordPath(context, releaseFingerprint, { create }) {
     if (!available) return null;
   }
   const directory = directories.at(-1);
-  return path11.join(directory, `${releaseFingerprint}.json`);
+  return path12.join(directory, `${releaseFingerprint}.json`);
 }
 async function requireCanonicalDirectory2(directory, { create }) {
   try {
@@ -34869,7 +34912,7 @@ async function requireCanonicalDirectory2(directory, { create }) {
     }
     let metadata;
     try {
-      metadata = await lstat7(directory);
+      metadata = await lstat8(directory);
     } catch (error40) {
       if (!create && error40?.code === "ENOENT") return false;
       throw error40;
@@ -34900,7 +34943,7 @@ init_define_RELEASE_IDENTITY();
 function registerConfigTools(server2, configManager, toolError2) {
   server2.registerTool("initialize_image_config", {
     title: "\u521D\u59CB\u5316\u56FE\u7247\u914D\u7F6E",
-    description: "\u5728\u56FA\u5B9A\u7528\u6237\u8DEF\u5F84\u521B\u5EFA\u4E00\u6B21\u56FE\u7247\u914D\u7F6E\u6A21\u677F\uFF1B\u5DF2\u6709\u914D\u7F6E\u4E0D\u4F1A\u88AB\u8986\u76D6\u3002\u4F20\u5165\u9879\u76EE\u6839\u76EE\u5F55\u65F6\u4F1A\u5728\u9879\u76EE\u914D\u7F6E\u76EE\u5F55\u521B\u5EFA\u53EA\u542B * \u7684\u672C\u5730 .gitignore\u3002\u6A21\u677F\u9996\u9009 api_key_env\u3002",
+    description: "\u5728\u56FA\u5B9A\u7528\u6237\u8DEF\u5F84\u521B\u5EFA\u4E00\u6B21\u56FE\u7247\u914D\u7F6E\u6A21\u677F\uFF1B\u5DF2\u6709\u914D\u7F6E\u4E0D\u4F1A\u88AB\u8986\u76D6\u3002\u7528\u6237\u914D\u7F6E\u76EE\u5F55\u59CB\u7EC8\u521B\u5EFA\u53EA\u542B * \u7684\u672C\u5730 .gitignore\uFF1B\u4F20\u5165\u9879\u76EE\u6839\u76EE\u5F55\u65F6\u4E5F\u4FDD\u62A4\u9879\u76EE\u914D\u7F6E\u76EE\u5F55\u3002\u6A21\u677F\u9996\u9009 api_key_env\u3002",
     inputSchema: { projectRoot: external_exports2.string().min(1).optional() },
     outputSchema: external_exports2.object({ created: external_exports2.literal(true), path: external_exports2.string().min(1), config: external_exports2.record(external_exports2.any()), gitignoreUpdated: external_exports2.boolean() }).strict(),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }
@@ -34928,7 +34971,7 @@ function registerConfigTools(server2, configManager, toolError2) {
   });
   server2.registerTool("update_image_config", {
     title: "\u4FEE\u6539\u56FE\u7247\u914D\u7F6E",
-    description: "\u6309\u914D\u7F6E\u767D\u540D\u5355\u4FEE\u6539\u7528\u6237\u914D\u7F6E\u6216\u9879\u76EE\u8986\u76D6\u3002\u7528\u6237\u660E\u786E\u8981\u6C42\u65F6\u53EF\u5199\u5165\u7528\u6237\u7EA7 api_key\uFF0C\u4F46\u7ED3\u679C\u59CB\u7EC8\u8131\u654F\uFF1B\u9879\u76EE\u4F5C\u7528\u57DF\u7981\u6B62\u5BC6\u94A5\u4E14\u53EA\u80FD\u4FEE\u6539\u5B89\u5168\u8986\u76D6\u5B57\u6BB5\u3002\u4FEE\u6539\u540E\u9700\u91CD\u65B0\u7ED1\u5B9A\u9879\u76EE\u3002",
+    description: "\u6309\u914D\u7F6E\u767D\u540D\u5355\u4FEE\u6539\u7528\u6237\u914D\u7F6E\u6216\u9879\u76EE\u8986\u76D6\uFF0C\u5E76\u786E\u4FDD\u76EE\u6807\u914D\u7F6E\u76EE\u5F55\u5305\u542B\u53EA\u542B * \u7684\u672C\u5730 .gitignore\u3002\u7528\u6237\u660E\u786E\u8981\u6C42\u65F6\u53EF\u5199\u5165\u7528\u6237\u7EA7 api_key\uFF0C\u4F46\u7ED3\u679C\u59CB\u7EC8\u8131\u654F\uFF1B\u9879\u76EE\u4F5C\u7528\u57DF\u7981\u6B62\u5BC6\u94A5\u4E14\u53EA\u80FD\u4FEE\u6539\u5B89\u5168\u8986\u76D6\u5B57\u6BB5\u3002\u4FEE\u6539\u540E\u9700\u91CD\u65B0\u7ED1\u5B9A\u9879\u76EE\u3002",
     inputSchema: { scope: external_exports2.enum(["user", "project"]).default("user"), projectRoot: external_exports2.string().min(1).optional(), changes: external_exports2.record(external_exports2.any()) },
     outputSchema: external_exports2.object({ scope: external_exports2.enum(["user", "project"]), path: external_exports2.string().min(1), config: external_exports2.record(external_exports2.any()) }).strict(),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }
@@ -35218,7 +35261,7 @@ function createImagegenServer({
     "bind_imagegen_project",
     {
       title: "\u7ED1\u5B9A\u56FE\u7247\u9879\u76EE",
-      description: "\u628A\u5F53\u524D\u4EFB\u52A1\u7ED1\u5B9A\u5230\u4E00\u4E2A\u5DF2\u5B58\u5728\u7684\u7EDD\u5BF9\u9879\u76EE\u6839\u76EE\u5F55\uFF0C\u5E76\u8FD4\u56DE\u4F9B\u540E\u7EED\u6A21\u578B\u4E0E App-only \u5DE5\u5177\u8DE8 MCP \u8FDB\u7A0B\u4F7F\u7528\u7684\u56FE\u7247\u9879\u76EE\u7ED1\u5B9A ID\u3002\u914D\u7F6E\u53D8\u5316\u540E\u643A\u5E26\u540C\u4E00\u7ED1\u5B9A ID \u518D\u6B21\u7ED1\u5B9A\u53EF\u66F4\u65B0\u914D\u7F6E\u6458\u8981\u3002",
+      description: "\u628A\u5F53\u524D\u4EFB\u52A1\u7ED1\u5B9A\u5230\u4E00\u4E2A\u5DF2\u5B58\u5728\u7684\u7EDD\u5BF9\u9879\u76EE\u6839\u76EE\u5F55\uFF0C\u786E\u4FDD\u5B9E\u9645\u56FE\u7247\u4EA7\u7269\u76EE\u5F55\u5305\u542B\u53EA\u542B * \u7684\u672C\u5730 .gitignore\uFF0C\u5E76\u8FD4\u56DE\u4F9B\u540E\u7EED\u6A21\u578B\u4E0E App-only \u5DE5\u5177\u8DE8 MCP \u8FDB\u7A0B\u4F7F\u7528\u7684\u56FE\u7247\u9879\u76EE\u7ED1\u5B9A ID\u3002\u914D\u7F6E\u53D8\u5316\u540E\u643A\u5E26\u540C\u4E00\u7ED1\u5B9A ID \u518D\u6B21\u7ED1\u5B9A\u53EF\u66F4\u65B0\u914D\u7F6E\u6458\u8981\u3002",
       inputSchema: {
         projectRoot: external_exports2.string().min(1),
         projectBindingId: projectBindingIdSchema.optional()
@@ -36277,8 +36320,8 @@ function copyHostObservation(observation) {
     truncated: observation.truncated
   };
 }
-function sanitizeHostFieldPath(path15) {
-  return path15.replace(/\.([A-Za-z_][A-Za-z0-9_-]{0,63})/g, (_match, key) => {
+function sanitizeHostFieldPath(path16) {
+  return path16.replace(/\.([A-Za-z_][A-Za-z0-9_-]{0,63})/g, (_match, key) => {
     if (sensitiveHostFieldKeyPattern.test(key)) return ".redacted";
     return retainedHostFieldKeys.has(key) ? `.${key}` : ".field";
   });
@@ -36308,8 +36351,8 @@ function writeAnnotations() {
 // mcp/file-edit-submission-registry.mjs
 init_define_RELEASE_IDENTITY();
 import { createHash as createHash6 } from "node:crypto";
-import { lstat as lstat8, mkdir as mkdir5 } from "node:fs/promises";
-import path12 from "node:path";
+import { lstat as lstat9, mkdir as mkdir5 } from "node:fs/promises";
+import path13 from "node:path";
 var SCHEMA_VERSION3 = "edit-submissions.v1";
 var BINDING_KEY_PATTERN3 = /^[0-9a-f]{64}$/;
 var IMAGE_ID_PATTERN4 = /^img_[0-9A-HJKMNP-TV-Z]{26}$/;
@@ -36462,16 +36505,16 @@ function unavailableState2() {
   return registryError("edit_submission_state_unavailable", "\u753B\u5E03\u63D0\u4EA4\u72B6\u6001\u6682\u65F6\u4E0D\u53EF\u7528\u3002");
 }
 async function prepareScope(input) {
-  if (typeof input?.artifactRoot !== "string" || !path12.isAbsolute(input.artifactRoot) || typeof input.bindingKey !== "string" || !BINDING_KEY_PATTERN3.test(input.bindingKey) || typeof input.parentImageId !== "string" || !IMAGE_ID_PATTERN4.test(input.parentImageId)) {
+  if (typeof input?.artifactRoot !== "string" || !path13.isAbsolute(input.artifactRoot) || typeof input.bindingKey !== "string" || !BINDING_KEY_PATTERN3.test(input.bindingKey) || typeof input.parentImageId !== "string" || !IMAGE_ID_PATTERN4.test(input.parentImageId)) {
     throw registryError("edit_submission_state_invalid", "\u753B\u5E03\u63D0\u4EA4\u72B6\u6001\u65E0\u6548\u3002");
   }
-  const stateRoot = path12.join(path12.resolve(input.artifactRoot), ".runtime", "edit-submissions");
-  const parentsDirectory = path12.join(stateRoot, "parents");
-  const locksDirectory = path12.join(stateRoot, "locks");
-  const artifactRoot = path12.resolve(input.artifactRoot);
+  const stateRoot = path13.join(path13.resolve(input.artifactRoot), ".runtime", "edit-submissions");
+  const parentsDirectory = path13.join(stateRoot, "parents");
+  const locksDirectory = path13.join(stateRoot, "locks");
+  const artifactRoot = path13.resolve(input.artifactRoot);
   for (const directory of [
     artifactRoot,
-    path12.join(artifactRoot, ".runtime"),
+    path13.join(artifactRoot, ".runtime"),
     stateRoot,
     parentsDirectory,
     locksDirectory
@@ -36483,8 +36526,8 @@ async function prepareScope(input) {
     bindingKey: input.bindingKey,
     parentImageId: input.parentImageId,
     parentsDirectory,
-    recordPath: path12.join(parentsDirectory, `${parentKey}.json`),
-    lockPath: path12.join(locksDirectory, `${parentKey}.lock`)
+    recordPath: path13.join(parentsDirectory, `${parentKey}.json`),
+    lockPath: path13.join(locksDirectory, `${parentKey}.lock`)
   };
 }
 async function readParentRecord(scope, ownership = null) {
@@ -36642,7 +36685,7 @@ async function ensureCanonicalDirectory2(directory, { create }) {
         if (error40?.code !== "EEXIST") throw error40;
       });
     }
-    const metadata = await lstat8(directory);
+    const metadata = await lstat9(directory);
     if (!metadata.isDirectory() || metadata.isSymbolicLink()) invalidState3();
     if (await pathContainsSymbolicLink(directory)) invalidState3();
   } catch (error40) {
@@ -36652,7 +36695,7 @@ async function ensureCanonicalDirectory2(directory, { create }) {
 }
 async function requireSafeLockPath2(lockPath) {
   try {
-    const metadata = await lstat8(lockPath);
+    const metadata = await lstat9(lockPath);
     if (!metadata.isDirectory() || metadata.isSymbolicLink() || await pathContainsSymbolicLink(lockPath)) invalidState3();
   } catch (error40) {
     if (error40?.code === "ENOENT") return;
@@ -36670,8 +36713,8 @@ function invalidStateError() {
 // mcp/file-editor-state-registry.mjs
 init_define_RELEASE_IDENTITY();
 import { createHash as createHash7 } from "node:crypto";
-import { lstat as lstat9, mkdir as mkdir6 } from "node:fs/promises";
-import path13 from "node:path";
+import { lstat as lstat10, mkdir as mkdir6 } from "node:fs/promises";
+import path14 from "node:path";
 var SCHEMA_VERSION4 = "editor-state.v1";
 var SESSION_ID_PATTERN2 = /^eds_[0-9a-f]{32}$/;
 var IMAGE_ID_PATTERN5 = /^img_[0-9A-HJKMNP-TV-Z]{26}$/;
@@ -36812,7 +36855,7 @@ async function withFileLock(input, callback) {
 }
 function mutationQueueKey(input) {
   if (typeof input?.artifactRoot !== "string" || typeof input?.bindingKey !== "string") return null;
-  return `${path13.resolve(input.artifactRoot)}\0${input.bindingKey}`;
+  return `${path14.resolve(input.artifactRoot)}\0${input.bindingKey}`;
 }
 function unavailableState3() {
   return editorStateError("editor_state_unavailable", "\u753B\u5E03\u72B6\u6001\u6682\u65F6\u4E0D\u53EF\u7528\u3002");
@@ -36822,14 +36865,14 @@ async function readOnlyRecord(input) {
   return scope.stateMissing ? emptyRecord2(scope.bindingKey) : await readRecord2(scope);
 }
 async function prepareScope2(input, { create }) {
-  if (typeof input?.artifactRoot !== "string" || !path13.isAbsolute(input.artifactRoot)) invalidState4();
+  if (typeof input?.artifactRoot !== "string" || !path14.isAbsolute(input.artifactRoot)) invalidState4();
   const bindingKey = input.bindingKey;
-  const artifactRoot = path13.resolve(input.artifactRoot);
+  const artifactRoot = path14.resolve(input.artifactRoot);
   await requireCanonicalDirectory3(artifactRoot, { create: false });
-  const runtimeDirectory = path13.join(artifactRoot, ".runtime");
-  const stateDirectory = path13.join(runtimeDirectory, "editor-state");
-  const bindingsDirectory = path13.join(stateDirectory, "bindings");
-  const locksDirectory = path13.join(stateDirectory, "locks");
+  const runtimeDirectory = path14.join(artifactRoot, ".runtime");
+  const stateDirectory = path14.join(runtimeDirectory, "editor-state");
+  const bindingsDirectory = path14.join(stateDirectory, "bindings");
+  const locksDirectory = path14.join(stateDirectory, "locks");
   let stateMissing = false;
   for (const directory of [runtimeDirectory, stateDirectory, bindingsDirectory, locksDirectory]) {
     if (stateMissing) break;
@@ -36844,8 +36887,8 @@ async function prepareScope2(input, { create }) {
     bindingKey,
     bindingsDirectory,
     stateMissing,
-    recordPath: path13.join(bindingsDirectory, `${recordKey2}.json`),
-    lockPath: path13.join(locksDirectory, `${recordKey2}.lock`)
+    recordPath: path14.join(bindingsDirectory, `${recordKey2}.json`),
+    lockPath: path14.join(locksDirectory, `${recordKey2}.lock`)
   };
 }
 async function readRecord2(scope, ownership = null) {
@@ -36900,7 +36943,7 @@ async function requireCanonicalDirectory3(directory, { create, allowMissing = fa
     if (create) await mkdir6(directory, { recursive: false, mode: 448 }).catch((error40) => {
       if (error40?.code !== "EEXIST") throw error40;
     });
-    const metadata = await lstat9(directory);
+    const metadata = await lstat10(directory);
     if (!metadata.isDirectory() || metadata.isSymbolicLink() || await pathContainsSymbolicLink(directory)) invalidState4();
   } catch (error40) {
     if (error40?.code === "editor_state_invalid") throw error40;
@@ -36912,7 +36955,7 @@ async function requireCanonicalDirectory3(directory, { create, allowMissing = fa
 }
 async function requireSafeLockPath3(lockPath) {
   try {
-    const metadata = await lstat9(lockPath);
+    const metadata = await lstat10(lockPath);
     if (!metadata.isDirectory() || metadata.isSymbolicLink() || await pathContainsSymbolicLink(lockPath)) {
       invalidState4();
     }
@@ -36969,7 +37012,7 @@ function invalidStateError2() {
 // mcp/image-runtime.mjs
 init_define_RELEASE_IDENTITY();
 import { spawn as spawn3 } from "node:child_process";
-import path14 from "node:path";
+import path15 from "node:path";
 import { fileURLToPath as fileURLToPath4 } from "node:url";
 var runtimeRelativePath3 = import.meta.url.replaceAll("\\", "/").includes("/dist/server.mjs") ? "./scripts/image_runtime.py" : "../scripts/image_runtime.py";
 var runtimePath = fileURLToPath4(new URL(runtimeRelativePath3, import.meta.url));
@@ -36979,7 +37022,7 @@ async function runImageTask(task, {
   effectiveConfigSha256,
   artifactRoot
 } = {}) {
-  if (typeof projectRoot !== "string" || !path14.isAbsolute(projectRoot)) {
+  if (typeof projectRoot !== "string" || !path15.isAbsolute(projectRoot)) {
     throw new Error("project root is required");
   }
   if (typeof effectiveConfigJson !== "string" || !effectiveConfigJson) {
@@ -36988,7 +37031,7 @@ async function runImageTask(task, {
   if (typeof effectiveConfigSha256 !== "string" || !/^[a-f0-9]{64}$/.test(effectiveConfigSha256)) {
     throw new Error("effective config SHA-256 is required");
   }
-  if (typeof artifactRoot !== "string" || !path14.isAbsolute(artifactRoot)) {
+  if (typeof artifactRoot !== "string" || !path15.isAbsolute(artifactRoot)) {
     throw new Error("artifact root is required");
   }
   return await new Promise((resolve, reject) => {
@@ -37056,7 +37099,7 @@ var server = createImagegenServer({
   hostObservationStore: createFileHostObservationStore(),
   editSubmissions: createFileEditSubmissionRegistry(),
   editorState: createFileEditorStateRegistry(),
-  readWidgetHtml: async () => await readFile2(widgetPath, "utf8"),
+  readWidgetHtml: async () => await readFile3(widgetPath, "utf8"),
   runTask: async (task, context) => await runImageTask(task, context),
   readArtifact: async (imageId, { artifactRoot }) => await readImageArtifact(imageId, { artifactRoot }),
   revealArtifact: async (imageId, { artifactRoot }) => await revealImageArtifact(imageId, { artifactRoot }),

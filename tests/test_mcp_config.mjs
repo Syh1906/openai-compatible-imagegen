@@ -19,6 +19,11 @@ test("configuration management initializes, redacts, and updates the fixed user 
     const initialized = await initializeImageConfig({ userHome });
     assert.equal(initialized.created, true);
     assert.equal(initialized.path, userConfigPath(userHome));
+    assert.equal(initialized.gitignoreUpdated, true);
+    assert.equal(
+      await readFile(path.join(path.dirname(userConfigPath(userHome)), ".gitignore"), "utf8"),
+      "*\n",
+    );
     assert.equal(initialized.config.providers.primary.api_key, undefined);
     assert.equal(initialized.config.providers.primary.api_key_env, "IMAGE_API_KEY");
 
@@ -48,6 +53,10 @@ test("initialization keeps local config ignored inside its own project directory
     assert.equal(await readFile(path.join(projectRoot, ".gitignore"), "utf8"), "existing-rule\n");
     const localIgnore = path.join(projectRoot, ".codex", "openai-compatible-imagegen", ".gitignore");
     assert.equal(await readFile(localIgnore, "utf8"), "*\n");
+    assert.equal(
+      await readFile(path.join(path.dirname(userConfigPath(userHome)), ".gitignore"), "utf8"),
+      "*\n",
+    );
     await initializeImageConfig({ userHome, projectRoot }).catch((error) => assert.equal(error.code, "image_config_exists"));
     assert.equal(await readFile(localIgnore, "utf8"), "*\n");
   });
@@ -80,6 +89,43 @@ test("configuration initialization never overwrites an existing file", async () 
     await writeJson(configPath, { preserved: true });
     await assert.rejects(initializeImageConfig({ userHome }), { code: "image_config_exists" });
     assert.deepEqual(JSON.parse(await readFile(configPath, "utf8")), { preserved: true });
+    assert.equal(await readFile(path.join(path.dirname(configPath), ".gitignore"), "utf8"), "*\n");
+  });
+});
+
+test("configuration updates backfill local ignore guards for both scopes", async () => {
+  await withConfigRoots(async ({ projectRoot, userHome }) => {
+    const userPath = userConfigPath(userHome);
+    const projectPath = projectConfigPath(projectRoot);
+    await writeJson(userPath, userConfig());
+    await writeJson(projectPath, projectConfig());
+
+    await updateImageConfig({ userHome, scope: "user", changes: { defaults: { quality: "high" } } });
+    await updateImageConfig({ projectRoot, scope: "project", changes: { defaults: { quality: "high" } } });
+
+    assert.equal(await readFile(path.join(path.dirname(userPath), ".gitignore"), "utf8"), "*\n");
+    assert.equal(await readFile(path.join(path.dirname(projectPath), ".gitignore"), "utf8"), "*\n");
+  });
+});
+
+test("configuration writes reject an incompatible local ignore guard", async () => {
+  await withConfigRoots(async ({ userHome }) => {
+    const configPath = userConfigPath(userHome);
+    const ignorePath = path.join(path.dirname(configPath), ".gitignore");
+    await mkdir(path.dirname(configPath), { recursive: true });
+    await writeFile(ignorePath, "config.json\n", "utf8");
+
+    await assert.rejects(initializeImageConfig({ userHome }), { code: "image_config_write_failed" });
+    await assert.rejects(readFile(configPath), { code: "ENOENT" });
+
+    await writeJson(configPath, userConfig());
+    const before = await readFile(configPath, "utf8");
+    await assert.rejects(
+      updateImageConfig({ userHome, scope: "user", changes: { defaults: { quality: "high" } } }),
+      { code: "image_config_write_failed" },
+    );
+    assert.equal(await readFile(configPath, "utf8"), before);
+    assert.equal(await readFile(ignorePath, "utf8"), "config.json\n");
   });
 });
 

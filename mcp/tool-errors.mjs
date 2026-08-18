@@ -3,6 +3,7 @@ const STABLE_TOOL_ERROR_ENTRIES = [
   ["annotation_not_found", "未找到指定标注。"],
   ["annotation_save_failed", "保存图片标注失败。"],
   ["artifact_not_found", "未找到指定图片产物。"],
+  ["artifact_ignore_write_failed", "无法安全保护图片产物目录。"],
   ["artifact_read_failed", "读取图片产物失败。"],
   ["artifact_reveal_failed", "无法在文件夹中显示图片。"],
   ["editor_session_not_found", "画布会话不存在或已经释放。"],

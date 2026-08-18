@@ -1,15 +1,15 @@
-name: Build release artifacts
+name: Publish release
 
 on:
   workflow_dispatch:
     inputs:
       release_ref:
-        description: Commit SHA or tag to build
+        description: Annotated version tag to publish, for example v1.0.1
         required: true
         type: string
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: release-artifacts-${{ inputs.release_ref }}
@@ -24,6 +24,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.release_ref }}
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -38,6 +39,29 @@ jobs:
 
       - name: Install Node dependencies
         run: npm ci
+
+      - name: Validate the annotated release tag
+        id: release
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.release_ref }}
+        run: |
+          set -euo pipefail
+          manifest_version="$(node -p "JSON.parse(require('node:fs').readFileSync('.codex-plugin/plugin.json', 'utf8')).version")"
+          expected_tag="v${manifest_version}"
+          if [[ "$RELEASE_TAG" != "$expected_tag" ]]; then
+            echo "Release tag $RELEASE_TAG does not match manifest version $manifest_version." >&2
+            exit 1
+          fi
+          if ! object_type="$(git cat-file -t "refs/tags/$RELEASE_TAG")"; then
+            echo "Release tag $RELEASE_TAG does not exist in the checked-out repository." >&2
+            exit 1
+          fi
+          if [[ "$object_type" != "tag" ]]; then
+            echo "Release tag $RELEASE_TAG must be annotated." >&2
+            exit 1
+          fi
+          echo "release_tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
 
       - name: Build the Plugin once
         run: npm run build
@@ -61,3 +85,13 @@ jobs:
           path: release/*
           if-no-files-found: error
           retention-days: 14
+
+      - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.release_tag }}
+        run: >-
+          gh release create "$RELEASE_TAG" release/*
+          --verify-tag
+          --title "$RELEASE_TAG"
+          --notes-from-tag

@@ -19,7 +19,7 @@ test("configuration MCP tools initialize, inspect, and update without exposing c
     configManager: {
       async initialize() {
         calls.push(["initialize"]);
-        return { created: true, path: "user-config", config: { providers: { primary: { api_key_env: "IMAGE_API_KEY" } } }, gitignoreUpdated: false };
+        return { created: true, path: "user-config", config: { providers: { primary: { api_key_env: "IMAGE_API_KEY" } } }, gitignoreUpdated: true };
       },
       async inspect(input) {
         calls.push(["inspect", input]);
@@ -64,6 +64,22 @@ test("widget resources read the current bundle for each request", async () => {
       assert.equal(second.contents[0].text, "<html>second</html>");
       assert.deepEqual(first.contents[0]._meta.ui.csp.resourceDomains, ["data:", "blob:"]);
       assert.deepEqual(first.contents[0]._meta["openai/widgetCSP"].resource_domains, ["data:", "blob:"]);
+    },
+  );
+});
+
+test("configuration and project binding tool descriptions declare local ignore protection", async () => {
+  await withClient(
+    {
+      runTask: async () => { throw new Error("not used"); },
+      readArtifact: async () => { throw new Error("not used"); },
+    },
+    async (client) => {
+      const { tools } = await client.listTools();
+      const descriptions = new Map(tools.map((tool) => [tool.name, tool.description]));
+      assert.match(descriptions.get("initialize_image_config"), /用户配置目录.*项目配置目录/);
+      assert.match(descriptions.get("update_image_config"), /目标配置目录.*\.gitignore/);
+      assert.match(descriptions.get("bind_imagegen_project"), /图片产物目录.*\.gitignore/);
     },
   );
 });

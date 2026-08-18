@@ -46,6 +46,45 @@ codex plugin add openai-compatible-imagegen@openai-compatible-imagegen
 
 The first configuration can also be created from a new task by asking the Agent to call `initialize_image_config`. Use `inspect_image_config` to review the redacted result and `update_image_config` for supported changes; the Plugin installation directory and Skill directory do not contain the user configuration.
 
+### Install from the Plugin ZIP
+
+Use this route when you want to install a specific GitHub Release from its downloaded Plugin archive instead of the Git-backed marketplace.
+
+1. Download these two files from the same GitHub Release:
+   - `openai-compatible-imagegen-codex-plugin-<version>.zip`
+   - `SHA256SUMS`
+2. Calculate the ZIP's SHA-256 digest and compare it with the matching line in `SHA256SUMS`.
+
+   PowerShell:
+
+   ```powershell
+   (Get-FileHash -Algorithm SHA256 -LiteralPath "openai-compatible-imagegen-codex-plugin-<version>.zip").Hash.ToLowerInvariant()
+   ```
+
+   macOS or Linux:
+
+   ```bash
+   sha256sum openai-compatible-imagegen-codex-plugin-<version>.zip
+   ```
+
+3. Extract the ZIP. The extracted `openai-compatible-imagegen` directory must contain both `.codex-plugin/plugin.json` and `.agents/plugins/marketplace.json`.
+4. Add the extracted directory as a local marketplace. Use its absolute path:
+
+   ```text
+   codex plugin marketplace add "/absolute/path/to/openai-compatible-imagegen"
+   ```
+
+5. Install the Plugin from that marketplace:
+
+   ```text
+   codex plugin add openai-compatible-imagegen@openai-compatible-imagegen
+   ```
+
+6. Confirm the installed version with `codex plugin list --json`, then start a new task.
+7. Continue with [Plugin configuration](./configuration.md#configure-the-codex-plugin).
+
+Codex installs plugins from marketplace directories, not directly from ZIP files. Keep the extracted directory while this local marketplace remains configured. The Git-backed marketplace remains the recommended route for normal updates.
+
 ### Agent handoff
 
 Give an Agent this task when you want it to prepare the supported install without changing global runtimes:
@@ -99,4 +138,4 @@ Report the installed version and final skill path.
 
 Public Plugins Directory availability is separate from this Git-backed release channel.
 
-Each GitHub Release also provides `openai-compatible-imagegen-codex-plugin-<version>.zip` for offline inspection, archive, and rollback. Verify downloaded archives against the release's `SHA256SUMS`. The Git-backed marketplace remains the normal Plugin installation channel.
+Each GitHub Release also provides `openai-compatible-imagegen-codex-plugin-<version>.zip` for version-pinned local installation, offline inspection, archive, and rollback. Verify downloaded archives against the release's `SHA256SUMS`. The Git-backed marketplace remains the normal Plugin installation channel.

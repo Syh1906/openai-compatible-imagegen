@@ -93,6 +93,42 @@ test("explicit project binding IDs restore one project across MCP processes with
   });
 });
 
+test("project binding protects the configured artifact directory from Git tracking", async () => {
+  await withProjectRoots(async ({ pluginRoot, projectA }) => {
+    const server = createTestServer({ pluginRoot });
+    try {
+      const bound = await server._registeredTools.bind_imagegen_project.handler({ projectRoot: projectA });
+      assert.equal(bound.structuredContent.status, "bound");
+      assert.equal(
+        await readFile(path.join(projectA, "output", "imagegen", ".gitignore"), "utf8"),
+        "*\n",
+      );
+    } finally {
+      await server.close();
+    }
+  });
+});
+
+test("project binding rejects an incompatible artifact ignore guard before storing state", async () => {
+  await withProjectRoots(async ({ pluginRoot, projectA, userHome }) => {
+    const artifactRoot = path.join(projectA, "output", "imagegen");
+    await mkdir(artifactRoot, { recursive: true });
+    await writeFile(path.join(artifactRoot, ".gitignore"), "*.png\n", "utf8");
+    const server = createTestServer({ pluginRoot });
+    try {
+      const result = await server._registeredTools.bind_imagegen_project.handler({ projectRoot: projectA });
+      assertStableError(result, "artifact_ignore_write_failed", [projectA]);
+      assert.equal(await readFile(path.join(artifactRoot, ".gitignore"), "utf8"), "*.png\n");
+      await assert.rejects(
+        readdir(path.join(userHome, ".codex", "openai-compatible-imagegen", "state", "project-bindings")),
+        { code: "ENOENT" },
+      );
+    } finally {
+      await server.close();
+    }
+  });
+});
+
 
 test("all project-bound tools require an explicit project binding ID", async () => {
   await withProjectRoots(async ({ pluginRoot }) => {

@@ -13,6 +13,7 @@ import {
   createProjectBindingStore,
   ProjectBindingStoreError,
 } from "./project-binding-store.mjs";
+import { ensureLocalIgnore, LocalIgnoreGuardError } from "./local-ignore-guard.mjs";
 
 
 const PROJECT_BINDING_KEY_SEED = "openai-compatible-imagegen:project-binding:v1";
@@ -33,6 +34,7 @@ export function createProjectContext({
   stateRoot = path.join(path.dirname(userConfigPath()), "state"),
   resolveConfigBinding = resolveImageConfigBinding,
   verifyConfigBinding = assertImageConfigBindingCurrent,
+  prepareArtifactRoot = ensureLocalIgnore,
 }) {
   if (typeof pluginRoot !== "string" || !path.isAbsolute(pluginRoot)) {
     throw new Error("pluginRoot must be an absolute path");
@@ -84,6 +86,14 @@ export function createProjectContext({
         }
         const resolvedProjectRoot = await validateProjectRoot(projectRoot, resolvedPluginRoot);
         const configBinding = await resolveConfigBinding({ projectRoot: resolvedProjectRoot });
+        try {
+          await prepareArtifactRoot(configBinding.artifactRoot);
+        } catch (error) {
+          if (error instanceof LocalIgnoreGuardError || error?.code === "local_ignore_guard_failed") {
+            throw new ProjectContextError("artifact_ignore_write_failed");
+          }
+          throw error;
+        }
         let stored;
         try {
           stored = await bindingStore.bind({

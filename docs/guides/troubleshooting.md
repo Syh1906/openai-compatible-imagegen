@@ -24,6 +24,7 @@ Identify the failing layer before changing configuration. The project does not s
 | Credential missing | Configured environment variable exists in the Codex process | Set the variable without pasting its value into chat |
 | Project override rejected | Project file changes only four allowed fields | Remove provider, model, endpoint, auth, timeout, concurrency, and route fields |
 | Output directory rejected | Value is a safe project-relative directory | Use a relative child such as `output/imagegen/` |
+| Local ignore protection rejected | The target configuration or output directory has a `.gitignore` containing only `*` | Review the existing rule; the Plugin does not overwrite incompatible local ignore files |
 | Model not listed | Model exists in the active profile catalog | Add a supported model declaration; do not force an undeclared capability |
 
 ## Runtime problems

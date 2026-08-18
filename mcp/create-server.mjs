@@ -287,7 +287,7 @@ export function createImagegenServer({
     "bind_imagegen_project",
     {
       title: "绑定图片项目",
-      description: "把当前任务绑定到一个已存在的绝对项目根目录，并返回供后续模型与 App-only 工具跨 MCP 进程使用的图片项目绑定 ID。配置变化后携带同一绑定 ID 再次绑定可更新配置摘要。",
+      description: "把当前任务绑定到一个已存在的绝对项目根目录，确保实际图片产物目录包含只含 * 的本地 .gitignore，并返回供后续模型与 App-only 工具跨 MCP 进程使用的图片项目绑定 ID。配置变化后携带同一绑定 ID 再次绑定可更新配置摘要。",
       inputSchema: {
         projectRoot: z.string().min(1),
         projectBindingId: projectBindingIdSchema.optional(),

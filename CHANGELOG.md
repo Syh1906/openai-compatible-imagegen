@@ -4,6 +4,16 @@ This file records user-visible changes for each release of `openai-compatible-im
 
 ## [Unreleased]
 
+### Added
+
+- Include a ready-to-use local marketplace in the Codex Plugin ZIP and document the supported download, checksum, extraction, and local installation flow.
+- Publish verified release artifacts from an existing annotated version tag with a GitHub Release title equal to that tag.
+
+### Fixed
+
+- Protect user and project configuration directories during initialization, update, and migration by creating or verifying a local `.gitignore` containing only `*`.
+- Protect the resolved image artifact directory during project binding so generated images, prompts, annotations, and metadata are not added to Git accidentally.
+
 ## [1.0.0] - 2026-08-18
 
 ### Added

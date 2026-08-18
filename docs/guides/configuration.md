@@ -59,13 +59,13 @@ The project file cannot replace the active profile, provider, model, endpoint, a
 
 The Codex Plugin exposes three configuration tools so an Agent can complete the setup without locating the Plugin installation directory:
 
-- `initialize_image_config` creates the user template at `~/.codex/openai-compatible-imagegen/config.json` only when the file does not exist. When called with `projectRoot`, it creates `.codex/openai-compatible-imagegen/.gitignore` containing only `*`; the project root `.gitignore` is not changed.
+- `initialize_image_config` creates the user template at `~/.codex/openai-compatible-imagegen/config.json` only when the file does not exist. It always creates or verifies a `.gitignore` containing only `*` in the user configuration directory. When called with `projectRoot`, it protects the project configuration directory the same way; the project root `.gitignore` is not changed.
 - `inspect_image_config` reads the user file and an optional project override as redacted data. It never returns `api_key` values.
-- `update_image_config` updates a user or project file through the same schema and scope rules as runtime binding. Prefer `api_key_env`; when a user explicitly chooses local plaintext storage, the tool may write user-level `api_key` but never returns it. Project credentials and forbidden project fields are rejected.
+- `update_image_config` updates a user or project file through the same schema and scope rules as runtime binding. Before writing, it creates or verifies the target configuration directory's local `*` ignore rule. Prefer `api_key_env`; when a user explicitly chooses local plaintext storage, the tool may write user-level `api_key` but never returns it. Project credentials and forbidden project fields are rejected.
 
-After initialization, set the environment variable named by `providers.primary.api_key_env`, then ask the Agent to query the configuration and bind the project. The user baseline lives outside Git; if a project override is used, initialize with the project root so the whole local configuration directory is ignored. After any update, bind the project again so the new configuration digest is used. Query and update results never print API keys.
+After initialization, set the environment variable named by `providers.primary.api_key_env`, then ask the Agent to query the configuration and bind the project. Both user and project configuration directories are protected at every configuration write. After any update, bind the project again so the new configuration digest is used. Query and update results never print API keys.
 
-`storage.output_directory` is a relative directory inside the project. The default is `output/imagegen/`. Absolute paths, project-root output, outside paths, files, symbolic links, junctions, and other reparse points are rejected.
+`storage.output_directory` is a relative directory inside the project. The default is `output/imagegen/`. Project binding creates or verifies a `.gitignore` containing only `*` in the resolved output directory, so images, prompts, annotations, and metadata remain local. An incompatible ignore rule stops binding without being overwritten. Absolute paths, project-root output, outside paths, files, symbolic links, junctions, and other reparse points are rejected.
 
 ## Backend contract
 

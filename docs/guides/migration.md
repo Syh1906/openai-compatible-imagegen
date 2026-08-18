@@ -49,4 +49,4 @@ Environment-variable authentication migrates by default. Migrating a usable plai
 
 ## Migration result
 
-The source remains unchanged. Migration stops if the source digest changed, a target already exists, the schema or model is unsupported, an obsolete field remains, or a write fails. The project does not provide automatic Plugin-to-Standalone migration.
+The source remains unchanged. Before writing each target, migration creates or verifies a `.gitignore` containing only `*` in that target configuration directory. Migration stops without overwriting an incompatible ignore rule if the source digest changed, a target already exists, the schema or model is unsupported, an obsolete field remains, or a write fails. The project does not provide automatic Plugin-to-Standalone migration.

@@ -68,6 +68,7 @@ const standaloneFiles = [
   "scripts/quick-init.py",
 ].sort();
 const pluginFiles = [
+  ".agents/plugins/marketplace.json",
   ".codex-plugin/plugin.json",
   ".mcp.json",
   "LICENSE",
@@ -89,12 +90,13 @@ test("package scripts expose the release artifact builder", async () => {
 });
 
 
-test("release workflow is manual, environment-gated, and artifact-only", async () => {
+test("release workflow publishes an exact version-titled release from an annotated tag", async () => {
   const workflow = await readFile(releaseWorkflow, "utf8");
   assert.match(workflow, /workflow_dispatch:/);
   assert.match(workflow, /environment:\s*release/);
-  assert.match(workflow, /permissions:\s*\n\s*contents:\s*read/);
+  assert.match(workflow, /permissions:\s*\n\s*contents:\s*write/);
   assert.match(workflow, /ref:\s*\$\{\{\s*inputs\.release_ref\s*\}\}/);
+  assert.match(workflow, /fetch-depth:\s*0/);
   for (const command of [
     "npm ci",
     "npm run build",
@@ -104,8 +106,14 @@ test("release workflow is manual, environment-gated, and artifact-only", async (
   ]) {
     assert.ok(workflow.includes(command), command);
   }
+  assert.match(workflow, /git cat-file -t/);
+  assert.match(workflow, /plugin\.json[^\n]+\.version/);
   assert.match(workflow, /actions\/upload-artifact@v4/);
-  assert.doesNotMatch(workflow, /gh release|git tag|git push/i);
+  assert.match(workflow, /gh release create/);
+  assert.match(workflow, /--verify-tag/);
+  assert.match(workflow, /--title "\$RELEASE_TAG"/);
+  assert.match(workflow, /release\/\*/);
+  assert.doesNotMatch(workflow, /git tag|git push/i);
 });
 
 
@@ -211,18 +219,18 @@ test("release mode rejects baseline metadata and publishes clean artifacts for t
 });
 
 
-test("the release source builds the first stable v1.0.0 artifact set", async (t) => {
+test("the release source builds the current v1.0.1 patch artifact set", async (t) => {
   const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "imagegen-release-candidate-"));
   t.after(() => rm(outputDirectory, { recursive: true, force: true }));
 
   const result = await runBuild(outputDirectory);
 
-  assert.equal(result.version, "1.0.0");
+  assert.equal(result.version, "1.0.1");
   assert.deepEqual(result.files, [
     "SHA256SUMS",
-    "openai-compatible-imagegen-codex-plugin-1.0.0.zip",
-    "openai-compatible-imagegen-shared-python-sha256-1.0.0.json",
-    "openai-compatible-imagegen-skill-1.0.0.zip",
+    "openai-compatible-imagegen-codex-plugin-1.0.1.zip",
+    "openai-compatible-imagegen-shared-python-sha256-1.0.1.json",
+    "openai-compatible-imagegen-skill-1.0.1.zip",
   ]);
   assert.deepEqual((await readdir(outputDirectory)).sort(), result.files);
 });

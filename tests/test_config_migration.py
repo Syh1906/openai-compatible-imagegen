@@ -53,6 +53,7 @@ class ImageConfigMigrationTests(unittest.TestCase):
 
         migrate_image_config.write_migration(plan)
         self.assertEqual(json.loads(self.user_target.read_text(encoding="utf-8")), plan.user_config)
+        self.assertEqual((self.user_target.parent / ".gitignore").read_text(encoding="utf-8"), "*\n")
         self.assertEqual(self.source.read_bytes(), source_before)
 
     def test_development_plugin_config_splits_only_explicit_project_overrides(self) -> None:
@@ -82,6 +83,28 @@ class ImageConfigMigrationTests(unittest.TestCase):
 
         migrate_image_config.write_migration(plan)
         self.assertEqual(json.loads(self.project_target.read_text(encoding="utf-8")), plan.project_config)
+        self.assertEqual((self.user_target.parent / ".gitignore").read_text(encoding="utf-8"), "*\n")
+        self.assertEqual((self.project_target.parent / ".gitignore").read_text(encoding="utf-8"), "*\n")
+
+    def test_migration_rejects_an_incompatible_local_ignore_guard(self) -> None:
+        self.write_source(standalone_config(api_key_env="IMAGEGEN_KEY"))
+        plan = migrate_image_config.plan_migration(
+            source_path=self.source,
+            source_kind="standalone",
+            user_target=self.user_target,
+        )
+        self.user_target.parent.mkdir(parents=True)
+        ignore_path = self.user_target.parent / ".gitignore"
+        ignore_path.write_text("config.json\n", encoding="utf-8")
+
+        with self.assertRaisesRegex(
+            migrate_image_config.ConfigMigrationError,
+            "migration_write_failed",
+        ):
+            migrate_image_config.write_migration(plan)
+
+        self.assertFalse(self.user_target.exists())
+        self.assertEqual(ignore_path.read_text(encoding="utf-8"), "config.json\n")
 
     def test_plaintext_key_requires_a_second_authorization_and_dry_run_is_redacted(self) -> None:
         self.write_source(standalone_config(api_key="plaintext-secret"))

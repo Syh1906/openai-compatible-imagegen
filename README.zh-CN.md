@@ -48,6 +48,8 @@ codex plugin add openai-compatible-imagegen@openai-compatible-imagegen
 
 Git-backed 安装已经包含 MCP server 和 widget，不需要构建仓库或启动本地 Web 服务。
 
+需要从 GitHub Releases 安装指定版本的 Plugin ZIP 时，请按[本地 Plugin ZIP 安装流程](docs/guides/installation.md#install-from-the-plugin-zip)操作。
+
 [Plugin 安装与配置](docs/guides/installation.md#install-the-codex-plugin)
 
 ## 安装 Standalone Skill

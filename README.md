@@ -48,6 +48,8 @@ You can also open **Plugins** in Codex App, select the `openai-compatible-imageg
 
 The Git-backed package already contains the MCP server and widget. You do not build the repository or run a local web server.
 
+To install a versioned Plugin ZIP from GitHub Releases, follow the [local Plugin ZIP installation](docs/guides/installation.md#install-from-the-plugin-zip) steps.
+
 [Plugin installation and configuration](docs/guides/installation.md#install-the-codex-plugin)
 
 ## Install the Standalone Skill
