@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       release_ref:
-        description: Annotated version tag to publish, for example v1.0.1
+        description: Annotated version tag to publish, for example v1.0.2
         required: true
         type: string
 
@@ -16,9 +16,10 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build:
+  windows_candidate:
     runs-on: windows-latest
-    environment: release
+    outputs:
+      release_tag: ${{ steps.release.outputs.release_tag }}
     steps:
       - name: Check out the requested ref
         uses: actions/checkout@v4
@@ -63,6 +64,12 @@ jobs:
           fi
           echo "release_tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
 
+      - name: Validate versioned release notes
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ steps.release.outputs.release_tag }}
+        run: node scripts/validate-release-notes.mjs --tag "$RELEASE_TAG"
+
       - name: Build the Plugin once
         run: npm run build
 
@@ -75,24 +82,104 @@ jobs:
       - name: Compile Python sources
         run: python -m compileall -q scripts
 
-      - name: Build versioned release artifacts
+      - name: Build the Windows release candidate
         run: node scripts/build-release-artifacts.mjs --source-root . --output-directory release
 
-      - name: Upload the release candidate
+      - name: Upload the Windows release candidate
         uses: actions/upload-artifact@v4
         with:
-          name: openai-compatible-imagegen-release-candidate
+          name: candidate-windows
           path: release/*
           if-no-files-found: error
           retention-days: 14
+
+  linux_candidate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the requested ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_ref }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Build the Plugin once
+        run: npm run build
+
+      - name: Build the Linux release candidate
+        run: node scripts/build-release-artifacts.mjs --source-root . --output-directory release
+
+      - name: Upload the Linux release candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: candidate-linux
+          path: release/*
+          if-no-files-found: error
+          retention-days: 14
+
+  compare_candidates:
+    needs: [windows_candidate, linux_candidate]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the requested ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_ref }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Download the Windows release candidate
+        uses: actions/download-artifact@v4
+        with:
+          name: candidate-windows
+          path: candidates/windows
+
+      - name: Download the Linux release candidate
+        uses: actions/download-artifact@v4
+        with:
+          name: candidate-linux
+          path: candidates/linux
+
+      - name: Compare release candidates
+        run: >-
+          node scripts/compare-release-artifacts.mjs
+          --left candidates/windows
+          --right candidates/linux
+
+  publish:
+    needs: [windows_candidate, compare_candidates]
+    runs-on: ubuntu-latest
+    environment: release
+    steps:
+      - name: Check out the requested ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_ref }}
+
+      - name: Download the verified Windows release candidate
+        uses: actions/download-artifact@v4
+        with:
+          name: candidate-windows
+          path: candidates/windows
 
       - name: Create the GitHub Release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ steps.release.outputs.release_tag }}
+          RELEASE_TAG: ${{ needs.windows_candidate.outputs.release_tag }}
+          RELEASE_NOTES_PATH: .github/release-notes/${{ inputs.release_ref }}.md
         run: >-
-          gh release create "$RELEASE_TAG" release/*
+          gh release create "$RELEASE_TAG" candidates/windows/*
           --verify-tag
           --title "$RELEASE_TAG"
-          --notes-from-tag
+          --notes-file "$RELEASE_NOTES_PATH"

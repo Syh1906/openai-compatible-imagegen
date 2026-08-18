@@ -94,7 +94,7 @@ test("release workflow publishes an exact version-titled release from an annotat
   const workflow = await readFile(releaseWorkflow, "utf8");
   assert.match(workflow, /workflow_dispatch:/);
   assert.match(workflow, /runs-on:\s*windows-latest/);
-  assert.doesNotMatch(workflow, /runs-on:\s*ubuntu-latest/);
+  assert.match(workflow, /runs-on:\s*ubuntu-latest/);
   assert.match(workflow, /environment:\s*release/);
   assert.match(workflow, /permissions:\s*\n\s*contents:\s*write/);
   assert.match(workflow, /ref:\s*\$\{\{\s*inputs\.release_ref\s*\}\}/);
@@ -111,11 +111,20 @@ test("release workflow publishes an exact version-titled release from an annotat
   assert.match(workflow, /git cat-file -t/);
   assert.match(workflow, /plugin\.json[^\n]+\.version/);
   assert.match(workflow, /actions\/upload-artifact@v4/);
+  assert.match(workflow, /validate-release-notes\.mjs/);
+  assert.match(workflow, /compare-release-artifacts\.mjs/);
+  assert.match(workflow, /candidate-windows/);
+  assert.match(workflow, /candidate-linux/);
+  assert.match(
+    workflow,
+    /compare_candidates:[\s\S]*?compare-release-artifacts\.mjs[\s\S]*?publish:[\s\S]*?environment:\s*release/,
+  );
   assert.match(workflow, /gh release create/);
   assert.match(workflow, /name:\s*Create the GitHub Release[\s\S]*?shell:\s*bash[\s\S]*?gh release create/);
   assert.match(workflow, /--verify-tag/);
   assert.match(workflow, /--title "\$RELEASE_TAG"/);
-  assert.match(workflow, /release\/\*/);
+  assert.match(workflow, /--notes-file "\$RELEASE_NOTES_PATH"/);
+  assert.doesNotMatch(workflow, /--notes-from-tag/);
   assert.doesNotMatch(workflow, /git tag|git push/i);
 });
 

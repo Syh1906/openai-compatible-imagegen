@@ -48,7 +48,17 @@ python -m unittest tests.<module>
 
 ## Publishing a release
 
-The `Publish release` workflow is manually triggered with an existing annotated version tag and uses the protected `release` environment. It requires the tag to match the Plugin manifest version, runs the release checks, builds the two archives, shared-core evidence, and `SHA256SUMS`, and uploads the same files to a GitHub Release. The Release title is the exact tag, such as `v1.0.1`. The workflow does not create, move, or push tags and does not replace an existing Release.
+Prepare the release in this order:
+
+1. Move the user-visible entries from `Unreleased` into a dated version section in `CHANGELOG.md` and update its comparison links.
+2. Add `.github/release-notes/<tag>.md` with an opening summary and non-empty `Highlights`, `Install`, and `Known limitations` sections. The installation section must link to the same tag's installation guide and require `SHA256SUMS` verification.
+3. Align `.codex-plugin/plugin.json`, `package.json`, `package-lock.json`, marketplace metadata, and built `dist/` files.
+4. Run the project checks, then create and push one annotated version tag after maintainer approval.
+5. Manually run `Publish release` with that existing tag.
+
+The workflow validates the tag, versioned notes, and changelog before building. Windows runs the complete test and Plugin checks; Linux builds an independent candidate. The publish job compares every candidate filename and byte before entering the protected `release` environment. It creates a Release only when both candidates match, uses the exact tag as the title, reads the body from the versioned release-notes file, and uploads the Windows candidate's two archives, shared-core evidence, and `SHA256SUMS`.
+
+The workflow never creates, moves, or pushes tags and never replaces an existing Release. A missing section, stale changelog, platform-specific artifact, or existing Release stops publication.
 
 ## Commit format
 

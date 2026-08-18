@@ -70,6 +70,8 @@ Standalone Skill -> Standalone adapter -> shared image core -> provider
 - `dist/` is tracked so the Git-backed Plugin installs without a source build or local web server.
 - The release builder verifies that shared Python files are byte-identical across packages.
 - One `SHA256SUMS` file covers both archives and the shared-core evidence file.
+- Versioned release notes and the matching `CHANGELOG.md` section are part of the tagged release source.
+- Windows and Linux build independent candidates; publication requires identical filenames and bytes.
 - Marketplace, plugin manifest, package metadata, tag, and release assets must report one version.
 
 ## Change matrix
