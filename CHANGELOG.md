@@ -4,6 +4,8 @@ This file records user-visible changes for each release of `openai-compatible-im
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-08-18
+
 ### Added
 
 - Add the `OpenAI-Compatible Images` Codex App Plugin with conversation image results, focused canvas editing, annotations, immutable artifacts, edit versions, advanced batch delivery, and deterministic QA.
@@ -160,6 +162,8 @@ This file records user-visible changes for each release of `openai-compatible-im
 - Publish the initial Agent Skills-compatible image generation workflow.
 - Support OpenAI-compatible image generation, image editing, local authentication, transparent asset intent, and JSONL batches.
 
+[Unreleased]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v0.3.0...v1.0.0
 [0.3.0]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v0.1.4...v0.2.0
 [0.1.4]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v0.1.3...v0.1.4
