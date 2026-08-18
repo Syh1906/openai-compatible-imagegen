@@ -18,6 +18,7 @@ generated/
 manifest.json
 node_modules/
 release/
+dist/*.zip
 docs/.internal/
 
 .DS_Store
