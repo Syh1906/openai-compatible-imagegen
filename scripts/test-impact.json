@@ -1,0 +1,261 @@
+{
+  "version": 1,
+  "suites": {
+    "shared": { "directory": "tests/shared", "runtimes": ["python"] },
+    "standalone": { "directory": "tests/standalone", "runtimes": ["python"] },
+    "plugin-runtime": { "directory": "tests/plugin-runtime", "runtimes": ["python"] },
+    "mcp": { "directory": "tests/mcp", "runtimes": ["node"], "requires": ["python"] },
+    "web": { "directory": "tests/web", "runtimes": ["node"] },
+    "release": { "directory": "tests/release", "runtimes": ["node", "python"] },
+    "test-infra": { "directory": "tests/test-infra", "runtimes": ["node", "python"] }
+  },
+  "rules": [
+    {
+      "name": "release-build",
+      "files": ["scripts/build.mjs", "scripts/build-release-artifacts.mjs", "scripts/compare-release-artifacts.mjs", "scripts/validate-release-notes.mjs"],
+      "suites": ["release"],
+      "checks": ["build", "plugin"]
+    },
+    {
+      "name": "plugin-manifest",
+      "files": [".codex-plugin/plugin.json", ".mcp.json", "scripts/plugin-file-set.mjs"],
+      "suites": ["release"],
+      "checks": ["build", "plugin"]
+    },
+    {
+      "name": "marketplace",
+      "files": [".agents/plugins/marketplace.json"],
+      "suites": ["release"],
+      "checks": ["build", "plugin"]
+    },
+    {
+      "name": "personal-plugin-tools",
+      "files": ["scripts/stage-personal-plugin.mjs", "scripts/prepare-personal-plugin.mjs"],
+      "suites": ["release"],
+      "checks": ["plugin"]
+    },
+    {
+      "name": "plugin-check-tools",
+      "files": ["scripts/probe-plugin.mjs", "scripts/check-plugin.mjs"],
+      "suites": ["release"],
+      "checks": ["plugin"]
+    },
+    {
+      "name": "native-explorer-adapter",
+      "files": ["scripts/reveal_in_explorer.py"],
+      "suites": ["plugin-runtime", "release"],
+      "checks": ["build", "diff", "plugin"],
+      "platforms": ["windows"]
+    },
+    {
+      "name": "native-filesystem-safety",
+      "files": ["mcp/filesystem-path-safety.mjs"],
+      "suites": ["mcp"],
+      "checks": ["build", "plugin"],
+      "platforms": ["macos"]
+    },
+    {
+      "name": "native-filesystem-safety-test",
+      "files": ["tests/mcp/test_filesystem_path_safety.mjs"],
+      "suites": ["mcp"],
+      "platforms": ["macos"]
+    },
+    {
+      "name": "native-plugin-tests",
+      "files": ["tests/plugin-runtime/test_windows_repository_fs.py", "tests/plugin-runtime/test_reveal_in_explorer.py"],
+      "suites": ["plugin-runtime"],
+      "platforms": ["windows"]
+    },
+    {
+      "name": "windows-adapter",
+      "files": ["scripts/windows_repository_fs.py"],
+      "suites": ["plugin-runtime", "release"],
+      "checks": ["build", "diff", "plugin"],
+      "platforms": ["windows"]
+    },
+    {
+      "name": "posix-adapter",
+      "files": ["scripts/posix_repository_fs.py"],
+      "suites": ["plugin-runtime", "release"],
+      "checks": ["build", "diff", "plugin"],
+      "platforms": ["macos"]
+    },
+    {
+      "name": "cross-platform-adapter",
+      "files": ["scripts/repository_fs.py"],
+      "suites": ["plugin-runtime", "release"],
+      "checks": ["build", "diff", "plugin"],
+      "platforms": ["macos", "windows"]
+    },
+    {
+      "name": "artifact-repository",
+      "files": ["scripts/artifact_repository.py"],
+      "suites": ["plugin-runtime", "release"],
+      "checks": ["build", "diff", "plugin"],
+      "platforms": ["macos", "windows"]
+    },
+    {
+      "name": "shared-runtime",
+      "prefixes": ["scripts/"],
+      "suites": ["shared", "standalone", "plugin-runtime", "mcp", "release"],
+      "checks": ["build", "diff", "plugin"]
+    },
+    {
+      "name": "mcp-python-runtime",
+      "files": ["mcp/python-runtime.mjs"],
+      "suites": ["mcp", "test-infra"],
+      "checks": ["build", "plugin"]
+    },
+    {
+      "name": "mcp-cross-contract",
+      "files": ["mcp/create-server.mjs", "mcp/host-observation-store.mjs", "mcp/release-identity.mjs"],
+      "suites": ["mcp", "release", "web"],
+      "checks": ["build", "plugin"]
+    },
+    {
+      "name": "mcp-project-context",
+      "files": ["mcp/project-context.mjs"],
+      "suites": ["mcp", "release", "web"],
+      "checks": ["build", "plugin"],
+      "platforms": ["windows"]
+    },
+    {
+      "name": "web-mcp-observation-contract",
+      "files": ["web/host-observation.mjs"],
+      "suites": ["mcp", "web"],
+      "checks": ["build", "plugin"]
+    },
+    {
+      "name": "mcp-release-contract",
+      "files": ["mcp/image-runtime.mjs"],
+      "suites": ["mcp", "release"],
+      "checks": ["build", "plugin"]
+    },
+    {
+      "name": "mcp-windows-path-identity",
+      "files": ["mcp/project-binding-store.mjs", "mcp/file-lock-ownership.mjs"],
+      "suites": ["mcp"],
+      "checks": ["build", "plugin"],
+      "platforms": ["windows"]
+    },
+    {
+      "name": "mcp-runtime",
+      "prefixes": ["mcp/"],
+      "suites": ["mcp"],
+      "checks": ["build", "plugin"]
+    },
+    {
+      "name": "web-release-contract",
+      "files": ["web/result-state.mjs"],
+      "suites": ["release", "web"],
+      "checks": ["build", "plugin"]
+    },
+    {
+      "name": "widget-runtime",
+      "prefixes": ["web/"],
+      "suites": ["web"],
+      "checks": ["build", "plugin"]
+    },
+    {
+      "name": "plugin-skill",
+      "prefixes": ["skills/", "dist/"],
+      "suites": ["release"],
+      "checks": ["build", "plugin"]
+    },
+    {
+      "name": "release-metadata",
+      "prefixes": [".github/release-notes/", "assets/"],
+      "suites": ["release"]
+    },
+    {
+      "name": "standalone-skill",
+      "files": ["SKILL.md"],
+      "prefixes": ["agents/", "examples/", "references/"],
+      "suites": ["release", "standalone"]
+    },
+    {
+      "name": "ci-workflow",
+      "prefixes": [".github/workflows/"],
+      "suites": ["test-infra", "release"],
+      "checks": ["plugin"]
+    },
+    {
+      "name": "test-infra",
+      "files": ["scripts/run-node-tests.mjs", "scripts/run-tests.mjs", "scripts/test-impact.json", "scripts/test-impact.mjs", "scripts/test-smart.mjs", "scripts/test-suite.mjs", "tests/test_node_test_runner.mjs"],
+      "prefixes": ["tests/test-infra/"],
+      "suites": ["test-infra"]
+    },
+    {
+      "name": "legacy-flat-tests",
+      "prefixes": ["tests/test_"],
+      "suites": ["mcp", "plugin-runtime", "release", "shared", "standalone", "test-infra", "web"]
+    },
+    {
+      "name": "test-mcp",
+      "prefixes": ["tests/mcp/"],
+      "suites": ["mcp"]
+    },
+    {
+      "name": "test-web",
+      "prefixes": ["tests/web/"],
+      "suites": ["web"]
+    },
+    {
+      "name": "test-shared",
+      "prefixes": ["tests/shared/"],
+      "suites": ["shared"]
+    },
+    {
+      "name": "test-standalone",
+      "prefixes": ["tests/standalone/"],
+      "suites": ["standalone"]
+    },
+    {
+      "name": "test-plugin-runtime",
+      "prefixes": ["tests/plugin-runtime/"],
+      "suites": ["plugin-runtime"]
+    },
+    {
+      "name": "test-release",
+      "prefixes": ["tests/release/"],
+      "suites": ["release"]
+    },
+    {
+      "name": "test-support-mcp",
+      "files": ["tests/support/fenced-record-fixture.mjs", "tests/support/file-lock-owner-worker.mjs", "tests/support/mcp-tool-client.mjs", "tests/support/project-binding-read-race-worker.mjs"],
+      "suites": ["mcp"]
+    },
+    {
+      "name": "test-support-mcp-web",
+      "files": ["tests/fixture-project-context.js", "tests/support/fixture-project-context.mjs"],
+      "suites": ["mcp", "web"]
+    },
+    {
+      "name": "test-support-plugin-runtime",
+      "files": ["tests/support/python_fixtures.py"],
+      "suites": ["plugin-runtime"]
+    },
+    {
+      "name": "test-support-web",
+      "files": ["tests/support/widget-runtime-host.mjs"],
+      "suites": ["web"]
+    },
+    {
+      "name": "public-documentation",
+      "files": ["CHANGELOG.md", "README.md", "README.zh-CN.md"],
+      "prefixes": ["docs/"],
+      "suites": ["release"]
+    },
+    {
+      "name": "documentation",
+      "files": [".gitignore", "AGENTS.md", "CONTRIBUTING.md", "LICENSE", "SECURITY.md"],
+      "suites": []
+    },
+    {
+      "name": "package-tooling",
+      "files": ["package.json", "package-lock.json", "pnpm-workspace.yaml"],
+      "suites": ["mcp", "release", "test-infra", "web"],
+      "checks": ["build", "plugin"]
+    }
+  ]
+}

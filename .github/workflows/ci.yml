@@ -2,22 +2,82 @@ name: CI
 
 on:
   push:
+    tags-ignore:
+      - "**"
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
+  plan:
+    name: plan (${{ github.event_name }})
+    runs-on: ubuntu-latest
+    outputs:
+      base_sha: ${{ steps.baseline.outputs.base_sha }}
+      head_sha: ${{ steps.baseline.outputs.head_sha }}
+      matrix: ${{ steps.impact.outputs.matrix }}
+      has_tests: ${{ steps.impact.outputs.has_tests }}
+      has_node: ${{ steps.impact.outputs.has_node }}
+      has_python: ${{ steps.impact.outputs.has_python }}
+      needs_build: ${{ steps.impact.outputs.needs_build }}
+      needs_plugin_check: ${{ steps.impact.outputs.needs_plugin_check }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Resolve the fixed regression baseline
+        id: baseline
+        shell: bash
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_SHA: ${{ github.sha }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "pull_request" ]]; then
+            requested_base="$PR_BASE_SHA"
+          elif [[ "$BEFORE_SHA" != "0000000000000000000000000000000000000000" ]]; then
+            requested_base="$BEFORE_SHA"
+          else
+            git fetch --no-tags origin "+refs/heads/$DEFAULT_BRANCH:refs/remotes/origin/$DEFAULT_BRANCH"
+            requested_base="$(git merge-base "origin/$DEFAULT_BRANCH" "$HEAD_SHA")"
+          fi
+          base_sha="$(git rev-parse "$requested_base^{commit}")"
+          head_sha="$(git rev-parse "$HEAD_SHA^{commit}")"
+          echo "base_sha=$base_sha" >> "$GITHUB_OUTPUT"
+          echo "head_sha=$head_sha" >> "$GITHUB_OUTPUT"
+      - name: Select impacted suites and platforms
+        id: impact
+        env:
+          TEST_BASE_SHA: ${{ steps.baseline.outputs.base_sha }}
+          TEST_HEAD_SHA: ${{ steps.baseline.outputs.head_sha }}
+        run: node scripts/test-smart.mjs --plan --github-output
+
   test:
     name: test (${{ matrix.os }}, ${{ github.event_name }})
+    needs: plan
+    env:
+      TEST_BASE_SHA: ${{ needs.plan.outputs.base_sha }}
+      TEST_HEAD_SHA: ${{ needs.plan.outputs.head_sha }}
     strategy:
       fail-fast: false
       matrix:
-        os:
-          - windows-latest
-          - ubuntu-latest
-          - macos-latest
+        os: ${{ fromJSON(needs.plan.outputs.matrix) }}
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
       - uses: actions/setup-python@v5
+        if: needs.plan.outputs.has_python == 'true'
         with:
           python-version: "3.12"
       - uses: actions/setup-node@v4
@@ -25,14 +85,36 @@ jobs:
           node-version: "20"
           cache: npm
       - name: Install Node dependencies
+        if: needs.plan.outputs.has_node == 'true' || needs.plan.outputs.needs_build == 'true' || needs.plan.outputs.needs_plugin_check == 'true'
         run: npm ci
       - name: Build plugin package
+        if: needs.plan.outputs.needs_build == 'true'
         run: npm run build
-      - name: Run tests
-        run: npm test
+      - name: Run smart regression
+        if: needs.plan.outputs.has_tests == 'true'
+        run: npm run test:smart
       - name: Check plugin package
+        if: needs.plan.outputs.needs_plugin_check == 'true'
         run: npm run check
       - name: Compile Python scripts
+        if: needs.plan.outputs.has_python == 'true'
         run: python -m compileall -q scripts
       - name: Check diffs
-        run: git diff --check
+        run: git diff --check "${{ needs.plan.outputs.base_sha }}" "${{ needs.plan.outputs.head_sha }}"
+
+  summary:
+    name: smart regression summary (${{ github.event_name }})
+    if: ${{ always() }}
+    needs: [plan, test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require plan and matrix success
+        env:
+          PLAN_RESULT: ${{ needs.plan.result }}
+          TEST_RESULT: ${{ needs.test.result }}
+        run: |
+          set -euo pipefail
+          if [[ "$PLAN_RESULT" != "success" || "$TEST_RESULT" != "success" ]]; then
+            echo "smart regression did not complete successfully: plan=$PLAN_RESULT test=$TEST_RESULT" >&2
+            exit 1
+          fi

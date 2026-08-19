@@ -1,0 +1,182 @@
+name: Release preflight
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Commit SHA to validate before creating the version tag
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-preflight-${{ inputs.source_sha }}
+  cancel-in-progress: false
+
+jobs:
+  resolve_source:
+    runs-on: ubuntu-latest
+    outputs:
+      source_sha: ${{ steps.source.outputs.source_sha }}
+    steps:
+      - name: Check out the requested source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Resolve and validate the fixed source SHA
+        id: source
+        shell: bash
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          REQUESTED_SHA: ${{ inputs.source_sha }}
+          WORKFLOW_BRANCH: ${{ github.ref_name }}
+          WORKFLOW_REF_TYPE: ${{ github.ref_type }}
+          WORKFLOW_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [[ "$WORKFLOW_REF_TYPE" != "branch" || "$WORKFLOW_BRANCH" != "$DEFAULT_BRANCH" ]]; then
+            echo "Release preflight must run from the repository default branch." >&2
+            exit 1
+          fi
+          if [[ ! "$REQUESTED_SHA" =~ ^[0-9a-fA-F]{40}$ ]]; then
+            echo "source_sha must be a full 40-character commit SHA." >&2
+            exit 1
+          fi
+          actual_sha="$(git rev-parse HEAD)"
+          if [[ "$actual_sha" != "${REQUESTED_SHA,,}" ]]; then
+            echo "The checked-out commit does not match source_sha." >&2
+            exit 1
+          fi
+          if [[ "$actual_sha" != "$WORKFLOW_SHA" ]]; then
+            echo "Run Release preflight from the same commit supplied as source_sha." >&2
+            exit 1
+          fi
+          echo "source_sha=$actual_sha" >> "$GITHUB_OUTPUT"
+
+  candidate:
+    needs: resolve_source
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows
+            os: windows-latest
+            artifact: candidate-windows
+          - name: linux
+            os: ubuntu-latest
+            artifact: candidate-linux
+          - name: macos
+            os: macos-latest
+            artifact: candidate-macos
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Check out the fixed source SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve_source.outputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+      - name: Install Node dependencies
+        run: npm ci
+      - name: Build the Plugin
+        run: npm run build
+      - name: Run full release regression
+        run: npm run test:release
+      - name: Check the Plugin package
+        run: npm run check
+      - name: Compile Python sources
+        run: python -m compileall -q scripts
+      - name: Check diffs
+        run: git diff --check
+      - name: Validate versioned release notes and changelog
+        shell: bash
+        run: |
+          set -euo pipefail
+          release_version="$(node -p "JSON.parse(require('node:fs').readFileSync('.codex-plugin/plugin.json', 'utf8')).version")"
+          node scripts/validate-release-notes.mjs --tag "v${release_version}"
+      - name: Build the release candidate
+        run: node scripts/build-release-artifacts.mjs --source-root . --output-directory release
+      - name: Upload the release candidate
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}-${{ github.run_attempt }}
+          path: release/*
+          if-no-files-found: error
+          retention-days: 14
+
+  compare_candidates:
+    needs: [resolve_source, candidate]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the fixed source SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve_source.outputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Download the Windows candidate
+        uses: actions/download-artifact@v4
+        with:
+          name: candidate-windows-${{ github.run_attempt }}
+          path: candidates/windows
+      - name: Download the Linux candidate
+        uses: actions/download-artifact@v4
+        with:
+          name: candidate-linux-${{ github.run_attempt }}
+          path: candidates/linux
+      - name: Download the macOS candidate
+        uses: actions/download-artifact@v4
+        with:
+          name: candidate-macos-${{ github.run_attempt }}
+          path: candidates/macos
+      - name: Compare Windows and Linux candidates
+        run: >-
+          node scripts/compare-release-artifacts.mjs
+          --left candidates/windows
+          --right candidates/linux
+      - name: Compare Windows and macOS candidates
+        run: >-
+          node scripts/compare-release-artifacts.mjs
+          --left candidates/windows
+          --right candidates/macos
+      - name: Record the verified preflight identity
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ needs.resolve_source.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          actual_sha="$(git rev-parse HEAD)"
+          if [[ "$actual_sha" != "$SOURCE_SHA" ]]; then
+            echo "Metadata checkout does not match the resolved source SHA." >&2
+            exit 1
+          fi
+          mkdir -p preflight-metadata
+          jq -n \
+            --arg source_sha "$actual_sha" \
+            --arg run_id "$GITHUB_RUN_ID" \
+            --arg run_attempt "$GITHUB_RUN_ATTEMPT" \
+            --arg repository "$GITHUB_REPOSITORY" \
+            --arg event "$GITHUB_EVENT_NAME" \
+            --arg workflow_ref "$GITHUB_WORKFLOW_REF" \
+            --arg workflow_sha "$GITHUB_SHA" \
+            '{source_sha: $source_sha, run_id: $run_id, run_attempt: $run_attempt, repository: $repository, event: $event, workflow_ref: $workflow_ref, workflow_sha: $workflow_sha, candidates: {windows: ("candidate-windows-" + $run_attempt), linux: ("candidate-linux-" + $run_attempt), macos: ("candidate-macos-" + $run_attempt)}}' \
+            > preflight-metadata/preflight.json
+      - name: Upload preflight metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: preflight-metadata-${{ github.run_attempt }}
+          path: preflight-metadata/preflight.json
+          retention-days: 30
