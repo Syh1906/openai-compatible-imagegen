@@ -1,46 +1,40 @@
-<!-- updated: 2026-08-19 -->
+<!-- updated: 2026-08-20 -->
 # Update the Plugin or Skill
 
 > Parent: [User guides](./README.md)
 
 Language: [简体中文](./updating.zh-CN.md)
 
-Use this guide to move an existing installation to a newer released version. Updating the package does not rewrite image-service credentials, user configuration, or generated artifacts.
+Use this guide to move an existing installation to a newer Git revision or released version. Updating the package does not rewrite image-service credentials, user configuration, or generated artifacts.
 
 ## Before you update
 
-- Read the target release notes for breaking configuration changes.
+- Choose the update channel. The Git marketplace follows the repository's default branch, while Release ZIP files provide fixed versions.
+- For a fixed version, read the target release notes for breaking configuration changes.
 - Keep the current installation and local configuration until the new version passes its smoke check.
 - Download release ZIP files and `SHA256SUMS` from the same GitHub Release when you need a fixed local package.
 
 ## Update a Git marketplace Plugin
 
-The marketplace command refreshes the configured Git snapshot. It is not a separate `plugin update` command and does not replace the installed Plugin by itself.
+When the Plugin system starts, Codex checks configured Git marketplaces. If this repository's default branch (`main`) has a new revision, Codex refreshes the marketplace snapshot and the installed Plugin cache. Run the marketplace upgrade command when you need to check immediately instead of waiting for the next startup.
 
 The `codex plugin` lifecycle commands below are identical in Windows PowerShell, macOS Terminal, and a Linux shell. Only local paths and platform utilities differ.
 
-1. Refresh the marketplace snapshot:
+1. Check for a new marketplace revision:
 
    ```text
    codex plugin marketplace upgrade openai-compatible-imagegen --json
    ```
 
-2. Replace the installed Plugin from the refreshed snapshot:
-
-   ```text
-   codex plugin remove openai-compatible-imagegen@openai-compatible-imagegen --json
-   codex plugin add openai-compatible-imagegen@openai-compatible-imagegen --json
-   ```
-
-3. Confirm the installed version:
+2. Confirm the installed Plugin:
 
    ```text
    codex plugin list --json
    ```
 
-4. Start a new task in Codex App or a new CLI session before using the updated Skill or MCP tools. [OpenAI's official Plugin documentation](https://developers.openai.com/codex/plugins) requires a new chat or CLI session after installation.
+3. Completely quit and restart Codex once, then start a new task or CLI session. The restart loads the updated Skill, MCP tools, and bundled dependencies.
 
-If the marketplace source itself changed, remove and add the marketplace again before step 2. Do not use `--ref` unless you intentionally want a tag or branch snapshot.
+Do not remove and add the Plugin during a normal Git marketplace update. Use the Plugin ZIP or [Rollback](./rollback.md) route when you need a fixed release, archived build, different source, tag, or branch.
 
 ## Update from a Plugin ZIP
 

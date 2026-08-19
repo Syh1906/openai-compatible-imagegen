@@ -1,4 +1,4 @@
-<!-- updated: 2026-08-19 -->
+<!-- updated: 2026-08-20 -->
 # 安装
 
 > 上级：[用户指南](./README.zh-CN.md)
@@ -40,6 +40,8 @@ Plugin 已包含预构建的 MCP server 和 Widget。无需运行 `npm install`�
 codex plugin marketplace add Syh1906/openai-compatible-imagegen
 ```
 
+如果 `openai-compatible-imagegen` marketplace 已注册，跳过这一步。
+
 2. 安装 Plugin：
 
 ```text
@@ -48,7 +50,7 @@ codex plugin add openai-compatible-imagegen@openai-compatible-imagegen
 
 3. 也可以在 Codex App 中打开 **Plugins**，或在交互式 Codex CLI 会话中输入 `/plugins`，选择 `openai-compatible-imagegen` marketplace，然后安装 **OpenAI-Compatible Images**。
 4. 使用 `codex plugin list --json` 确认已安装版本。
-5. 安装后开始一个新任务。
+5. 安装后完全退出并重新启动 Codex 一次，再开始新任务。
 6. 继续完成 [Plugin 配置](./configuration.zh-CN.md#配置-codex-plugin)。
 
 第一次配置也可以在新任务中要求 Agent 调用 `initialize_image_config`。使用 `inspect_image_config` 查看脱敏结果，使用 `update_image_config` 修改支持的字段。Plugin 安装目录和 Skill 目录不保存用户配置。
@@ -101,7 +103,7 @@ codex plugin add openai-compatible-imagegen@openai-compatible-imagegen
    codex plugin add openai-compatible-imagegen@openai-compatible-imagegen
    ```
 
-6. 使用 `codex plugin list --json` 确认版本，然后开始一个新任务。
+6. 使用 `codex plugin list --json` 确认版本。完全退出并重新启动 Codex 一次，再开始新任务。
 7. 继续完成 [Plugin 配置](./configuration.zh-CN.md#配置-codex-plugin)。
 
 Codex 从 marketplace 目录安装 Plugin，不能直接从 ZIP 安装。只要仍在使用这个本地 marketplace，就需要保留解压目录。日常更新仍推荐使用 Git marketplace。

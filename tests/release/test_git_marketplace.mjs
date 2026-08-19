@@ -72,32 +72,61 @@ test("CI gives push and pull request checks distinct names", async () => {
 
 
 test("public install, update, and rollback guides use the documented plugin lifecycle commands", async () => {
-  const [readme, readmeZh, installation, updating, updatingZh, rollback, troubleshooting] = await Promise.all([
+  const [
+    readme,
+    readmeZh,
+    installation,
+    installationZh,
+    updating,
+    updatingZh,
+    rollback,
+    rollbackZh,
+    troubleshooting,
+    troubleshootingZh,
+  ] = await Promise.all([
     readFile(path.join(projectRoot, "README.md"), "utf8"),
     readFile(path.join(projectRoot, "README.zh-CN.md"), "utf8"),
     readFile(path.join(projectRoot, "docs/guides/installation.md"), "utf8"),
+    readFile(path.join(projectRoot, "docs/guides/installation.zh-CN.md"), "utf8"),
     readFile(path.join(projectRoot, "docs/guides/updating.md"), "utf8"),
     readFile(path.join(projectRoot, "docs/guides/updating.zh-CN.md"), "utf8"),
     readFile(path.join(projectRoot, "docs/guides/rollback.md"), "utf8"),
+    readFile(path.join(projectRoot, "docs/guides/rollback.zh-CN.md"), "utf8"),
     readFile(path.join(projectRoot, "docs/guides/troubleshooting.md"), "utf8"),
+    readFile(path.join(projectRoot, "docs/guides/troubleshooting.zh-CN.md"), "utf8"),
   ]);
 
   assert.match(readme, /\[简体中文\]\(README\.zh-CN\.md\)/);
   assert.match(readmeZh, /\[English\]\(README\.md\)/);
 
-  for (const document of [readme, readmeZh, installation]) {
+  for (const document of [readme, readmeZh, installation, installationZh]) {
     assert.match(document, /codex plugin marketplace add Syh1906\/openai-compatible-imagegen/);
     assert.match(document, /codex plugin add openai-compatible-imagegen@openai-compatible-imagegen/);
   }
-  for (const document of [updating, updatingZh]) {
+
+  for (const [document, marketplaceHeading, zipHeading, restartPattern] of [
+    [updating, "Update a Git marketplace Plugin", "Update from a Plugin ZIP", /completely quit and restart Codex/i],
+    [updatingZh, "更新 Git marketplace Plugin", "从 Plugin ZIP 更新", /完全退出并重新启动 Codex/],
+  ]) {
+    const marketplaceSection = markdownSection(document, marketplaceHeading);
+    const zipSection = markdownSection(document, zipHeading);
+
     for (const command of [
       "codex plugin marketplace upgrade openai-compatible-imagegen --json",
-      "codex plugin remove openai-compatible-imagegen@openai-compatible-imagegen --json",
-      "codex plugin add openai-compatible-imagegen@openai-compatible-imagegen --json",
       "codex plugin list --json",
     ]) {
-      assert.ok(document.includes(command), `${command}: updating guide`);
+      assert.ok(marketplaceSection.includes(command), `${command}: ${marketplaceHeading}`);
     }
+    for (const command of [
+      "codex plugin remove openai-compatible-imagegen@openai-compatible-imagegen --json",
+      "codex plugin add openai-compatible-imagegen@openai-compatible-imagegen --json",
+    ]) {
+      assert.ok(zipSection.includes(command), `${command}: ${zipHeading}`);
+    }
+    assert.doesNotMatch(marketplaceSection, /codex plugin (?:remove|add) /);
+    assert.doesNotMatch(marketplaceSection, /npm install/);
+    assert.match(marketplaceSection, restartPattern);
+
     for (const platformCommand of [
       '(Get-FileHash -Algorithm SHA256 -LiteralPath "openai-compatible-imagegen-codex-plugin-<version>.zip").Hash.ToLowerInvariant()',
       'shasum -a 256 openai-compatible-imagegen-codex-plugin-<version>.zip',
@@ -113,13 +142,27 @@ test("public install, update, and rollback guides use the documented plugin life
     assert.match(document, /auth\.json/);
   }
 
-  for (const command of [
-    "codex plugin list --json",
-    "codex plugin remove openai-compatible-imagegen@openai-compatible-imagegen --json",
-    "codex plugin marketplace upgrade openai-compatible-imagegen --json",
-    "codex plugin marketplace remove openai-compatible-imagegen --json",
+  assert.match(readme, /marketplace is already registered[\s\S]*skip/i);
+  assert.match(readme, /completely quit and restart Codex/i);
+  assert.match(installation, /marketplace is already registered[\s\S]*skip/i);
+  assert.match(installation, /completely quit and restart Codex/i);
+  assert.match(readmeZh, /marketplace 已注册[\s\S]*跳过/);
+  assert.match(readmeZh, /完全退出并重新启动 Codex/);
+  assert.match(installationZh, /marketplace 已注册[\s\S]*跳过/);
+  assert.match(installationZh, /完全退出并重新启动 Codex/);
+
+  for (const documents of [
+    `${rollback}\n${troubleshooting}`,
+    `${rollbackZh}\n${troubleshootingZh}`,
   ]) {
-    assert.ok(`${rollback}\n${troubleshooting}`.includes(command), command);
+    for (const command of [
+      "codex plugin list --json",
+      "codex plugin remove openai-compatible-imagegen@openai-compatible-imagegen --json",
+      "codex plugin marketplace upgrade openai-compatible-imagegen --json",
+      "codex plugin marketplace remove openai-compatible-imagegen --json",
+    ]) {
+      assert.ok(documents.includes(command), command);
+    }
   }
 });
 
@@ -277,6 +320,14 @@ function fencedBodies(markdown) {
   return [...markdown.matchAll(/```[^\n]*\n([\s\S]*?)```/g)]
     .map((match) => match[1].trim().replaceAll(".zh-CN.md", ".md"))
     .sort();
+}
+
+function markdownSection(markdown, heading) {
+  const lines = markdown.split(/\r?\n/);
+  const start = lines.findIndex((line) => line === `## ${heading}`);
+  assert.notEqual(start, -1, `missing section: ${heading}`);
+  const next = lines.findIndex((line, index) => index > start && /^#{1,2} /.test(line));
+  return lines.slice(start + 1, next === -1 ? undefined : next).join("\n");
 }
 
 function publicRelativeLinks(markdown) {

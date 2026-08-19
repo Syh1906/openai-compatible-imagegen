@@ -1,4 +1,4 @@
-<!-- updated: 2026-08-19 -->
+<!-- updated: 2026-08-20 -->
 # Installation
 
 > Parent: [User guides](./README.md)
@@ -40,6 +40,8 @@ The runtime selects `python` on Windows and `python3` on macOS/Linux. It require
 codex plugin marketplace add Syh1906/openai-compatible-imagegen
 ```
 
+If the `openai-compatible-imagegen` marketplace is already registered, skip this step.
+
 2. Install the Plugin:
 
 ```text
@@ -48,7 +50,7 @@ codex plugin add openai-compatible-imagegen@openai-compatible-imagegen
 
 3. Alternatively, open **Plugins** in Codex App or enter `/plugins` in an interactive Codex CLI session, select the `openai-compatible-imagegen` marketplace, and install **OpenAI-Compatible Images**.
 4. Confirm the installed version with `codex plugin list --json`.
-5. Start a new task after installation.
+5. Completely quit and restart Codex once after installation, then start a new task.
 6. Continue with [Plugin configuration](./configuration.md#configure-the-codex-plugin).
 
 The first configuration can also be created from a new task by asking the Agent to call `initialize_image_config`. Use `inspect_image_config` to review the redacted result and `update_image_config` for supported changes; the Plugin installation directory and Skill directory do not contain the user configuration.
@@ -101,7 +103,7 @@ Use this route when you want to install a specific GitHub Release from its downl
    codex plugin add openai-compatible-imagegen@openai-compatible-imagegen
    ```
 
-6. Confirm the installed version with `codex plugin list --json`, then start a new task.
+6. Confirm the installed version with `codex plugin list --json`. Completely quit and restart Codex once, then start a new task.
 7. Continue with [Plugin configuration](./configuration.md#configure-the-codex-plugin).
 
 Codex installs plugins from marketplace directories, not directly from ZIP files. Keep the extracted directory while this local marketplace remains configured. The Git-backed marketplace remains the recommended route for normal updates.

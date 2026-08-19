@@ -1,46 +1,40 @@
-<!-- updated: 2026-08-19 -->
+<!-- updated: 2026-08-20 -->
 # 更新 Plugin 或 Skill
 
 > 上级：[用户指南](./README.zh-CN.md)
 
 [English](./updating.md) | 简体中文
 
-本指南用于把已有安装更新到较新的已发布版本。更新发行包不会重写图片服务凭据、用户配置或已生成的产物。
+本指南用于把已有安装更新到较新的 Git revision 或已发布版本。更新发行包不会重写图片服务凭据、用户配置或已生成的产物。
 
 ## 更新前检查
 
-- 阅读目标版本的 release notes，确认配置是否有不兼容变化。
+- 先选择更新渠道。Git marketplace 跟随仓库默认分支，Release ZIP 提供固定版本。
+- 使用固定版本时，阅读目标版本的 release notes，确认配置是否有不兼容变化。
 - 在新版本通过冒烟检查前保留当前安装和本地配置。
 - 需要固定版本的本地发行包时，从同一个 GitHub Release 下载 ZIP 和 `SHA256SUMS`。
 
 ## 更新 Git marketplace Plugin
 
-marketplace 命令只刷新已配置的 Git 快照；它不是单独的 `plugin update` 命令，也不会单独替换已经安装的 Plugin。
+Plugin 系统启动时，Codex 会检查已经配置的 Git marketplace。如果本仓库默认分支 `main` 出现新的 revision，Codex 会刷新 marketplace 快照和已安装 Plugin 的缓存。需要立即检查时，运行 marketplace upgrade 命令，不必等待下一次启动。
 
 下面的 `codex plugin` 生命周期命令在 Windows PowerShell、macOS 终端和 Linux shell 中相同。只有本地路径和平台工具不同。
 
-1. 刷新 marketplace 快照：
+1. 检查新的 marketplace revision：
 
    ```text
    codex plugin marketplace upgrade openai-compatible-imagegen --json
    ```
 
-2. 从刷新后的快照替换已安装 Plugin：
-
-   ```text
-   codex plugin remove openai-compatible-imagegen@openai-compatible-imagegen --json
-   codex plugin add openai-compatible-imagegen@openai-compatible-imagegen --json
-   ```
-
-3. 确认已安装版本：
+2. 确认已安装 Plugin：
 
    ```text
    codex plugin list --json
    ```
 
-4. 在 Codex App 开始新任务，或开始新的 CLI 会话，再使用更新后的 Skill 或 MCP 工具。[OpenAI 官方 Plugin 文档](https://developers.openai.com/codex/plugins)要求安装后开始新的 chat 或 CLI session。
+3. 完全退出并重新启动 Codex 一次，再开始新任务或 CLI 会话。重启后会加载更新后的 Skill、MCP 工具和包内依赖。
 
-如果 marketplace 来源本身发生变化，在第 2 步前先删除并重新添加 marketplace。只有明确需要标签或分支快照时才使用 `--ref`。
+日常 Git marketplace 更新不需要删除并重新添加 Plugin。需要固定 Release、归档版本、其他来源、tag 或分支时，改用 Plugin ZIP 或[回滚](./rollback.zh-CN.md)路线。
 
 ## 从 Plugin ZIP 更新
 
