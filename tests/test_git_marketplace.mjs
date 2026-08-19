@@ -64,6 +64,12 @@ test("public plugin metadata uses English defaults", async () => {
   }
 });
 
+test("CI gives push and pull request checks distinct names", async () => {
+  const workflow = await readFile(path.join(projectRoot, ".github/workflows/ci.yml"), "utf8");
+
+  assert.match(workflow, /^\s+name: test \(\$\{\{ matrix\.os \}\}, \$\{\{ github\.event_name \}\}\)$/m);
+});
+
 
 test("public install, update, and rollback guides use the documented plugin lifecycle commands", async () => {
   const [readme, readmeZh, installation, updating, updatingZh, rollback, troubleshooting] = await Promise.all([

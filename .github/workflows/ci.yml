@@ -6,6 +6,7 @@ on:
 
 jobs:
   test:
+    name: test (${{ matrix.os }}, ${{ github.event_name }})
     strategy:
       fail-fast: false
       matrix:
