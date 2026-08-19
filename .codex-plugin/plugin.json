@@ -1,6 +1,6 @@
 {
   "name": "openai-compatible-imagegen",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Generate, annotate, edit, and manage OpenAI-compatible image artifacts in Codex App.",
   "author": {
     "name": "\u5c0f\u4e3a",

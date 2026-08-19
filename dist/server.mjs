@@ -51,7 +51,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 var define_RELEASE_IDENTITY_default;
 var init_define_RELEASE_IDENTITY = __esm({
   "<define:__RELEASE_IDENTITY__>"() {
-    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "1.1.0", serverBuildDigest: "7ebb6f327b31f730fe03838cdd3920d8dbe2f9d2c797a6d968bfce472a4f55c9", widgetAssetDigest: "0808fe08666e07f61a45206d1ea3fbce86981fb968a552ee84bae77e63b30b44", fingerprint: "22ce25c8c12fe83bee33", resourceUris: { result: "ui://openai-compatible-imagegen/result-22ce25c8c12fe83bee33.html", editor: "ui://openai-compatible-imagegen/editor-22ce25c8c12fe83bee33.html" } };
+    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "1.1.1", serverBuildDigest: "c3d281d18c84e389284d5f7ddd513c90d90e08be1e31ae2cdc6c3e0fcd8d3c93", widgetAssetDigest: "0808fe08666e07f61a45206d1ea3fbce86981fb968a552ee84bae77e63b30b44", fingerprint: "564388874a8f326b0b8d", resourceUris: { result: "ui://openai-compatible-imagegen/result-564388874a8f326b0b8d.html", editor: "ui://openai-compatible-imagegen/editor-564388874a8f326b0b8d.html" } };
   }
 });
 
@@ -33805,7 +33805,16 @@ async function readLatestFencedFileSnapshot(recordPath, { maxBytes }) {
       return await readStableFileSnapshot(resolvedRecordPath, { maxBytes });
     }
     if (latest && initialized) {
-      return await readEpochRecord(latest.path, latest, maxBytes);
+      try {
+        const snapshot = await readEpochRecord(latest.path, latest, maxBytes);
+        if (snapshot !== null || !await hasNewerCommittedEpoch(storage.committed, latest)) {
+          return snapshot;
+        }
+      } catch (error40) {
+        if (!(error40 instanceof StableFileSnapshotError) || !await hasNewerCommittedEpoch(storage.committed, latest)) {
+          throw error40;
+        }
+      }
     }
     await delay2(1);
   }
@@ -34088,7 +34097,13 @@ async function readEpochRecord(epochPath, expected, maxBytes) {
   if (metadata.generation !== expected.generation || metadata.token !== expected.token) {
     throw new StableFileSnapshotError("invalid");
   }
-  const entries = await safeReadDirectory(epochPath);
+  let entries;
+  try {
+    entries = await safeReadDirectory(epochPath);
+  } catch (error40) {
+    if (error40?.code === "ENOENT") throw new StableFileSnapshotError("invalid");
+    throw error40;
+  }
   for (const entry of entries) {
     if (entry.isSymbolicLink() || !entry.isFile() || !["epoch.json", "record.json"].includes(entry.name)) {
       throw new StableFileSnapshotError("invalid");
@@ -34124,6 +34139,10 @@ function requireUniqueLatestEpoch(epochs) {
     throw new StableFileSnapshotError("invalid");
   }
   return latest;
+}
+async function hasNewerCommittedEpoch(committedRoot, previous) {
+  const latest = requireUniqueLatestEpoch(await listCommittedEpochs(committedRoot));
+  return latest !== null && latest.generation > previous.generation;
 }
 async function pruneCommittedEpochs(committedRoot) {
   const epochs = await listCommittedEpochs(committedRoot);

@@ -4,6 +4,10 @@ This file records user-visible changes for each release of `openai-compatible-im
 
 ## [Unreleased]
 
+### Fixed
+
+- Prevent concurrent Codex Plugin tools from intermittently reporting a valid project binding as unavailable while another Plugin process refreshes it.
+
 ## [1.1.0] - 2026-08-19
 
 ### Added

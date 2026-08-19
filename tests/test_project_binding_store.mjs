@@ -19,6 +19,10 @@ import { latestCommittedRecordPath } from "./support/fenced-record-fixture.mjs";
 
 const MODULE_PATH = fileURLToPath(new URL("../mcp/project-binding-store.mjs", import.meta.url));
 const THIS_TEST_PATH = fileURLToPath(import.meta.url);
+const READ_RACE_WORKER_PATH = fileURLToPath(
+  new URL("./support/project-binding-read-race-worker.mjs", import.meta.url),
+);
+const READ_RACE_TIMEOUT_MS = 10_000;
 const HASH_A = "a".repeat(64);
 const HASH_B = "b".repeat(64);
 const CONFIG_HASH = "c".repeat(64);
@@ -98,6 +102,75 @@ if (process.argv[2] === "--bind-worker") {
       ]);
       assert.deepEqual(parseWorkerOutcome(writer), { status: "ok" });
       assert.deepEqual(parseWorkerOutcome(reader), { status: "ok" });
+    });
+  });
+
+
+  test("a reader retries when its selected epoch is retired", async () => {
+    await withStoreRoots(async ({ stateRoot, projectA }) => {
+      const store = createProjectBindingStore({ stateRoot });
+      await store.bind(record(HASH_A, projectA));
+      const reader = spawnPausedReadRaceWorker({
+        stateRoot,
+        bindingHash: HASH_A,
+        pauseAt: "committed-list",
+      });
+      await reader.ready;
+      let outcome;
+      try {
+        await store.bind(record(HASH_A, projectA, { projectConfigSha256: HASH_B }));
+        await store.bind(record(HASH_A, projectA));
+      } finally {
+        reader.resume();
+        outcome = await reader.completed;
+      }
+      assert.deepEqual(outcome, { status: "ok" });
+    });
+  });
+
+
+  test("a reader retries when its epoch disappears after metadata validation", async () => {
+    await withStoreRoots(async ({ stateRoot, projectA }) => {
+      const store = createProjectBindingStore({ stateRoot });
+      await store.bind(record(HASH_A, projectA));
+      const reader = spawnPausedReadRaceWorker({
+        stateRoot,
+        bindingHash: HASH_A,
+        pauseAt: "epoch-directory",
+      });
+      await reader.ready;
+      let outcome;
+      try {
+        await store.bind(record(HASH_A, projectA, { projectConfigSha256: HASH_B }));
+        await store.bind(record(HASH_A, projectA));
+      } finally {
+        reader.resume();
+        outcome = await reader.completed;
+      }
+      assert.deepEqual(outcome, { status: "ok" });
+    });
+  });
+
+
+  test("a reader rejects a missing current epoch after metadata validation", async () => {
+    await withStoreRoots(async ({ stateRoot, projectA }) => {
+      const store = createProjectBindingStore({ stateRoot });
+      await store.bind(record(HASH_A, projectA));
+      const reader = spawnPausedReadRaceWorker({
+        stateRoot,
+        bindingHash: HASH_A,
+        pauseAt: "epoch-directory",
+      });
+      await reader.ready;
+      let outcome;
+      try {
+        const recordPath = await latestCommittedRecordPath(bindingPath(stateRoot, HASH_A));
+        await rm(path.dirname(recordPath), { recursive: true });
+      } finally {
+        reader.resume();
+        outcome = await reader.completed;
+      }
+      assert.deepEqual(outcome, { status: "project_binding_state_invalid" });
     });
   });
 
@@ -258,6 +331,80 @@ async function spawnStoreWorker(mode, {
     child.on("error", reject);
     child.on("close", (code) => resolve({ code, stdout, stderr }));
   });
+}
+
+
+function spawnPausedReadRaceWorker({ stateRoot, bindingHash, pauseAt }) {
+  const child = spawn(process.execPath, [READ_RACE_WORKER_PATH, stateRoot, bindingHash, pauseAt], {
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  child.stdout.setEncoding("utf8");
+  child.stderr.setEncoding("utf8");
+  let stdout = "";
+  let stderr = "";
+  let readyResolved = false;
+  let resumed = false;
+  let resolveReady;
+  let rejectReady;
+  let resolveCompleted;
+  let rejectCompleted;
+  const ready = new Promise((resolve, reject) => {
+    resolveReady = resolve;
+    rejectReady = reject;
+  });
+  const completed = new Promise((resolve, reject) => {
+    resolveCompleted = resolve;
+    rejectCompleted = reject;
+  });
+  const readyTimeout = setTimeout(() => {
+    rejectReady(new Error("race worker timed out before selecting an epoch"));
+    child.kill();
+  }, READ_RACE_TIMEOUT_MS);
+  readyTimeout.unref();
+  let completionTimeout = null;
+  child.stdout.on("data", (chunk) => {
+    stdout += chunk;
+    if (!readyResolved && stdout.startsWith("ready\n")) {
+      readyResolved = true;
+      clearTimeout(readyTimeout);
+      resolveReady();
+    }
+  });
+  child.stderr.on("data", (chunk) => { stderr += chunk; });
+  child.on("error", (error) => {
+    clearTimeout(readyTimeout);
+    if (completionTimeout !== null) clearTimeout(completionTimeout);
+    if (readyResolved) rejectCompleted(error);
+    else rejectReady(error);
+  });
+  child.on("close", (code) => {
+    clearTimeout(readyTimeout);
+    if (completionTimeout !== null) clearTimeout(completionTimeout);
+    if (!readyResolved) {
+      const error = new Error(`race worker closed before ready (${code}): ${stderr}`);
+      rejectReady(error);
+      return;
+    }
+    if (code !== 0 || stderr !== "") {
+      rejectCompleted(new Error(`race worker failed (${code}): ${stderr}`));
+      return;
+    }
+    resolveCompleted(JSON.parse(stdout.trim().split("\n").at(-1)));
+  });
+  return {
+    ready,
+    completed,
+    resume: () => {
+      if (resumed) return;
+      resumed = true;
+      completionTimeout = setTimeout(() => {
+        rejectCompleted(new Error("race worker timed out after resuming"));
+        child.kill();
+      }, READ_RACE_TIMEOUT_MS);
+      completionTimeout.unref();
+      child.stdin.end("continue\n");
+    },
+  };
 }
 
 

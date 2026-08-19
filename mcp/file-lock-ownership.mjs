@@ -120,7 +120,19 @@ export async function readLatestFencedFileSnapshot(recordPath, { maxBytes }) {
       return await readStableFileSnapshot(resolvedRecordPath, { maxBytes });
     }
     if (latest && initialized) {
-      return await readEpochRecord(latest.path, latest, maxBytes);
+      try {
+        const snapshot = await readEpochRecord(latest.path, latest, maxBytes);
+        if (snapshot !== null || !await hasNewerCommittedEpoch(storage.committed, latest)) {
+          return snapshot;
+        }
+      } catch (error) {
+        if (
+          !(error instanceof StableFileSnapshotError)
+          || !await hasNewerCommittedEpoch(storage.committed, latest)
+        ) {
+          throw error;
+        }
+      }
     }
     await delay(1);
   }
@@ -441,7 +453,13 @@ async function readEpochRecord(epochPath, expected, maxBytes) {
   if (metadata.generation !== expected.generation || metadata.token !== expected.token) {
     throw new StableFileSnapshotError("invalid");
   }
-  const entries = await safeReadDirectory(epochPath);
+  let entries;
+  try {
+    entries = await safeReadDirectory(epochPath);
+  } catch (error) {
+    if (error?.code === "ENOENT") throw new StableFileSnapshotError("invalid");
+    throw error;
+  }
   for (const entry of entries) {
     if (
       entry.isSymbolicLink()
@@ -487,6 +505,12 @@ function requireUniqueLatestEpoch(epochs) {
     throw new StableFileSnapshotError("invalid");
   }
   return latest;
+}
+
+
+async function hasNewerCommittedEpoch(committedRoot, previous) {
+  const latest = requireUniqueLatestEpoch(await listCommittedEpochs(committedRoot));
+  return latest !== null && latest.generation > previous.generation;
 }
 
 
