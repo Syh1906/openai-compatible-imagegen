@@ -5,7 +5,9 @@
 
 Language: [简体中文](./rollback.zh-CN.md)
 
-Rollback changes the installed package version. It does not downgrade or rewrite your image-service configuration automatically.
+Rollback changes the installed package version. It does not downgrade or rewrite your image-service configuration automatically. For a normal forward update, use [Update the Plugin or Skill](./updating.md).
+
+The `codex plugin` rollback commands are identical in Windows PowerShell, macOS Terminal, and a Linux shell.
 
 ## Roll back the Codex Plugin
 

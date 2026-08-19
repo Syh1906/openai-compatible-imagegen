@@ -58,13 +58,29 @@ Plugin 在 Windows 默认调用 `python`，在 macOS/Linux 默认调用 `python3
 
 从 [GitHub Releases](https://github.com/Syh1906/openai-compatible-imagegen/releases) 下载 `openai-compatible-imagegen-skill-<version>.zip`。解压到客户端的 skills 目录，确保包根存在 `SKILL.md`，再启动新会话。
 
-如果使用第三方 [`skills`](https://www.npmjs.com/package/skills) CLI，请先解压 Standalone ZIP，再把解压后的 `openai-compatible-imagegen` 目录作为包源。默认安装到当前项目：
+如果使用第三方 [`skills`](https://www.npmjs.com/package/skills) CLI，请先解压 Standalone ZIP，再把解压后的 `openai-compatible-imagegen` 目录作为包源。默认安装到当前项目。
+
+Windows PowerShell：
+
+```powershell
+npx --yes skills@latest add "C:/path/to/openai-compatible-imagegen" --agent codex --skill openai-compatible-imagegen --copy --yes
+```
+
+macOS 或 Linux shell：
 
 ```text
 npx --yes skills@latest add /path/to/openai-compatible-imagegen --agent codex --skill openai-compatible-imagegen --copy --yes
 ```
 
-增加 `--global` 可安装到当前用户，在多个项目中使用：
+增加 `--global` 可安装到当前用户，在多个项目中使用。
+
+Windows PowerShell：
+
+```powershell
+npx --yes skills@latest add "C:/path/to/openai-compatible-imagegen" --global --agent codex --skill openai-compatible-imagegen --copy --yes
+```
+
+macOS 或 Linux shell：
 
 ```text
 npx --yes skills@latest add /path/to/openai-compatible-imagegen --global --agent codex --skill openai-compatible-imagegen --copy --yes
@@ -73,6 +89,8 @@ npx --yes skills@latest add /path/to/openai-compatible-imagegen --global --agent
 不要把本仓库根目录直接交给 CLI。Skills CLI 只用于首次安装已解压的 Standalone 压缩包。作用域、更新、回滚和卸载行为见 [Standalone 安装指南](docs/guides/installation.zh-CN.md#使用第三方-skills-cli-安装)。
 
 [Standalone 安装路径与设置](docs/guides/installation.zh-CN.md#安装-standalone-skill)
+
+更新命令、发行包替换和保留 Skill 凭据的切换方式见[更新 Plugin 或 Skill](docs/guides/updating.zh-CN.md)。
 
 ## 能做什么
 
@@ -101,7 +119,7 @@ Codex Plugin 在 App 中显示结果与画布操作。Standalone Skill 调用包
 
 ## 文档
 
-通过[文档导航](docs/README.zh-CN.md)查找安装、配置、迁移、回滚、故障排查和架构说明。
+通过[文档导航](docs/README.zh-CN.md)查找安装、配置、迁移、更新、回滚、故障排查和架构说明。
 
 ## 安全
 

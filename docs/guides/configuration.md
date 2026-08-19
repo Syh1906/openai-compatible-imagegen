@@ -11,10 +11,18 @@ Configure only the package you installed. The Standalone Skill and Codex Plugin 
 
 The Standalone Skill reads `auth.json` from its installed directory.
 
-1. Run the setup wizard from the installed Skill:
+1. Run the setup wizard from the installed Skill with the command for the current platform.
+
+Windows PowerShell:
 
 ```powershell
-python "<skill-root>/scripts/quick-init.py"
+python "C:/path/to/openai-compatible-imagegen/scripts/quick-init.py"
+```
+
+macOS or Linux shell:
+
+```bash
+python3 "/absolute/path/to/openai-compatible-imagegen/scripts/quick-init.py"
 ```
 
 2. Or copy `examples/auth.example.json` to `<skill-root>/auth.json` and set:
@@ -26,10 +34,18 @@ python "<skill-root>/scripts/quick-init.py"
 | `api_key_env` | Preferred environment variable containing the credential |
 | `api_key` | Optional local plaintext credential when explicitly chosen |
 
-3. Inspect the redacted effective configuration:
+3. Inspect the redacted effective configuration with the same platform mapping.
+
+Windows PowerShell:
 
 ```powershell
-python "<skill-root>/scripts/imagegen.py" info
+python "C:/path/to/openai-compatible-imagegen/scripts/imagegen.py" info
+```
+
+macOS or Linux shell:
+
+```bash
+python3 "/absolute/path/to/openai-compatible-imagegen/scripts/imagegen.py" info
 ```
 
 Command flags override `auth.json` defaults. Per-row JSONL fields override shared batch flags.

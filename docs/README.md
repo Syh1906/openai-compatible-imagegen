@@ -11,6 +11,7 @@ Use these guides to install, configure, migrate, restore, or troubleshoot OpenAI
 | Choose and install a package | [Installation](./guides/installation.md) |
 | Connect an image provider | [Configuration](./guides/configuration.md) |
 | Move an older configuration | [Migration](./guides/migration.md) |
+| Update an installed package | [Updating](./guides/updating.md) |
 | Restore a released version | [Rollback](./guides/rollback.md) |
 | Diagnose a failure | [Troubleshooting](./guides/troubleshooting.md) |
 

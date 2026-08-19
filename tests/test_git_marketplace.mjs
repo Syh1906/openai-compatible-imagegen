@@ -65,11 +65,13 @@ test("public plugin metadata uses English defaults", async () => {
 });
 
 
-test("public install and rollback guides use the documented plugin lifecycle commands", async () => {
-  const [readme, readmeZh, installation, rollback, troubleshooting] = await Promise.all([
+test("public install, update, and rollback guides use the documented plugin lifecycle commands", async () => {
+  const [readme, readmeZh, installation, updating, updatingZh, rollback, troubleshooting] = await Promise.all([
     readFile(path.join(projectRoot, "README.md"), "utf8"),
     readFile(path.join(projectRoot, "README.zh-CN.md"), "utf8"),
     readFile(path.join(projectRoot, "docs/guides/installation.md"), "utf8"),
+    readFile(path.join(projectRoot, "docs/guides/updating.md"), "utf8"),
+    readFile(path.join(projectRoot, "docs/guides/updating.zh-CN.md"), "utf8"),
     readFile(path.join(projectRoot, "docs/guides/rollback.md"), "utf8"),
     readFile(path.join(projectRoot, "docs/guides/troubleshooting.md"), "utf8"),
   ]);
@@ -81,6 +83,30 @@ test("public install and rollback guides use the documented plugin lifecycle com
     assert.match(document, /codex plugin marketplace add Syh1906\/openai-compatible-imagegen/);
     assert.match(document, /codex plugin add openai-compatible-imagegen@openai-compatible-imagegen/);
   }
+  for (const document of [updating, updatingZh]) {
+    for (const command of [
+      "codex plugin marketplace upgrade openai-compatible-imagegen --json",
+      "codex plugin remove openai-compatible-imagegen@openai-compatible-imagegen --json",
+      "codex plugin add openai-compatible-imagegen@openai-compatible-imagegen --json",
+      "codex plugin list --json",
+    ]) {
+      assert.ok(document.includes(command), `${command}: updating guide`);
+    }
+    for (const platformCommand of [
+      '(Get-FileHash -Algorithm SHA256 -LiteralPath "openai-compatible-imagegen-codex-plugin-<version>.zip").Hash.ToLowerInvariant()',
+      'shasum -a 256 openai-compatible-imagegen-codex-plugin-<version>.zip',
+      'sha256sum openai-compatible-imagegen-codex-plugin-<version>.zip',
+      'codex plugin marketplace add "C:/path/to/openai-compatible-imagegen" --json',
+      'codex plugin marketplace add "/absolute/path/to/openai-compatible-imagegen" --json',
+      'python "C:/path/to/openai-compatible-imagegen/scripts/imagegen.py" info',
+      'python3 "/absolute/path/to/openai-compatible-imagegen/scripts/imagegen.py" info',
+    ]) {
+      assert.ok(document.includes(platformCommand), `${platformCommand}: updating guide`);
+    }
+    assert.match(document, /skills update/);
+    assert.match(document, /auth\.json/);
+  }
+
   for (const command of [
     "codex plugin list --json",
     "codex plugin remove openai-compatible-imagegen@openai-compatible-imagegen --json",
@@ -88,6 +114,28 @@ test("public install and rollback guides use the documented plugin lifecycle com
     "codex plugin marketplace remove openai-compatible-imagegen --json",
   ]) {
     assert.ok(`${rollback}\n${troubleshooting}`.includes(command), command);
+  }
+});
+
+test("public navigation exposes the update guide from package entry points", async () => {
+  const documents = await Promise.all([
+    "README.md",
+    "README.zh-CN.md",
+    "docs/README.md",
+    "docs/README.zh-CN.md",
+    "docs/guides/README.md",
+    "docs/guides/README.zh-CN.md",
+    "docs/guides/installation.md",
+    "docs/guides/installation.zh-CN.md",
+    "docs/guides/rollback.md",
+    "docs/guides/rollback.zh-CN.md",
+  ].map(async (relativePath) => [
+    relativePath,
+    await readFile(path.join(projectRoot, relativePath), "utf8"),
+  ]));
+
+  for (const [relativePath, document] of documents) {
+    assert.match(document, /updating(?:\.zh-CN)?\.md/, relativePath);
   }
 });
 
@@ -108,6 +156,8 @@ test("English and Chinese README files keep commands and public links synchroniz
 test("public installation docs use the latest Skills CLI without pinning a package version", async () => {
   const projectCommand = "npx --yes skills@latest add /path/to/openai-compatible-imagegen --agent codex --skill openai-compatible-imagegen --copy --yes";
   const globalCommand = "npx --yes skills@latest add /path/to/openai-compatible-imagegen --global --agent codex --skill openai-compatible-imagegen --copy --yes";
+  const windowsProjectCommand = 'npx --yes skills@latest add "C:/path/to/openai-compatible-imagegen" --agent codex --skill openai-compatible-imagegen --copy --yes';
+  const windowsGlobalCommand = 'npx --yes skills@latest add "C:/path/to/openai-compatible-imagegen" --global --agent codex --skill openai-compatible-imagegen --copy --yes';
 
   for (const documentPath of [
     "README.md",
@@ -118,7 +168,49 @@ test("public installation docs use the latest Skills CLI without pinning a packa
     const document = await readFile(path.join(projectRoot, documentPath), "utf8");
     assert.match(document, new RegExp(escapeRegExp(projectCommand)), documentPath);
     assert.match(document, new RegExp(escapeRegExp(globalCommand)), documentPath);
+    assert.match(document, new RegExp(escapeRegExp(windowsProjectCommand)), documentPath);
+    assert.match(document, new RegExp(escapeRegExp(windowsGlobalCommand)), documentPath);
     assert.doesNotMatch(document, /npx --yes skills@\d/, documentPath);
+  }
+});
+
+test("public command guides cover Windows, macOS, and Linux shell variants", async () => {
+  const documents = await Promise.all([
+    "docs/guides/installation.md",
+    "docs/guides/installation.zh-CN.md",
+    "docs/guides/updating.md",
+    "docs/guides/updating.zh-CN.md",
+    "docs/guides/configuration.md",
+    "docs/guides/configuration.zh-CN.md",
+    "docs/guides/migration.md",
+    "docs/guides/migration.zh-CN.md",
+  ].map(async (relativePath) => [
+    relativePath,
+    await readFile(path.join(projectRoot, relativePath), "utf8"),
+  ]));
+
+  for (const [relativePath, document] of documents) {
+    assert.match(document, /Windows PowerShell/, relativePath);
+    assert.match(document, /macOS/, relativePath);
+    assert.match(document, /Linux/, relativePath);
+  }
+
+  for (const relativePath of [
+    "docs/guides/configuration.md",
+    "docs/guides/configuration.zh-CN.md",
+  ]) {
+    const document = await readFile(path.join(projectRoot, relativePath), "utf8");
+    assert.match(document, /python "C:\/path\/to\/openai-compatible-imagegen\/scripts\/quick-init\.py"/, relativePath);
+    assert.match(document, /python3 "\/absolute\/path\/to\/openai-compatible-imagegen\/scripts\/quick-init\.py"/, relativePath);
+  }
+
+  for (const relativePath of [
+    "docs/guides/migration.md",
+    "docs/guides/migration.zh-CN.md",
+  ]) {
+    const document = await readFile(path.join(projectRoot, relativePath), "utf8");
+    assert.match(document, /python "C:\/path\/to\/openai-compatible-imagegen\/dist\/scripts\/migrate_image_config\.py"/, relativePath);
+    assert.match(document, /python3 "\/absolute\/path\/to\/openai-compatible-imagegen\/dist\/scripts\/migrate_image_config\.py"/, relativePath);
   }
 });
 
@@ -130,6 +222,7 @@ test("public docs keep localized pairs and English runtime skills", async () => 
     ["docs/guides/installation.md", "docs/guides/installation.zh-CN.md"],
     ["docs/guides/configuration.md", "docs/guides/configuration.zh-CN.md"],
     ["docs/guides/migration.md", "docs/guides/migration.zh-CN.md"],
+    ["docs/guides/updating.md", "docs/guides/updating.zh-CN.md"],
     ["docs/guides/rollback.md", "docs/guides/rollback.zh-CN.md"],
     ["docs/guides/troubleshooting.md", "docs/guides/troubleshooting.zh-CN.md"],
   ];
@@ -211,7 +304,7 @@ function fenceLanguages(markdown) {
 
 function cliCommands(markdown) {
   const commands = [];
-  const commandPattern = /^(?:\(Get-FileHash|codex|npx|python|sha256sum)\b/;
+  const commandPattern = /^(?:\(Get-FileHash|codex|npx|python3?|shasum|sha256sum)\b/;
   for (const match of markdown.matchAll(/```[^\r\n]*\r?\n([\s\S]*?)```/g)) {
     for (const line of match[1].split(/\r?\n/)) {
       const command = line.trim();
