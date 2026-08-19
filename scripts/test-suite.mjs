@@ -12,6 +12,5 @@ if (isMain) {
   const suites = process.argv.slice(2);
   if (suites.length === 0) throw new Error("usage: npm run test:suite -- <suite> [suite ...]");
   const manifestPath = path.join(projectRoot, "scripts", "test-impact.json");
-  const manifest = JSON.parse(await (await import("node:fs/promises")).readFile(manifestPath, "utf8"));
   process.exitCode = await runSelectedTests({ mode: "smart", changedFiles: [], manifestPath, explicitSuites: suites });
 }
