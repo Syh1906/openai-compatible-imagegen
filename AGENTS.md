@@ -17,9 +17,11 @@
 
 | Task | Command |
 | --- | --- |
-| All tests | `npm test` |
-| One Node test file | `node --test tests/<file>.mjs` |
-| One Python test module | `python -m unittest tests.<module>` |
+| Smart regression | `npm test` or `npm run test:smart` |
+| Full release regression | `npm run test:release` |
+| One test suite | `npm run test:suite -- <suite>` |
+| One Node test file | `node --test tests/<suite>/<file>.mjs` |
+| One Python test file | `python -m unittest discover -s tests/<suite> -p <file>.py` |
 | Build the Plugin | `npm run build` |
 | Check the Plugin | `npm run check` |
 | Compile Python files | `python -m compileall -q scripts` |
@@ -47,6 +49,9 @@
 ## Tests and Documentation
 
 - Add a test that reproduces the target behavior before implementing a feature or fixing a defect.
+- Use smart regression for routine work. Unmapped paths must fail and receive an explicit impact rule; they must not trigger an automatic full regression.
+- Run the full regression only through `npm run test:release` during release preparation.
+- Keep tests in their owning suite and shared fixtures in `tests/support/`; test modules must not import helpers from another test module.
 - Validate both the Standalone and Plugin adapters when shared image logic changes.
 - Changes to MCP, the widget, Plugin manifests, or the marketplace require matching Node tests and Codex App acceptance checks.
 - Update `CHANGELOG.md` and affected public guides when user-visible behavior changes.

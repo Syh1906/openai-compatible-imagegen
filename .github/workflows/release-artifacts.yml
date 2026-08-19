@@ -7,9 +7,14 @@ on:
         description: Annotated version tag to publish, for example v1.1.0
         required: true
         type: string
+      preflight_run_id:
+        description: Release preflight workflow run ID for the exact tagged commit
+        required: true
+        type: string
 
 permissions:
-  contents: write
+  contents: read
+  actions: read
 
 concurrency:
   group: release-artifacts-${{ inputs.release_ref }}
@@ -19,148 +24,177 @@ jobs:
   validate_release:
     runs-on: ubuntu-latest
     outputs:
+      default_branch: ${{ steps.preflight.outputs.default_branch }}
       release_tag: ${{ steps.release.outputs.release_tag }}
+      preflight_sha: ${{ steps.preflight.outputs.source_sha }}
+      run_attempt: ${{ steps.preflight.outputs.run_attempt }}
     steps:
-      - name: Check out the requested ref
+      - name: Authenticate the Release preflight run
+        id: preflight
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CURRENT_BRANCH: ${{ github.ref_name }}
+          CURRENT_REF_TYPE: ${{ github.ref_type }}
+          CURRENT_REPOSITORY: ${{ github.repository }}
+          EXPECTED_REPOSITORY: ${{ github.repository }}
+          GITHUB_WORKFLOW_REF: ${{ github.workflow_ref }}
+          PREFLIGHT_RUN_ID: ${{ inputs.preflight_run_id }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$PREFLIGHT_RUN_ID" =~ ^[1-9][0-9]*$ ]]; then
+            echo "preflight_run_id must be a positive workflow run ID." >&2
+            exit 1
+          fi
+          repository_json="$(gh api -H "X-GitHub-Api-Version: 2022-11-28" "repos/$EXPECTED_REPOSITORY")"
+          repository_default_branch="$(jq -r '.default_branch' <<< "$repository_json")"
+          expected_publish_workflow_ref="$EXPECTED_REPOSITORY/.github/workflows/release-artifacts.yml@refs/heads/$repository_default_branch"
+          if [[ "$CURRENT_REPOSITORY" != "$EXPECTED_REPOSITORY" || "$CURRENT_REF_TYPE" != "branch" || "$CURRENT_BRANCH" != "$repository_default_branch" || "$GITHUB_WORKFLOW_REF" != "$expected_publish_workflow_ref" ]]; then
+            echo "Publish release must run from the repository default branch." >&2
+            exit 1
+          fi
+          run_json="$(gh api -H "X-GitHub-Api-Version: 2022-11-28" "repos/$EXPECTED_REPOSITORY/actions/runs/$PREFLIGHT_RUN_ID")"
+          workflow_json="$(gh api -H "X-GitHub-Api-Version: 2022-11-28" "repos/$EXPECTED_REPOSITORY/actions/workflows/release-preflight.yml")"
+          run_workflow_id="$(jq -r '.workflow_id' <<< "$run_json")"
+          expected_workflow_id="$(jq -r '.id' <<< "$workflow_json")"
+          run_repository="$(jq -r '.repository.full_name' <<< "$run_json")"
+          run_head_repository="$(jq -r '.head_repository.full_name' <<< "$run_json")"
+          default_branch="$(jq -r '.repository.default_branch' <<< "$run_json")"
+          run_head_branch="$(jq -r '.head_branch' <<< "$run_json")"
+          run_attempt="$(jq -r '.run_attempt' <<< "$run_json")"
+          run_path="$(jq -r '.path' <<< "$run_json")"
+          run_event="$(jq -r '.event' <<< "$run_json")"
+          run_status="$(jq -r '.status' <<< "$run_json")"
+          run_conclusion="$(jq -r '.conclusion' <<< "$run_json")"
+          source_sha="$(jq -r '.head_sha' <<< "$run_json")"
+          if [[ "$run_workflow_id" != "$expected_workflow_id" || "$run_path" != ".github/workflows/release-preflight.yml" ]]; then
+            echo "The supplied run ID is not a Release preflight run." >&2
+            exit 1
+          fi
+          if [[ "$run_repository" != "$EXPECTED_REPOSITORY" || "$run_head_repository" != "$EXPECTED_REPOSITORY" ]]; then
+            echo "The Release preflight run does not belong to this repository." >&2
+            exit 1
+          fi
+          if [[ -z "$default_branch" || "$default_branch" == "null" || "$default_branch" != "$repository_default_branch" || "$run_head_branch" != "$default_branch" ]]; then
+            echo "The Release preflight run must use the repository default branch." >&2
+            exit 1
+          fi
+          if [[ "$run_event" != "workflow_dispatch" || "$run_status" != "completed" || "$run_conclusion" != "success" ]]; then
+            echo "The Release preflight run must be a successful completed workflow_dispatch run." >&2
+            exit 1
+          fi
+          if [[ ! "$source_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "The Release preflight run does not expose a full source commit SHA." >&2
+            exit 1
+          fi
+          if [[ ! "$run_attempt" =~ ^[1-9][0-9]*$ ]]; then
+            echo "The Release preflight run does not expose a valid run attempt." >&2
+            exit 1
+          fi
+          echo "default_branch=$default_branch" >> "$GITHUB_OUTPUT"
+          echo "run_attempt=$run_attempt" >> "$GITHUB_OUTPUT"
+          echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
+      - name: Download verified preflight metadata
+        uses: actions/download-artifact@v4
+        with:
+          name: preflight-metadata-${{ steps.preflight.outputs.run_attempt }}
+          path: preflight-metadata
+          run-id: ${{ inputs.preflight_run_id }}
+          github-token: ${{ github.token }}
+      - name: Check out the authenticated preflight SHA
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.release_ref }}
+          ref: ${{ steps.preflight.outputs.source_sha }}
           fetch-depth: 0
-
+          persist-credentials: false
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-
-      - name: Validate the annotated release tag
+      - name: Validate preflight metadata and the annotated release tag
         id: release
         shell: bash
         env:
+          EXPECTED_REPOSITORY: ${{ github.repository }}
+          DEFAULT_BRANCH: ${{ steps.preflight.outputs.default_branch }}
+          PREFLIGHT_RUN_ID: ${{ inputs.preflight_run_id }}
+          PREFLIGHT_RUN_ATTEMPT: ${{ steps.preflight.outputs.run_attempt }}
+          PREFLIGHT_SHA: ${{ steps.preflight.outputs.source_sha }}
           RELEASE_TAG: ${{ inputs.release_ref }}
         run: |
           set -euo pipefail
+          expected_workflow_ref="$EXPECTED_REPOSITORY/.github/workflows/release-preflight.yml@refs/heads/$DEFAULT_BRANCH"
+          jq -e \
+            --arg source_sha "$PREFLIGHT_SHA" \
+            --arg run_id "$PREFLIGHT_RUN_ID" \
+            --arg run_attempt "$PREFLIGHT_RUN_ATTEMPT" \
+            --arg repository "$EXPECTED_REPOSITORY" \
+            --arg expected_workflow_ref "$expected_workflow_ref" \
+            '.source_sha == $source_sha and .workflow_sha == $source_sha and .run_id == $run_id and .run_attempt == $run_attempt and .repository == $repository and .event == "workflow_dispatch" and .workflow_ref == $expected_workflow_ref and .candidates.windows == ("candidate-windows-" + $run_attempt) and .candidates.linux == ("candidate-linux-" + $run_attempt) and .candidates.macos == ("candidate-macos-" + $run_attempt)' \
+            preflight-metadata/preflight.json > /dev/null
+          if [[ "$(git rev-parse HEAD)" != "$PREFLIGHT_SHA" ]]; then
+            echo "The release checkout does not match the authenticated preflight SHA." >&2
+            exit 1
+          fi
           manifest_version="$(node -p "JSON.parse(require('node:fs').readFileSync('.codex-plugin/plugin.json', 'utf8')).version")"
           expected_tag="v${manifest_version}"
           if [[ "$RELEASE_TAG" != "$expected_tag" ]]; then
             echo "Release tag $RELEASE_TAG does not match manifest version $manifest_version." >&2
             exit 1
           fi
-          if ! object_type="$(git cat-file -t "refs/tags/$RELEASE_TAG")"; then
-            echo "Release tag $RELEASE_TAG does not exist in the checked-out repository." >&2
-            exit 1
-          fi
-          if [[ "$object_type" != "tag" ]]; then
+          git fetch --force --no-tags origin "+refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
+          if [[ "$(git cat-file -t "refs/tags/$RELEASE_TAG")" != "tag" ]]; then
             echo "Release tag $RELEASE_TAG must be annotated." >&2
             exit 1
           fi
+          tagged_sha="$(git rev-list -n 1 "refs/tags/$RELEASE_TAG^{commit}")"
+          if [[ "$tagged_sha" != "$PREFLIGHT_SHA" ]]; then
+            echo "Release tag $RELEASE_TAG does not point to the verified preflight SHA." >&2
+            exit 1
+          fi
           echo "release_tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
-
       - name: Validate versioned release notes
         shell: bash
         env:
           RELEASE_TAG: ${{ steps.release.outputs.release_tag }}
         run: node scripts/validate-release-notes.mjs --tag "$RELEASE_TAG"
 
-  candidate:
-    needs: validate_release
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - name: windows
-            os: windows-latest
-            artifact: candidate-windows
-          - name: linux
-            os: ubuntu-latest
-            artifact: candidate-linux
-          - name: macos
-            os: macos-latest
-            artifact: candidate-macos
-    runs-on: ${{ matrix.os }}
-    steps:
-      - name: Check out the requested ref
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.release_ref }}
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: npm
-
-      - name: Install Node dependencies
-        run: npm ci
-
-      - name: Build the Plugin
-        run: npm run build
-
-      - name: Run tests
-        run: npm test
-
-      - name: Check the Plugin package
-        run: npm run check
-
-      - name: Compile Python sources
-        run: python -m compileall -q scripts
-
-      - name: Check diffs
-        run: git diff --check
-
-      - name: Build the release candidate
-        run: node scripts/build-release-artifacts.mjs --source-root . --output-directory release
-
-      - name: Upload the release candidate
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.artifact }}
-          path: release/*
-          if-no-files-found: error
-          retention-days: 14
-
   compare_candidates:
-    needs: candidate
+    needs: validate_release
     runs-on: ubuntu-latest
     steps:
-      - name: Check out the requested ref
+      - name: Check out the authenticated preflight SHA
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.release_ref }}
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-
+          ref: ${{ needs.validate_release.outputs.preflight_sha }}
+          fetch-depth: 0
+          persist-credentials: false
       - name: Download the Windows candidate
         uses: actions/download-artifact@v4
         with:
-          name: candidate-windows
+          name: candidate-windows-${{ needs.validate_release.outputs.run_attempt }}
           path: candidates/windows
-
+          run-id: ${{ inputs.preflight_run_id }}
+          github-token: ${{ github.token }}
       - name: Download the Linux candidate
         uses: actions/download-artifact@v4
         with:
-          name: candidate-linux
+          name: candidate-linux-${{ needs.validate_release.outputs.run_attempt }}
           path: candidates/linux
-
+          run-id: ${{ inputs.preflight_run_id }}
+          github-token: ${{ github.token }}
       - name: Download the macOS candidate
         uses: actions/download-artifact@v4
         with:
-          name: candidate-macos
+          name: candidate-macos-${{ needs.validate_release.outputs.run_attempt }}
           path: candidates/macos
-
+          run-id: ${{ inputs.preflight_run_id }}
+          github-token: ${{ github.token }}
       - name: Compare Windows and Linux candidates
         run: >-
           node scripts/compare-release-artifacts.mjs
           --left candidates/windows
           --right candidates/linux
-
       - name: Compare Windows and macOS candidates
         run: >-
           node scripts/compare-release-artifacts.mjs
@@ -169,20 +203,70 @@ jobs:
 
   publish:
     needs: [validate_release, compare_candidates]
+    permissions:
+      contents: write
+      actions: read
     runs-on: ubuntu-latest
     environment: release
     steps:
-      - name: Check out the requested ref
+      - name: Revalidate the Release preflight attempt
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEFAULT_BRANCH: ${{ needs.validate_release.outputs.default_branch }}
+          EXPECTED_REPOSITORY: ${{ github.repository }}
+          PREFLIGHT_RUN_ATTEMPT: ${{ needs.validate_release.outputs.run_attempt }}
+          PREFLIGHT_RUN_ID: ${{ inputs.preflight_run_id }}
+          PREFLIGHT_SHA: ${{ needs.validate_release.outputs.preflight_sha }}
+        run: |
+          set -euo pipefail
+          current_run_json="$(gh api -H "X-GitHub-Api-Version: 2022-11-28" "repos/$EXPECTED_REPOSITORY/actions/runs/$PREFLIGHT_RUN_ID")"
+          attempt_json="$(gh api -H "X-GitHub-Api-Version: 2022-11-28" "repos/$EXPECTED_REPOSITORY/actions/runs/$PREFLIGHT_RUN_ID/attempts/$PREFLIGHT_RUN_ATTEMPT")"
+          workflow_json="$(gh api -H "X-GitHub-Api-Version: 2022-11-28" "repos/$EXPECTED_REPOSITORY/actions/workflows/release-preflight.yml")"
+          current_run_attempt="$(jq -r '.run_attempt' <<< "$current_run_json")"
+          expected_workflow_id="$(jq -r '.id' <<< "$workflow_json")"
+          jq -e \
+            --arg default_branch "$DEFAULT_BRANCH" \
+            --arg expected_repository "$EXPECTED_REPOSITORY" \
+            --arg expected_run_attempt "$PREFLIGHT_RUN_ATTEMPT" \
+            --arg expected_sha "$PREFLIGHT_SHA" \
+            --arg expected_workflow_id "$expected_workflow_id" \
+            '.workflow_id == ($expected_workflow_id | tonumber) and .repository.full_name == $expected_repository and .head_repository.full_name == $expected_repository and .head_branch == $default_branch and .head_sha == $expected_sha and (.run_attempt | tostring) == $expected_run_attempt and .path == ".github/workflows/release-preflight.yml" and .event == "workflow_dispatch" and .status == "completed" and .conclusion == "success"' \
+            <<< "$attempt_json" > /dev/null
+          if [[ "$current_run_attempt" != "$PREFLIGHT_RUN_ATTEMPT" ]]; then
+            echo "Release preflight was rerun after validation; authenticate the latest successful attempt." >&2
+            exit 1
+          fi
+      - name: Check out the authenticated preflight SHA
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.release_ref }}
-
+          ref: ${{ needs.validate_release.outputs.preflight_sha }}
+          fetch-depth: 0
+          persist-credentials: false
       - name: Download the verified Windows release candidate
         uses: actions/download-artifact@v4
         with:
-          name: candidate-windows
+          name: candidate-windows-${{ needs.validate_release.outputs.run_attempt }}
           path: candidates/windows
-
+          run-id: ${{ inputs.preflight_run_id }}
+          github-token: ${{ github.token }}
+      - name: Revalidate the remote annotated tag
+        shell: bash
+        env:
+          PREFLIGHT_SHA: ${{ needs.validate_release.outputs.preflight_sha }}
+          RELEASE_TAG: ${{ needs.validate_release.outputs.release_tag }}
+        run: |
+          set -euo pipefail
+          git fetch --force --no-tags origin "+refs/tags/$RELEASE_TAG:refs/tags/$RELEASE_TAG"
+          if [[ "$(git cat-file -t "refs/tags/$RELEASE_TAG")" != "tag" ]]; then
+            echo "Release tag $RELEASE_TAG must still be annotated." >&2
+            exit 1
+          fi
+          tagged_sha="$(git rev-list -n 1 "refs/tags/$RELEASE_TAG^{commit}")"
+          if [[ "$tagged_sha" != "$PREFLIGHT_SHA" ]]; then
+            echo "Release tag $RELEASE_TAG moved after validation." >&2
+            exit 1
+          fi
       - name: Create the GitHub Release
         shell: bash
         env:

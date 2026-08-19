@@ -10,9 +10,11 @@
     "prepare:personal": "node scripts/prepare-personal-plugin.mjs",
     "probe": "node scripts/probe-plugin.mjs",
     "stage:personal": "node scripts/stage-personal-plugin.mjs",
-    "test": "npm run test:python && npm run test:node",
-    "test:python": "python -m unittest discover -s tests",
-    "test:node": "node scripts/run-node-tests.mjs"
+    "test": "npm run test:smart",
+    "test:smart": "node scripts/test-smart.mjs",
+    "test:release": "node scripts/run-tests.mjs --release",
+    "verify:release": "npm run build && npm run test:release && npm run check && python -m compileall -q scripts && git diff --check",
+    "test:suite": "node scripts/test-suite.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/ext-apps": "^1.7.5",
