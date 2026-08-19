@@ -112,7 +112,16 @@ def _open_directory_chain(path: Path) -> list[int]:
     try:
         for part in absolute.parts[1:]:
             current /= part
-            descriptors.append(_open_directory_at(descriptors[-1], part, current))
+            try:
+                descriptors.append(_open_directory_at(descriptors[-1], part, current))
+            except NotADirectoryError:
+                if part != "var":
+                    raise
+                descriptor = os.open(part, _DIRECTORY_FLAGS, dir_fd=descriptors[-1])
+                if not stat.S_ISDIR(os.fstat(descriptor).st_mode):
+                    os.close(descriptor)
+                    raise
+                descriptors.append(descriptor)
         return descriptors
     except BaseException:
         _close_all(descriptors)
@@ -556,12 +565,20 @@ class RepositoryMutation(AbstractContextManager["RepositoryMutation"]):
     def create_directory(self, relative_path: str | Path) -> None:
         self._directory_fd(_relative_path(relative_path), create=True)
 
+    def _reject_relative_links(self, relative: Path) -> None:
+        current = self.repository
+        for part in relative.parts:
+            current /= part
+            if current.is_symlink():
+                raise ValueError(f"artifact path contains a reparse point: {current.name}")
+
     def directory_exists(self, relative_path: str | Path) -> bool:
         relative = _relative_path(relative_path)
+        self._reject_relative_links(relative)
         try:
             self._directory_fd(relative, create=False)
             return True
-        except FileNotFoundError:
+        except (FileNotFoundError, NotADirectoryError):
             return False
 
     def list_directory(self, relative_path: str | Path) -> list[str]:

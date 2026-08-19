@@ -778,7 +778,7 @@ class ArtifactRepository:
             self.index_path,
             *paths,
         ):
-            reject_reparse_points(path)
+            reject_reparse_points(path, within=self.project_root)
 
 
 def validate_artifact_id(artifact_id: str) -> None:
@@ -1140,12 +1140,15 @@ def encode_json(payload: dict[str, Any]) -> bytes:
     return (json.dumps(payload, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
 
 
-def reject_reparse_points(path: Path) -> None:
+def reject_reparse_points(path: Path, *, within: Path | None = None) -> None:
     candidate = Path(path).absolute()
+    boundary = Path(within).absolute() if within is not None else None
     existing: list[Path] = []
     while True:
         if candidate.exists() or candidate.is_symlink():
             existing.append(candidate)
+        if boundary is not None and candidate == boundary:
+            break
         if candidate.parent == candidate:
             break
         candidate = candidate.parent
@@ -1162,7 +1165,7 @@ def validate_artifact_root(project_root: Path, artifact_root: Path) -> Path:
         raise ValueError("artifact root must be absolute")
     raw_artifact_root = candidate.absolute()
     reject_reparse_points(raw_project_root)
-    reject_reparse_points(raw_artifact_root)
+    reject_reparse_points(raw_artifact_root, within=raw_project_root)
     resolved_project_root = raw_project_root.resolve(strict=False)
     resolved_artifact_root = raw_artifact_root.resolve(strict=False)
     try:
