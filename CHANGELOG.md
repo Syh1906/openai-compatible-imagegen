@@ -4,6 +4,8 @@ This file records user-visible changes for each release of `openai-compatible-im
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-08-19
+
 ### Added
 
 - Add one platform-neutral Codex Plugin runtime for Windows, macOS, and Linux with platform-specific secure repository filesystem adapters.
@@ -13,6 +15,10 @@ This file records user-visible changes for each release of `openai-compatible-im
 ### Changed
 
 - Keep the platform filesystem adapters and MCP runtime files Plugin-only; the Standalone Skill release remains independent.
+
+### Fixed
+
+- Accept the macOS system `/var` alias to `/private/var` while continuing to reject project-owned symbolic links outside the safe repository path contract.
 
 ### Known limitations
 
@@ -212,7 +218,8 @@ This file records user-visible changes for each release of `openai-compatible-im
 - Publish the initial Agent Skills-compatible image generation workflow.
 - Support OpenAI-compatible image generation, image editing, local authentication, transparent asset intent, and JSONL batches.
 
-[Unreleased]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v1.0.2...HEAD
+[Unreleased]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v1.0.2...v1.1.0
 [1.0.2]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v0.3.0...v1.0.0

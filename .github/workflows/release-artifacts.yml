@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       release_ref:
-        description: Annotated version tag to publish, for example v1.0.2
+        description: Annotated version tag to publish, for example v1.1.0
         required: true
         type: string
 
