@@ -44,6 +44,8 @@ codex plugin marketplace add Syh1906/openai-compatible-imagegen
 codex plugin add openai-compatible-imagegen@openai-compatible-imagegen
 ```
 
+If the `openai-compatible-imagegen` marketplace is already registered, skip the first command. After installation, completely quit and restart Codex once so it loads the Plugin's Skill, MCP tools, and bundled dependencies.
+
 You can also open **Plugins** in Codex App, select the `openai-compatible-imagegen` marketplace, and install **OpenAI-Compatible Images**. In an interactive Codex CLI session, enter `/plugins` to use the same browser.
 
 The Git-backed package already contains the MCP server and widget. You do not build the repository or run a local web server.
