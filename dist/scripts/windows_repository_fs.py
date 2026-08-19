@@ -622,12 +622,26 @@ def ensure_directory_tree_safely(project_root: Path, target: Path) -> DirectoryL
 
 
 class RepositoryLock(AbstractContextManager["RepositoryLock"]):
-    def __init__(self, repository: Path, *, timeout: float = 10.0, poll_interval: float = 0.01) -> None:
+    def __init__(
+        self,
+        repository: Path,
+        *,
+        timeout: float = 10.0,
+        poll_interval: float = 0.01,
+        directory_lease: DirectoryLease | None = None,
+    ) -> None:
         if timeout < 0 or poll_interval <= 0:
             raise ValueError("lock timeout must be non-negative and poll interval must be positive")
         self.repository = Path(repository).absolute()
         self.timeout = timeout
         self.poll_interval = poll_interval
+        if directory_lease is not None:
+            if directory_lease.path != self.repository:
+                raise ValueError("directory lease does not match repository")
+            if not directory_lease._handles:
+                raise ValueError("directory lease is closed")
+        self._provided_lease = directory_lease
+        self._owns_lease = False
         self._lease: DirectoryLease | None = None
         self._parent_lease: DirectoryLease | None = None
         self._handle: int | None = None
@@ -637,7 +651,8 @@ class RepositoryLock(AbstractContextManager["RepositoryLock"]):
         if self._handle is not None:
             raise RuntimeError("repository lock is already acquired")
         deadline = time.monotonic() + self.timeout
-        lease = DirectoryLease(self.repository)
+        lease = self._provided_lease or DirectoryLease(self.repository)
+        owns_lease = self._provided_lease is None
         try:
             while True:
                 try:
@@ -660,11 +675,12 @@ class RepositoryLock(AbstractContextManager["RepositoryLock"]):
             self._handle = handle
             self._overlapped = overlapped
             self._lease = lease
+            self._owns_lease = owns_lease
             return self
         except BaseException:
             if "handle" in locals():
                 _close(handle)
-            if lease is not None:
+            if owns_lease:
                 lease.close()
             raise
 
@@ -673,6 +689,7 @@ class RepositoryLock(AbstractContextManager["RepositoryLock"]):
             return
         handle, self._handle = self._handle, None
         overlapped, self._overlapped = self._overlapped, None
+        owns_lease, self._owns_lease = self._owns_lease, False
         first_error: BaseException | None = None
         try:
             if not _unlock_file(handle, 0, 1, 0, ctypes.byref(overlapped)):
@@ -684,13 +701,13 @@ class RepositoryLock(AbstractContextManager["RepositoryLock"]):
         except BaseException as exc:
             if first_error is None:
                 first_error = exc
-        if self._lease is not None:
+        if owns_lease and self._lease is not None:
             try:
                 self._lease.close()
             except BaseException as exc:
                 if first_error is None:
                     first_error = exc
-            self._lease = None
+        self._lease = None
         if self._parent_lease is not None:
             try:
                 self._parent_lease.close()
@@ -816,9 +833,19 @@ class SubmissionLock(AbstractContextManager["SubmissionLock"]):
 
 
 class RepositoryMutation(AbstractContextManager["RepositoryMutation"]):
-    def __init__(self, repository: Path, *, timeout: float = 10.0) -> None:
+    def __init__(
+        self,
+        repository: Path,
+        *,
+        timeout: float = 10.0,
+        directory_lease: DirectoryLease | None = None,
+    ) -> None:
         self.repository = Path(repository).absolute()
-        self._lock = RepositoryLock(self.repository, timeout=timeout)
+        self._lock = RepositoryLock(
+            self.repository,
+            timeout=timeout,
+            directory_lease=directory_lease,
+        )
         self._directory_handles: dict[str, int] = {}
 
     def create_directory(self, relative_path: str | Path) -> None:
@@ -837,6 +864,21 @@ class RepositoryMutation(AbstractContextManager["RepositoryMutation"]):
                     delete_access=True,
                 )
             parent_handle = self._directory_handles[key]
+
+    def directory_exists(self, relative_path: str | Path) -> bool:
+        relative = _relative_path(relative_path)
+        target = self.repository / relative
+        try:
+            self._protect_parent(relative / "placeholder")
+            return target.is_dir()
+        except FileNotFoundError:
+            return False
+
+    def list_directory(self, relative_path: str | Path) -> list[str]:
+        relative = _relative_path(relative_path)
+        target = self.repository / relative
+        self._protect_parent(relative / "placeholder")
+        return [entry.name for entry in target.iterdir()]
 
     def _protect_parent(self, relative: Path) -> None:
         current = self.repository

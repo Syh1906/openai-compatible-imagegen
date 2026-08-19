@@ -66,22 +66,20 @@ class ArtifactRepository:
         mutation: RepositoryMutation,
         index: dict[str, Any],
     ) -> None:
-        if not self.transactions_root.exists():
+        if not mutation.directory_exists(".transactions"):
             return
-        reject_reparse_points(self.transactions_root)
-        entries = list(self.transactions_root.iterdir())
-        if len(entries) > MAX_PENDING_TRANSACTIONS:
+        entry_names = mutation.list_directory(".transactions")
+        if len(entry_names) > MAX_PENDING_TRANSACTIONS:
             raise ValueError("artifact repository has too many pending transactions")
         manifests = index.get("batchManifests", {})
         if not isinstance(manifests, dict):
             raise ValueError("artifact index has invalid batch manifests")
-        for marker_dir in entries:
-            if not TRANSACTION_ID_PATTERN.fullmatch(marker_dir.name):
+        for marker_name in entry_names:
+            if not TRANSACTION_ID_PATTERN.fullmatch(marker_name):
                 raise ValueError("artifact transaction directory contains an unknown entry")
-            reject_reparse_points(marker_dir)
-            if not marker_dir.is_dir():
+            relative_dir = Path(".transactions") / marker_name
+            if not mutation.directory_exists(relative_dir):
                 raise ValueError("artifact transaction directory contains an unknown entry")
-            relative_dir = Path(".transactions") / marker_dir.name
             try:
                 with mutation.open_file(relative_dir / "manifest.json") as verified_file:
                     payload = json.loads(verified_file.read_bytes().decode("utf-8"))
@@ -105,9 +103,7 @@ class ArtifactRepository:
                         if resource["kind"] == "artifact"
                         else Path("batches") / resource["id"]
                     )
-                    resource_path = self.data_root / relative
-                    reject_reparse_points(resource_path)
-                    if resource_path.exists():
+                    if mutation.directory_exists(relative):
                         mutation.remove_directory_if_known(relative, set(resource["files"]))
             mutation.remove_directory_if_known(relative_dir, {"manifest.json"})
 
@@ -161,9 +157,9 @@ class ArtifactRepository:
         if len(set(artifact_ids)) != len(artifact_ids):
             raise ValueError("artifact ID factory returned a duplicate ID")
 
-        with ensure_directory_tree_safely(self.project_root, self.data_root):
-            with RepositoryMutation(self.data_root) as mutation:
-                self._recover_incomplete_transactions(mutation, self._read_index())
+        with ensure_directory_tree_safely(self.project_root, self.data_root) as lease:
+            with RepositoryMutation(self.data_root, directory_lease=lease) as mutation:
+                self._recover_incomplete_transactions(mutation, self._read_index(lease=lease))
                 marker_dir = self._begin_transaction(
                     mutation,
                     transaction_resources(artifact_ids, [mime_type] * len(images)),
@@ -185,6 +181,7 @@ class ArtifactRepository:
                     derived_from=None,
                     delivery_kinds=None,
                     parameters_by_image=None,
+                    directory_lease=lease,
                 )
                 self._finish_transaction(mutation, marker_dir)
                 return records
@@ -219,9 +216,9 @@ class ArtifactRepository:
         if len(set(artifact_ids)) != len(artifact_ids):
             raise ValueError("artifact ID factory returned a duplicate ID")
 
-        with ensure_directory_tree_safely(self.project_root, self.data_root):
-            with RepositoryMutation(self.data_root) as mutation:
-                self._recover_incomplete_transactions(mutation, self._read_index())
+        with ensure_directory_tree_safely(self.project_root, self.data_root) as lease:
+            with RepositoryMutation(self.data_root, directory_lease=lease) as mutation:
+                self._recover_incomplete_transactions(mutation, self._read_index(lease=lease))
                 marker_dir = self._begin_transaction(
                     mutation,
                     transaction_resources(artifact_ids, mime_types),
@@ -243,6 +240,7 @@ class ArtifactRepository:
                     derived_from=None,
                     delivery_kinds=None,
                     parameters_by_image=None,
+                    directory_lease=lease,
                 )
                 self._finish_transaction(mutation, marker_dir)
                 return records
@@ -287,9 +285,9 @@ class ArtifactRepository:
         if len(set(artifact_ids)) != len(artifact_ids):
             raise ValueError("artifact ID factory returned a duplicate ID")
 
-        with ensure_directory_tree_safely(self.project_root, self.data_root):
-            with RepositoryMutation(self.data_root) as mutation:
-                self._recover_incomplete_transactions(mutation, self._read_index())
+        with ensure_directory_tree_safely(self.project_root, self.data_root) as lease:
+            with RepositoryMutation(self.data_root, directory_lease=lease) as mutation:
+                self._recover_incomplete_transactions(mutation, self._read_index(lease=lease))
                 marker_dir = (
                     self._begin_transaction(
                         mutation,
@@ -317,6 +315,7 @@ class ArtifactRepository:
                     parameters_by_image=[dict(item) for item in parameters],
                     receipt_id=receipt_id,
                     receipt=dict(receipt) if receipt is not None else None,
+                    directory_lease=lease,
                 )
                 if marker_dir is not None:
                     self._finish_transaction(mutation, marker_dir)
@@ -342,8 +341,9 @@ class ArtifactRepository:
         parameters_by_image: list[dict[str, Any]] | None,
         receipt_id: str | None = None,
         receipt: dict[str, Any] | None = None,
+        directory_lease: DirectoryLease,
     ) -> list[ArtifactRecord]:
-        index = self._read_index()
+        index = self._read_index(lease=directory_lease)
         receipts = index.get("deliveryReceipts")
         if receipts is not None and not isinstance(receipts, dict):
             raise ValueError("artifact index has invalid delivery receipts")
@@ -353,7 +353,7 @@ class ArtifactRepository:
             if parent_id not in index["artifacts"]:
                 raise KeyError(f"artifact not found: {parent_id}")
         for artifact_id in artifact_ids:
-            if artifact_id in index["artifacts"] or (self.artifacts_root / artifact_id).exists():
+            if artifact_id in index["artifacts"] or mutation.directory_exists(Path("artifacts") / artifact_id):
                 raise FileExistsError(f"artifact already exists: {artifact_id}")
         if derived_from is not None:
             source = index["artifacts"].get(derived_from)
@@ -516,9 +516,9 @@ class ArtifactRepository:
         }
         manifest_bytes = encode_json(stored)
 
-        with ensure_directory_tree_safely(self.project_root, self.data_root):
-            with RepositoryMutation(self.data_root) as mutation:
-                index = self._read_index()
+        with ensure_directory_tree_safely(self.project_root, self.data_root) as lease:
+            with RepositoryMutation(self.data_root, directory_lease=lease) as mutation:
+                index = self._read_index(lease=lease)
                 self._recover_incomplete_transactions(mutation, index)
                 artifact_ids, receipt_ids = self._validate_batch_manifest_relationships(
                     index,
@@ -528,7 +528,7 @@ class ArtifactRepository:
                 if not isinstance(manifests, dict):
                     raise ValueError("artifact index has invalid batch manifests")
                 batch_dir = Path("batches") / batch_id
-                if batch_id in manifests or (self.batches_root / batch_id).exists():
+                if batch_id in manifests or mutation.directory_exists(Path("batches") / batch_id):
                     raise FileExistsError(f"batch manifest already exists: {batch_id}")
 
                 marker_dir = self._begin_transaction(

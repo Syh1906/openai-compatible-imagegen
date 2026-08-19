@@ -237,73 +237,81 @@ class ArtifactRepositoryTests(unittest.TestCase):
         from scripts import artifact_repository as repository_module
 
         original_ensure = repository_module.ensure_directory_tree_safely
-        replacement_blocked = False
+        replacement_attempted = False
+        moved_output = self.project_root / "verified-output"
 
-        with tempfile.TemporaryDirectory() as outside_directory:
-            outside_root = Path(outside_directory)
-
-            @contextmanager
-            def ensure_then_attempt_parent_replacement(project_root: Path, artifact_root: Path):
-                nonlocal replacement_blocked
-                with original_ensure(project_root, artifact_root) as lease:
+        @contextmanager
+        def ensure_then_attempt_parent_replacement(project_root: Path, artifact_root: Path):
+            nonlocal replacement_attempted
+            with original_ensure(project_root, artifact_root) as lease:
+                if os.name == "nt":
                     with self.assertRaises(OSError):
-                        self.artifact_root.parent.rename(self.project_root / "replaced-output")
-                    replacement_blocked = True
-                    yield lease
+                        self.artifact_root.parent.rename(moved_output)
+                else:
+                    self.artifact_root.parent.rename(moved_output)
+                    self.artifact_root.mkdir(parents=True)
+                replacement_attempted = True
+                yield lease
 
-            with mock.patch.object(
-                repository_module,
-                "ensure_directory_tree_safely",
-                side_effect=ensure_then_attempt_parent_replacement,
-            ):
-                self.repository.store_images(
-                    images=[make_png(2, 2)],
-                    mime_type="image/png",
-                    provider="primary",
-                    model="gpt-image-2",
-                    operation="generate",
-                    prompt="must hold the output parent",
-                    parameters={},
-                )
+        with mock.patch.object(
+            repository_module,
+            "ensure_directory_tree_safely",
+            side_effect=ensure_then_attempt_parent_replacement,
+        ):
+            self.repository.store_images(
+                images=[make_png(2, 2)],
+                mime_type="image/png",
+                provider="primary",
+                model="gpt-image-2",
+                operation="generate",
+                prompt="must hold the output parent",
+                parameters={},
+            )
 
-            self.assertTrue(replacement_blocked)
-            self.assertEqual(list(outside_root.iterdir()), [])
+        self.assertTrue(replacement_attempted)
+        if os.name != "nt":
+            self.assertEqual(list(self.artifact_root.iterdir()), [])
+            self.assertTrue((moved_output / "imagegen" / "index.json").is_file())
 
     def test_store_holds_the_artifact_root_lease_for_the_full_transaction(self) -> None:
         from scripts import artifact_repository as repository_module
 
         original_ensure = repository_module.ensure_directory_tree_safely
-        replacement_blocked = False
+        replacement_attempted = False
+        moved_artifact_root = self.artifact_root.with_name("verified-imagegen")
 
-        with tempfile.TemporaryDirectory() as outside_directory:
-            outside_root = Path(outside_directory)
-
-            @contextmanager
-            def ensure_then_attempt_root_replacement(project_root: Path, artifact_root: Path):
-                nonlocal replacement_blocked
-                with original_ensure(project_root, artifact_root) as lease:
+        @contextmanager
+        def ensure_then_attempt_root_replacement(project_root: Path, artifact_root: Path):
+            nonlocal replacement_attempted
+            with original_ensure(project_root, artifact_root) as lease:
+                if os.name == "nt":
                     with self.assertRaises(OSError):
-                        self.artifact_root.rename(self.artifact_root.with_name("replaced-imagegen"))
-                    replacement_blocked = True
-                    yield lease
+                        self.artifact_root.rename(moved_artifact_root)
+                else:
+                    self.artifact_root.rename(moved_artifact_root)
+                    self.artifact_root.mkdir()
+                replacement_attempted = True
+                yield lease
 
-            with mock.patch.object(
-                repository_module,
-                "ensure_directory_tree_safely",
-                side_effect=ensure_then_attempt_root_replacement,
-            ):
-                self.repository.store_images(
-                    images=[make_png(2, 2)],
-                    mime_type="image/png",
-                    provider="primary",
-                    model="gpt-image-2",
-                    operation="generate",
-                    prompt="must hold the artifact root",
-                    parameters={},
-                )
+        with mock.patch.object(
+            repository_module,
+            "ensure_directory_tree_safely",
+            side_effect=ensure_then_attempt_root_replacement,
+        ):
+            self.repository.store_images(
+                images=[make_png(2, 2)],
+                mime_type="image/png",
+                provider="primary",
+                model="gpt-image-2",
+                operation="generate",
+                prompt="must hold the artifact root",
+                parameters={},
+            )
 
-            self.assertTrue(replacement_blocked)
-            self.assertEqual(list(outside_root.iterdir()), [])
+        self.assertTrue(replacement_attempted)
+        if os.name != "nt":
+            self.assertEqual(list(self.artifact_root.iterdir()), [])
+            self.assertTrue((moved_artifact_root / "index.json").is_file())
 
     def test_store_images_creates_independent_artifacts_and_atomic_index(self) -> None:
         from scripts import artifact_repository as repository_module

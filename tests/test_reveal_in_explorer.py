@@ -241,6 +241,7 @@ class RevealInExplorerTests(unittest.TestCase):
             reveal_in_explorer(Path("image.png"), os_name="nt", shell_api=shell_api)
         self.assertEqual(shell_api.targets, [])
 
+    @unittest.skipUnless(os.name == "nt", "Windows Explorer path semantics are required")
     def test_hidden_target_explorer_is_restored_even_when_another_window_has_focus(self):
         window_api = FakeWindowApi()
 
@@ -261,6 +262,7 @@ class RevealInExplorerTests(unittest.TestCase):
         )
         self.assertTrue(window_api.is_window_visible(42))
 
+    @unittest.skipUnless(os.name == "nt", "Windows Explorer path semantics are required")
     def test_hidden_target_explorer_is_visible_before_foreground_activation(self):
         target = Path("F:/artifacts/img_01J00000000000000000000000/image.png")
 
@@ -303,6 +305,7 @@ class RevealInExplorerTests(unittest.TestCase):
         self.assertEqual(window_api.foregrounded, [42])
         self.assertEqual(window_api.foreground_visible, [True])
 
+    @unittest.skipUnless(os.name == "nt", "Windows Explorer path semantics are required")
     def test_shell_selection_precedes_the_only_foreground_activation(self):
         target = Path("F:/artifacts/img_01J00000000000000000000000/image.png")
         events = []
@@ -373,6 +376,7 @@ class RevealInExplorerTests(unittest.TestCase):
         self.assertEqual(window_api.restored, [12])
         self.assertEqual(window_api.foregrounded, [12])
 
+    @unittest.skipUnless(os.name == "nt", "Windows Explorer path semantics are required")
     def test_same_name_explorer_window_cannot_claim_the_target(self):
         target = Path("F:/project-a/output/imagegen/artifacts/img_01J00000000000000000000000/image.png")
         window_api = FakeWindowApi(windows=[
@@ -407,6 +411,7 @@ class RevealInExplorerTests(unittest.TestCase):
             },
         )
 
+    @unittest.skipUnless(os.name == "nt", "Windows Explorer path semantics are required")
     def test_same_top_level_explorer_tabs_keep_selection_records_separate(self):
         target = Path("F:/project/output/imagegen/artifacts/img_01J00000000000000000000000/image.png")
         folder_path = str(target.parent)
@@ -432,6 +437,7 @@ class RevealInExplorerTests(unittest.TestCase):
         self.assertEqual(window_api.get_selected_paths(records[0], folder_path), [str(target.parent / "other.png")])
         self.assertEqual(window_api.get_selected_paths(records[1], folder_path), [str(target)])
 
+    @unittest.skipUnless(os.name == "nt", "Windows Explorer path semantics are required")
     def test_background_tab_selection_cannot_claim_a_visible_top_level_window(self):
         target = Path("F:/project/output/imagegen/artifacts/img_01J00000000000000000000000/image.png")
         folder_path = str(target.parent)
@@ -483,6 +489,7 @@ class RevealInExplorerTests(unittest.TestCase):
 
         self.assertEqual(window_api.user32.foregrounded, [])
 
+    @unittest.skipUnless(os.name == "nt", "Windows Explorer path semantics are required")
     def test_target_window_without_exact_selection_does_not_report_success(self):
         target = Path("F:/project-a/output/imagegen/artifacts/img_01J00000000000000000000000/image.png")
         window_api = FakeWindowApi(windows=[{
@@ -501,6 +508,7 @@ class RevealInExplorerTests(unittest.TestCase):
                 sleep_seconds=0.001,
             )
 
+    @unittest.skipUnless(os.name == "nt", "Windows Explorer path semantics are required")
     def test_confirmation_polling_does_not_repeatedly_steal_the_foreground(self):
         target = Path("F:/project-a/output/imagegen/artifacts/img_01J00000000000000000000000/image.png")
 
@@ -533,6 +541,7 @@ class RevealInExplorerTests(unittest.TestCase):
         self.assertEqual(result["targetSelected"], True)
         self.assertEqual(window_api.foregrounded, [12])
 
+    @unittest.skipUnless(os.name == "nt", "Windows Explorer path semantics are required")
     def test_missing_target_explorer_window_fails_instead_of_claiming_success(self):
         window_api = FakeWindowApi(windows=[])
 

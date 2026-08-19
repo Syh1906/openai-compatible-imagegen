@@ -101,6 +101,7 @@ test("release workflow publishes an exact version-titled release from an annotat
   assert.match(workflow, /permissions:\s*\n\s*contents:\s*write/);
   assert.match(workflow, /ref:\s*\$\{\{\s*inputs\.release_ref\s*\}\}/);
   assert.match(workflow, /fetch-depth:\s*0/);
+  assert.equal(workflow.match(/uses:\s*actions\/setup-node@v4/g)?.length, 3);
   for (const command of [
     "npm ci",
     "npm run build",

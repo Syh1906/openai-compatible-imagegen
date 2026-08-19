@@ -17,7 +17,10 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 import migrate_image_config
-import windows_repository_fs
+if os.name == "nt":
+    import windows_repository_fs as repository_fs_adapter
+else:
+    import posix_repository_fs as repository_fs_adapter
 
 
 class ImageConfigMigrationTests(unittest.TestCase):
@@ -297,7 +300,7 @@ class ImageConfigMigrationTests(unittest.TestCase):
             user_target=self.user_target,
         )
 
-        with mock.patch.object(windows_repository_fs, "_write_all", side_effect=OSError("interrupted")):
+        with mock.patch.object(repository_fs_adapter, "_write_all", side_effect=OSError("interrupted")):
             with self.assertRaisesRegex(
                 migrate_image_config.ConfigMigrationError,
                 "migration_write_failed",

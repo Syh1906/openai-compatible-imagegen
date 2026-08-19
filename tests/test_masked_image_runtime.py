@@ -520,7 +520,7 @@ class MaskedImageRuntimeTests(unittest.TestCase):
             request.assert_not_called()
 
     def test_mask_preflight_rejects_repository_reparse_points_before_request(self) -> None:
-        from scripts.windows_repository_fs import DirectoryLease
+        from scripts.repository_fs import DirectoryLease
 
         original_open_file = DirectoryLease.open_file
 

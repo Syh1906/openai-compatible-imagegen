@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import secrets
 import stat
+import threading
 import time
 from typing import Self
 
@@ -14,6 +15,52 @@ _DIRECTORY_FLAGS = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_
 _FILE_READ_FLAGS = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
 _FILE_WRITE_FLAGS = os.O_WRONLY | getattr(os, "O_CLOEXEC", 0)
 _NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
+
+_SUBMISSION_THREAD_LOCKS_GUARD = threading.Lock()
+_SUBMISSION_THREAD_LOCKS: dict[tuple[int, int, str], tuple[threading.Lock, int]] = {}
+_SUBMISSION_FILE_HANDLES: dict[tuple[int, int], tuple[int, int]] = {}
+
+
+def _retain_submission_thread_lock(key: tuple[int, int, str]) -> threading.Lock:
+    with _SUBMISSION_THREAD_LOCKS_GUARD:
+        lock, users = _SUBMISSION_THREAD_LOCKS.get(key, (threading.Lock(), 0))
+        _SUBMISSION_THREAD_LOCKS[key] = (lock, users + 1)
+        return lock
+
+
+def _discard_submission_thread_lock(key: tuple[int, int, str]) -> None:
+    with _SUBMISSION_THREAD_LOCKS_GUARD:
+        lock, users = _SUBMISSION_THREAD_LOCKS[key]
+        if users == 1:
+            del _SUBMISSION_THREAD_LOCKS[key]
+        else:
+            _SUBMISSION_THREAD_LOCKS[key] = (lock, users - 1)
+
+
+def _retain_submission_file_handle(lease: "DirectoryLease", key: tuple[int, int]) -> int:
+    with _SUBMISSION_THREAD_LOCKS_GUARD:
+        existing = _SUBMISSION_FILE_HANDLES.get(key)
+        if existing is None:
+            descriptor = _open_regular_file_at(
+                lease._handles[-1],
+                ".submission.lock",
+                os.O_RDWR | os.O_CREAT | getattr(os, "O_CLOEXEC", 0),
+            )
+            users = 0
+        else:
+            descriptor, users = existing
+        _SUBMISSION_FILE_HANDLES[key] = (descriptor, users + 1)
+        return descriptor
+
+
+def _discard_submission_file_handle(key: tuple[int, int]) -> None:
+    with _SUBMISSION_THREAD_LOCKS_GUARD:
+        descriptor, users = _SUBMISSION_FILE_HANDLES[key]
+        if users == 1:
+            del _SUBMISSION_FILE_HANDLES[key]
+            os.close(descriptor)
+        else:
+            _SUBMISSION_FILE_HANDLES[key] = (descriptor, users - 1)
 
 
 def _fcntl_module():
@@ -283,19 +330,34 @@ def ensure_directory_tree_safely(project_root: Path, target: Path) -> DirectoryL
 
 
 class RepositoryLock(AbstractContextManager["RepositoryLock"]):
-    def __init__(self, repository: Path, *, timeout: float = 10.0, poll_interval: float = 0.01) -> None:
+    def __init__(
+        self,
+        repository: Path,
+        *,
+        timeout: float = 10.0,
+        poll_interval: float = 0.01,
+        directory_lease: DirectoryLease | None = None,
+    ) -> None:
         if timeout < 0 or poll_interval <= 0:
             raise ValueError("lock timeout must be non-negative and poll interval must be positive")
         self.repository = _absolute_path(repository)
         self.timeout = timeout
         self.poll_interval = poll_interval
+        if directory_lease is not None:
+            if directory_lease.path != self.repository:
+                raise ValueError("directory lease does not match repository")
+            if not directory_lease._handles:
+                raise ValueError("directory lease is closed")
+        self._provided_lease = directory_lease
+        self._owns_lease = False
         self._lease: DirectoryLease | None = None
         self._handle: int | None = None
 
     def acquire(self) -> Self:
         if self._handle is not None:
             raise RuntimeError("repository lock is already acquired")
-        lease = DirectoryLease(self.repository)
+        lease = self._provided_lease or DirectoryLease(self.repository)
+        owns_lease = self._provided_lease is None
         descriptor = _open_regular_file_at(
             lease._handles[-1],
             ".repository.lock",
@@ -304,11 +366,13 @@ class RepositoryLock(AbstractContextManager["RepositoryLock"]):
         try:
             _acquire_lock(descriptor, self.timeout, self.poll_interval, "repository is locked by another image task")
             self._lease = lease
+            self._owns_lease = owns_lease
             self._handle = descriptor
             return self
         except BaseException:
             os.close(descriptor)
-            lease.close()
+            if owns_lease:
+                lease.close()
             raise
 
     def release(self) -> None:
@@ -316,6 +380,7 @@ class RepositoryLock(AbstractContextManager["RepositoryLock"]):
             return
         descriptor, self._handle = self._handle, None
         lease, self._lease = self._lease, None
+        owns_lease, self._owns_lease = self._owns_lease, False
         first_error: BaseException | None = None
         try:
             _fcntl_module().flock(descriptor, _fcntl_module().LOCK_UN)
@@ -326,11 +391,12 @@ class RepositoryLock(AbstractContextManager["RepositoryLock"]):
         except BaseException as exc:
             if first_error is None:
                 first_error = exc
-        try:
-            lease.close()
-        except BaseException as exc:
-            if first_error is None:
-                first_error = exc
+        if owns_lease and lease is not None:
+            try:
+                lease.close()
+            except BaseException as exc:
+                if first_error is None:
+                    first_error = exc
         if first_error is not None:
             raise first_error
 
@@ -378,32 +444,47 @@ class SubmissionLock(AbstractContextManager["SubmissionLock"]):
         self._offset = int.from_bytes(hashlib.sha256(submission_id.encode("ascii")).digest()[:8], "little") % ((1 << 63) - 1)
         self._lease: DirectoryLease | None = None
         self._handle: int | None = None
+        self._thread_lock: threading.Lock | None = None
+        self._thread_lock_key: tuple[int, int, str] | None = None
+        self._file_handle_key: tuple[int, int] | None = None
 
     def acquire(self) -> Self:
         if self._handle is not None:
             raise RuntimeError("submission lock is already acquired")
         lease = DirectoryLease(self.repository)
-        descriptor = _open_regular_file_at(
-            lease._handles[-1],
-            ".submission.lock",
-            os.O_RDWR | os.O_CREAT | getattr(os, "O_CLOEXEC", 0),
-        )
         fcntl = _fcntl_module()
         deadline = time.monotonic() + self.timeout
+        repository_metadata = os.fstat(lease._handles[-1])
+        file_handle_key = (repository_metadata.st_dev, repository_metadata.st_ino)
+        thread_lock_key = (*file_handle_key, self.submission_id)
+        thread_lock = _retain_submission_thread_lock(thread_lock_key)
+        thread_lock_acquired = thread_lock.acquire(timeout=max(0.0, deadline - time.monotonic()))
+        if not thread_lock_acquired:
+            _discard_submission_thread_lock(thread_lock_key)
+            lease.close()
+            raise TimeoutError("edit submission is still in progress")
+        descriptor: int | None = None
         try:
+            descriptor = _retain_submission_file_handle(lease, file_handle_key)
             while True:
                 try:
                     fcntl.lockf(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB, 1, self._offset, os.SEEK_SET)
                     self._lease = lease
                     self._handle = descriptor
+                    self._thread_lock = thread_lock
+                    self._thread_lock_key = thread_lock_key
+                    self._file_handle_key = file_handle_key
                     return self
                 except BlockingIOError as exc:
                     if time.monotonic() >= deadline:
                         raise TimeoutError("edit submission is still in progress") from exc
                     time.sleep(min(self.poll_interval, max(0, deadline - time.monotonic())))
         except BaseException:
-            os.close(descriptor)
+            if descriptor is not None:
+                _discard_submission_file_handle(file_handle_key)
             lease.close()
+            thread_lock.release()
+            _discard_submission_thread_lock(thread_lock_key)
             raise
 
     def release(self) -> None:
@@ -411,21 +492,28 @@ class SubmissionLock(AbstractContextManager["SubmissionLock"]):
             return
         descriptor, self._handle = self._handle, None
         lease, self._lease = self._lease, None
+        thread_lock, self._thread_lock = self._thread_lock, None
+        thread_lock_key, self._thread_lock_key = self._thread_lock_key, None
+        file_handle_key, self._file_handle_key = self._file_handle_key, None
         first_error: BaseException | None = None
         try:
             _fcntl_module().lockf(descriptor, _fcntl_module().LOCK_UN, 1, self._offset, os.SEEK_SET)
         except BaseException as exc:
             first_error = exc
-        try:
-            os.close(descriptor)
-        except BaseException as exc:
-            if first_error is None:
-                first_error = exc
+        if file_handle_key is not None:
+            try:
+                _discard_submission_file_handle(file_handle_key)
+            except BaseException as exc:
+                if first_error is None:
+                    first_error = exc
         try:
             lease.close()
         except BaseException as exc:
             if first_error is None:
                 first_error = exc
+        if thread_lock is not None and thread_lock_key is not None:
+            thread_lock.release()
+            _discard_submission_thread_lock(thread_lock_key)
         if first_error is not None:
             raise first_error
 
@@ -437,9 +525,19 @@ class SubmissionLock(AbstractContextManager["SubmissionLock"]):
 
 
 class RepositoryMutation(AbstractContextManager["RepositoryMutation"]):
-    def __init__(self, repository: Path, *, timeout: float = 10.0) -> None:
+    def __init__(
+        self,
+        repository: Path,
+        *,
+        timeout: float = 10.0,
+        directory_lease: DirectoryLease | None = None,
+    ) -> None:
         self.repository = _absolute_path(repository)
-        self._lock = RepositoryLock(self.repository, timeout=timeout)
+        self._lock = RepositoryLock(
+            self.repository,
+            timeout=timeout,
+            directory_lease=directory_lease,
+        )
         self._directory_handles: dict[tuple[str, ...], int] = {}
 
     def _directory_fd(self, relative: Path, *, create: bool) -> int:
@@ -457,6 +555,18 @@ class RepositoryMutation(AbstractContextManager["RepositoryMutation"]):
 
     def create_directory(self, relative_path: str | Path) -> None:
         self._directory_fd(_relative_path(relative_path), create=True)
+
+    def directory_exists(self, relative_path: str | Path) -> bool:
+        relative = _relative_path(relative_path)
+        try:
+            self._directory_fd(relative, create=False)
+            return True
+        except FileNotFoundError:
+            return False
+
+    def list_directory(self, relative_path: str | Path) -> list[str]:
+        directory_fd = self._directory_fd(_relative_path(relative_path), create=False)
+        return os.listdir(directory_fd)
 
     def create_new_directory(self, relative_path: str | Path) -> None:
         relative = _relative_path(relative_path)

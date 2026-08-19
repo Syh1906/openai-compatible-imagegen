@@ -70,6 +70,24 @@ class PosixRepositoryFsTests(unittest.TestCase):
                 with lease.open_file(Path("artifacts") / "candidate" / "image.png") as snapshot:
                     self.assertEqual(snapshot.read_bytes(), b"second")
 
+    def test_repository_mutation_uses_the_verified_directory_after_path_replacement(self) -> None:
+        from scripts.repository_fs import RepositoryMutation, ensure_directory_tree_safely
+
+        with tempfile.TemporaryDirectory() as root:
+            project_root = Path(root).absolute()
+            repository = project_root / "output" / "imagegen"
+            moved_repository = project_root / "output" / "verified-imagegen"
+
+            with ensure_directory_tree_safely(project_root, repository) as lease:
+                repository.rename(moved_repository)
+                repository.mkdir()
+
+                with RepositoryMutation(repository, directory_lease=lease) as mutation:
+                    mutation.create_directory("artifacts")
+
+            self.assertEqual(list(repository.iterdir()), [])
+            self.assertTrue((moved_repository / "artifacts").is_dir())
+
     def test_repository_and_submission_locks_reject_conflicting_owners(self) -> None:
         from scripts.repository_fs import RepositoryLock, SubmissionLock, ensure_directory_tree_safely
 
