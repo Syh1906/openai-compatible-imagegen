@@ -155,6 +155,33 @@ test("release identity ignores checkout line-ending differences in text build in
 });
 
 
+test("release identity normalizes widget line endings before hashing and embedding", () => {
+  const lfWidget = [
+    "<!doctype html>",
+    "<html>",
+    "  <head>",
+    RELEASE_IDENTITY_PLACEHOLDER,
+    "  </head>",
+    "</html>",
+    "",
+  ].join("\n");
+  const baseInput = {
+    pluginId: "openai-compatible-imagegen",
+    pluginVersion: "1.1.0",
+    serverBuildInputs: [{ path: "mcp/server.mjs", content: "server" }],
+  };
+  const lfRelease = createReleaseBundle({ ...baseInput, widgetHtml: lfWidget });
+  const crlfRelease = createReleaseBundle({
+    ...baseInput,
+    widgetHtml: lfWidget.replaceAll("\n", "\r\n"),
+  });
+
+  assert.deepEqual(crlfRelease.releaseIdentity, lfRelease.releaseIdentity);
+  assert.equal(crlfRelease.widgetHtml, lfRelease.widgetHtml);
+  assert.doesNotMatch(crlfRelease.widgetHtml, /\r/);
+});
+
+
 test("the built plugin exposes one content-bound release identity", async () => {
   const { RELEASE_IDENTITY_META_NAME } = await import("../mcp/release-identity.mjs");
   const manifest = JSON.parse(await readFile(manifestPath, "utf8"));

@@ -9,15 +9,16 @@ export function createReleaseBundle({ pluginId, pluginVersion, serverBuildInputs
   requireText(pluginId, "pluginId");
   requireText(pluginVersion, "pluginVersion");
   requireText(widgetHtml, "widgetHtml");
+  const normalizedWidgetHtml = normalizeTextLineEndings(widgetHtml);
   if (!Array.isArray(serverBuildInputs) || serverBuildInputs.length === 0) {
     throw new Error("serverBuildInputs must contain at least one build input");
   }
-  if (countOccurrences(widgetHtml, RELEASE_IDENTITY_PLACEHOLDER) !== 1) {
+  if (countOccurrences(normalizedWidgetHtml, RELEASE_IDENTITY_PLACEHOLDER) !== 1) {
     throw new Error("widgetHtml must contain exactly one release identity placeholder");
   }
 
   const serverBuildDigest = digestBuildInputs(serverBuildInputs);
-  const widgetAssetDigest = sha256(widgetHtml);
+  const widgetAssetDigest = sha256(normalizedWidgetHtml);
   const fingerprint = sha256(JSON.stringify([
     pluginId,
     pluginVersion,
@@ -40,7 +41,7 @@ export function createReleaseBundle({ pluginId, pluginVersion, serverBuildInputs
 
   return {
     releaseIdentity,
-    widgetHtml: widgetHtml.replace(RELEASE_IDENTITY_PLACEHOLDER, marker),
+    widgetHtml: normalizedWidgetHtml.replace(RELEASE_IDENTITY_PLACEHOLDER, marker),
   };
 }
 
@@ -52,7 +53,7 @@ function digestBuildInputs(inputs) {
     }
     requireText(input.path, "serverBuildInputs[].path");
     const content = typeof input.content === "string"
-      ? Buffer.from(input.content.replaceAll("\r\n", "\n"), "utf8")
+      ? Buffer.from(normalizeTextLineEndings(input.content), "utf8")
       : Buffer.from(input.content ?? []);
     return { path: input.path.replaceAll("\\", "/"), content };
   }).sort((left, right) => left.path.localeCompare(right.path));
@@ -69,6 +70,11 @@ function digestBuildInputs(inputs) {
     hash.update(input.content);
   }
   return hash.digest("hex");
+}
+
+
+function normalizeTextLineEndings(value) {
+  return value.replaceAll("\r\n", "\n");
 }
 
 
