@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { access, mkdir, mkdtemp, rename, rm, writeFile } from "node:fs/promises";
+import { access, chmod, mkdir, mkdtemp, rename, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -107,6 +107,68 @@ test("an initialized record never falls back to a legacy snapshot", async () => 
       (error) => error instanceof StableFileSnapshotError && error.kind === "invalid",
     );
   } finally {
+    await rm(root, { recursive: true });
+  }
+});
+
+
+test("a committed snapshot remains readable while the allocator lock exists", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "imagegen-lock-readable-"));
+  const recordPath = path.join(root, "record.json");
+  const lockPath = path.join(root, "record.lock");
+  const unavailableError = () => Object.assign(new Error("state unavailable"), {
+    code: "state_unavailable",
+  });
+  try {
+    const ownership = await acquireFileLockOwnership({
+      recordPath,
+      lockPath,
+      maxRecordBytes: 1024,
+      retries: 0,
+      unavailableError,
+    });
+    await ownership.replaceSnapshot(Buffer.from("current\n", "utf8"));
+    await ownership.release();
+    await mkdir(path.join(`${recordPath}.epochs`, "allocator.lock"));
+
+    assert.equal(
+      (await readLatestFencedFileSnapshot(recordPath, { maxBytes: 1024 })).toString("utf8"),
+      "current\n",
+    );
+  } finally {
+    await rm(root, { recursive: true });
+  }
+});
+
+
+test("a committed snapshot remains readable from a read-only epoch root", {
+  skip: process.platform === "win32",
+}, async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "imagegen-lock-read-only-"));
+  const recordPath = path.join(root, "record.json");
+  const lockPath = path.join(root, "record.lock");
+  const epochRoot = `${recordPath}.epochs`;
+  const unavailableError = () => Object.assign(new Error("state unavailable"), {
+    code: "state_unavailable",
+  });
+  try {
+    const ownership = await acquireFileLockOwnership({
+      recordPath,
+      lockPath,
+      maxRecordBytes: 1024,
+      retries: 0,
+      unavailableError,
+    });
+    await ownership.replaceSnapshot(Buffer.from("current\n", "utf8"));
+    await ownership.release();
+    await chmod(epochRoot, 0o500);
+
+    assert.equal(
+      (await readLatestFencedFileSnapshot(recordPath, { maxBytes: 1024 })).toString("utf8"),
+      "current\n",
+    );
+  } finally {
+    await chmod(epochRoot, 0o700).catch(() => {});
     await rm(root, { recursive: true });
   }
 });
