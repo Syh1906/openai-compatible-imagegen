@@ -51,7 +51,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 var define_RELEASE_IDENTITY_default;
 var init_define_RELEASE_IDENTITY = __esm({
   "<define:__RELEASE_IDENTITY__>"() {
-    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "1.0.2", serverBuildDigest: "6aa5bdfe33506fee47e4c4c56bac98e1fc8b9b261b0297ddf82ddc2b39a820f6", widgetAssetDigest: "2462240903056504eb47eeab00934805bc7f635b5afc2d8f6d6587a6db8151dd", fingerprint: "e99319be76d4b58e92ce", resourceUris: { result: "ui://openai-compatible-imagegen/result-e99319be76d4b58e92ce.html", editor: "ui://openai-compatible-imagegen/editor-e99319be76d4b58e92ce.html" } };
+    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "1.0.2", serverBuildDigest: "706e1d128c42a36978f0906520a75f20005971876e341c42182c0296909e90d7", widgetAssetDigest: "2462240903056504eb47eeab00934805bc7f635b5afc2d8f6d6587a6db8151dd", fingerprint: "0b9d01fd45236d5418bc", resourceUris: { result: "ui://openai-compatible-imagegen/result-0b9d01fd45236d5418bc.html", editor: "ui://openai-compatible-imagegen/editor-0b9d01fd45236d5418bc.html" } };
   }
 });
 
@@ -32981,7 +32981,7 @@ import path11 from "node:path";
 
 // mcp/filesystem-path-safety.mjs
 init_define_RELEASE_IDENTITY();
-import { lstat } from "node:fs/promises";
+import { lstat, realpath } from "node:fs/promises";
 import path6 from "node:path";
 async function pathContainsSymbolicLink(targetPath) {
   const absolutePath = path6.resolve(targetPath);
@@ -32990,9 +32990,14 @@ async function pathContainsSymbolicLink(targetPath) {
   const relativePath = path6.relative(root, absolutePath);
   for (const component of relativePath.split(path6.sep).filter(Boolean)) {
     currentPath = path6.join(currentPath, component);
-    if ((await lstat(currentPath)).isSymbolicLink()) return true;
+    if (!(await lstat(currentPath)).isSymbolicLink()) continue;
+    if (await isAllowedMacOSSystemAlias(currentPath)) continue;
+    return true;
   }
   return false;
+}
+async function isAllowedMacOSSystemAlias(candidate) {
+  return process.platform === "darwin" && candidate === "/var" && await realpath(candidate) === "/private/var";
 }
 
 // mcp/config-resolution.mjs

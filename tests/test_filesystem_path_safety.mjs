@@ -15,6 +15,13 @@ test("Windows short-path aliases are not treated as symbolic links", async (t) =
 });
 
 
+test("the macOS system temporary-directory alias is not treated as a project link", {
+  skip: process.platform !== "darwin",
+}, async () => {
+  assert.equal(await pathContainsSymbolicLink(os.tmpdir()), false);
+});
+
+
 test("a junction in the selected path is treated as a symbolic link", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "imagegen-path-safety-link-"));
   const target = path.join(root, "target");
