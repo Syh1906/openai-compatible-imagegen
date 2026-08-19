@@ -1143,11 +1143,15 @@ def encode_json(payload: dict[str, Any]) -> bytes:
 def reject_reparse_points(path: Path, *, within: Path | None = None) -> None:
     candidate = Path(path).absolute()
     boundary = Path(within).absolute() if within is not None else None
+    boundary_real = Path(os.path.realpath(boundary)) if boundary is not None else None
     existing: list[Path] = []
     while True:
         if candidate.exists() or candidate.is_symlink():
             existing.append(candidate)
-        if boundary is not None and candidate == boundary:
+        if boundary is not None and (
+            candidate == boundary
+            or (boundary_real is not None and Path(os.path.realpath(candidate)) == boundary_real)
+        ):
             break
         if candidate.parent == candidate:
             break
