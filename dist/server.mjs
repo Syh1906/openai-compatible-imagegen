@@ -51,7 +51,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 var define_RELEASE_IDENTITY_default;
 var init_define_RELEASE_IDENTITY = __esm({
   "<define:__RELEASE_IDENTITY__>"() {
-    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "1.0.2", serverBuildDigest: "12b9748ee9c2a6e99459f4811adb7038c90fdbbd3fcf3b21f5aae1012e33e0b9", widgetAssetDigest: "2462240903056504eb47eeab00934805bc7f635b5afc2d8f6d6587a6db8151dd", fingerprint: "beec6439d8f48152d315", resourceUris: { result: "ui://openai-compatible-imagegen/result-beec6439d8f48152d315.html", editor: "ui://openai-compatible-imagegen/editor-beec6439d8f48152d315.html" } };
+    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "1.0.2", serverBuildDigest: "6aa5bdfe33506fee47e4c4c56bac98e1fc8b9b261b0297ddf82ddc2b39a820f6", widgetAssetDigest: "2462240903056504eb47eeab00934805bc7f635b5afc2d8f6d6587a6db8151dd", fingerprint: "e99319be76d4b58e92ce", resourceUris: { result: "ui://openai-compatible-imagegen/result-e99319be76d4b58e92ce.html", editor: "ui://openai-compatible-imagegen/editor-e99319be76d4b58e92ce.html" } };
   }
 });
 
@@ -32949,8 +32949,13 @@ function summarizeClient(clientVersion, clientCapabilities, rootsSupported) {
   };
 }
 function normalizePath(value) {
-  const normalized = path5.resolve(String(value)).replaceAll("\\", "/");
-  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
+  const pathApi = process.platform === "win32" ? path5.win32 : path5.posix;
+  const normalized = pathApi.resolve(String(value)).replaceAll("\\", "/");
+  if (process.platform === "win32") return normalized.toLowerCase();
+  if (process.platform === "darwin" && (normalized === "/private/var" || normalized.startsWith("/private/var/"))) {
+    return normalized.slice("/private".length);
+  }
+  return normalized;
 }
 function fingerprintValue(value) {
   return createHash3("sha256").update(String(value), "utf8").digest("hex").slice(0, 20);

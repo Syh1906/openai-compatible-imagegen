@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from contextlib import AbstractContextManager
+import errno
 import hashlib
 import os
 from pathlib import Path
 import secrets
 import stat
+import sys
 import threading
 import time
 from typing import Self
@@ -88,6 +90,14 @@ def _absolute_path(value: Path) -> Path:
     return path
 
 
+def _is_allowed_system_ancestor(path: Path) -> bool:
+    return (
+        sys.platform == "darwin"
+        and path == Path("/var")
+        and Path(os.path.realpath(path)) == Path("/private/var")
+    )
+
+
 def _open_directory_at(parent_fd: int, name: str, path: Path, *, create: bool = False, create_new: bool = False) -> int:
     if create:
         try:
@@ -95,7 +105,12 @@ def _open_directory_at(parent_fd: int, name: str, path: Path, *, create: bool = 
         except FileExistsError:
             if create_new:
                 raise
-    descriptor = os.open(name, _DIRECTORY_FLAGS | _NOFOLLOW, dir_fd=parent_fd)
+    try:
+        descriptor = os.open(name, _DIRECTORY_FLAGS | _NOFOLLOW, dir_fd=parent_fd)
+    except OSError as exc:
+        if exc.errno not in {errno.ELOOP, errno.ENOTDIR} or not _is_allowed_system_ancestor(path):
+            raise
+        descriptor = os.open(name, _DIRECTORY_FLAGS, dir_fd=parent_fd)
     try:
         if not stat.S_ISDIR(os.fstat(descriptor).st_mode):
             raise ValueError(f"repository path is not a directory: {path.name}")
@@ -112,16 +127,7 @@ def _open_directory_chain(path: Path) -> list[int]:
     try:
         for part in absolute.parts[1:]:
             current /= part
-            try:
-                descriptors.append(_open_directory_at(descriptors[-1], part, current))
-            except NotADirectoryError:
-                if part != "var":
-                    raise
-                descriptor = os.open(part, _DIRECTORY_FLAGS, dir_fd=descriptors[-1])
-                if not stat.S_ISDIR(os.fstat(descriptor).st_mode):
-                    os.close(descriptor)
-                    raise
-                descriptors.append(descriptor)
+            descriptors.append(_open_directory_at(descriptors[-1], part, current))
         return descriptors
     except BaseException:
         _close_all(descriptors)

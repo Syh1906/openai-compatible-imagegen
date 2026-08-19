@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import re
 import secrets
+import sys
 import time
 from typing import Any, Callable
 
@@ -1140,18 +1141,29 @@ def encode_json(payload: dict[str, Any]) -> bytes:
     return (json.dumps(payload, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
 
 
+def _is_allowed_system_ancestor(path: Path) -> bool:
+    return (
+        sys.platform == "darwin"
+        and path == Path("/var")
+        and Path(os.path.realpath(path)) == Path("/private/var")
+    )
+
+
 def reject_reparse_points(path: Path, *, within: Path | None = None) -> None:
     candidate = Path(path).absolute()
     boundary = Path(within).absolute() if within is not None else None
     boundary_real = Path(os.path.realpath(boundary)) if boundary is not None else None
     existing: list[Path] = []
     while True:
-        if candidate.exists() or candidate.is_symlink():
+        is_system_ancestor = _is_allowed_system_ancestor(candidate)
+        if not is_system_ancestor and (candidate.exists() or candidate.is_symlink()):
             existing.append(candidate)
         if boundary is not None and (
             candidate == boundary
             or (boundary_real is not None and Path(os.path.realpath(candidate)) == boundary_real)
         ):
+            break
+        if is_system_ancestor:
             break
         if candidate.parent == candidate:
             break

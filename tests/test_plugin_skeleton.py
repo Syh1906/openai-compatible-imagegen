@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -654,7 +656,11 @@ class PluginSkeletonTests(unittest.TestCase):
 
 
 def path_fingerprint(value: Path) -> str:
-    normalized = str(value.absolute()).replace("\\", "/").lower()
+    normalized = os.path.normcase(str(value.absolute())).replace("\\", "/")
+    if sys.platform == "darwin" and (
+        normalized == "/private/var" or normalized.startswith("/private/var/")
+    ):
+        normalized = normalized[len("/private"):]
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:20]
 
 

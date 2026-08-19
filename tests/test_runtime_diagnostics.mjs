@@ -12,6 +12,7 @@ import { createReleaseBundle, RELEASE_IDENTITY_PLACEHOLDER } from "../mcp/releas
 import {
   containsAbsolutePath,
   createRuntimeObservation,
+  fingerprintPath,
   pathRelation,
 } from "../mcp/runtime-diagnostics.mjs";
 import { summarizeHostEnvelope } from "../web/host-observation.mjs";
@@ -37,6 +38,24 @@ const ROOTS = [
   { uri: pathToFileURL(PROJECT_ROOT).href, name: "current-project" },
   { uri: pathToFileURL(path.resolve(PROJECT_ROOT, "..", "private-project")).href },
 ];
+
+
+test("runtime path fingerprints normalize only the macOS system var alias", () => {
+  const originalPlatform = process.platform;
+  Object.defineProperty(process, "platform", { configurable: true, value: "darwin" });
+  try {
+    assert.equal(
+      fingerprintPath("/var/folders/runtime/plugin"),
+      fingerprintPath("/private/var/folders/runtime/plugin"),
+    );
+    assert.notEqual(
+      fingerprintPath("/Users/runner/workspace/project"),
+      fingerprintPath("/users/runner/workspace/project"),
+    );
+  } finally {
+    Object.defineProperty(process, "platform", { configurable: true, value: originalPlatform });
+  }
+});
 
 
 test("runtime diagnostics report unsupported roots without exposing launch paths", async () => {

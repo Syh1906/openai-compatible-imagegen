@@ -575,6 +575,8 @@ def validate_target_parent_chains(targets: list[Path]) -> None:
                     "migration_target_invalid",
                     "migration target parent is not safely accessible",
                 ) from exc
+            if _is_allowed_system_ancestor(current):
+                continue
             if is_reparse_point(metadata) or not stat.S_ISDIR(metadata.st_mode):
                 raise ConfigMigrationError(
                     "migration_target_invalid",
@@ -695,6 +697,14 @@ def sha256(value: bytes) -> str:
 def is_reparse_point(metadata: os.stat_result) -> bool:
     return stat.S_ISLNK(metadata.st_mode) or bool(
         getattr(metadata, "st_file_attributes", 0) & REPARSE_POINT_ATTRIBUTE
+    )
+
+
+def _is_allowed_system_ancestor(path: Path) -> bool:
+    return (
+        sys.platform == "darwin"
+        and path == Path("/var")
+        and Path(os.path.realpath(path)) == Path("/private/var")
     )
 
 

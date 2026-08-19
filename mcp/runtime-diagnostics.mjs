@@ -121,8 +121,13 @@ function summarizeClient(clientVersion, clientCapabilities, rootsSupported) {
 
 
 function normalizePath(value) {
-  const normalized = path.resolve(String(value)).replaceAll("\\", "/");
-  return process.platform === "win32" ? normalized.toLowerCase() : normalized;
+  const pathApi = process.platform === "win32" ? path.win32 : path.posix;
+  const normalized = pathApi.resolve(String(value)).replaceAll("\\", "/");
+  if (process.platform === "win32") return normalized.toLowerCase();
+  if (process.platform === "darwin" && (normalized === "/private/var" || normalized.startsWith("/private/var/"))) {
+    return normalized.slice("/private".length);
+  }
+  return normalized;
 }
 
 
