@@ -16,11 +16,21 @@ Migration to the Codex Plugin is explicit. The Plugin does not scan, copy, merge
 
 ## Preview the migration
 
-Run a redacted dry run from the installed Plugin root:
+Run a redacted dry run with the command for the current platform.
+
+Windows PowerShell:
 
 ```powershell
-python "<plugin-root>/dist/scripts/migrate_image_config.py" `
-  --source "<legacy-config>" `
+python "C:/path/to/openai-compatible-imagegen/dist/scripts/migrate_image_config.py" `
+  --source "C:/path/to/legacy/auth.json" `
+  --source-kind standalone
+```
+
+macOS or Linux shell:
+
+```bash
+python3 "/absolute/path/to/openai-compatible-imagegen/dist/scripts/migrate_image_config.py" \
+  --source "/absolute/path/to/legacy/auth.json" \
   --source-kind standalone
 ```
 
@@ -38,13 +48,25 @@ Review these fields:
 
 ## Write the migration
 
-Use the same inputs and the reviewed digest:
+Use the same inputs and the reviewed digest.
+
+Windows PowerShell:
 
 ```powershell
-python "<plugin-root>/dist/scripts/migrate_image_config.py" `
-  --source "<legacy-config>" `
+python "C:/path/to/openai-compatible-imagegen/dist/scripts/migrate_image_config.py" `
+  --source "C:/path/to/legacy/auth.json" `
   --source-kind standalone `
   --write `
+  --expected-source-sha256 "<sourceSha256>"
+```
+
+macOS or Linux shell:
+
+```bash
+python3 "/absolute/path/to/openai-compatible-imagegen/dist/scripts/migrate_image_config.py" \
+  --source "/absolute/path/to/legacy/auth.json" \
+  --source-kind standalone \
+  --write \
   --expected-source-sha256 "<sourceSha256>"
 ```
 

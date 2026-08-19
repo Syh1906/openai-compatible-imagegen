@@ -5,7 +5,9 @@
 
 [English](./rollback.md) | 简体中文
 
-回滚会更改已安装发行包的版本，不会自动降级或重写图片服务配置。
+回滚会更改已安装发行包的版本，不会自动降级或重写图片服务配置。正常向前更新请使用[更新 Plugin 或 Skill](./updating.zh-CN.md)。
+
+下面的 `codex plugin` 回滚命令在 Windows PowerShell、macOS 终端和 Linux shell 中相同。
 
 ## 回滚 Codex Plugin
 

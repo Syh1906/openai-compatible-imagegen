@@ -11,6 +11,7 @@
 | 选择并安装发行包 | [安装](./guides/installation.zh-CN.md) |
 | 连接图片服务 | [配置](./guides/configuration.zh-CN.md) |
 | 迁移旧配置 | [迁移](./guides/migration.zh-CN.md) |
+| 更新已安装发行包 | [更新](./guides/updating.zh-CN.md) |
 | 恢复已发布版本 | [回滚](./guides/rollback.zh-CN.md) |
 | 排查故障 | [故障排查](./guides/troubleshooting.zh-CN.md) |
 

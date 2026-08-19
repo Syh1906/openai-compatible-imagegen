@@ -11,10 +11,18 @@
 
 Standalone Skill 从安装目录读取 `auth.json`。
 
-1. 从已安装的 Skill 运行设置向导：
+1. 使用当前平台的命令，从已安装的 Skill 运行设置向导。
+
+Windows PowerShell：
 
 ```powershell
-python "<skill-root>/scripts/quick-init.py"
+python "C:/path/to/openai-compatible-imagegen/scripts/quick-init.py"
+```
+
+macOS 或 Linux shell：
+
+```bash
+python3 "/absolute/path/to/openai-compatible-imagegen/scripts/quick-init.py"
 ```
 
 2. 或把 `examples/auth.example.json` 复制到 `<skill-root>/auth.json`，然后设置：
@@ -26,10 +34,18 @@ python "<skill-root>/scripts/quick-init.py"
 | `api_key_env` | 保存凭据的首选环境变量 |
 | `api_key` | 明确选择本地明文存储时使用的可选凭据 |
 
-3. 查看脱敏后的有效配置：
+3. 使用相同的平台映射查看脱敏后的有效配置。
+
+Windows PowerShell：
 
 ```powershell
-python "<skill-root>/scripts/imagegen.py" info
+python "C:/path/to/openai-compatible-imagegen/scripts/imagegen.py" info
+```
+
+macOS 或 Linux shell：
+
+```bash
+python3 "/absolute/path/to/openai-compatible-imagegen/scripts/imagegen.py" info
 ```
 
 命令参数覆盖 `auth.json` 默认值。每行 JSONL 字段覆盖共享批处理参数。

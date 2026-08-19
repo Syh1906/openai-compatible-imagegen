@@ -28,6 +28,8 @@ You do not need to install both. The Codex Plugin does not depend on the Standal
 
 The Plugin includes its prebuilt MCP server and widget. You do not run `npm install`, build the repository, or start a local web server. The same Plugin archive supports Windows, macOS, and Linux.
 
+The `codex plugin` commands below are identical in Windows PowerShell, macOS Terminal, and a Linux shell. Platform-specific examples are separated only when paths or system utilities differ.
+
 The runtime selects `python` on Windows and `python3` on macOS/Linux. It requires Python 3.12 or newer. To select one explicit executable, set `OPENAI_COMPATIBLE_IMAGEGEN_PYTHON`; an invalid override or failed version preflight stops the operation and does not try another command. macOS/Linux do not expose the Windows **Show in folder** action, while generation, editing, artifacts, annotations, and canvas operations remain available.
 
 ### Steps
@@ -66,16 +68,30 @@ Use this route when you want to install a specific GitHub Release from its downl
    (Get-FileHash -Algorithm SHA256 -LiteralPath "openai-compatible-imagegen-codex-plugin-<version>.zip").Hash.ToLowerInvariant()
    ```
 
-   macOS or Linux:
+   macOS Terminal:
+
+   ```bash
+   shasum -a 256 openai-compatible-imagegen-codex-plugin-<version>.zip
+   ```
+
+   Linux shell:
 
    ```bash
    sha256sum openai-compatible-imagegen-codex-plugin-<version>.zip
    ```
 
 3. Extract the ZIP. The extracted `openai-compatible-imagegen` directory must contain both `.codex-plugin/plugin.json` and `.agents/plugins/marketplace.json`.
-4. Add the extracted directory as a local marketplace. Use its absolute path:
+4. Add the extracted directory as a local marketplace with the path format for the current platform.
 
-   ```text
+   Windows PowerShell:
+
+   ```powershell
+   codex plugin marketplace add "C:/path/to/openai-compatible-imagegen"
+   ```
+
+   macOS or Linux shell:
+
+   ```bash
    codex plugin marketplace add "/absolute/path/to/openai-compatible-imagegen"
    ```
 
@@ -132,13 +148,29 @@ The `skills` package is a third-party Agent Skills CLI, not an OpenAI or Codex c
 | Project (default) | Current project | `<project>/.agents/skills/openai-compatible-imagegen` |
 | User (`--global`) | Current user across projects | `~/.agents/skills/openai-compatible-imagegen` |
 
-For a project installation, run the command from the target project:
+For a project installation, run the matching command from the target project.
+
+Windows PowerShell:
+
+```powershell
+npx --yes skills@latest add "C:/path/to/openai-compatible-imagegen" --agent codex --skill openai-compatible-imagegen --copy --yes
+```
+
+macOS or Linux shell:
 
 ```text
 npx --yes skills@latest add /path/to/openai-compatible-imagegen --agent codex --skill openai-compatible-imagegen --copy --yes
 ```
 
-For a user installation, add `--global`:
+For a user installation, add `--global`.
+
+Windows PowerShell:
+
+```powershell
+npx --yes skills@latest add "C:/path/to/openai-compatible-imagegen" --global --agent codex --skill openai-compatible-imagegen --copy --yes
+```
+
+macOS or Linux shell:
 
 ```text
 npx --yes skills@latest add /path/to/openai-compatible-imagegen --global --agent codex --skill openai-compatible-imagegen --copy --yes
@@ -146,17 +178,15 @@ npx --yes skills@latest add /path/to/openai-compatible-imagegen --global --agent
 
 The source directory must contain `SKILL.md` at its root together with `scripts/`, `references/`, `examples/`, and `agents/`. Do not pass the repository root. A repository-root install copies Plugin, MCP, Widget, test, and documentation files into the Skill target.
 
-Both commands use `skills@latest` so new installations receive the current CLI. The `1.0.2` release verification covered copied installation and discovery at both project and user scope. Project installation creates a project `skills-lock.json`; user installation does not create that project lock file.
+Both commands use `skills@latest` so new installations receive the current CLI. A project installation creates `skills-lock.json` in the project; a user installation does not create that project lock file.
 
 Use this CLI route only for the first installation. Local copied installs have these maintenance limits:
 
 - `skills update` does not update a Skill copied from a local extracted directory at either scope.
 - Running `skills add` again replaces the installed directory and removes its local `auth.json`.
-- Project-level `skills remove` can report success while leaving the copied directory, project lock entry, and list result in place.
-- User-level `skills remove --global` removed the copied directory and list entry during the `1.0.2` verification.
 - Output files outside the installed Skill directory are not managed by these CLI operations.
 
-For an update or rollback, preserve the current installation and `auth.json`, extract the target version to a new directory, and follow the [Standalone rollback flow](./rollback.md#roll-back-the-standalone-skill). Keep generated outputs outside the installed Skill directory.
+For an update, follow [Update the Plugin or Skill](./updating.md). For a rollback, preserve the current installation and `auth.json`, extract the target version to a new directory, and follow the [Standalone rollback flow](./rollback.md#roll-back-the-standalone-skill). Keep generated outputs outside the installed Skill directory.
 
 ## Installation result
 

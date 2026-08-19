@@ -58,13 +58,29 @@ To install a versioned Plugin ZIP from GitHub Releases, follow the [local Plugin
 
 Download `openai-compatible-imagegen-skill-<version>.zip` from [GitHub Releases](https://github.com/Syh1906/openai-compatible-imagegen/releases). Extract it into your client's skills directory so `SKILL.md` is at the package root, then start a new session.
 
-For the third-party [`skills`](https://www.npmjs.com/package/skills) CLI, extract the Standalone ZIP first and pass the extracted `openai-compatible-imagegen` directory as the package source. Install it for the current project by default:
+For the third-party [`skills`](https://www.npmjs.com/package/skills) CLI, extract the Standalone ZIP first and pass the extracted `openai-compatible-imagegen` directory as the package source. Install it for the current project by default.
+
+Windows PowerShell:
+
+```powershell
+npx --yes skills@latest add "C:/path/to/openai-compatible-imagegen" --agent codex --skill openai-compatible-imagegen --copy --yes
+```
+
+macOS or Linux shell:
 
 ```text
 npx --yes skills@latest add /path/to/openai-compatible-imagegen --agent codex --skill openai-compatible-imagegen --copy --yes
 ```
 
-Add `--global` to make the Skill available to the current user across projects:
+Add `--global` to make the Skill available to the current user across projects.
+
+Windows PowerShell:
+
+```powershell
+npx --yes skills@latest add "C:/path/to/openai-compatible-imagegen" --global --agent codex --skill openai-compatible-imagegen --copy --yes
+```
+
+macOS or Linux shell:
 
 ```text
 npx --yes skills@latest add /path/to/openai-compatible-imagegen --global --agent codex --skill openai-compatible-imagegen --copy --yes
@@ -73,6 +89,8 @@ npx --yes skills@latest add /path/to/openai-compatible-imagegen --global --agent
 Do not pass this repository root to the CLI. Use the Skills CLI only for the first installation of an extracted Standalone archive. For scope, updates, rollback, and removal behavior, follow the [Standalone installation guide](docs/guides/installation.md#install-with-the-third-party-skills-cli).
 
 [Standalone installation paths and setup](docs/guides/installation.md#install-the-standalone-skill)
+
+For update commands, package replacement, and credential-preserving Skill switching, see [Update the Plugin or Skill](docs/guides/updating.md).
 
 ## What it does
 
@@ -101,7 +119,7 @@ The Plugin presents results and canvas actions in Codex App. The Standalone Skil
 
 ## Documentation
 
-Use the [documentation index](docs/README.md) to find installation, configuration, migration, rollback, troubleshooting, and architecture guides.
+Use the [documentation index](docs/README.md) to find installation, configuration, migration, updating, rollback, troubleshooting, and architecture guides.
 
 ## Security
 

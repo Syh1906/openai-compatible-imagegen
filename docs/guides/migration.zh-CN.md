@@ -16,11 +16,21 @@
 
 ## 预览迁移
 
-从已安装 Plugin 根目录执行脱敏 dry run：
+使用当前平台的命令执行脱敏 dry run。
+
+Windows PowerShell：
 
 ```powershell
-python "<plugin-root>/dist/scripts/migrate_image_config.py" `
-  --source "<legacy-config>" `
+python "C:/path/to/openai-compatible-imagegen/dist/scripts/migrate_image_config.py" `
+  --source "C:/path/to/legacy/auth.json" `
+  --source-kind standalone
+```
+
+macOS 或 Linux shell：
+
+```bash
+python3 "/absolute/path/to/openai-compatible-imagegen/dist/scripts/migrate_image_config.py" \
+  --source "/absolute/path/to/legacy/auth.json" \
   --source-kind standalone
 ```
 
@@ -38,13 +48,25 @@ python "<plugin-root>/dist/scripts/migrate_image_config.py" `
 
 ## 写入迁移结果
 
-使用相同输入和已经检查的摘要：
+使用相同输入和已经检查的摘要。
+
+Windows PowerShell：
 
 ```powershell
-python "<plugin-root>/dist/scripts/migrate_image_config.py" `
-  --source "<legacy-config>" `
+python "C:/path/to/openai-compatible-imagegen/dist/scripts/migrate_image_config.py" `
+  --source "C:/path/to/legacy/auth.json" `
   --source-kind standalone `
   --write `
+  --expected-source-sha256 "<sourceSha256>"
+```
+
+macOS 或 Linux shell：
+
+```bash
+python3 "/absolute/path/to/openai-compatible-imagegen/dist/scripts/migrate_image_config.py" \
+  --source "/absolute/path/to/legacy/auth.json" \
+  --source-kind standalone \
+  --write \
   --expected-source-sha256 "<sourceSha256>"
 ```
 

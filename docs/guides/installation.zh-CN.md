@@ -28,6 +28,8 @@
 
 Plugin 已包含预构建的 MCP server 和 Widget。无需运行 `npm install`、构建仓库或启动本地 Web server。同一个 Plugin 压缩包支持 Windows、macOS 和 Linux。
 
+下面的 `codex plugin` 命令在 Windows PowerShell、macOS 终端和 Linux shell 中相同。只有路径或系统工具不同时才拆分平台示例。
+
 运行时在 Windows 默认调用 `python`，在 macOS/Linux 默认调用 `python3`，并要求 Python 3.12 或更高版本。需要指定一个明确的可执行文件时，设置 `OPENAI_COMPATIBLE_IMAGEGEN_PYTHON`；覆盖值无效或版本预检失败时会停止，不会尝试其他命令。macOS/Linux 不提供 Windows 的“在文件夹中显示”，但生成、编辑、产物、标注和画布操作仍可用。
 
 ### 操作步骤
@@ -66,16 +68,30 @@ codex plugin add openai-compatible-imagegen@openai-compatible-imagegen
    (Get-FileHash -Algorithm SHA256 -LiteralPath "openai-compatible-imagegen-codex-plugin-<version>.zip").Hash.ToLowerInvariant()
    ```
 
-   macOS 或 Linux：
+   macOS 终端：
+
+   ```bash
+   shasum -a 256 openai-compatible-imagegen-codex-plugin-<version>.zip
+   ```
+
+   Linux shell：
 
    ```bash
    sha256sum openai-compatible-imagegen-codex-plugin-<version>.zip
    ```
 
 3. 解压 ZIP。解压后的 `openai-compatible-imagegen` 目录必须同时包含 `.codex-plugin/plugin.json` 和 `.agents/plugins/marketplace.json`。
-4. 使用绝对路径把解压目录添加为本地 marketplace：
+4. 按当前平台的路径格式，把解压目录添加为本地 marketplace。
 
-   ```text
+   Windows PowerShell：
+
+   ```powershell
+   codex plugin marketplace add "C:/path/to/openai-compatible-imagegen"
+   ```
+
+   macOS 或 Linux shell：
+
+   ```bash
    codex plugin marketplace add "/absolute/path/to/openai-compatible-imagegen"
    ```
 
@@ -132,13 +148,29 @@ Codex 从 marketplace 目录安装 Plugin，不能直接从 ZIP 安装。只要�
 | 项目级（默认） | 当前项目 | `<project>/.agents/skills/openai-compatible-imagegen` |
 | 用户级（`--global`） | 当前用户的多个项目 | `~/.agents/skills/openai-compatible-imagegen` |
 
-项目级安装需要在目标项目中运行：
+项目级安装需要在目标项目中运行对应平台的命令。
+
+Windows PowerShell：
+
+```powershell
+npx --yes skills@latest add "C:/path/to/openai-compatible-imagegen" --agent codex --skill openai-compatible-imagegen --copy --yes
+```
+
+macOS 或 Linux shell：
 
 ```text
 npx --yes skills@latest add /path/to/openai-compatible-imagegen --agent codex --skill openai-compatible-imagegen --copy --yes
 ```
 
-用户级安装需要增加 `--global`：
+用户级安装需要增加 `--global`。
+
+Windows PowerShell：
+
+```powershell
+npx --yes skills@latest add "C:/path/to/openai-compatible-imagegen" --global --agent codex --skill openai-compatible-imagegen --copy --yes
+```
+
+macOS 或 Linux shell：
 
 ```text
 npx --yes skills@latest add /path/to/openai-compatible-imagegen --global --agent codex --skill openai-compatible-imagegen --copy --yes
@@ -146,17 +178,15 @@ npx --yes skills@latest add /path/to/openai-compatible-imagegen --global --agent
 
 源目录根部必须包含 `SKILL.md`，并同时包含 `scripts/`、`references/`、`examples/` 和 `agents/`。不要传入仓库根目录，否则 Plugin、MCP、Widget、测试和文档文件也会被复制到 Skill 目标目录。
 
-两条命令都使用 `skills@latest`，让新安装获取当前 CLI。`1.0.2` 发布验收已经覆盖项目级和用户级的复制安装与发现。项目级安装会创建项目 `skills-lock.json`；用户级安装不会创建该项目锁文件。
+两条命令都使用 `skills@latest`，让新安装获取当前 CLI。项目级安装会在项目中创建 `skills-lock.json`；用户级安装不会创建该项目锁文件。
 
 该 CLI 路线只用于首次安装。本地复制安装存在以下维护限制：
 
 - 两种作用域下，`skills update` 都不会更新从本地解压目录复制的 Skill。
 - 再次运行 `skills add` 会替换已安装目录，并删除其中的本地 `auth.json`。
-- 项目级 `skills remove` 可能报告成功，但仍保留复制目录、项目 lock 记录和列表结果。
-- `1.0.2` 验收中，用户级 `skills remove --global` 已移除复制目录和列表记录。
 - 安装目录外的输出文件不由这些 CLI 操作管理。
 
-需要更新或回滚时，保留当前安装和 `auth.json`，把目标版本解压到新目录，再按 [Standalone 回滚流程](./rollback.zh-CN.md#回滚-standalone-skill)切换。生成的图片和 manifest 应保存在已安装 Skill 目录之外。
+需要更新时，参照[更新 Plugin 或 Skill](./updating.zh-CN.md)。需要回滚时，保留当前安装和 `auth.json`，把目标版本解压到新目录，再按 [Standalone 回滚流程](./rollback.zh-CN.md#回滚-standalone-skill)切换。生成的图片和 manifest 应保存在已安装 Skill 目录之外。
 
 ## 安装结果
 
