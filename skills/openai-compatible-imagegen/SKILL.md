@@ -15,6 +15,12 @@ The first bind without an ID issues a new random binding, so do not repeat an in
 
 A `projectBindingId` survives MCP process and server restarts. Stop the current operation on `project_binding_required` or `project_binding_invalid`; do not scan old state or guess another ID. If a fresh start is required, create a new isolated binding only from the current task project root and continue with the new ID. Old canvas and submission state does not migrate automatically. App-only tools obtain the same ID from standard `tool-input.arguments.projectBindingId`, not private host fields.
 
+## Platform runtime
+
+The Plugin supports Windows, macOS, and Linux from one archive. Its Python bridge selects `python` on Windows and `python3` on macOS/Linux and requires Python 3.12 or newer. To choose one explicit executable, set `OPENAI_COMPATIBLE_IMAGEGEN_PYTHON`. An invalid override or failed preflight stops the operation; never probe another command or silently switch runtimes.
+
+Repository safety uses a platform adapter behind `scripts/repository_fs.py`: Windows uses the Windows adapter, while macOS/Linux use the POSIX adapter. This adapter is Plugin-only and is not part of the Standalone Skill. macOS/Linux do not provide **Show in folder**; this does not block image generation, editing, artifact reads, annotations, or canvas work.
+
 ## Routing
 
 1. For generation, call `generate_image` once. For multiple candidates, pass `count` in that same call. The runtime executes the same number of ordered single-image requests and returns the ordered group only when all succeed; any failure aborts the group without storing partial candidates. Do not retry or split it into multiple calls. For transparent delivery, pass top-level `transparency`, never `background=transparent`; the runtime resolves the route, enhances the prompt once before the API request, and preserves PNG originals. After ordinary generation, call `render_image_results` once with the returned IDs in order. For transparent generation, call `deliver_image` once per original, then render the successful derivatives together. Generation tools do not render image bytes, and display does not require `get_image_artifact`.

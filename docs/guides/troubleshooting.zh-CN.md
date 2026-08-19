@@ -16,7 +16,7 @@
 | Plugin 未列出 | Marketplace 名称和快照存在 | 运行 `codex plugin list --available --json`，然后重启 Codex App 或开始新的 CLI 会话 |
 | Plugin 删除不完整 | 已安装 Plugin 和 marketplace 名称正确 | 先运行 `codex plugin remove openai-compatible-imagegen@openai-compatible-imagegen --json`，再运行 `codex plugin marketplace remove openai-compatible-imagegen --json` |
 | MCP server 无法启动 | `node --version` 为 20 或更高 | 在 Plugin 外部安装或选择受支持的 Node 运行环境 |
-| Python helper 无法启动 | `python --version` 报告 3.12 | 在 Plugin 外部安装或选择 Python 3.12 |
+| Python helper 无法启动 | 平台映射命令报告 Python 3.12 或更高版本 | Windows 检查 `python --version`，macOS/Linux 检查 `python3 --version`。需要指定可执行文件时设置 `OPENAI_COMPATIBLE_IMAGEGEN_PYTHON`。预检失败会停止，Plugin 不会切换命令。 |
 | 未发现 Standalone Skill | 已安装包根目录存在 `SKILL.md` | 修正解压层级并开始新会话 |
 | Skills CLI 更新未发现项目 Skill | `skills-lock.json` 中的安装来源是本地解压目录 | 保留当前安装并使用新的版本化 ZIP 目录；`skills update` 不会更新本地复制安装 |
 | Skills CLI 卸载后仍出现在列表中 | `skills remove` 对复制型本地 Skill 报告成功 | 把 CLI 路线只用于首次安装；保留 `auth.json`，并使用版本化 ZIP 回滚流程 |

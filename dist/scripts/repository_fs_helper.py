@@ -13,7 +13,7 @@ PLUGIN_ROOT = Path(__file__).resolve().parents[1]
 if str(PLUGIN_ROOT) not in sys.path:
     sys.path.insert(0, str(PLUGIN_ROOT))
 
-from scripts.windows_repository_fs import DirectoryLease, RepositoryMutation
+from scripts.repository_fs import DirectoryLease, RepositoryMutation
 
 
 ARTIFACT_ID_PATTERN = re.compile(r"^img_[0-9A-HJKMNP-TV-Z]{26}$")

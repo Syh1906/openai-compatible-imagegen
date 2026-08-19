@@ -18,6 +18,8 @@ This document is for contributors and maintainers. It defines the stable module,
 | `.codex-plugin/plugin.json`, `.mcp.json` | Plugin identity and launch contract |
 | `tests/` | Executable public behavior and release boundaries |
 
+The Plugin runtime is platform-neutral at the package level. `scripts/repository_fs.py` is the only filesystem entry point: it selects `windows_repository_fs.py` on Windows and `posix_repository_fs.py` on macOS/Linux. Both adapters expose the same repository, submission-lock, atomic-publication, and safe-path contract; the adapters are Plugin-only and are excluded from the Standalone archive.
+
 ## Core flow
 
 ```mermaid
@@ -45,6 +47,13 @@ flowchart LR
 | MCP tools, result cards, canvas |  |  | Yes |
 
 Shared code moves from `scripts/` into both versioned packages. Distribution adapters remain separate so Codex-specific behavior never enters the portable runtime.
+
+| Platform | Python command | Filesystem adapter | UI limitation |
+| --- | --- | --- | --- |
+| Windows | `python` | `windows_repository_fs.py` | Explorer reveal available |
+| macOS/Linux | `python3` | `posix_repository_fs.py` | No **Show in folder** action |
+
+Set `OPENAI_COMPATIBLE_IMAGEGEN_PYTHON` to override the command explicitly. The runtime validates Python 3.12 or newer once before use and stops on an invalid override or failed preflight; it does not probe a list of commands.
 
 ## Dependency direction
 
@@ -78,7 +87,7 @@ Standalone Skill -> Standalone adapter -> shared image core -> provider
 
 ## Release model
 
-- One version and tag produce a Standalone Skill archive and a Codex Plugin archive.
+- One version and tag produce a Standalone Skill archive and one platform-neutral Codex Plugin archive. Windows, Linux, and macOS build independent candidates; release promotion requires identical file sets and SHA-256 bytes.
 - `dist/` is tracked so the Git-backed Plugin installs without a source build or local web server.
 - The release builder verifies that shared Python files are byte-identical across the two packages.
 - One `SHA256SUMS` file covers both archives and the shared-core evidence file.

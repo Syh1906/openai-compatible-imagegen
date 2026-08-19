@@ -37,7 +37,7 @@ Generate an image in the conversation, then open its focused canvas to mark regi
 
 ## Install the Codex Plugin
 
-Requirements: a Codex version with Plugin support, Git, Node.js 20+, Python 3.12, and your own OpenAI-compatible image service.
+Requirements: a Codex version with Plugin support, Git, Node.js 20+, Python 3.12 or newer, and your own OpenAI-compatible image service. The Plugin ZIP is platform-neutral and supports Windows, macOS, and Linux.
 
 ```text
 codex plugin marketplace add Syh1906/openai-compatible-imagegen
@@ -47,6 +47,8 @@ codex plugin add openai-compatible-imagegen@openai-compatible-imagegen
 You can also open **Plugins** in Codex App, select the `openai-compatible-imagegen` marketplace, and install **OpenAI-Compatible Images**. In an interactive Codex CLI session, enter `/plugins` to use the same browser.
 
 The Git-backed package already contains the MCP server and widget. You do not build the repository or run a local web server.
+
+The Plugin selects `python` on Windows and `python3` on macOS/Linux, then requires Python 3.12 or newer. Set `OPENAI_COMPATIBLE_IMAGEGEN_PYTHON` to one explicit executable when the default command is not available; an invalid override or failed preflight stops the operation instead of trying another command. The Windows-only **Show in folder** action is unavailable on macOS/Linux, but generation, editing, artifacts, annotations, and canvas workflows remain supported.
 
 To install a versioned Plugin ZIP from GitHub Releases, follow the [local Plugin ZIP installation](docs/guides/installation.md#install-from-the-plugin-zip) steps.
 
@@ -95,7 +97,7 @@ Describe the subject, composition, size, quantity, transparency, checks, and out
 
 > Generate four editorial illustrations and keep an auditable batch manifest.
 
-The Plugin presents results and canvas actions in Codex App. The Standalone Skill runs its bundled CLI and reports output and manifest paths.
+The Plugin presents results and canvas actions in Codex App. The Standalone Skill runs its bundled CLI and reports output and manifest paths. The Standalone package remains independent: it does not include the Plugin's MCP or platform filesystem adapters.
 
 ## Documentation
 

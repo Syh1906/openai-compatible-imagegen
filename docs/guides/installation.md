@@ -23,10 +23,12 @@ You do not need to install both. The Codex Plugin does not depend on the Standal
 - A Codex App version with Plugin support
 - Git
 - Node.js 20 or later
-- Python 3.12
+- Python 3.12 or newer
 - An OpenAI-compatible image service and your own credential
 
-The Plugin includes its prebuilt MCP server and widget. You do not run `npm install`, build the repository, or start a local web server.
+The Plugin includes its prebuilt MCP server and widget. You do not run `npm install`, build the repository, or start a local web server. The same Plugin archive supports Windows, macOS, and Linux.
+
+The runtime selects `python` on Windows and `python3` on macOS/Linux. It requires Python 3.12 or newer. To select one explicit executable, set `OPENAI_COMPATIBLE_IMAGEGEN_PYTHON`; an invalid override or failed version preflight stops the operation and does not try another command. macOS/Linux do not expose the Windows **Show in folder** action, while generation, editing, artifacts, annotations, and canvas operations remain available.
 
 ### Steps
 
@@ -94,7 +96,7 @@ Give an Agent this task when you want it to prepare the supported install withou
 
 ```text
 Install OpenAI-Compatible Images as a Codex Plugin from the Git-backed marketplace
-Syh1906/openai-compatible-imagegen. Verify Git, Node.js 20+, and Python 3.12 first.
+Syh1906/openai-compatible-imagegen. Verify Git, Node.js 20+, and Python 3.12 or newer first.
 Do not install global dependencies or build the repository. Stop before entering or moving credentials.
 ```
 
@@ -102,7 +104,7 @@ Do not install global dependencies or build the repository. Stop before entering
 
 ### Requirements
 
-- Python 3.12
+- Python 3.12 or newer
 - An Agent client that loads Agent Skills
 - An OpenAI-compatible image service and your own credential
 

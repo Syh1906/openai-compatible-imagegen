@@ -57,7 +57,7 @@ from scripts.provider_config import (
     normalize_model_capabilities,
     parse_plugin_config,
 )
-from scripts.windows_repository_fs import SubmissionLock
+from scripts.repository_fs import SubmissionLock
 
 
 DeliveryError = image_delivery.DeliveryError

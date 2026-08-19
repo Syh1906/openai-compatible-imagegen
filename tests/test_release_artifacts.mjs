@@ -93,8 +93,10 @@ test("package scripts expose the release artifact builder", async () => {
 test("release workflow publishes an exact version-titled release from an annotated tag", async () => {
   const workflow = await readFile(releaseWorkflow, "utf8");
   assert.match(workflow, /workflow_dispatch:/);
-  assert.match(workflow, /runs-on:\s*windows-latest/);
-  assert.match(workflow, /runs-on:\s*ubuntu-latest/);
+  assert.match(workflow, /os:\s*windows-latest/);
+  assert.match(workflow, /os:\s*ubuntu-latest/);
+  assert.match(workflow, /os:\s*macos-latest/);
+  assert.match(workflow, /runs-on:\s*\$\{\{\s*matrix\.os\s*\}\}/);
   assert.match(workflow, /environment:\s*release/);
   assert.match(workflow, /permissions:\s*\n\s*contents:\s*write/);
   assert.match(workflow, /ref:\s*\$\{\{\s*inputs\.release_ref\s*\}\}/);
@@ -113,13 +115,13 @@ test("release workflow publishes an exact version-titled release from an annotat
   assert.match(workflow, /actions\/upload-artifact@v4/);
   assert.match(workflow, /validate-release-notes\.mjs/);
   assert.match(workflow, /candidate-windows/);
-  assert.doesNotMatch(workflow, /^\s{2}linux_candidate:/m);
-  assert.doesNotMatch(workflow, /^\s{2}compare_candidates:/m);
-  assert.doesNotMatch(workflow, /compare-release-artifacts\.mjs/);
-  assert.doesNotMatch(workflow, /candidate-linux/);
+  assert.match(workflow, /candidate-linux/);
+  assert.match(workflow, /candidate-macos/);
+  assert.match(workflow, /^\s{2}compare_candidates:/m);
+  assert.match(workflow, /compare-release-artifacts\.mjs/);
   assert.match(
     workflow,
-    /publish:\s*\n\s+needs:\s*windows_candidate[\s\S]*?environment:\s*release/,
+    /publish:\s*\n\s+needs:\s*\[[^\]]*compare_candidates[^\]]*\][\s\S]*?environment:\s*release/,
   );
   assert.match(workflow, /gh release create/);
   assert.match(workflow, /name:\s*Create the GitHub Release[\s\S]*?shell:\s*bash[\s\S]*?gh release create/);
@@ -128,6 +130,24 @@ test("release workflow publishes an exact version-titled release from an annotat
   assert.match(workflow, /--notes-file "\$RELEASE_NOTES_PATH"/);
   assert.doesNotMatch(workflow, /--notes-from-tag/);
   assert.doesNotMatch(workflow, /git tag|git push/i);
+});
+
+
+test("Standalone releases remain independent from Plugin filesystem adapters", async () => {
+  const pluginOnlyRuntimeNames = [
+    "artifact_repository.py",
+    "posix_repository_fs.py",
+    "repository_fs.py",
+    "repository_fs_helper.py",
+    "windows_repository_fs.py",
+  ];
+  for (const name of pluginOnlyRuntimeNames) {
+    assert.equal(standaloneFiles.includes(`scripts/${name}`), false, name);
+  }
+  for (const relativePath of standaloneFiles.filter((name) => name.startsWith("scripts/"))) {
+    const source = await readFile(path.join(projectRoot, relativePath), "utf8");
+    assert.doesNotMatch(source, /(?:artifact_repository|repository_fs|\bmcp\b)/, relativePath);
+  }
 });
 
 

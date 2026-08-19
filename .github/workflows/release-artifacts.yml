@@ -16,8 +16,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  windows_candidate:
-    runs-on: windows-latest
+  validate_release:
+    runs-on: ubuntu-latest
     outputs:
       release_tag: ${{ steps.release.outputs.release_tag }}
     steps:
@@ -26,20 +26,6 @@ jobs:
         with:
           ref: ${{ inputs.release_ref }}
           fetch-depth: 0
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          cache: npm
-
-      - name: Install Node dependencies
-        run: npm ci
 
       - name: Validate the annotated release tag
         id: release
@@ -70,7 +56,43 @@ jobs:
           RELEASE_TAG: ${{ steps.release.outputs.release_tag }}
         run: node scripts/validate-release-notes.mjs --tag "$RELEASE_TAG"
 
-      - name: Build the Plugin once
+  candidate:
+    needs: validate_release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows
+            os: windows-latest
+            artifact: candidate-windows
+          - name: linux
+            os: ubuntu-latest
+            artifact: candidate-linux
+          - name: macos
+            os: macos-latest
+            artifact: candidate-macos
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Check out the requested ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_ref }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Build the Plugin
         run: npm run build
 
       - name: Run tests
@@ -82,19 +104,61 @@ jobs:
       - name: Compile Python sources
         run: python -m compileall -q scripts
 
-      - name: Build the Windows release candidate
+      - name: Check diffs
+        run: git diff --check
+
+      - name: Build the release candidate
         run: node scripts/build-release-artifacts.mjs --source-root . --output-directory release
 
-      - name: Upload the Windows release candidate
+      - name: Upload the release candidate
         uses: actions/upload-artifact@v4
         with:
-          name: candidate-windows
+          name: ${{ matrix.artifact }}
           path: release/*
           if-no-files-found: error
           retention-days: 14
 
+  compare_candidates:
+    needs: candidate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the requested ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.release_ref }}
+
+      - name: Download the Windows candidate
+        uses: actions/download-artifact@v4
+        with:
+          name: candidate-windows
+          path: candidates/windows
+
+      - name: Download the Linux candidate
+        uses: actions/download-artifact@v4
+        with:
+          name: candidate-linux
+          path: candidates/linux
+
+      - name: Download the macOS candidate
+        uses: actions/download-artifact@v4
+        with:
+          name: candidate-macos
+          path: candidates/macos
+
+      - name: Compare Windows and Linux candidates
+        run: >-
+          node scripts/compare-release-artifacts.mjs
+          --left candidates/windows
+          --right candidates/linux
+
+      - name: Compare Windows and macOS candidates
+        run: >-
+          node scripts/compare-release-artifacts.mjs
+          --left candidates/windows
+          --right candidates/macos
+
   publish:
-    needs: windows_candidate
+    needs: [validate_release, compare_candidates]
     runs-on: ubuntu-latest
     environment: release
     steps:
@@ -113,7 +177,7 @@ jobs:
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_TAG: ${{ needs.windows_candidate.outputs.release_tag }}
+          RELEASE_TAG: ${{ needs.validate_release.outputs.release_tag }}
           RELEASE_NOTES_PATH: .github/release-notes/${{ inputs.release_ref }}.md
         run: >-
           gh release create "$RELEASE_TAG" candidates/windows/*

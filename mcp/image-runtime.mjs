@@ -2,18 +2,23 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { resolvePythonRuntime, selectPythonCommand } from "./python-runtime.mjs";
+
 
 const runtimeRelativePath = import.meta.url.replaceAll("\\", "/").includes("/dist/server.mjs")
   ? "./scripts/image_runtime.py"
   : "../scripts/image_runtime.py";
 const runtimePath = fileURLToPath(new URL(runtimeRelativePath, import.meta.url));
 
-export async function runImageTask(task, {
+export async function runImageTask(task, options = {}) {
+  const {
   projectRoot,
   effectiveConfigJson,
   effectiveConfigSha256,
   artifactRoot,
-} = {}) {
+    pythonCommand: configuredPythonCommand,
+    spawnProcess = spawn,
+  } = options;
   if (typeof projectRoot !== "string" || !path.isAbsolute(projectRoot)) {
     throw new Error("project root is required");
   }
@@ -26,6 +31,14 @@ export async function runImageTask(task, {
   if (typeof artifactRoot !== "string" || !path.isAbsolute(artifactRoot)) {
     throw new Error("artifact root is required");
   }
+  const pythonCommand = Object.hasOwn(options, "pythonCommand")
+    ? configuredPythonCommand
+    : spawnProcess !== spawn
+      ? selectPythonCommand()
+      : await resolvePythonRuntime();
+  if (typeof pythonCommand !== "string" || !pythonCommand) {
+    throw new Error("image runtime Python command is invalid");
+  }
   return await new Promise((resolve, reject) => {
     const args = [
       runtimePath,
@@ -35,8 +48,8 @@ export async function runImageTask(task, {
       "--artifact-root",
       artifactRoot,
     ];
-    const child = spawn(
-      "python",
+    const child = spawnProcess(
+      pythonCommand,
       args,
       {
         cwd: projectRoot,

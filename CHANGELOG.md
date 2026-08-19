@@ -4,6 +4,20 @@ This file records user-visible changes for each release of `openai-compatible-im
 
 ## [Unreleased]
 
+### Added
+
+- Add one platform-neutral Codex Plugin runtime for Windows, macOS, and Linux with platform-specific secure repository filesystem adapters.
+- Add explicit Python command mapping (`python` on Windows, `python3` on macOS/Linux) and the `OPENAI_COMPATIBLE_IMAGEGEN_PYTHON` override with a Python 3.12-or-newer preflight.
+- Expand CI and release candidates to Windows, Linux, and macOS, requiring identical candidate file sets and SHA-256 bytes before publication.
+
+### Changed
+
+- Keep the platform filesystem adapters and MCP runtime files Plugin-only; the Standalone Skill release remains independent.
+
+### Known limitations
+
+- macOS and Linux do not provide the Windows **Show in folder** action. Generation, editing, artifacts, annotations, and canvas workflows remain supported.
+
 ## [1.0.2] - 2026-08-19
 
 ### Added

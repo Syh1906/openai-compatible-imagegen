@@ -23,10 +23,12 @@
 - 支持 Plugin 的 Codex App 版本
 - Git
 - Node.js 20 或更高版本
-- Python 3.12
+- Python 3.12 或更高版本
 - OpenAI-compatible 图片服务和你自己的凭据
 
-Plugin 已包含预构建的 MCP server 和 Widget。无需运行 `npm install`、构建仓库或启动本地 Web server。
+Plugin 已包含预构建的 MCP server 和 Widget。无需运行 `npm install`、构建仓库或启动本地 Web server。同一个 Plugin 压缩包支持 Windows、macOS 和 Linux。
+
+运行时在 Windows 默认调用 `python`，在 macOS/Linux 默认调用 `python3`，并要求 Python 3.12 或更高版本。需要指定一个明确的可执行文件时，设置 `OPENAI_COMPATIBLE_IMAGEGEN_PYTHON`；覆盖值无效或版本预检失败时会停止，不会尝试其他命令。macOS/Linux 不提供 Windows 的“在文件夹中显示”，但生成、编辑、产物、标注和画布操作仍可用。
 
 ### 操作步骤
 
@@ -94,7 +96,7 @@ Codex 从 marketplace 目录安装 Plugin，不能直接从 ZIP 安装。只要�
 
 ```text
 从 Git marketplace Syh1906/openai-compatible-imagegen 安装 OpenAI-Compatible Images Codex Plugin。
-先验证 Git、Node.js 20+ 和 Python 3.12。不要安装全局依赖或构建仓库。
+先验证 Git、Node.js 20+ 和 Python 3.12 或更高版本。不要安装全局依赖或构建仓库。
 在输入或移动凭据前停止。
 ```
 
@@ -102,7 +104,7 @@ Codex 从 marketplace 目录安装 Plugin，不能直接从 ZIP 安装。只要�
 
 ### 使用前提
 
-- Python 3.12
+- Python 3.12 或更高版本
 - 支持 Agent Skills 的 Agent 客户端
 - OpenAI-compatible 图片服务和你自己的凭据
 

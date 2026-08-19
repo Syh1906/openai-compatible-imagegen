@@ -37,7 +37,7 @@ OpenAI 兼容图片把同一套图片核心发布为两种安装形态。Standal
 
 ## 安装 Codex Plugin
 
-需要：支持 Plugin 的 Codex、Git、Node.js 20+、Python 3.12，以及你自己的 OpenAI 兼容图片服务。
+需要：支持 Plugin 的 Codex、Git、Node.js 20+、Python 3.12 或更高版本，以及你自己的 OpenAI 兼容图片服务。Plugin ZIP 与平台无关，支持 Windows、macOS 和 Linux。
 
 ```text
 codex plugin marketplace add Syh1906/openai-compatible-imagegen
@@ -47,6 +47,8 @@ codex plugin add openai-compatible-imagegen@openai-compatible-imagegen
 你也可以在 Codex App 打开 **Plugins**，选择 `openai-compatible-imagegen` marketplace，安装 **OpenAI-Compatible Images**。交互式 Codex CLI 会话可输入 `/plugins` 打开同一浏览器。
 
 Git-backed 安装已经包含 MCP server 和 widget，不需要构建仓库或启动本地 Web 服务。
+
+Plugin 在 Windows 默认调用 `python`，在 macOS/Linux 默认调用 `python3`，并要求 Python 3.12 或更高版本。默认命令不可用时，可通过 `OPENAI_COMPATIBLE_IMAGEGEN_PYTHON` 指定一个明确的 Python 可执行文件；覆盖值无效或预检失败时会停止，不会静默尝试其他命令。macOS/Linux 不提供 Windows 的“在文件夹中显示”，但不影响生成、编辑、产物、标注和画布流程。
 
 需要从 GitHub Releases 安装指定版本的 Plugin ZIP 时，请按[本地 Plugin ZIP 安装流程](docs/guides/installation.zh-CN.md#从-plugin-zip-安装)操作。
 
@@ -95,7 +97,7 @@ npx --yes skills@latest add /path/to/openai-compatible-imagegen --global --agent
 
 > 生成四张编辑插图，并保留可审计的 batch manifest。
 
-Codex Plugin 在 App 中显示结果与画布操作。Standalone Skill 调用包内 CLI，并报告输出文件和 manifest 路径。
+Codex Plugin 在 App 中显示结果与画布操作。Standalone Skill 调用包内 CLI，并报告输出文件和 manifest 路径。Standalone 包保持独立，不包含 Plugin 的 MCP 或平台文件系统适配器。
 
 ## 文档
 

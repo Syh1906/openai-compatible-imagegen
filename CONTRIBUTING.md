@@ -20,7 +20,7 @@ Requirements:
 
 - Node.js 20 or later
 - npm
-- Python 3.12
+- Python 3.12 or newer
 
 ```bash
 npm ci
@@ -56,7 +56,7 @@ Prepare the release in this order:
 4. Run the project checks, then create and push one annotated version tag after maintainer approval.
 5. Manually run `Publish release` with that existing tag.
 
-The workflow validates the tag, versioned notes, and changelog before building. Windows runs the complete test and Plugin checks; Linux builds an independent candidate. The publish job compares every candidate filename and byte before entering the protected `release` environment. It creates a Release only when both candidates match, uses the exact tag as the title, reads the body from the versioned release-notes file, and uploads the Windows candidate's two archives, shared-core evidence, and `SHA256SUMS`.
+The workflow validates the tag, versioned notes, and changelog before building. Windows, Linux, and macOS each run the complete test and Plugin checks and upload an independent candidate. The publish job compares every candidate filename and SHA-256 byte before entering the protected `release` environment. It creates a Release only when all three candidates match, uses the exact tag as the title, reads the body from the versioned release-notes file, and uploads the Windows candidate's two archives, shared-core evidence, and `SHA256SUMS`.
 
 The workflow never creates, moves, or pushes tags and never replaces an existing Release. A missing section, stale changelog, platform-specific artifact, or existing Release stops publication.
 

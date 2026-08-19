@@ -21,7 +21,7 @@ from provider_config import (
     ProviderConfigError,
     parse_plugin_config,
 )
-from windows_repository_fs import (
+from repository_fs import (
     DirectoryLease,
     delete_file_safely,
     ensure_directory_tree_safely,

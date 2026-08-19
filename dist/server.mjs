@@ -51,7 +51,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 var define_RELEASE_IDENTITY_default;
 var init_define_RELEASE_IDENTITY = __esm({
   "<define:__RELEASE_IDENTITY__>"() {
-    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "1.0.2", serverBuildDigest: "8179c0e31f42c47fe139cc6452dbd77b9a7cc39a5530e160b0319a45890662d7", widgetAssetDigest: "2462240903056504eb47eeab00934805bc7f635b5afc2d8f6d6587a6db8151dd", fingerprint: "0979feecd94659a6ef2f", resourceUris: { result: "ui://openai-compatible-imagegen/result-0979feecd94659a6ef2f.html", editor: "ui://openai-compatible-imagegen/editor-0979feecd94659a6ef2f.html" } };
+    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "1.0.2", serverBuildDigest: "7eb667e718b83d100f7d63483185686d84d97611995ee01b0773e69bc95920e0", widgetAssetDigest: "2462240903056504eb47eeab00934805bc7f635b5afc2d8f6d6587a6db8151dd", fingerprint: "32ec6ff524e1254c6282", resourceUris: { result: "ui://openai-compatible-imagegen/result-32ec6ff524e1254c6282.html", editor: "ui://openai-compatible-imagegen/editor-32ec6ff524e1254c6282.html" } };
   }
 });
 
@@ -21934,18 +21934,76 @@ init_define_RELEASE_IDENTITY();
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+// mcp/python-runtime.mjs
+init_define_RELEASE_IDENTITY();
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+var execFileAsync = promisify(execFile);
+var PYTHON_OVERRIDE = "OPENAI_COMPATIBLE_IMAGEGEN_PYTHON";
+var verifiedDefaultRuntime;
+function selectPythonCommand({
+  platform = process.platform,
+  environment = process.env
+} = {}) {
+  if (Object.hasOwn(environment, PYTHON_OVERRIDE)) {
+    const override = environment[PYTHON_OVERRIDE];
+    if (typeof override !== "string" || !override.trim() || override.includes("\0")) {
+      throw new Error(`${PYTHON_OVERRIDE} override is invalid`);
+    }
+    return override.trim();
+  }
+  if (platform === "win32") return "python";
+  if (platform === "darwin" || platform === "linux") return "python3";
+  throw new Error(`Python runtime has an unsupported platform: ${platform}`);
+}
+async function verifyPythonRuntime(pythonCommand, { runCommand = execFileAsync } = {}) {
+  if (typeof pythonCommand !== "string" || !pythonCommand) {
+    throw new Error("Python runtime command is invalid");
+  }
+  let output;
+  try {
+    const result = await runCommand(pythonCommand, ["--version"], {
+      encoding: "utf8",
+      timeout: 1e4,
+      windowsHide: true
+    });
+    output = `${result.stdout || ""}
+${result.stderr || ""}`.trim();
+  } catch (error40) {
+    throw new Error(`Python runtime preflight failed: ${error40?.message || "could not start"}`);
+  }
+  const match = /^Python (\d+)\.(\d+)\.(\d+)(?:\s|$)/m.exec(output);
+  if (!match || Number(match[1]) !== 3 || Number(match[2]) < 12) {
+    throw new Error("Python 3.12 or newer is required");
+  }
+  return pythonCommand;
+}
+async function resolvePythonRuntime() {
+  if (!verifiedDefaultRuntime) {
+    const command = selectPythonCommand();
+    verifiedDefaultRuntime = verifyPythonRuntime(command).catch((error40) => {
+      verifiedDefaultRuntime = void 0;
+      throw error40;
+    });
+  }
+  return await verifiedDefaultRuntime;
+}
+
+// mcp/repository-fs-client.mjs
 var runtimeRelativePath = import.meta.url.replaceAll("\\", "/").includes("/dist/server.mjs") ? "./scripts/repository_fs_helper.py" : "../scripts/repository_fs_helper.py";
 var defaultRuntimePath = fileURLToPath(new URL(runtimeRelativePath, import.meta.url));
 var MAX_RUNTIME_OUTPUT = 48 * 1024 * 1024;
 var DEFAULT_HELPER_TIMEOUT_MS = 12e4;
 var DEFAULT_HELPER_TERMINATION_GRACE_MS = 1e3;
-async function runRepositoryFsOperation(request, {
-  pythonCommand = "python",
-  runtimePath: runtimePath2 = defaultRuntimePath,
-  spawnProcess = spawn,
-  helperTimeoutMs = DEFAULT_HELPER_TIMEOUT_MS,
-  helperTerminationGraceMs = DEFAULT_HELPER_TERMINATION_GRACE_MS
-} = {}) {
+async function runRepositoryFsOperation(request, options = {}) {
+  const {
+    pythonCommand: configuredPythonCommand,
+    runtimePath: runtimePath2 = defaultRuntimePath,
+    spawnProcess = spawn,
+    helperTimeoutMs = DEFAULT_HELPER_TIMEOUT_MS,
+    helperTerminationGraceMs = DEFAULT_HELPER_TERMINATION_GRACE_MS
+  } = options;
   if (!request || typeof request !== "object" || Array.isArray(request)) {
     throw new Error("repository operation is required");
   }
@@ -21966,6 +22024,10 @@ async function runRepositoryFsOperation(request, {
   }
   if (typeof serializedRequest !== "string") {
     throw new Error("repository operation is not serializable");
+  }
+  const pythonCommand = Object.hasOwn(options, "pythonCommand") ? configuredPythonCommand : spawnProcess !== spawn ? selectPythonCommand() : await resolvePythonRuntime();
+  if (typeof pythonCommand !== "string" || !pythonCommand) {
+    throw new Error("repository runtime Python command is invalid");
   }
   return await new Promise((resolve, reject) => {
     let child;
@@ -37016,12 +37078,15 @@ import path15 from "node:path";
 import { fileURLToPath as fileURLToPath4 } from "node:url";
 var runtimeRelativePath3 = import.meta.url.replaceAll("\\", "/").includes("/dist/server.mjs") ? "./scripts/image_runtime.py" : "../scripts/image_runtime.py";
 var runtimePath = fileURLToPath4(new URL(runtimeRelativePath3, import.meta.url));
-async function runImageTask(task, {
-  projectRoot,
-  effectiveConfigJson,
-  effectiveConfigSha256,
-  artifactRoot
-} = {}) {
+async function runImageTask(task, options = {}) {
+  const {
+    projectRoot,
+    effectiveConfigJson,
+    effectiveConfigSha256,
+    artifactRoot,
+    pythonCommand: configuredPythonCommand,
+    spawnProcess = spawn3
+  } = options;
   if (typeof projectRoot !== "string" || !path15.isAbsolute(projectRoot)) {
     throw new Error("project root is required");
   }
@@ -37034,6 +37099,10 @@ async function runImageTask(task, {
   if (typeof artifactRoot !== "string" || !path15.isAbsolute(artifactRoot)) {
     throw new Error("artifact root is required");
   }
+  const pythonCommand = Object.hasOwn(options, "pythonCommand") ? configuredPythonCommand : spawnProcess !== spawn3 ? selectPythonCommand() : await resolvePythonRuntime();
+  if (typeof pythonCommand !== "string" || !pythonCommand) {
+    throw new Error("image runtime Python command is invalid");
+  }
   return await new Promise((resolve, reject) => {
     const args = [
       runtimePath,
@@ -37043,8 +37112,8 @@ async function runImageTask(task, {
       "--artifact-root",
       artifactRoot
     ];
-    const child = spawn3(
-      "python",
+    const child = spawnProcess(
+      pythonCommand,
       args,
       {
         cwd: projectRoot,

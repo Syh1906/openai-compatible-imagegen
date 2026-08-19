@@ -16,7 +16,7 @@ Identify the failing layer before changing configuration. The project does not s
 | Plugin is not listed | Marketplace name and snapshot are present | Run `codex plugin list --available --json`, then restart Codex App or start a new CLI session |
 | Plugin removal is incomplete | The installed Plugin and marketplace names are correct | Run `codex plugin remove openai-compatible-imagegen@openai-compatible-imagegen --json` before `codex plugin marketplace remove openai-compatible-imagegen --json` |
 | MCP server cannot start | `node --version` is 20 or later | Install or select a supported Node runtime outside the Plugin |
-| Python helper cannot start | `python --version` reports 3.12 | Install or select Python 3.12 outside the Plugin |
+| Python helper cannot start | The mapped command reports Python 3.12 or newer | On Windows check `python --version`; on macOS/Linux check `python3 --version`. Set `OPENAI_COMPATIBLE_IMAGEGEN_PYTHON` for one explicit executable. The Plugin stops on a failed preflight and does not switch commands. |
 | Standalone Skill is not detected | `SKILL.md` is at the installed package root | Fix the extraction level and start a new session |
 | Skills CLI update finds no project Skill | The install source in `skills-lock.json` is a local extracted directory | Keep the current install and use a new versioned ZIP directory; local copied installs are not updated by `skills update` |
 | Skills CLI removal remains listed | `skills remove` reported success for a copied local Skill | Treat the CLI route as first-install only; preserve `auth.json` and use the versioned ZIP rollback flow |

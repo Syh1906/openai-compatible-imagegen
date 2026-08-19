@@ -18,6 +18,8 @@
 | `.codex-plugin/plugin.json`、`.mcp.json` | Plugin 身份和启动契约 |
 | `tests/` | 可执行的公开行为和发行边界 |
 
+Plugin 在包级别保持平台无关。`scripts/repository_fs.py` 是唯一的文件系统入口：Windows 选择 `windows_repository_fs.py`，macOS/Linux 选择 `posix_repository_fs.py`。两个适配器提供相同的仓库、提交锁、原子发布和安全路径契约；适配器只属于 Plugin，不进入 Standalone 压缩包。
+
 ## 核心流程
 
 ```mermaid
@@ -45,6 +47,13 @@ flowchart LR
 | MCP 工具、结果卡和画布 |  |  | 是 |
 
 共享代码从 `scripts/` 进入两个版本化发行包。两种发行适配器保持分离，Codex 专属行为不会进入便携式运行时。
+
+| 平台 | Python 命令 | 文件系统适配器 | UI 限制 |
+| --- | --- | --- | --- |
+| Windows | `python` | `windows_repository_fs.py` | 支持在资源管理器中显示 |
+| macOS/Linux | `python3` | `posix_repository_fs.py` | 不提供“在文件夹中显示” |
+
+可使用 `OPENAI_COMPATIBLE_IMAGEGEN_PYTHON` 显式覆盖命令。运行时首次使用前会验证 Python 3.12 或更高版本；覆盖值无效或预检失败时停止，不会轮询多个命令。
 
 ## 依赖方向
 
@@ -78,7 +87,7 @@ Standalone Skill -> Standalone adapter -> shared image core -> provider
 
 ## 发布模型
 
-- 一个版本和标签同时生成 Standalone Skill 与 Codex Plugin 压缩包。
+- 一个版本和标签同时生成 Standalone Skill 压缩包与一个平台无关的 Codex Plugin 压缩包。Windows、Linux 和 macOS 分别构建候选；只有文件集和 SHA-256 字节完全一致时才能进入发布环境。
 - `dist/` 纳入 Git，使 Git-backed Plugin 安装不需要源码构建或本地 Web server。
 - 发布构建器验证两个发行包中的共享 Python 文件逐字节一致。
 - 一个 `SHA256SUMS` 文件覆盖两个压缩包和共享核心证据文件。

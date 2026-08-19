@@ -10,7 +10,7 @@ from typing import Any
 import zlib
 
 from scripts.artifact_repository import inspect_image
-from scripts.windows_repository_fs import DirectoryLease
+from scripts.repository_fs import DirectoryLease
 
 
 MASK_GUARD_V1 = """[Mask policy: mandatory]

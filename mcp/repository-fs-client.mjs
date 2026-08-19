@@ -2,6 +2,8 @@ import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { resolvePythonRuntime, selectPythonCommand } from "./python-runtime.mjs";
+
 
 const runtimeRelativePath = import.meta.url.replaceAll("\\", "/").includes("/dist/server.mjs")
   ? "./scripts/repository_fs_helper.py"
@@ -12,13 +14,14 @@ const DEFAULT_HELPER_TIMEOUT_MS = 120_000;
 const DEFAULT_HELPER_TERMINATION_GRACE_MS = 1_000;
 
 
-export async function runRepositoryFsOperation(request, {
-  pythonCommand = "python",
+export async function runRepositoryFsOperation(request, options = {}) {
+  const {
+  pythonCommand: configuredPythonCommand,
   runtimePath = defaultRuntimePath,
   spawnProcess = spawn,
   helperTimeoutMs = DEFAULT_HELPER_TIMEOUT_MS,
   helperTerminationGraceMs = DEFAULT_HELPER_TERMINATION_GRACE_MS,
-} = {}) {
+  } = options;
   if (!request || typeof request !== "object" || Array.isArray(request)) {
     throw new Error("repository operation is required");
   }
@@ -39,6 +42,14 @@ export async function runRepositoryFsOperation(request, {
   }
   if (typeof serializedRequest !== "string") {
     throw new Error("repository operation is not serializable");
+  }
+  const pythonCommand = Object.hasOwn(options, "pythonCommand")
+    ? configuredPythonCommand
+    : spawnProcess !== spawn
+      ? selectPythonCommand()
+      : await resolvePythonRuntime();
+  if (typeof pythonCommand !== "string" || !pythonCommand) {
+    throw new Error("repository runtime Python command is invalid");
   }
   return await new Promise((resolve, reject) => {
     let child;
