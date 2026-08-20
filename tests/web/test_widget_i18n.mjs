@@ -91,11 +91,91 @@ test("result card follows the initial host locale and live locale changes", asyn
 
   try {
     await import(`../../web/editor-runtime.mjs?i18n-result=${Date.now()}`);
-    await waitFor(() => document.querySelector("[data-action=open-editor]")?.textContent.trim() === "Open canvas");
+    await waitFor(() => document.querySelector("[data-image]")?.hidden === false
+      && document.querySelector("[data-action=open-editor]")?.disabled === false);
+    assert.equal(document.querySelector("[data-action=open-editor]")?.textContent.trim(), "Open canvas");
     assert.equal(document.querySelector(".eyebrow")?.textContent, "Image result");
+    const englishResult = document.querySelector(".inline-result");
 
-    host.notifyHostContextChanged({ locale: "zh-TW" });
-    await waitFor(() => document.querySelector("[data-action=open-editor]")?.textContent.trim() === "打开画布");
+    host.notifyHostContextChanged({ locale: "en-GB", theme: "light" });
+    await waitFor(() => document.documentElement.dataset.theme === "light");
+    assert.equal(document.querySelector(".inline-result"), englishResult);
+
+    host.notifyHostContextChanged({ locale: "zh-TW", theme: "dark" });
+    await waitFor(() => document.documentElement.dataset.theme === "dark");
+    assert.equal(document.querySelector("[data-action=open-editor]")?.textContent.trim(), "打开画布");
+    assert.equal(document.querySelector(".eyebrow")?.textContent, "图片结果");
+  } finally {
+    host.dispose();
+    restoreDomGlobals(previous);
+    dom.window.close();
+  }
+});
+
+test("result preview keeps its state and focus across live locale changes", async () => {
+  const dom = new JSDOM(
+    '<!doctype html><html><body><main><p>正在加载图片...</p></main></body></html>',
+    { pretendToBeVisual: true, url: "https://widget.local/" },
+  );
+  const previous = installDomGlobals(dom.window);
+  const host = installHost(dom.window, {
+    toolName: "render_image_results",
+    initialHostContext: { locale: "en-US" },
+    initialArtifacts: [{ id: IMAGE_ID, mimeType: "image/png", width: 1024, height: 768, operation: "generate", parentIds: [], childIds: [] }],
+  });
+
+  try {
+    await import(`../../web/editor-runtime.mjs?i18n-preview=${Date.now()}`);
+    await waitFor(() => document.querySelector("[data-action=preview-image]") !== null);
+    document.querySelector("[data-action=preview-image]").click();
+    await waitFor(() => document.querySelector("[data-result-preview]")?.hidden === false);
+
+    const preview = document.querySelector("[data-result-preview]");
+    const zoomIn = preview.querySelector("[data-preview-action=zoom-in]");
+    zoomIn.click();
+    zoomIn.focus();
+    assert.equal(preview.dataset.previewScale, "1.25");
+    assert.equal(document.activeElement, zoomIn);
+
+    host.notifyHostContextChanged({ locale: "zh-TW", theme: "dark", displayMode: "fullscreen" });
+    await waitFor(() => document.documentElement.dataset.theme === "dark");
+
+    assert.equal(document.querySelector("[data-result-preview]"), preview);
+    assert.equal(preview.dataset.previewScale, "1.25");
+    assert.equal(document.activeElement, zoomIn);
+    assert.equal(preview.querySelector("[data-preview-action=close]")?.getAttribute("aria-label"), "关闭图片预览");
+  } finally {
+    host.dispose();
+    restoreDomGlobals(previous);
+    dom.window.close();
+  }
+});
+
+test("late artifact hydration keeps the latest result locale", async () => {
+  const dom = new JSDOM(
+    '<!doctype html><html><body><main><p>正在加载图片...</p></main></body></html>',
+    { pretendToBeVisual: true, url: "https://widget.local/" },
+  );
+  const previous = installDomGlobals(dom.window);
+  const host = installHost(dom.window, {
+    toolName: "render_image_results",
+    initialHostContext: { locale: "en-US" },
+    initialArtifacts: [{ id: IMAGE_ID, mimeType: "image/png", width: 1, height: 1, operation: "generate", parentIds: [], childIds: [] }],
+    deferArtifactDataImageIds: [IMAGE_ID],
+  });
+
+  try {
+    await import(`../../web/editor-runtime.mjs?i18n-late-artifact=${Date.now()}`);
+    await waitFor(() => host.pendingArtifactDataRequestCount === 1
+      && document.querySelector("[data-action=open-editor]")?.textContent.trim() === "Open canvas");
+
+    host.notifyHostContextChanged({ locale: "zh-TW", theme: "dark" });
+    await waitFor(() => document.documentElement.dataset.theme === "dark");
+    assert.equal(document.querySelector("[data-action=open-editor]")?.textContent.trim(), "打开画布");
+
+    host.resolveArtifactData(IMAGE_ID);
+    await waitFor(() => document.querySelector("[data-image]")?.hidden === false);
+    assert.equal(document.querySelector("[data-action=open-editor]")?.textContent.trim(), "打开画布");
     assert.equal(document.querySelector(".eyebrow")?.textContent, "图片结果");
   } finally {
     host.dispose();

@@ -7,6 +7,7 @@ This file records user-visible changes for each release of `openai-compatible-im
 ### Fixed
 
 - Prevent concurrent Codex Plugin tools from intermittently reporting a valid project binding as unavailable while another Plugin process refreshes it.
+- Update result cards immediately when the Codex host locale changes instead of waiting for a later artifact refresh.
 
 ## [1.1.0] - 2026-08-19
 

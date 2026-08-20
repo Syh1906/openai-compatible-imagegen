@@ -151,6 +151,13 @@
       "checks": ["build", "plugin"]
     },
     {
+      "name": "widget-result-locale",
+      "files": ["web/editor-runtime.mjs"],
+      "suites": ["web"],
+      "checks": ["build", "plugin"],
+      "platforms": ["macos", "windows"]
+    },
+    {
       "name": "widget-runtime",
       "prefixes": ["web/"],
       "suites": ["web"],
@@ -194,6 +201,12 @@
       "name": "test-mcp",
       "prefixes": ["tests/mcp/"],
       "suites": ["mcp"]
+    },
+    {
+      "name": "test-widget-result-locale",
+      "files": ["tests/web/test_widget_i18n.mjs"],
+      "suites": ["web"],
+      "platforms": ["macos", "windows"]
     },
     {
       "name": "test-web",
