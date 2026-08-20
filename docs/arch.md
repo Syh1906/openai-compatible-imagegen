@@ -96,11 +96,13 @@ Standalone Skill -> Standalone adapter -> shared image core -> provider
 
 ## Change matrix
 
+Codex App acceptance is based on the boundary being changed, not only the file path. Run it during development when a change affects Plugin manifests or marketplaces, host loading, installation or cache identity, tool injection, the MCP Apps bridge, or behavior that deterministic automation cannot observe. Other Plugin changes can defer acceptance to the final release candidate. Every final release candidate runs acceptance on available target platforms; unavailable platforms remain explicitly unverified and follow the active release plan's platform matrix.
+
 | Change | Required implementation review | Required validation |
 | --- | --- | --- |
 | Shared image behavior | Shared core and both adapters | Python tests, Plugin bridge tests, dual release evidence |
 | Standalone CLI or config | Standalone adapter and guide | Python tests and Standalone archive |
-| MCP or artifact behavior | MCP and Plugin guide | Node tests, build, Plugin check |
-| Result cards or canvas | `web/`, MCP Apps bridge | Widget tests and Codex App acceptance |
-| Widget-visible text | English/Chinese message catalog, public metadata, affected README pair | Locale tests, English no-Han gate, metadata gate, Codex App acceptance |
-| Distribution metadata | Both manifests and release builder | Version, file-set, archive, and marketplace checks |
+| MCP or artifact behavior | MCP and Plugin guide | Node tests, build, Plugin check, risk-based Codex App acceptance |
+| Result cards or canvas | `web/`, MCP Apps bridge | Widget tests and risk-based Codex App acceptance |
+| Widget-visible text | English/Chinese message catalog, public metadata, affected README pair | Locale tests, English no-Han gate, metadata gate, risk-based Codex App acceptance |
+| Distribution metadata | Both manifests and release builder | Version, file-set, archive, marketplace checks, risk-based Codex App acceptance |

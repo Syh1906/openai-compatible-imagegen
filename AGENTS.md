@@ -53,7 +53,9 @@
 - Run the full regression only through `npm run test:release` during release preparation.
 - Keep tests in their owning suite and shared fixtures in `tests/support/`; test modules must not import helpers from another test module.
 - Validate both the Standalone and Plugin adapters when shared image logic changes.
-- Changes to MCP, the widget, Plugin manifests, or the marketplace require matching Node tests and Codex App acceptance checks.
+- Changes to MCP, the widget, Plugin manifests, or the marketplace require matching Node tests.
+- Run Codex App acceptance during development when a change affects Plugin manifests or marketplaces, host loading, installation or cache identity, tool injection, the MCP Apps bridge, or behavior that deterministic automation cannot observe.
+- Otherwise defer Codex App acceptance to the final release candidate. Every final release candidate requires acceptance on available target platforms; record unavailable platforms as unverified and follow the active release plan's platform matrix.
 - Update `CHANGELOG.md` and affected public guides when user-visible behavior changes.
 - `README.md` serves first-time visitors; `docs/guides/` serves users; `AGENTS.md` serves contributors; distribution `SKILL.md` files serve runtime agents.
 - Public content must not contain credentials, private endpoints, local absolute paths, test output, or unpublished implementation plans.

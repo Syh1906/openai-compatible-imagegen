@@ -10,9 +10,13 @@ Classify the change as `shared`, `standalone`, `plugin`, or a combination:
 | --- | --- | --- |
 | `shared` | `scripts/` shared runtime | Standalone and Plugin adapter tests |
 | `standalone` | root `SKILL.md`, `agents/`, Standalone CLI | Python tests and Standalone release checks |
-| `plugin` | `mcp/`, `web/`, bundled Plugin Skill | Node tests, build, plugin check, Codex App acceptance |
+| `plugin` | `mcp/`, `web/`, bundled Plugin Skill | Node tests, build, plugin check, and risk-based Codex App acceptance |
 
 Read [the architecture guide](docs/arch.md) before changing module boundaries. Use the [documentation index](docs/README.md) to find affected public guides.
+
+Codex App acceptance is based on the boundary being changed, not only the file path. Run it during development when a Plugin change affects manifests or marketplaces, host loading, installation or cache identity, tool injection, the MCP Apps bridge, or behavior that deterministic automation cannot observe. When tests directly and deterministically observe the target behavior and the host contract is unchanged, defer acceptance to the final release candidate.
+
+Every final release candidate requires Codex App acceptance on available target platforms. Record a platform without a real device as unverified and follow the active release plan's platform matrix.
 
 ## Development setup
 
