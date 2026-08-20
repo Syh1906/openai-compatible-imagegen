@@ -35,7 +35,9 @@ class ImageConfigMigrationTests(unittest.TestCase):
         self.temp_dir.cleanup()
 
     def test_standalone_env_key_migrates_to_the_user_config_only(self) -> None:
-        self.write_source(standalone_config(api_key_env="IMAGEGEN_KEY", api_key="source-secret"))
+        source = standalone_config(api_key_env="IMAGEGEN_KEY", api_key="source-secret")
+        source["proxy"] = {"url": "http://127.0.0.1:7890"}
+        self.write_source(source)
         source_before = self.source.read_bytes()
 
         plan = migrate_image_config.plan_migration(
@@ -50,6 +52,10 @@ class ImageConfigMigrationTests(unittest.TestCase):
         self.assertEqual(plan.user_config["providers"]["primary"]["api_key_env"], "IMAGEGEN_KEY")
         self.assertEqual(plan.user_config["config_version"], 1)
         self.assertEqual(plan.user_config["active_profile"], "primary/gpt-image-2")
+        self.assertEqual(
+            plan.user_config["providers"]["primary"]["proxy"],
+            {"url": "http://127.0.0.1:7890"},
+        )
         self.assertIsNone(plan.project_config)
         self.assertNotIn("source-secret", json.dumps(public))
         self.assertEqual(self.source.read_bytes(), source_before)
@@ -60,7 +66,9 @@ class ImageConfigMigrationTests(unittest.TestCase):
         self.assertEqual(self.source.read_bytes(), source_before)
 
     def test_development_plugin_config_splits_only_explicit_project_overrides(self) -> None:
-        self.write_source(development_plugin_config())
+        source = development_plugin_config()
+        source["providers"]["primary"]["proxy"] = {"url": "https://proxy.example.test:8443"}
+        self.write_source(source)
 
         plan = migrate_image_config.plan_migration(
             source_path=self.source,
@@ -83,6 +91,10 @@ class ImageConfigMigrationTests(unittest.TestCase):
         )
         self.assertEqual(plan.user_config["defaults"], {"timeout_seconds": 120, "concurrency": 4})
         self.assertNotIn("storage", plan.user_config)
+        self.assertEqual(
+            plan.user_config["providers"]["primary"]["proxy"],
+            {"url": "https://proxy.example.test:8443"},
+        )
 
         migrate_image_config.write_migration(plan)
         self.assertEqual(json.loads(self.project_target.read_text(encoding="utf-8")), plan.project_config)
@@ -360,6 +372,9 @@ class ImageConfigMigrationTests(unittest.TestCase):
         invalid_postprocess = development_plugin_config()
         invalid_postprocess["postprocess"]["enabled"] = "yes"
         invalid_cases.append(invalid_postprocess)
+        invalid_proxy = development_plugin_config()
+        invalid_proxy["providers"]["primary"]["proxy"] = {"url": "socks5://127.0.0.1:1080"}
+        invalid_cases.append(invalid_proxy)
 
         for raw in invalid_cases:
             with self.subTest(raw=raw):

@@ -26,6 +26,7 @@ test("configuration management initializes, redacts, and updates the fixed user 
     );
     assert.equal(initialized.config.providers.primary.api_key, undefined);
     assert.equal(initialized.config.providers.primary.api_key_env, "IMAGE_API_KEY");
+    assert.equal(initialized.config.providers.primary.proxy, undefined);
 
     const inspected = await inspectImageConfig({ userHome, projectRoot });
     assert.equal(inspected.user.exists, true);
@@ -36,13 +37,23 @@ test("configuration management initializes, redacts, and updates the fixed user 
       userHome,
       scope: "user",
       changes: {
-        providers: { primary: { base_url: "https://images.example.test/v1", api_key_env: "NEW_IMAGE_KEY" } },
+        providers: {
+          primary: {
+            base_url: "https://images.example.test/v1",
+            api_key_env: "NEW_IMAGE_KEY",
+            proxy: { url: "http://127.0.0.1:7890" },
+          },
+        },
         defaults: { quality: "high" },
       },
     });
     assert.equal(updated.config.defaults.quality, "high");
     assert.equal(updated.config.providers.primary.base_url, "https://images.example.test/v1");
     assert.equal(updated.config.providers.primary.api_key_env, "NEW_IMAGE_KEY");
+    assert.deepEqual(updated.config.providers.primary.proxy, { configured: true });
+    assert.equal(JSON.stringify(updated).includes("127.0.0.1:7890"), false);
+    const stored = JSON.parse(await readFile(userConfigPath(userHome), "utf8"));
+    assert.deepEqual(stored.providers.primary.proxy, { url: "http://127.0.0.1:7890" });
   });
 });
 
@@ -253,6 +264,7 @@ test("project config rejects endpoint, authentication, model and resource overri
       { endpoint: "https://evil.example.test/v1" },
       { api_key: "secret" },
       { api_key_env: "EVIL_KEY" },
+      { proxy: { url: "http://127.0.0.1:7890" } },
       { defaults: { concurrency: 8 } },
       { defaults: { timeout_seconds: 1 } },
       { storage: { other: "value" } },
@@ -296,10 +308,23 @@ test("user config validates schema, active profile and resource bounds", async (
       { providers: { primary: { api_key_env: "BAD-NAME" } } },
       { providers: { primary: { api_key_env: "BAD NAME" } } },
       { providers: { primary: { api_key_env: "BAD\u0000NAME" } } },
+      { providers: { primary: { proxy: [] } } },
+      { providers: { primary: { proxy: {} } } },
+      { providers: { primary: { proxy: { url: "socks5://127.0.0.1:7890" } } } },
+      { providers: { primary: { proxy: { url: "http:///missing-host" } } } },
+      { providers: { primary: { proxy: { url: "http://127.0.0.1:70000" } } } },
+      { providers: { primary: { proxy: { url: "http://user:password@127.0.0.1:7890" } } } },
+      { providers: { primary: { proxy: { url: "http://127.0.0.1:7890?mode=test" } } } },
+      { providers: { primary: { proxy: { url: "http://127.0.0.1:7890#fragment" } } } },
+      { providers: { primary: { proxy: { url: "http://127.0.0.1:7890\n" } } } },
     ];
     for (const override of cases) {
       await writeJson(userConfigPath(userHome), mergeUserConfig(override));
-      await assert.rejects(resolveImageConfigBinding({ projectRoot, userHome }), { code: "image_config_invalid" });
+      await assert.rejects(
+        resolveImageConfigBinding({ projectRoot, userHome }),
+        { code: "image_config_invalid" },
+        JSON.stringify(override),
+      );
     }
   });
 });
@@ -336,6 +361,27 @@ test("binding detects user and project changes before a runtime call", async () 
     await writeJson(projectPath, projectConfig({ storage: { output_directory: "project-output" } }));
     await writeJson(userPath, userConfig({ defaults: { quality: "high" } }));
     await assert.rejects(assertImageConfigBindingCurrent({ projectRoot, ...binding }), { code: "image_config_changed" });
+  });
+});
+
+test("binding preserves custom proxy and detects proxy changes", async () => {
+  await withConfigRoots(async ({ projectRoot, userHome }) => {
+    const userPath = userConfigPath(userHome);
+    await writeJson(userPath, userConfig({
+      providers: { primary: { proxy: { url: "http://127.0.0.1:7890" } } },
+    }));
+    const binding = await resolveImageConfigBinding({ projectRoot, userHome });
+    const effective = JSON.parse(binding.effectiveConfigJson);
+
+    assert.deepEqual(effective.providers.primary.proxy, { url: "http://127.0.0.1:7890" });
+
+    await writeJson(userPath, userConfig({
+      providers: { primary: { proxy: { url: "http://127.0.0.1:7891" } } },
+    }));
+    await assert.rejects(
+      assertImageConfigBindingCurrent({ projectRoot, ...binding }),
+      { code: "image_config_changed" },
+    );
   });
 });
 

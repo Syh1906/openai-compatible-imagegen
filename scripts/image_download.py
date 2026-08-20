@@ -8,6 +8,7 @@ import urllib.parse
 import urllib.request
 
 from scripts.image_response import MAX_IMAGE_RESPONSE_BYTES, detect_image_format, read_limited_bytes
+from scripts.network_proxy import proxy_mapping
 
 
 DEFAULT_DIRECT_DOWNLOAD_GUIDANCE = (
@@ -26,6 +27,7 @@ def download_image_url(
     direct_url_download: bool = False,
     direct_download_guidance: str = DEFAULT_DIRECT_DOWNLOAD_GUIDANCE,
     response_limit: int | None = None,
+    proxy_url: str | None = None,
 ) -> bytes:
     parsed = urllib.parse.urlparse(url)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
@@ -35,9 +37,12 @@ def download_image_url(
         url,
         headers={"Accept": "image/*", "User-Agent": user_agent},
     )
-    opener = None
-    if direct_url_download:
-        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+    mapping = proxy_mapping(proxy_url, direct=direct_url_download)
+    opener = (
+        urllib.request.build_opener(urllib.request.ProxyHandler(mapping))
+        if mapping is not None
+        else None
+    )
     for attempt in range(2):
         try:
             response = (

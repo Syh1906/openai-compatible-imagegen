@@ -17,6 +17,7 @@ DEFAULT_USER_AGENT = (
 )
 DEFAULT_POSTPROCESS = {"enabled": False}
 DEFAULT_URL_DOWNLOAD = {"proxy_mode": "environment"}
+DEFAULT_PROXY: dict[str, str] = {}
 MODEL_CAPABILITY_KEYS = (
     "generate",
     "edit",
@@ -49,6 +50,7 @@ class EffectiveImageConfig:
     transparency: TransparencyPolicy = field(default_factory=TransparencyPolicy)
     user_agent: str = DEFAULT_USER_AGENT
     url_download: dict[str, Any] = field(default_factory=lambda: dict(DEFAULT_URL_DOWNLOAD))
+    proxy: dict[str, str] = field(default_factory=lambda: dict(DEFAULT_PROXY))
 
 
 Config = EffectiveImageConfig
@@ -118,6 +120,7 @@ def parse_plugin_config(
         transparency=transparency,
         user_agent=resolve_user_agent(provider.get("user_agent"), config_label="user config"),
         url_download=resolve_url_download_config(provider.get("url_download")),
+        proxy=resolve_proxy_config(provider.get("proxy"), config_label="user config"),
     )
 
 
@@ -154,6 +157,7 @@ def _parse_standalone_config(raw: dict[str, Any], *, require_api_key: bool) -> E
         transparency=transparency,
         user_agent=resolve_user_agent(raw.get("user_agent")),
         url_download=resolve_url_download_config(raw.get("url_download")),
+        proxy=resolve_proxy_config(raw.get("proxy")),
     )
 
 
@@ -199,6 +203,36 @@ def resolve_url_download_config(value: Any) -> dict[str, Any]:
         raise ProviderConfigError("url_download.proxy_mode must be environment or direct")
     config["proxy_mode"] = proxy_mode
     return config
+
+
+def resolve_proxy_config(value: Any, *, config_label: str = "auth.json") -> dict[str, str]:
+    if value is None:
+        return dict(DEFAULT_PROXY)
+    if not isinstance(value, dict) or set(value) != {"url"}:
+        raise ProviderConfigError(f"{config_label} proxy must contain only proxy.url")
+    raw_url = value.get("url")
+    if not isinstance(raw_url, str) or raw_url != raw_url.strip():
+        raise ProviderConfigError(f"{config_label} proxy.url must be a valid http(s) URL")
+    if any(ord(char) < 32 or ord(char) == 127 for char in raw_url):
+        raise ProviderConfigError(f"{config_label} proxy.url must not contain control characters")
+    try:
+        parsed = urllib.parse.urlsplit(raw_url)
+        parsed.port
+    except ValueError as exc:
+        raise ProviderConfigError(f"{config_label} proxy.url must be a valid http(s) URL") from exc
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+        or parsed.path not in {"", "/"}
+    ):
+        raise ProviderConfigError(
+            f"{config_label} proxy.url must be an http(s) URL without credentials, query, fragment, or path"
+        )
+    return {"url": raw_url.rstrip("/")}
 
 
 def resolve_user_agent(value: Any, *, config_label: str = "auth.json") -> str:

@@ -4,6 +4,10 @@ This file records user-visible changes for each release of `openai-compatible-im
 
 ## [Unreleased]
 
+### Added
+
+- Add optional provider-specific HTTP proxy URLs for generation, editing, and returned image downloads in both the Standalone Skill and Codex Plugin. Existing environment proxy behavior remains the default, and download-only direct mode retains priority when explicitly enabled.
+
 ### Fixed
 
 - Prevent concurrent Codex Plugin tools from intermittently reporting a valid project binding as unavailable while another Plugin process refreshes it.

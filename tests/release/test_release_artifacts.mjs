@@ -43,6 +43,7 @@ const sharedCoreFiles = [
   "image_transparency.py",
   "image_transport.py",
   "image_webp.py",
+  "network_proxy.py",
   "provider_config.py",
 ];
 const standaloneRuntimeFiles = [
