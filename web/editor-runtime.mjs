@@ -400,7 +400,7 @@ async function connectHost() {
       void returnAfterHostRestoredInline();
       return;
     }
-    if (widgetRole === "result") resultPreview.syncHostContext(params?.displayMode); else if (changed || localeChanged) render();
+    if (widgetRole === "result") { resultPreview.syncHostContext(params?.displayMode); if (localeChanged) render(); } else if (changed || localeChanged) render();
   };
   app.onteardown = async () => {
     let draftSaveError = null;

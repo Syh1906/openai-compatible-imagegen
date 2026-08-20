@@ -159,6 +159,17 @@ test("platform-sensitive repositories select their native runners", () => {
 });
 
 
+test("locale-sensitive widget paths select all runners without widening other widget changes", () => {
+  for (const file of ["web/editor-runtime.mjs", "tests/web/test_widget_i18n.mjs"]) {
+    const plan = selectImpactPlan([file], projectManifest);
+    assert.deepEqual(plan.suites, ["web"], file);
+    assert.deepEqual(plan.platforms, ["linux", "macos", "windows"], file);
+  }
+  assert.deepEqual(selectImpactPlan(["web/result-preview.mjs"], projectManifest).platforms, ["linux"]);
+  assert.deepEqual(selectImpactPlan(["tests/web/test_widget_theme.mjs"], projectManifest).platforms, ["linux"]);
+});
+
+
 test("platform-specific production rules retain their build gates", () => {
   const cases = [
     ["scripts/reveal_in_explorer.py", ["build", "diff", "plugin"]],
