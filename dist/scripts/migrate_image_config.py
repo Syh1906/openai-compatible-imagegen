@@ -46,7 +46,15 @@ USER_TOP_LEVEL_KEYS = {
 USER_DEFAULT_KEYS = {"size", "quality", "output_format", "timeout_seconds", "concurrency"}
 PROJECT_TOP_LEVEL_KEYS = {"config_version", "defaults", "storage"}
 STORAGE_KEYS = {"output_directory"}
-PROVIDER_KEYS = {"protocol", "base_url", "api_key", "api_key_env", "user_agent", "url_download"}
+PROVIDER_KEYS = {
+    "protocol",
+    "base_url",
+    "api_key",
+    "api_key_env",
+    "user_agent",
+    "url_download",
+    "proxy",
+}
 MODEL_KEYS = {"provider", "model", "capabilities"}
 STANDALONE_KEYS = {
     "base_url",
@@ -58,6 +66,7 @@ STANDALONE_KEYS = {
     "transparency",
     "user_agent",
     "url_download",
+    "proxy",
     "capabilities",
 }
 DEVELOPMENT_PLUGIN_KEYS = {
@@ -260,6 +269,7 @@ def migrate_standalone(
             "api_key_env": raw.get("api_key_env"),
             "user_agent": raw.get("user_agent"),
             "url_download": raw.get("url_download"),
+            "proxy": raw.get("proxy"),
         },
         allow_plaintext_api_key=allow_plaintext_api_key,
     )
@@ -342,7 +352,15 @@ def migrate_provider_auth(
     *,
     allow_plaintext_api_key: bool,
 ) -> tuple[dict[str, Any], bool]:
-    allowed = {"protocol", "base_url", "api_key", "api_key_env", "user_agent", "url_download"}
+    allowed = {
+        "protocol",
+        "base_url",
+        "api_key",
+        "api_key_env",
+        "user_agent",
+        "url_download",
+        "proxy",
+    }
     reject_unknown_keys(raw, allowed)
     protocol = raw.get("protocol") or "openai-compatible"
     if protocol != "openai-compatible":
@@ -351,7 +369,7 @@ def migrate_provider_auth(
     if not base_url:
         raise ConfigMigrationError("migration_source_invalid", "provider base_url is required")
     provider: dict[str, Any] = {"protocol": protocol, "base_url": base_url}
-    for key in ("user_agent", "url_download"):
+    for key in ("user_agent", "url_download", "proxy"):
         if raw.get(key) is not None:
             provider[key] = deepcopy(raw[key])
 

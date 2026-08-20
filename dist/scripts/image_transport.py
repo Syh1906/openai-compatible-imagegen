@@ -18,6 +18,7 @@ if str(SCRIPT_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPT_DIR))
 
 from image_response import MAX_JSON_RESPONSE_BYTES, read_json_response, safe_error_body
+from network_proxy import proxy_mapping
 
 
 MultipartUpload = tuple[str, Path] | tuple[str, Path, bytes]
@@ -47,6 +48,7 @@ def request_json(
     payload: dict[str, Any],
     timeout: int,
     response_limit: int | None = MAX_JSON_RESPONSE_BYTES,
+    proxy_url: str | None = None,
 ) -> dict[str, Any]:
     body = json.dumps(drop_none(payload)).encode("utf-8")
     request = urllib.request.Request(
@@ -55,7 +57,7 @@ def request_json(
         method="POST",
         headers=request_headers(api_key, user_agent, "application/json"),
     )
-    return _send_request(request, timeout, path, response_limit)
+    return _send_request(request, timeout, path, response_limit, proxy_url)
 
 
 def request_multipart(
@@ -68,6 +70,7 @@ def request_multipart(
     files: list[MultipartUpload],
     timeout: int,
     response_limit: int | None = MAX_JSON_RESPONSE_BYTES,
+    proxy_url: str | None = None,
 ) -> dict[str, Any]:
     boundary = f"----codex-imagegen-{int(time.time() * 1000)}"
     body = build_multipart_body(boundary, fields, files)
@@ -81,7 +84,7 @@ def request_multipart(
             f"multipart/form-data; boundary={boundary}",
         ),
     )
-    return _send_request(request, timeout, path, response_limit)
+    return _send_request(request, timeout, path, response_limit, proxy_url)
 
 
 def api_url(base_url: str, path: str) -> str:
@@ -149,9 +152,21 @@ def _send_request(
     timeout: int,
     operation: str,
     response_limit: int | None,
+    proxy_url: str | None,
 ) -> dict[str, Any]:
+    mapping = proxy_mapping(proxy_url)
+    opener = (
+        urllib.request.build_opener(urllib.request.ProxyHandler(mapping))
+        if mapping is not None
+        else None
+    )
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        response_context = (
+            opener.open(request, timeout=timeout)
+            if opener is not None
+            else urllib.request.urlopen(request, timeout=timeout)
+        )
+        with response_context as response:
             if response_limit is None:
                 value = json.loads(response.read().decode("utf-8"))
                 if not isinstance(value, dict):
@@ -166,7 +181,10 @@ def _send_request(
             operation=operation,
         ) from exc
     except urllib.error.URLError as exc:
+        reason = str(exc.reason)
+        if proxy_url:
+            reason = reason.replace(proxy_url, "[configured proxy]")
         raise TransportError(
-            f"API request failed: {exc.reason}",
+            f"API request failed: {reason}",
             operation=operation,
         ) from exc

@@ -415,6 +415,7 @@ def request_json(cfg: Config, path: str, payload: dict[str, Any], timeout: int) 
             payload=payload,
             timeout=timeout,
             response_limit=MAX_JSON_RESPONSE_BYTES,
+            proxy_url=cfg.proxy.get("url"),
         )
     except image_transport.TransportError as exc:
         if exc.status_code is not None:
@@ -441,6 +442,7 @@ def request_multipart(
             files=files,
             timeout=timeout,
             response_limit=MAX_JSON_RESPONSE_BYTES,
+            proxy_url=cfg.proxy.get("url"),
         )
     except image_transport.TransportError as exc:
         if exc.status_code is not None:
@@ -497,6 +499,7 @@ def generate(cfg: Config, args: argparse.Namespace, task: dict[str, Any] | None 
         params["output_format"],
         cfg.user_agent,
         params["direct_url_download"],
+        cfg.proxy.get("url"),
         expected_count=params["n"],
         expected_size=parse_size(params["size"]),
         planned_extra_dir=_planned_extra_dir(task),
@@ -555,6 +558,7 @@ def edit(cfg: Config, args: argparse.Namespace, task: dict[str, Any] | None = No
         params["output_format"],
         cfg.user_agent,
         params["direct_url_download"],
+        cfg.proxy.get("url"),
         expected_count=params["n"],
         expected_size=parse_size(params["size"]),
         planned_extra_dir=_planned_extra_dir(task),
@@ -590,6 +594,7 @@ def write_response_images(
     fmt: str,
     user_agent: str = DEFAULT_USER_AGENT,
     direct_url_download: bool = False,
+    proxy_url: str | None = None,
     expected_count: int | None = None,
     expected_size: tuple[int, int] | None = None,
     planned_extra_dir: Path | None = None,
@@ -599,7 +604,7 @@ def write_response_images(
             response,
             out_file,
             fmt,
-            lambda item: decode_image_item(item, user_agent, direct_url_download),
+            lambda item: decode_image_item(item, user_agent, direct_url_download, proxy_url),
             expected_count=expected_count,
             expected_size=expected_size,
             planned_extra_dir=planned_extra_dir,
@@ -617,6 +622,7 @@ def decode_image_item(
     item: dict[str, Any],
     user_agent: str = DEFAULT_USER_AGENT,
     direct_url_download: bool = False,
+    proxy_url: str | None = None,
 ) -> bytes:
     b64_value = item.get("b64_json")
     if isinstance(b64_value, str) and b64_value.strip():
@@ -626,7 +632,7 @@ def decode_image_item(
             raise ImagegenError(str(exc)) from exc
     url = item.get("url")
     if isinstance(url, str) and url.strip():
-        return download_image_url(url, user_agent, direct_url_download)
+        return download_image_url(url, user_agent, direct_url_download, proxy_url)
     raise ImagegenError("image item has neither b64_json nor url")
 
 
@@ -634,6 +640,7 @@ def download_image_url(
     url: str,
     user_agent: str = DEFAULT_USER_AGENT,
     direct_url_download: bool = False,
+    proxy_url: str | None = None,
 ) -> bytes:
     try:
         return _download_image_url(
@@ -641,6 +648,7 @@ def download_image_url(
             user_agent,
             DEFAULT_TIMEOUT_SECONDS,
             direct_url_download=direct_url_download,
+            proxy_url=proxy_url,
             direct_download_guidance=(
                 "direct fallback is disabled. Ask the user before retrying with "
                 "--allow-direct-url-download or enabling auth.json "
@@ -1105,6 +1113,7 @@ def info(cfg: Config) -> int:
             "llm_assisted": cfg.transparency.llm_assisted.to_record(),
         },
         "url_download": cfg.url_download,
+        "proxy": {"configured": bool(cfg.proxy.get("url"))},
         "script_path": display_path(Path(__file__).resolve()),
         "auth_json": display_path(AUTH_PATH),
         "api_key_source": cfg.api_key_source,

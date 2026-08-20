@@ -77,6 +77,7 @@ class ImageRuntimeTransportContractTests(unittest.TestCase):
             capabilities={"generate": True, "edit": True},
             postprocess={"enabled": False},
             user_agent="Imagegen-Test/1.0",
+            proxy={"url": "http://127.0.0.1:7890"},
         )
 
     def test_machine_json_and_multipart_requests_use_bounded_response_limit(self) -> None:
@@ -95,6 +96,26 @@ class ImageRuntimeTransportContractTests(unittest.TestCase):
             request_multipart.call_args.kwargs["response_limit"],
             self.imagegen.MAX_JSON_RESPONSE_BYTES,
         )
+        self.assertEqual(
+            request_json.call_args.kwargs["proxy_url"],
+            "http://127.0.0.1:7890",
+        )
+        self.assertEqual(
+            request_multipart.call_args.kwargs["proxy_url"],
+            "http://127.0.0.1:7890",
+        )
+
+    def test_machine_error_redaction_removes_the_configured_proxy_url(self) -> None:
+        message = "request failed through http://127.0.0.1:7890"
+
+        redacted = self.imagegen.redact_machine_error(
+            message,
+            self.cfg,
+            Path("C:/project"),
+        )
+
+        self.assertNotIn("http://127.0.0.1:7890", redacted)
+        self.assertIn("[REDACTED]", redacted)
 
     def test_base64_data_url_uses_bounded_decoder(self) -> None:
         encoded = "c25hcHNob3Q="
@@ -1122,6 +1143,7 @@ class ImageRuntimeMachineModeTests(unittest.TestCase):
                             "user_agent": "Example-Provider/1.0",
                             "api_key": "provider-secret",
                             "url_download": {"proxy_mode": "direct"},
+                            "proxy": {"url": "http://127.0.0.1:7890"},
                         }
                     },
                     "models": {
@@ -1165,6 +1187,7 @@ class ImageRuntimeMachineModeTests(unittest.TestCase):
         self.assertEqual(cfg.model, "gpt-image-2")
         self.assertEqual(cfg.defaults["quality"], "high")
         self.assertEqual(cfg.url_download["proxy_mode"], "direct")
+        self.assertEqual(cfg.proxy, {"url": "http://127.0.0.1:7890"})
         self.assertEqual(cfg.transparency.default_route, "emissive-alpha")
         self.assertEqual(len(cfg.transparency.prompt_only_allow), 1)
         self.assertEqual(cfg.transparency.prompt_only_allow[0].model, "gpt-image-2")

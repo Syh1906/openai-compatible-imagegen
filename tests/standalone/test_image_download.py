@@ -142,6 +142,59 @@ class ImageDownloadTests(unittest.TestCase):
                 if direct:
                     self.assertEqual(build_opener.call_args.args[0].proxies, {})
 
+    def test_download_uses_custom_proxy_when_direct_mode_is_disabled(self) -> None:
+        response = RecordingResponse()
+        opener = mock.MagicMock()
+        opener.open.return_value = response
+
+        with (
+            mock.patch.object(image_download.urllib.request, "urlopen") as urlopen,
+            mock.patch.object(
+                image_download.urllib.request,
+                "build_opener",
+                return_value=opener,
+            ) as build_opener,
+        ):
+            result = image_download.download_image_url(
+                "https://cdn.example.test/image.png",
+                "Imagegen-Test/1.0",
+                10,
+                proxy_url="http://127.0.0.1:7890",
+            )
+
+        self.assertEqual(result, PNG_BYTES)
+        urlopen.assert_not_called()
+        self.assertEqual(
+            build_opener.call_args.args[0].proxies,
+            {
+                "http": "http://127.0.0.1:7890",
+                "https": "http://127.0.0.1:7890",
+            },
+        )
+        opener.open.assert_called_once()
+
+    def test_direct_download_overrides_custom_proxy(self) -> None:
+        response = RecordingResponse()
+        opener = mock.MagicMock()
+        opener.open.return_value = response
+
+        with mock.patch.object(
+            image_download.urllib.request,
+            "build_opener",
+            return_value=opener,
+        ) as build_opener:
+            result = image_download.download_image_url(
+                "https://cdn.example.test/image.png",
+                "Imagegen-Test/1.0",
+                10,
+                direct_url_download=True,
+                proxy_url="http://127.0.0.1:7890",
+            )
+
+        self.assertEqual(result, PNG_BYTES)
+        self.assertEqual(build_opener.call_args.args[0].proxies, {})
+        opener.open.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()

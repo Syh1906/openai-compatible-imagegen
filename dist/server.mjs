@@ -51,7 +51,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 var define_RELEASE_IDENTITY_default;
 var init_define_RELEASE_IDENTITY = __esm({
   "<define:__RELEASE_IDENTITY__>"() {
-    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "1.1.1", serverBuildDigest: "c3d281d18c84e389284d5f7ddd513c90d90e08be1e31ae2cdc6c3e0fcd8d3c93", widgetAssetDigest: "aa3ca9ecff54c3d04b2f4dd8afecd84c5f3499bbc2341acbb28668c0440c69e7", fingerprint: "d700618afa4f9c57fa05", resourceUris: { result: "ui://openai-compatible-imagegen/result-d700618afa4f9c57fa05.html", editor: "ui://openai-compatible-imagegen/editor-d700618afa4f9c57fa05.html" } };
+    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "1.1.1", serverBuildDigest: "e9a5a1419e026c077846ebc6ba9a8498ad05872b73f807f717bad44df1c0a9c4", widgetAssetDigest: "aa3ca9ecff54c3d04b2f4dd8afecd84c5f3499bbc2341acbb28668c0440c69e7", fingerprint: "2f0234ba6d731e66d281", resourceUris: { result: "ui://openai-compatible-imagegen/result-2f0234ba6d731e66d281.html", editor: "ui://openai-compatible-imagegen/editor-2f0234ba6d731e66d281.html" } };
   }
 });
 
@@ -33101,7 +33101,8 @@ var PROVIDER_KEYS = /* @__PURE__ */ new Set([
   "api_key",
   "api_key_env",
   "user_agent",
-  "url_download"
+  "url_download",
+  "proxy"
 ]);
 var MODEL_KEYS = /* @__PURE__ */ new Set(["provider", "model", "capabilities"]);
 var CAPABILITY_KEYS = /* @__PURE__ */ new Set(["generate", "edit", "mask", "multi_reference"]);
@@ -33304,7 +33305,12 @@ async function readManagedConfig(configPath, invalidCode, optional2) {
 function redactConfig(config2) {
   const copy = structuredClone(config2);
   for (const provider of Object.values(copy.providers || {})) {
-    if (isRecord2(provider)) delete provider.api_key;
+    if (isRecord2(provider)) {
+      delete provider.api_key;
+      if (isRecord2(provider.proxy)) {
+        provider.proxy = { configured: typeof provider.proxy.url === "string" && Boolean(provider.proxy.url) };
+      }
+    }
   }
   return copy;
 }
@@ -33422,6 +33428,23 @@ function validateProvider(provider) {
     if (!(/* @__PURE__ */ new Set(["environment", "direct"])).has(provider.url_download.proxy_mode ?? "environment")) {
       throw invalidImageConfigError();
     }
+  }
+  if (provider.proxy !== void 0) validateProxy(provider.proxy);
+}
+function validateProxy(proxy) {
+  if (!isRecord2(proxy)) throw invalidImageConfigError();
+  requireExactKeys(proxy, /* @__PURE__ */ new Set(["url"]), "image_config_invalid");
+  if (typeof proxy.url !== "string" || proxy.url !== stripPythonWhitespace(proxy.url) || /[\x00-\x1f\x7f]/.test(proxy.url) || !/^https?:\/\/[^/]/.test(proxy.url)) {
+    throw invalidImageConfigError();
+  }
+  try {
+    const parsed = new URL(proxy.url);
+    if (!(/* @__PURE__ */ new Set(["http:", "https:"])).has(parsed.protocol) || !parsed.hostname || parsed.username || parsed.password || parsed.search || parsed.hash || parsed.pathname !== "/") {
+      throw invalidImageConfigError();
+    }
+  } catch (error40) {
+    if (error40 instanceof ImageConfigResolutionError) throw error40;
+    throw invalidImageConfigError();
   }
 }
 function validateCapabilities(value) {

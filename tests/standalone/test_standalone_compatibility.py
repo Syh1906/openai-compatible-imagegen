@@ -106,6 +106,7 @@ class StandaloneCompatibilityTests(unittest.TestCase):
                 llm_assisted=SimpleNamespace(to_record=lambda: {"enabled": False}),
             ),
             url_download={"proxy_mode": "environment"},
+            proxy={},
             api_key_source="env:IMAGE_API_KEY",
         )
         stdout = io.StringIO()
@@ -126,6 +127,7 @@ class StandaloneCompatibilityTests(unittest.TestCase):
                 "postprocess",
                 "transparency",
                 "url_download",
+                "proxy",
                 "script_path",
                 "auth_json",
                 "api_key_source",
@@ -133,6 +135,7 @@ class StandaloneCompatibilityTests(unittest.TestCase):
             },
         )
         self.assertEqual(info["api_key"], "***REDACTED***")
+        self.assertEqual(info["proxy"], {"configured": False})
 
         stderr = io.StringIO()
         with patch.object(sys, "argv", ["imagegen", "inspect-image", "missing.png"]), contextlib.redirect_stderr(stderr):

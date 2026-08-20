@@ -1,4 +1,4 @@
-<!-- updated: 2026-08-19 -->
+<!-- updated: 2026-08-20 -->
 # Configuration
 
 > Parent: [User guides](./README.md)
@@ -50,7 +50,23 @@ python3 "/absolute/path/to/openai-compatible-imagegen/scripts/imagegen.py" info
 
 Command flags override `auth.json` defaults. Per-row JSONL fields override shared batch flags.
 
-`url_download.proxy_mode` defaults to the environment proxy. If provider-returned image URLs repeatedly fail with TLS EOF through that proxy, approve one direct download with `--allow-direct-url-download`. Set the persistent mode to `direct` only after approving that provider's URL route. This setting affects returned image downloads, not image API requests, and the runtime never sends the API key to a returned URL.
+### Configure a provider proxy
+
+Leave `proxy` absent to keep the environment proxy behavior. To route this provider through a specific HTTP proxy and port, add this object to `auth.json`:
+
+```json
+{
+  "proxy": {
+    "url": "http://127.0.0.1:7890"
+  }
+}
+```
+
+The configured proxy handles generation requests, edit requests, and provider-returned image URL downloads. `proxy.url` must be a complete `http://` or `https://` URL with a host; an explicit port must be valid. SOCKS URLs, credentials, paths, queries, fragments, and control characters are rejected.
+
+`url_download.proxy_mode` defaults to `environment`. In that mode, downloads use `proxy.url` when configured and otherwise use the environment proxy. If provider-returned image URLs repeatedly fail with TLS EOF, approve one direct download with `--allow-direct-url-download`. Set the persistent mode to `direct` only after approving that provider's URL route. Direct mode overrides the configured proxy only for returned image downloads; generation and edit requests continue through `proxy.url`.
+
+A failed configured proxy request stops with its original network error. The runtime does not retry through the environment proxy or a direct connection, and it does not expose the proxy URL in the redacted configuration summary or public error details.
 
 ## Configure the Codex Plugin
 
@@ -61,9 +77,25 @@ The Plugin reads these fixed paths:
 | User baseline | `~/.codex/openai-compatible-imagegen/config.json` | Yes |
 | Project overrides | `<project>/.codex/openai-compatible-imagegen/config.json` | No |
 
-Start from `skills/openai-compatible-imagegen/references/config.example.json` in the installed Plugin.
+Start from `skills/openai-compatible-imagegen/references/config.example.json` in the installed Plugin. Its `proxy` object demonstrates the optional provider proxy; remove that object to retain environment proxy behavior.
 
 The user baseline declares the active profile, provider, model, authentication, defaults, transparency policy, resource limits, and storage. Prefer an environment variable for the credential.
+
+To route one Plugin provider through a specific proxy, add `proxy` to that provider in the user baseline:
+
+```json
+{
+  "providers": {
+    "primary": {
+      "proxy": {
+        "url": "http://127.0.0.1:7890"
+      }
+    }
+  }
+}
+```
+
+The same proxy validation and request routing apply to both packages. Plugin project configuration cannot declare or override `proxy`. After changing a user-level proxy, bind the project again so the runtime uses the new configuration digest. Configuration inspection reports only whether a proxy is configured, not its URL.
 
 The project file may override only:
 
@@ -72,7 +104,7 @@ The project file may override only:
 - `defaults.output_format`
 - `storage.output_directory`
 
-The project file cannot replace the active profile, provider, model, endpoint, authentication source, credential environment variable, timeout, concurrency, or route permissions. A rejected override stops before a network request.
+The project file cannot replace the active profile, provider, model, endpoint, proxy, authentication source, credential environment variable, timeout, concurrency, or route permissions. A rejected override stops before a network request.
 
 ### Configure through MCP
 

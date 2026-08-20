@@ -104,6 +104,58 @@ class ProviderConfigAdapterTests(unittest.TestCase):
 
         self.assertEqual(plugin.provider_id, "corp")
 
+    def test_standalone_and_plugin_adapters_preserve_custom_proxy_url(self) -> None:
+        proxy = {"url": "http://127.0.0.1:7890"}
+        standalone = provider_config.parse_standalone_config(
+            {
+                "base_url": "https://images.example.test/v1",
+                "api_key_env": "IMAGEGEN_TEST_KEY",
+                "model": "gpt-image-2",
+                "proxy": proxy,
+            },
+            require_api_key=True,
+        )
+        raw = plugin_config()
+        raw["providers"]["primary"]["proxy"] = proxy
+        plugin = provider_config.parse_plugin_config(
+            raw,
+            require_api_key=True,
+            model_profile_id="primary/gpt-image-2",
+        )
+
+        self.assertEqual(standalone.proxy, proxy)
+        self.assertEqual(plugin.proxy, proxy)
+
+    def test_adapters_reject_invalid_custom_proxy_urls(self) -> None:
+        invalid_urls = (
+            "socks5://127.0.0.1:7890",
+            "http:///missing-host",
+            "http://127.0.0.1:70000",
+            "http://user:password@127.0.0.1:7890",
+            "http://127.0.0.1:7890?mode=test",
+            "http://127.0.0.1:7890#fragment",
+            "http://127.0.0.1:7890\n",
+        )
+        for proxy_url in invalid_urls:
+            with self.subTest(proxy_url=proxy_url):
+                standalone = {
+                    "base_url": "https://images.example.test/v1",
+                    "api_key_env": "IMAGEGEN_TEST_KEY",
+                    "model": "gpt-image-2",
+                    "proxy": {"url": proxy_url},
+                }
+                with self.assertRaisesRegex(provider_config.ProviderConfigError, "proxy.url"):
+                    provider_config.parse_standalone_config(standalone, require_api_key=True)
+
+                raw = plugin_config()
+                raw["providers"]["primary"]["proxy"] = {"url": proxy_url}
+                with self.assertRaisesRegex(provider_config.ProviderConfigError, "proxy.url"):
+                    provider_config.parse_plugin_config(
+                        raw,
+                        require_api_key=True,
+                        model_profile_id="primary/gpt-image-2",
+                    )
+
 
 def plugin_config() -> dict:
     return {

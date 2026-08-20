@@ -718,6 +718,12 @@ class RequestHeaderTests(unittest.TestCase):
         response.close.assert_called_once_with()
 
     def test_info_reports_effective_user_agent(self) -> None:
+        self.cfg = self.imagegen.Config(
+            **{
+                **self.cfg.__dict__,
+                "proxy": {"url": "http://127.0.0.1:7890"},
+            }
+        )
         with mock.patch("builtins.print") as print_mock:
             self.imagegen.info(self.cfg)
 
@@ -728,6 +734,8 @@ class RequestHeaderTests(unittest.TestCase):
             self.imagegen.display_path(Path(self.imagegen.__file__).resolve()),
         )
         self.assertEqual(summary["api_key"], "***REDACTED***")
+        self.assertEqual(summary["proxy"], {"configured": True})
+        self.assertNotIn("127.0.0.1", json.dumps(summary))
         self.assertEqual(summary["transparency"]["default_route"], "chroma-matting")
         self.assertFalse(summary["transparency"]["llm_assisted"]["enabled"])
         self.assertNotIn("allow_generated_code", summary["transparency"]["llm_assisted"])

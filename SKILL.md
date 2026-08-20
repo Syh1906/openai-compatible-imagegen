@@ -38,6 +38,8 @@ The script accepts `data[].b64_json` and `data[].url` responses. Do not add `res
 
 If a returned image URL fails with a TLS EOF while direct download is disabled, explain the two explicit authorization choices: `--allow-direct-url-download` for one command or `auth.json url_download.proxy_mode="direct"` persistently. Do not enable either choice without user approval.
 
+When `auth.json proxy.url` is configured, generation, edit, and returned image URL requests use that HTTP proxy. Do not expose the URL or change it automatically. A proxy failure stops the operation; never retry through the environment proxy or a direct connection. `url_download.proxy_mode="direct"` overrides the proxy only for returned image downloads.
+
 ## Local Auth
 
 `auth.json` is local-only and must not be committed.
@@ -76,6 +78,7 @@ Important configuration fields:
 - `base_url`: OpenAI-compatible API base URL, usually ending in `/v1`.
 - `api_key` or `api_key_env`: local authentication.
 - `model`: default image model.
+- `proxy.url`: optional complete `http://` or `https://` proxy URL for this provider. Credentials, paths, queries, fragments, and SOCKS URLs are not accepted.
 - `url_download.proxy_mode`: `environment` or explicitly authorized `direct`.
 - `defaults`: values used when a request omits a parameter.
 - `postprocess.enabled`: default permission for local transparency processing; when false, transparent requests still reach the API and the returned originals are inspected without local pixel changes.

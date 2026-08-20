@@ -38,6 +38,7 @@ const PROVIDER_KEYS = new Set([
   "api_key_env",
   "user_agent",
   "url_download",
+  "proxy",
 ]);
 const MODEL_KEYS = new Set(["provider", "model", "capabilities"]);
 const CAPABILITY_KEYS = new Set(["generate", "edit", "mask", "multi_reference"]);
@@ -260,7 +261,12 @@ async function readManagedConfig(configPath, invalidCode, optional) {
 function redactConfig(config) {
   const copy = structuredClone(config);
   for (const provider of Object.values(copy.providers || {})) {
-    if (isRecord(provider)) delete provider.api_key;
+    if (isRecord(provider)) {
+      delete provider.api_key;
+      if (isRecord(provider.proxy)) {
+        provider.proxy = { configured: typeof provider.proxy.url === "string" && Boolean(provider.proxy.url) };
+      }
+    }
   }
   return copy;
 }
@@ -394,6 +400,38 @@ function validateProvider(provider) {
     if (!new Set(["environment", "direct"]).has(provider.url_download.proxy_mode ?? "environment")) {
       throw invalidImageConfigError();
     }
+  }
+  if (provider.proxy !== undefined) validateProxy(provider.proxy);
+}
+
+
+function validateProxy(proxy) {
+  if (!isRecord(proxy)) throw invalidImageConfigError();
+  requireExactKeys(proxy, new Set(["url"]), "image_config_invalid");
+  if (
+    typeof proxy.url !== "string"
+    || proxy.url !== stripPythonWhitespace(proxy.url)
+    || /[\x00-\x1f\x7f]/.test(proxy.url)
+    || !/^https?:\/\/[^/]/.test(proxy.url)
+  ) {
+    throw invalidImageConfigError();
+  }
+  try {
+    const parsed = new URL(proxy.url);
+    if (
+      !new Set(["http:", "https:"]).has(parsed.protocol)
+      || !parsed.hostname
+      || parsed.username
+      || parsed.password
+      || parsed.search
+      || parsed.hash
+      || parsed.pathname !== "/"
+    ) {
+      throw invalidImageConfigError();
+    }
+  } catch (error) {
+    if (error instanceof ImageConfigResolutionError) throw error;
+    throw invalidImageConfigError();
   }
 }
 

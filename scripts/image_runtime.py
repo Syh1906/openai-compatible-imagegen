@@ -129,6 +129,7 @@ def request_json(cfg: Config, path: str, payload: dict[str, Any], timeout: int) 
             payload=payload,
             timeout=timeout,
             response_limit=MAX_JSON_RESPONSE_BYTES,
+            proxy_url=cfg.proxy.get("url"),
         )
     except (image_transport.TransportError, ValueError) as exc:
         raise ImagegenError(str(exc)) from exc
@@ -151,6 +152,7 @@ def request_multipart(
             files=files,
             timeout=timeout,
             response_limit=MAX_JSON_RESPONSE_BYTES,
+            proxy_url=cfg.proxy.get("url"),
         )
     except (image_transport.TransportError, ValueError) as exc:
         raise ImagegenError(str(exc)) from exc
@@ -171,6 +173,7 @@ def decode_response_images(
     response: dict[str, Any],
     user_agent: str,
     direct_url_download: bool = False,
+    proxy_url: str | None = None,
     *,
     max_items: int = MAX_IMAGE_RESPONSE_ITEMS,
     total_limit: int = MAX_TOTAL_IMAGE_RESPONSE_BYTES,
@@ -193,7 +196,7 @@ def decode_response_images(
     for item in data:
         if not isinstance(item, dict):
             continue
-        raw = decode_image_item(item, user_agent, direct_url_download)
+        raw = decode_image_item(item, user_agent, direct_url_download, proxy_url)
         total_bytes += len(raw)
         if total_bytes > total_limit:
             raise ImagegenError(
@@ -210,6 +213,7 @@ def decode_image_item(
     item: dict[str, Any],
     user_agent: str = DEFAULT_USER_AGENT,
     direct_url_download: bool = False,
+    proxy_url: str | None = None,
 ) -> bytes:
     b64_value = item.get("b64_json")
     if isinstance(b64_value, str) and b64_value.strip():
@@ -223,7 +227,13 @@ def decode_image_item(
     url = item.get("url")
     if isinstance(url, str) and url.strip():
         try:
-            return download_image_url(url, user_agent, DEFAULT_TIMEOUT_SECONDS, direct_url_download)
+            return download_image_url(
+                url,
+                user_agent,
+                DEFAULT_TIMEOUT_SECONDS,
+                direct_url_download,
+                proxy_url=proxy_url,
+            )
         except ImageDownloadError as exc:
             raise ImagegenError(str(exc)) from exc
     raise ImagegenError("image item has neither b64_json nor url")
@@ -263,7 +273,7 @@ def publish_partial_response_images(
             issues.append({"code": "item_unusable", "responseIndex": response_index})
             continue
         try:
-            image_bytes = decode_image_item(item, cfg.user_agent, direct_download)
+            image_bytes = decode_image_item(item, cfg.user_agent, direct_download, cfg.proxy.get("url"))
         except Exception:
             issues.append({"code": "item_unusable", "responseIndex": response_index})
             continue
@@ -634,6 +644,7 @@ def run_machine_task(
                         response,
                         effective_cfg.user_agent,
                         effective_cfg.url_download.get("proxy_mode") == "direct",
+                        effective_cfg.proxy.get("url"),
                         max_items=1,
                         total_limit=MAX_TOTAL_IMAGE_RESPONSE_BYTES,
                     )
@@ -670,6 +681,7 @@ def run_machine_task(
                     response,
                     effective_cfg.user_agent,
                     effective_cfg.url_download.get("proxy_mode") == "direct",
+                    effective_cfg.proxy.get("url"),
                     max_items=params["count"],
                     total_limit=MAX_TOTAL_IMAGE_RESPONSE_BYTES,
                 )
@@ -1181,6 +1193,7 @@ def redact_machine_error(
         secrets_to_remove.append(str(Path(config_path).absolute()))
     if cfg is not None:
         secrets_to_remove.extend([cfg.api_key, cfg.base_url])
+        secrets_to_remove.append(cfg.proxy.get("url", ""))
     for value in secrets_to_remove:
         if value:
             redacted = redacted.replace(value, "[REDACTED]")

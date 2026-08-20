@@ -12,6 +12,7 @@ export const sharedCoreFileNames = Object.freeze([
   "image_transparency.py",
   "image_transport.py",
   "image_webp.py",
+  "network_proxy.py",
   "provider_config.py",
 ]);
 
@@ -73,6 +74,7 @@ export const runtimeFileNames = Object.freeze([
   "mask_policy.py",
   "image_runtime.py",
   "migrate_image_config.py",
+  "network_proxy.py",
   "posix_repository_fs.py",
   "provider_config.py",
   "repository_fs.py",

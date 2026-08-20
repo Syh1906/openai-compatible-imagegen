@@ -70,6 +70,7 @@ const EXPECTED_RUNTIME_FILES = [
   "mask_policy.py",
   "image_runtime.py",
   "migrate_image_config.py",
+  "network_proxy.py",
   "posix_repository_fs.py",
   "provider_config.py",
   "repository_fs.py",
