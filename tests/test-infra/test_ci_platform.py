@@ -91,6 +91,8 @@ class CiPlatformTests(unittest.TestCase):
         self.assertIn("GITHUB_WORKFLOW_REF", workflow)
         self.assertIn("CURRENT_REF_TYPE", workflow)
         self.assertIn("CURRENT_BRANCH", workflow)
+        self.assertIn('repository_default_branch="$(jq -r \'.default_branch\' <<< "$repository_json")"', workflow)
+        self.assertNotIn('default_branch="$(jq -r \'.repository.default_branch\' <<< "$run_json")"', workflow)
         self.assertIn("must run from the repository default branch", workflow)
         publish_start = workflow.index("  publish:")
         attempt_recheck = workflow.index("name: Revalidate the Release preflight attempt", publish_start)
