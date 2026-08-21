@@ -59,7 +59,6 @@ jobs:
           expected_workflow_id="$(jq -r '.id' <<< "$workflow_json")"
           run_repository="$(jq -r '.repository.full_name' <<< "$run_json")"
           run_head_repository="$(jq -r '.head_repository.full_name' <<< "$run_json")"
-          default_branch="$(jq -r '.repository.default_branch' <<< "$run_json")"
           run_head_branch="$(jq -r '.head_branch' <<< "$run_json")"
           run_attempt="$(jq -r '.run_attempt' <<< "$run_json")"
           run_path="$(jq -r '.path' <<< "$run_json")"
@@ -75,7 +74,7 @@ jobs:
             echo "The Release preflight run does not belong to this repository." >&2
             exit 1
           fi
-          if [[ -z "$default_branch" || "$default_branch" == "null" || "$default_branch" != "$repository_default_branch" || "$run_head_branch" != "$default_branch" ]]; then
+          if [[ -z "$repository_default_branch" || "$repository_default_branch" == "null" || "$run_head_branch" != "$repository_default_branch" ]]; then
             echo "The Release preflight run must use the repository default branch." >&2
             exit 1
           fi
@@ -91,7 +90,7 @@ jobs:
             echo "The Release preflight run does not expose a valid run attempt." >&2
             exit 1
           fi
-          echo "default_branch=$default_branch" >> "$GITHUB_OUTPUT"
+          echo "default_branch=$repository_default_branch" >> "$GITHUB_OUTPUT"
           echo "run_attempt=$run_attempt" >> "$GITHUB_OUTPUT"
           echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
       - name: Download verified preflight metadata
