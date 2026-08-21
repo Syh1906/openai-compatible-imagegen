@@ -1,20 +1,20 @@
 # Changelog
 
-This file records user-visible changes for each release of `openai-compatible-imagegen`.
+这里记录 `openai-compatible-imagegen` 每个版本面向用户的变化。
 
 ## [1.1.1] - 2026-08-22
 
-### Added
+### 新增
 
-- Add optional provider-specific HTTP proxy URLs for generation, editing, and returned image downloads in both the Standalone Skill and Codex Plugin. Existing environment proxy behavior remains the default, and download-only direct mode retains priority when explicitly enabled.
-- Add user-configured model IDs and native transparency routing for Standalone and Plugin. Native transparency can retry once without the provider parameter and then use the configured local fallback route; results record the attempts and final QA route.
-- Automatically present successful generation, edit, batch, and delivery results in the result card; historical images remain available through `render_image_results`.
+- 可为 Standalone Skill 和 Codex Plugin 配置供应商专用的 HTTP 代理，用于生成、编辑和下载供应商返回的图片；未配置时仍沿用环境代理。
+- 模型 ID 由用户配置，支持供应商的自定义值。需要透明图片时，运行时会按配置尝试原生透明；供应商拒绝后默认去掉透明参数重试一次，再按配置使用本地透明处理。
+- 生成、编辑、批处理和交付成功后自动显示结果卡；历史图片仍可通过 `render_image_results` 查看。
 
-### Fixed
+### 修复
 
-- Prevent concurrent Codex Plugin tools from intermittently reporting a valid project binding as unavailable while another Plugin process refreshes it.
-- Update result cards immediately when the Codex host locale changes instead of waiting for a later artifact refresh.
-- Start result-card artifact reads from valid standard tool input even when the host omits a projected tool-result notification, avoiding an indefinite loading state.
+- 修复多个 Codex Plugin 工具并发刷新项目绑定时，偶尔把有效绑定报告为不可用的问题。
+- Codex 主机语言切换后，结果卡会立即更新，不再等待下一次产物刷新。
+- 修复部分主机未提供附加通知时结果卡一直读取中的问题。
 
 ## [1.1.0] - 2026-08-19
 

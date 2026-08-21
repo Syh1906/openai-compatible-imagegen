@@ -4,7 +4,11 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 
 const projectRoot = fileURLToPath(new URL("..", import.meta.url));
-const requiredSections = ["Highlights", "Install", "Known limitations"];
+const requiredSections = [
+  ["Highlights", "重点变化"],
+  ["Install", "安装"],
+  ["Known limitations", "已知限制"],
+];
 
 
 export async function validateReleaseNotes({ projectRoot: root, releaseTag }) {
@@ -47,17 +51,19 @@ function validateNotesBody(notes, releaseTag) {
     const bodyEnd = headings[index + 1]?.index ?? normalized.length;
     sections.set(heading[1], normalized.slice(bodyStart, bodyEnd).trim());
   }
-  if (requiredSections.some((name) => !sections.get(name))) {
-    throw new Error("release notes must contain non-empty ## Highlights, ## Install, and ## Known limitations sections");
+  if (requiredSections.some((names) => !names.some((name) => sections.get(name)))) {
+    throw new Error("release notes must contain non-empty Highlights/重点变化, Install/安装, and Known limitations/已知限制 sections");
   }
   const firstSection = normalized.indexOf("\n## ");
   if (firstSection <= 0 || normalized.slice(0, firstSection).trim().length === 0) {
     throw new Error("release notes must start with a summary paragraph");
   }
-  if (!sections.get("Install").includes(`/blob/${releaseTag}/docs/guides/installation.md`)) {
+  const installSection = sections.get("Install") ?? sections.get("安装");
+  if (!installSection.includes(`/blob/${releaseTag}/docs/guides/installation.md`)
+    && !installSection.includes(`/blob/${releaseTag}/docs/guides/installation.zh-CN.md`)) {
     throw new Error(`the Install section must link to the ${releaseTag} installation guide`);
   }
-  if (!sections.get("Install").includes("SHA256SUMS")) {
+  if (!installSection.includes("SHA256SUMS")) {
     throw new Error("the Install section must require SHA256SUMS verification");
   }
   if (/(?:^|[\s("'])[A-Za-z]:[\\/]|(?:^|[\s("'])\/(?:home|Users)\//m.test(normalized)) {
