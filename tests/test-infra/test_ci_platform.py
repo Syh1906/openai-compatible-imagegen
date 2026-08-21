@@ -84,6 +84,10 @@ class CiPlatformTests(unittest.TestCase):
         self.assertIn("ref: ${{ needs.validate_release.outputs.preflight_sha }}", workflow)
         self.assertIn("candidate-windows-${{ needs.validate_release.outputs.run_attempt }}", workflow)
         self.assertIn("preflight-metadata-${{ steps.preflight.outputs.run_attempt }}", workflow)
+        self.assertLess(
+            workflow.index("name: Check out the authenticated preflight SHA"),
+            workflow.index("name: Download verified preflight metadata"),
+        )
         publish_start = workflow.index("  publish:")
         recheck = workflow.index("name: Revalidate the remote annotated tag", publish_start)
         create = workflow.index("name: Create the GitHub Release", publish_start)
