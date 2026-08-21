@@ -57,6 +57,28 @@ class TransparencyPlanTests(unittest.TestCase):
         self.assertIn(str(plan.key_hex), plan.prompt)
         self.assertNotIn("background=transparent", plan.prompt)
 
+    def test_native_alpha_policy_resolves_without_model_whitelist_lock(self) -> None:
+        policy = resolve_policy(
+            {
+                "default_route": "native-alpha",
+                "native": {
+                    "enabled": True,
+                    "model_ids": ["vendor-image-alpha"],
+                    "retry_without_parameter": True,
+                    "fallback_route": "chroma-matting",
+                },
+            }
+        )
+
+        plan = resolve_plan(
+            self.context(model="vendor-image-alpha", postprocess_allowed=True),
+            policy,
+        )
+
+        self.assertEqual(plan.mode, "native-alpha")
+        self.assertIn("real alpha", plan.prompt.lower())
+        self.assertEqual(plan.options["native_parameter"], "transparent")
+
     def test_exact_prompt_only_rule_adds_real_alpha_contract(self) -> None:
         policy = resolve_policy(
             {

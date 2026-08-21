@@ -958,6 +958,89 @@ class ParameterResolutionTests(unittest.TestCase):
         self.assertIn("#00FF00", payload["prompt"])
         self.assertEqual(result["transparency"]["mode"], "chroma-matting")
 
+    def test_generate_native_alpha_sends_transparent_background_only_for_transparent_intent(self) -> None:
+        from image_transparency import resolve_policy
+
+        cfg = self.imagegen.Config(
+            **{
+                **self.cfg.__dict__,
+                "transparency": resolve_policy(
+                    {
+                        "default_route": "native-alpha",
+                        "native": {
+                            "enabled": True,
+                            "model_ids": ["gpt-image-2"],
+                            "retry_without_parameter": True,
+                            "fallback_route": "chroma-matting",
+                        },
+                    }
+                ),
+            }
+        )
+        args = self.make_args(
+            transparent=True,
+            size="1024x1024",
+            prompt="A red enamel badge",
+            file=str(ROOT / "unused-native-result.png"),
+        )
+
+        with (
+            mock.patch.object(self.imagegen, "request_json", return_value={"data": []}) as request_json,
+            mock.patch.object(
+                self.imagegen,
+                "write_response_images",
+                return_value={"files": [], "warnings": [], "api_delivery": {"status": "published", "items": []}},
+            ),
+        ):
+            result = self.imagegen.generate(cfg, args)
+
+        payload = self.imagegen.drop_none(request_json.call_args.args[2])
+        self.assertEqual(payload["background"], "transparent")
+        self.assertEqual(payload["output_format"], "png")
+        self.assertIn("genuinely transparent", payload["prompt"])
+        self.assertEqual(result["transparency"]["mode"], "native-alpha")
+
+    def test_generate_native_alpha_retries_without_parameter_after_transparency_rejection(self) -> None:
+        from image_transparency import resolve_policy
+
+        cfg = self.imagegen.Config(
+            **{
+                **self.cfg.__dict__,
+                "postprocess": {"enabled": True},
+                "transparency": resolve_policy(
+                    {
+                        "default_route": "native-alpha",
+                        "native": {
+                            "enabled": True,
+                            "retry_without_parameter": True,
+                            "fallback_route": "chroma-matting",
+                        },
+                    }
+                ),
+            }
+        )
+        args = self.make_args(transparent=True, prompt="A red enamel badge", file=str(ROOT / "unused-native-retry.png"))
+        rejected = self.imagegen.ApiRequestError(
+            "API HTTP 422: background transparent is not supported",
+            status_code=422,
+            operation="images/generations",
+        )
+        with (
+            mock.patch.object(self.imagegen, "request_json", side_effect=[rejected, {"data": []}]) as request_json,
+            mock.patch.object(
+                self.imagegen,
+                "write_response_images",
+                return_value={"files": [], "warnings": [], "api_delivery": {"status": "published", "items": []}},
+            ),
+        ):
+            result = self.imagegen.generate(cfg, args)
+
+        self.assertEqual(request_json.call_count, 2)
+        self.assertEqual(request_json.call_args_list[0].args[2]["background"], "transparent")
+        self.assertNotIn("background", request_json.call_args_list[1].args[2])
+        self.assertEqual(result["transparency"]["mode"], "chroma-matting")
+        self.assertTrue(result["transparency"]["retried_without_parameter"])
+
     def test_generate_uses_explicit_emissive_route_and_tuning(self) -> None:
         args = self.make_args(
             transparent=True,

@@ -46,6 +46,7 @@ class EffectiveImageConfig:
     defaults: dict[str, Any]
     postprocess: dict[str, Any]
     provider_id: str = "primary"
+    profile_id: str = "primary/gpt-image-2"
     capabilities: dict[str, Any] = field(default_factory=dict)
     transparency: TransparencyPolicy = field(default_factory=TransparencyPolicy)
     user_agent: str = DEFAULT_USER_AGENT
@@ -115,6 +116,7 @@ def parse_plugin_config(
         model=model,
         defaults=raw.get("defaults") if isinstance(raw.get("defaults"), dict) else {},
         provider_id=provider_id,
+        profile_id=model_profile_id,
         capabilities=normalize_model_capabilities(profile.get("capabilities")),
         postprocess=resolve_postprocess_config(raw.get("postprocess")),
         transparency=transparency,

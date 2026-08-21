@@ -160,8 +160,8 @@ def _normalize_mask_policy_body(policy: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("mask policy body fields are invalid")
     if policy["policyVersion"] != MASK_POLICY_VERSION:
         raise ValueError("mask policy version is unsupported")
-    if policy["modelProfileId"] != "primary/gpt-image-2":
-        raise ValueError("mask policy model profile is unsupported")
+    if not isinstance(policy["modelProfileId"], str) or not policy["modelProfileId"].strip():
+        raise ValueError("mask policy model profile is invalid")
     required_capabilities = policy["requiredCapabilities"]
     if (
         not isinstance(required_capabilities, dict)
@@ -239,7 +239,7 @@ def _normalize_mask_policy_body(policy: dict[str, Any]) -> dict[str, Any]:
 
     return {
         "policyVersion": MASK_POLICY_VERSION,
-        "modelProfileId": "primary/gpt-image-2",
+        "modelProfileId": policy["modelProfileId"],
         "requiredCapabilities": {"mask": True},
         "strategy": expected_strategy,
         "parentImageId": parent_image_id,

@@ -62,7 +62,12 @@ const CONFIG_TEMPLATE = Object.freeze({
   } },
   defaults: { size: "1536x1024", quality: "auto", output_format: "png" },
   postprocess: { enabled: true },
-  transparency: { default_route: "chroma-matting", prompt_only_allow: [], llm_assisted: {
+  transparency: { default_route: "native-alpha", native: {
+    enabled: true,
+    model_ids: ["gpt-image-1", "gpt-image-1.5", "gpt-image-2"],
+    retry_without_parameter: true,
+    fallback_route: "chroma-matting",
+  }, prompt_only_allow: [], llm_assisted: {
     enabled: false, max_attempts: 2, allow_parameter_tuning: true,
     allow_route_change: true, allow_api_retry: false,
   } },
@@ -110,7 +115,25 @@ export async function initializeImageConfig({ userHome = os.homedir(), projectRo
     if (error?.code === "EEXIST") throw new ImageConfigManagementError("image_config_exists");
     throw new ImageConfigManagementError("image_config_write_failed");
   }
-  return { created: true, path: target, config: redactConfig(CONFIG_TEMPLATE), gitignoreUpdated: true };
+  return {
+    created: true,
+    path: target,
+    config: redactConfig(CONFIG_TEMPLATE),
+    gitignoreUpdated: true,
+    nextSteps: [
+      "设置 provider.api_key_env 对应的环境变量",
+      "按供应商实际值修改 active_profile 和 models.<profile>.model，模型 ID 不要求使用标准名称",
+      "新配置默认启用 native-alpha；如果保留旧配置，请在 inspect_image_config 的提示下显式更新透明策略",
+      "确认 transparency.native.model_ids 只是能力声明；不确定时可留空数组",
+      "调用 inspect_image_config 检查有效配置，然后重新绑定项目",
+    ],
+    guidance: {
+      modelIdIsUserConfigured: true,
+      nativeModelIdsAreCapabilityDeclaration: true,
+      retryWithoutParameterDefault: true,
+      requiresRebind: true,
+    },
+  };
 }
 
 export async function inspectImageConfig({ userHome = os.homedir(), projectRoot } = {}) {
@@ -119,9 +142,40 @@ export async function inspectImageConfig({ userHome = os.homedir(), projectRoot 
   const project = projectRoot
     ? await readManagedConfig(projectConfigPath(projectRoot), "project_config_invalid", true)
     : null;
+  const activeProfile = user?.active_profile || null;
+  const activeModel = activeProfile && user?.models?.[activeProfile];
+  const transparency = user?.transparency || {};
+  const native = transparency.native || {};
+  const warnings = [];
+  const nextSteps = [];
+  if (!isRecord(transparency.native) && transparency.default_route !== "native-alpha") {
+    warnings.push("当前配置未声明 transparency.native；为保持兼容仍使用旧透明路线。若要启用原生透明，请更新透明配置并重新绑定项目。");
+    nextSteps.push("将 transparency.default_route 设置为 native-alpha，并确认 transparency.native.enabled=true");
+  }
+  if (activeModel?.model && Array.isArray(native.model_ids) && native.model_ids.length && !native.model_ids.includes(activeModel.model)) {
+    warnings.push("当前模型 ID 未列入 transparency.native.model_ids；明确请求 native-alpha 仍会交由供应商判定。");
+  }
+  if (!nextSteps.length) nextSteps.push("确认当前模型和透明策略后重新绑定项目");
   return {
     user: { path: userPath, exists: Boolean(user), config: user ? redactConfig(user) : null },
     project: { path: projectRoot ? projectConfigPath(projectRoot) : null, exists: Boolean(project), config: project ? redactConfig(project) : null },
+    activeProfile,
+    provider: activeModel?.provider || null,
+    modelId: activeModel?.model || null,
+    transparencySummary: {
+      defaultRoute: transparency.default_route || "chroma-matting",
+      nativeEnabled: native.enabled === true,
+      nativeModelIds: Array.isArray(native.model_ids) ? native.model_ids : [],
+      retryWithoutParameter: native.retry_without_parameter !== false,
+      fallbackRoute: native.fallback_route || "chroma-matting",
+    },
+    capabilitySummary: {
+      modelIdConfiguredByUser: true,
+      nativeModelIdsAreDeclarationOnly: true,
+      providerValidationPending: true,
+    },
+    warnings,
+    nextSteps,
   };
 }
 
@@ -136,7 +190,15 @@ export async function updateImageConfig({ userHome = os.homedir(), projectRoot, 
   if (scope === "project") validateProjectConfig(next); else validateUserConfig(next);
   await ensureConfigIgnored(target);
   await writeManagedConfig(target, next);
-  return { scope, path: target, config: redactConfig(next) };
+  return {
+    scope,
+    path: target,
+    config: redactConfig(next),
+    changeSummary: Object.keys(changes),
+    validation: { ok: true },
+    requiresRebind: true,
+    nextSteps: ["重新绑定项目以刷新有效配置快照", "调用 inspect_image_config 确认模型和透明策略"],
+  };
 }
 
 export class ImageConfigManagementError extends Error {
@@ -183,7 +245,7 @@ export async function resolveImageConfigBinding({
     projectConfigSha256: projectBytes === null ? null : sha256(projectBytes),
     effectiveConfigJson,
     effectiveConfigSha256: sha256(Buffer.from(effectiveConfigJson, "utf8")),
-    activeProfile: ACTIVE_PROFILE,
+    activeProfile: userConfig.active_profile,
     runtimeDefaults: Object.freeze({
       timeout_seconds: defaults.timeout_seconds ?? DEFAULT_TIMEOUT_SECONDS,
       concurrency: defaults.concurrency ?? DEFAULT_CONCURRENCY,
@@ -333,15 +395,15 @@ function parseConfigSnapshot(configBytes, errorCode) {
 
 function validateUserConfig(config) {
   requireExactKeys(config, USER_TOP_LEVEL_KEYS, "image_config_invalid");
-  if (config.config_version !== 1 || config.active_profile !== ACTIVE_PROFILE) {
+  if (config.config_version !== 1 || typeof config.active_profile !== "string" || !config.active_profile.trim()) {
     throw invalidImageConfigError();
   }
   if (!isRecord(config.providers) || !isRecord(config.models)) throw invalidImageConfigError();
 
-  const model = config.models[ACTIVE_PROFILE];
+  const model = config.models[config.active_profile];
   if (!isRecord(model)) throw invalidImageConfigError();
   requireExactKeys(model, MODEL_KEYS, "image_config_invalid");
-  if (model.model !== "gpt-image-2" || typeof model.provider !== "string") {
+  if (typeof model.model !== "string" || !model.model.trim() || model.model.trim() !== model.model || typeof model.provider !== "string") {
     throw invalidImageConfigError();
   }
   const providerId = stripPythonWhitespace(model.provider);
@@ -477,11 +539,19 @@ function validatePostprocess(value) {
 function validateTransparency(value) {
   if (value === undefined) return;
   if (!isRecord(value)) throw invalidImageConfigError();
-  const allowed = new Set(["default_route", "prompt_only_allow", "llm_assisted"]);
+  const allowed = new Set(["default_route", "native", "prompt_only_allow", "llm_assisted"]);
   if (unknownKeys(value, allowed).length) throw invalidImageConfigError();
   if (value.default_route !== undefined) {
     const route = String(value.default_route || "chroma-matting").trim().toLowerCase();
-    if (!new Set(["chroma-matting", "emissive-alpha", "mask-alpha"]).has(route)) throw invalidImageConfigError();
+    if (!new Set(["chroma-matting", "emissive-alpha", "mask-alpha", "native-alpha"]).has(route)) throw invalidImageConfigError();
+    if (route === "native-alpha" && (!isRecord(value.native) || value.native.enabled !== true)) throw invalidImageConfigError();
+  }
+  if (value.native !== undefined) {
+    if (!isRecord(value.native) || unknownKeys(value.native, new Set(["enabled", "model_ids", "retry_without_parameter", "fallback_route"])).length) throw invalidImageConfigError();
+    if (value.native.enabled !== undefined && typeof value.native.enabled !== "boolean") throw invalidImageConfigError();
+    if (value.native.retry_without_parameter !== undefined && typeof value.native.retry_without_parameter !== "boolean") throw invalidImageConfigError();
+    if (value.native.model_ids !== undefined && (!Array.isArray(value.native.model_ids) || value.native.model_ids.some((model) => typeof model !== "string" || !model.trim() || model !== model.trim()) || new Set(value.native.model_ids).size !== value.native.model_ids.length)) throw invalidImageConfigError();
+    if (value.native.fallback_route !== undefined && !new Set(["chroma-matting", "emissive-alpha", "mask-alpha"]).has(value.native.fallback_route)) throw invalidImageConfigError();
   }
   if (value.prompt_only_allow !== undefined) {
     if (!Array.isArray(value.prompt_only_allow)) throw invalidImageConfigError();

@@ -65,6 +65,25 @@ class ProviderConfigAdapterTests(unittest.TestCase):
                         model_profile_id="primary/gpt-image-2",
                     )
 
+    def test_plugin_adapter_accepts_custom_profile_and_model_ids(self) -> None:
+        raw = plugin_config()
+        raw["active_profile"] = "vendor/custom-profile"
+        raw["models"] = {
+            "vendor/custom-profile": {
+                "provider": "primary",
+                "model": "vendor-image-alpha",
+                "capabilities": {"generate": True},
+            }
+        }
+
+        parsed = provider_config.parse_plugin_config(
+            raw,
+            require_api_key=True,
+            model_profile_id="vendor/custom-profile",
+        )
+
+        self.assertEqual(parsed.model, "vendor-image-alpha")
+
     def test_plugin_adapter_rejects_removed_transparent_background_capability(self) -> None:
         raw = plugin_config()
         raw["models"]["primary/gpt-image-2"]["capabilities"]["transparent_background"] = True

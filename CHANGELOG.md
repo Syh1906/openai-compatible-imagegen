@@ -2,16 +2,19 @@
 
 This file records user-visible changes for each release of `openai-compatible-imagegen`.
 
-## [Unreleased]
+## [1.1.1] - 2026-08-22
 
 ### Added
 
 - Add optional provider-specific HTTP proxy URLs for generation, editing, and returned image downloads in both the Standalone Skill and Codex Plugin. Existing environment proxy behavior remains the default, and download-only direct mode retains priority when explicitly enabled.
+- Add user-configured model IDs and native transparency routing for Standalone and Plugin. Native transparency can retry once without the provider parameter and then use the configured local fallback route; results record the attempts and final QA route.
+- Automatically present successful generation, edit, batch, and delivery results in the result card; historical images remain available through `render_image_results`.
 
 ### Fixed
 
 - Prevent concurrent Codex Plugin tools from intermittently reporting a valid project binding as unavailable while another Plugin process refreshes it.
 - Update result cards immediately when the Codex host locale changes instead of waiting for a later artifact refresh.
+- Start result-card artifact reads from valid standard tool input even when the host omits a projected tool-result notification, avoiding an indefinite loading state.
 
 ## [1.1.0] - 2026-08-19
 
@@ -227,7 +230,8 @@ This file records user-visible changes for each release of `openai-compatible-im
 - Publish the initial Agent Skills-compatible image generation workflow.
 - Support OpenAI-compatible image generation, image editing, local authentication, transparent asset intent, and JSONL batches.
 
-[Unreleased]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v1.1.1...HEAD
+[1.1.1]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v1.0.2...v1.1.0
 [1.0.2]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v1.0.0...v1.0.1

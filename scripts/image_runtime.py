@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import replace
 import hashlib
 import json
 import re
@@ -39,6 +40,13 @@ from scripts.image_transparency_contract import (
     parse_transparency_request,
     resolve_transparency_request,
     restore_transparency_plan,
+    transparency_storage_record,
+)
+from scripts.image_transparency import (
+    NativeTransparencyPolicy,
+    TransparencyContext,
+    TransparencyPolicy,
+    resolve_plan,
 )
 from scripts.mask_policy import (
     MASK_GUARD_V2_BY_STRATEGY,
@@ -61,6 +69,7 @@ from scripts.repository_fs import SubmissionLock
 
 
 DeliveryError = image_delivery.DeliveryError
+ProviderRequestError = image_transport.TransportError
 
 
 SUBMISSION_ID_PATTERN = re.compile(r"^sub_[0-9a-f]{32}$")
@@ -131,7 +140,9 @@ def request_json(cfg: Config, path: str, payload: dict[str, Any], timeout: int) 
             response_limit=MAX_JSON_RESPONSE_BYTES,
             proxy_url=cfg.proxy.get("url"),
         )
-    except (image_transport.TransportError, ValueError) as exc:
+    except image_transport.TransportError as exc:
+        raise _provider_image_error(exc) from exc
+    except ValueError as exc:
         raise ImagegenError(str(exc)) from exc
 
 
@@ -154,8 +165,64 @@ def request_multipart(
             response_limit=MAX_JSON_RESPONSE_BYTES,
             proxy_url=cfg.proxy.get("url"),
         )
-    except (image_transport.TransportError, ValueError) as exc:
+    except image_transport.TransportError as exc:
+        raise _provider_image_error(exc) from exc
+    except ValueError as exc:
         raise ImagegenError(str(exc)) from exc
+
+
+def _provider_image_error(exc: image_transport.TransportError) -> ImagegenError:
+    error = ImagegenError(str(exc))
+    error.status_code = exc.status_code
+    error.operation = exc.operation
+    return error
+
+
+def _is_transparency_parameter_rejection(exc: BaseException) -> bool:
+    status_code = getattr(exc, "status_code", None)
+    if status_code not in {400, 422}:
+        return False
+    message = str(exc).lower()
+    return any(
+        marker in message
+        for marker in (
+            "background",
+            "transparent",
+            "transparency",
+            "alpha channel",
+            "output_format",
+        )
+    )
+
+
+def request_with_transparency_retry(
+    request_call: Any,
+    payload: dict[str, Any],
+    transparency: ResolvedTransparency | None,
+    fallback_builder: Any,
+) -> tuple[dict[str, Any], ResolvedTransparency | None, int]:
+    try:
+        return request_call(payload), transparency, 1
+    except (ImagegenError, image_transport.TransportError) as exc:
+        if (
+            transparency is None
+            or transparency.plan.mode != "native-alpha"
+            or not transparency.plan.native_retry_without_parameter
+            or "background" not in payload
+            or not _is_transparency_parameter_rejection(exc)
+        ):
+            raise
+        retry_payload = dict(payload)
+        retry_payload.pop("background", None)
+        fallback = fallback_builder()
+        fallback.record["native_attempted"] = True
+        fallback.record["native_parameter"] = "rejected"
+        fallback.record["retried_without_parameter"] = True
+        fallback.record["warnings"] = [
+            "native_transparency_rejected",
+            "transparent_delivery_fell_back_to_local_processing",
+        ]
+        return request_call(retry_payload), fallback, 2
 
 
 def build_multipart_body(
@@ -294,7 +361,7 @@ def publish_partial_response_images(
             stored = repository.store_response_images(
                 images=[image_bytes],
                 provider=cfg.provider_id,
-                model="gpt-image-2",
+                model=cfg.model,
                 operation=operation,
                 prompt=prompt,
                 parameters=item_parameters,
@@ -359,6 +426,14 @@ def read_png_rgba(path: Path) -> dict[str, Any]:
     return {"width": decoded.width, "height": decoded.height, "pixels": pixels}
 
 
+def image_has_alpha(image_bytes: bytes) -> bool:
+    try:
+        decoded = decode_png_rgba(image_bytes)
+    except ValueError:
+        return False
+    return any(decoded.pixels[index] < 255 for index in range(3, len(decoded.pixels), 4))
+
+
 def parse_size(value: str) -> tuple[int, int]:
     match = re.fullmatch(r"(\d+)x(\d+)", value.strip())
     if not match:
@@ -383,7 +458,7 @@ def run_machine_task(
         if not isinstance(task, dict):
             raise MachineTaskError("invalid_task", "machine task must be a JSON object")
         profile_id = str(task.get("modelProfileId") or "")
-        if profile_id != "primary/gpt-image-2":
+        if not profile_id:
             raise MachineTaskError(
                 "unsupported_model_profile",
                 f"unsupported model profile: {profile_id or '(missing)'}",
@@ -431,10 +506,10 @@ def run_machine_task(
                 )
             except ImagegenError as exc:
                 raise MachineTaskError("image_config_invalid", str(exc)) from exc
-        if effective_cfg.model != "gpt-image-2":
+        if profile_id != effective_cfg.profile_id:
             raise MachineTaskError(
                 "unsupported_model_profile",
-                f"configured model does not match {profile_id}",
+                f"unsupported model profile: {profile_id}",
             )
         if operation == "list_models":
             return {
@@ -613,7 +688,7 @@ def run_machine_task(
             raise MachineTaskError("invalid_task", str(exc)) from exc
         request_prompt = masked_context.effective_prompt if masked_context else planned_prompt
         payload = {
-            "model": "gpt-image-2",
+            "model": effective_cfg.model,
             "prompt": request_prompt,
             "size": params["size"],
             "quality": params["quality"],
@@ -626,20 +701,59 @@ def run_machine_task(
             "output_format": params["format"],
             "output_compression": params["compression"],
         }
+        if transparency is not None and transparency.plan.mode == "native-alpha":
+            payload["background"] = "transparent"
+            payload["output_format"] = "png"
         batch_response: dict[str, Any] | None = None
+        transparency_attempts = 1
+        native_fallback_used = False
         if operation == "generate":
             if is_batch_item:
-                batch_response = request_json(
-                    effective_cfg,
-                    "images/generations",
+                batch_response, transparency, transparency_attempts = request_with_transparency_retry(
+                    lambda request_payload: request_json(
+                        effective_cfg,
+                        "images/generations",
+                        request_payload,
+                        params["timeout"],
+                    ),
                     payload,
-                    params["timeout"],
+                    transparency,
+                    lambda: fallback_transparency_plan(
+                        transparency,
+                        prompt=prompt,
+                        operation=operation,
+                        params=params,
+                        cfg=effective_cfg,
+                        reference_paths=tuple(parent_paths),
+                    ),
                 )
+                native_fallback_used = transparency is not None and transparency.plan.mode != "native-alpha"
                 images: list[bytes] = []
             else:
                 images = []
                 for candidate_index in range(params["count"]):
-                    response = request_json(effective_cfg, "images/generations", payload, params["timeout"])
+                    response, transparency, attempts = request_with_transparency_retry(
+                        lambda request_payload: request_json(
+                            effective_cfg,
+                            "images/generations",
+                            request_payload,
+                            params["timeout"],
+                        ),
+                        payload,
+                        transparency,
+                        lambda: fallback_transparency_plan(
+                            transparency,
+                            prompt=prompt,
+                            operation=operation,
+                            params=params,
+                            cfg=effective_cfg,
+                            reference_paths=tuple(parent_paths),
+                        ),
+                    )
+                    transparency_attempts = max(transparency_attempts, attempts)
+                    native_fallback_used = native_fallback_used or (
+                        transparency is not None and transparency.plan.mode != "native-alpha"
+                    )
                     candidate_images = decode_response_images(
                         response,
                         effective_cfg.user_agent,
@@ -665,13 +779,26 @@ def run_machine_task(
                     files.append(("image[]", parent_path, parent_snapshot))
             if masked_context:
                 files.append(("mask", masked_context.mask_path, masked_context.mask_snapshot))
-            response = request_multipart(
-                effective_cfg,
-                "images/edits",
-                {key: value for key, value in payload.items() if key != "moderation"},
-                files,
-                params["timeout"],
+            response, transparency, transparency_attempts = request_with_transparency_retry(
+                lambda request_payload: request_multipart(
+                    effective_cfg,
+                    "images/edits",
+                    {key: value for key, value in request_payload.items() if key != "moderation"},
+                    files,
+                    params["timeout"],
+                ),
+                payload,
+                transparency,
+                lambda: fallback_transparency_plan(
+                    transparency,
+                    prompt=prompt,
+                    operation=operation,
+                    params=params,
+                    cfg=effective_cfg,
+                    reference_paths=tuple(parent_paths),
+                ),
             )
+            native_fallback_used = transparency is not None and transparency.plan.mode != "native-alpha"
             parent_ids = [input_ids[0]]
             if is_batch_item:
                 batch_response = response
@@ -695,9 +822,46 @@ def run_machine_task(
                         images = finalize_masked_images(masked_context, images)
                     except ValueError as exc:
                         raise MachineTaskError("image_task_failed", str(exc)) from exc
+        if transparency is not None and transparency.plan.mode == "native-alpha":
+            transparency = ResolvedTransparency(
+                plan=replace(
+                    transparency.plan,
+                    native_attempted=True,
+                    native_parameter="sent",
+                    api_attempts=transparency_attempts,
+                ),
+                record=transparency.record,
+                mask_image_id=transparency.mask_image_id,
+            )
+            transparency.record.update(transparency.plan.to_record())
+        if transparency is not None and transparency.plan.mode == "native-alpha" and images:
+            if any(not image_has_alpha(image) for image in images):
+                transparency = fallback_transparency_plan(
+                    transparency,
+                    prompt=prompt,
+                    operation=operation,
+                    params=params,
+                    cfg=effective_cfg,
+                    reference_paths=tuple(parent_paths),
+                )
+                transparency = ResolvedTransparency(
+                    plan=replace(
+                        transparency.plan,
+                        native_attempted=True,
+                        native_parameter="accepted_but_no_alpha",
+                        api_attempts=transparency_attempts,
+                        warnings=("native_transparency_returned_opaque_image", "transparent_delivery_fell_back_to_local_processing"),
+                    ),
+                    record=transparency.record,
+                    mask_image_id=transparency.mask_image_id,
+                )
+                transparency.record.update(transparency.plan.to_record())
         stored_parameters = {key: value for key, value in params.items() if key != "timeout"}
         if transparency is not None:
             stored_parameters["transparency"] = transparency.record
+            stored_parameters["transparency"]["api_attempts"] = transparency_attempts
+            if native_fallback_used:
+                stored_parameters["transparency"]["final_route"] = transparency.plan.mode
         if masked_context:
             stored_parameters.update(masked_edit_audit(masked_context))
         if submission_id:
@@ -723,7 +887,7 @@ def run_machine_task(
             records = repository.store_response_images(
                 images=images,
                 provider=effective_cfg.provider_id,
-                model="gpt-image-2",
+                model=effective_cfg.model,
                 operation=operation,
                 prompt=prompt,
                 parameters=stored_parameters,
@@ -1003,6 +1167,36 @@ def resolve_machine_transparency(
         )
     except ValueError as exc:
         raise MachineTaskError("invalid_task", str(exc)) from exc
+
+
+def fallback_transparency_plan(
+    transparency: ResolvedTransparency,
+    *,
+    prompt: str,
+    operation: str,
+    params: dict[str, Any],
+    cfg: Config,
+    reference_paths: tuple[Path, ...],
+) -> ResolvedTransparency:
+    route = transparency.plan.native_fallback_route or "chroma-matting"
+    try:
+        plan = resolve_plan(
+            TransparencyContext(
+                requested=True,
+                prompt=prompt,
+                model=cfg.model,
+                mode=operation,
+                size=str(params["size"]),
+                postprocess_allowed=True,
+                reference_paths=reference_paths,
+                route=route,
+            ),
+            cfg.transparency,
+        )
+    except ValueError as exc:
+        raise MachineTaskError("invalid_task", str(exc)) from exc
+    record = dict(transparency_storage_record(plan, transparency.mask_image_id))
+    return ResolvedTransparency(plan=plan, record=record, mask_image_id=transparency.mask_image_id)
 
 
 def validate_inline_delivery(

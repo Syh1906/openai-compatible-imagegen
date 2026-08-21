@@ -1,4 +1,4 @@
-<!-- updated: 2026-08-20 -->
+<!-- updated: 2026-08-21 -->
 # 更新 Plugin 或 Skill
 
 > 上级：[用户指南](./README.zh-CN.md)
@@ -13,6 +13,14 @@
 - 使用固定版本时，阅读目标版本的 release notes，确认配置是否有不兼容变化。
 - 在新版本通过冒烟检查前保留当前安装和本地配置。
 - 需要固定版本的本地发行包时，从同一个 GitHub Release 下载 ZIP 和 `SHA256SUMS`。
+
+## 迁移透明配置
+
+新配置默认启用原生透明。升级时会保留已有 `config.json`，避免静默改变图片路线。升级后调用 `inspect_image_config`；如果提示缺少 `transparency.native`，使用 `update_image_config` 把 `transparency.default_route` 设为 `native-alpha`，并把 `transparency.native.enabled` 设为 `true`。
+
+`transparency.native.retry_without_parameter` 默认值为 `true`。只有希望供应商拒绝透明参数时直接失败、不发起第二次请求，才把它设为 `false`。无论是否重试，最终图片结果都会说明是否发送原生透明参数、是否发生重试，以及最终采用的路线。
+
+修改配置后重新绑定项目，再次调用 `inspect_image_config`。在检查通过前保留旧安装和旧配置。
 
 ## 更新 Git marketplace Plugin
 

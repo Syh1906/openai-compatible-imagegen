@@ -49,6 +49,7 @@ const legacyWidgetResourceFingerprints = [
 const editorSessionIdSchema = z.string().regex(/^eds_[0-9a-f]{32}$/).describe("Open canvas session ID");
 const projectBindingIdSchema = z.string().regex(/^pbind_[0-9a-f]{64}$/).describe("Image project binding ID");
 const projectBindingInputSchema = { projectBindingId: projectBindingIdSchema };
+const modelProfileIdSchema = z.string().min(1);
 const annotationIdSchema = z.string().regex(/^ann_[0-9A-HJKMNP-TV-Z]{26}$/);
 const submissionIdSchema = z.string().regex(/^sub_[0-9a-f]{32}$/);
 const deliveryReceiptIdPattern = /^delivery_[0-9a-f]{64}$/;
@@ -71,7 +72,7 @@ const editorSessionOutputSchema = z.object({
 }).strict();
 const maskPolicyOutputSchema = z.object({
   policyVersion: z.literal("mask-policy-v2"),
-  modelProfileId: z.literal("primary/gpt-image-2"),
+  modelProfileId: modelProfileIdSchema,
   requiredCapabilities: z.object({ mask: z.literal(true) }).strict(),
   strategy: z.enum(["edit-only", "protect-only", "mixed"]),
   parentImageId: imageIdSchema,
@@ -193,6 +194,8 @@ const retainedHostErrorCodes = new Set([
 ]);
 const sensitiveHostFieldKeyPattern = /(api[_-]?key|authorization|credential|password|secret|token|cookie)/i;
 const hostObservationProvenance = "unverified_widget_report";
+const DEFAULT_MODEL_PROFILE_ID = "primary/gpt-image-2";
+const SERVER_INSTRUCTIONS = "After generate_image or edit_image succeeds, call render_image_results once with the returned artifact IDs in order before the final response. After deliver_image succeeds with deliveryReady=true, call render_image_results with the returned derivative artifact IDs. After batch_images succeeds, call render_image_results once with up to 10 final presentation IDs, preferring delivery-ready derivatives over API originals. Do not ask the user to request this display step, and do not render the same result twice.";
 
 export function createImagegenServer({
   releaseIdentity,
@@ -221,6 +224,7 @@ export function createImagegenServer({
       version: releaseIdentity.pluginVersion,
     },
     {
+      instructions: SERVER_INSTRUCTIONS,
       capabilities: {
         experimental: {
           // Development-only: release-bound widget URIs require a fresh tools/list during pre-release validation.
@@ -445,7 +449,7 @@ export function createImagegenServer({
     async ({ projectBindingId }) => await withBoundProject(projectContext, projectBindingId, async (context) => {
       try {
         const result = await runTask(
-          { operation: "list_models", modelProfileId: "primary/gpt-image-2" },
+          { operation: "list_models", modelProfileId: context.activeProfile || DEFAULT_MODEL_PROFILE_ID },
           context,
         );
         if (!result?.ok) return toolError(new Error(result?.error?.message || "model catalog unavailable"), result?.error?.code);
@@ -464,22 +468,22 @@ export function createImagegenServer({
     "generate_image",
     {
       title: "Generate images",
-      description: "Generate one or more independent candidate images with the configured gpt-image-2 model. Multiple candidates run as ordered single-image requests and return only after the full group succeeds.",
+      description: "Generate one or more independent candidate images with the configured model. Multiple candidates run as ordered single-image requests and return only after the full group succeeds. After success, call render_image_results once with the returned artifact IDs before replying to the user.",
       inputSchema: {
         ...projectBindingInputSchema,
         prompt: z.string().min(1),
-        modelProfileId: z.literal("primary/gpt-image-2").optional(),
+        modelProfileId: modelProfileIdSchema.optional(),
         transparency: transparencyInputSchema.optional(),
         ...outputSchema,
       },
       outputSchema: imageArtifactsOutputSchema,
       annotations: writeAnnotations(),
     },
-    async ({ projectBindingId, prompt, modelProfileId = "primary/gpt-image-2", transparency, ...output }) =>
+    async ({ projectBindingId, prompt, modelProfileId, transparency, ...output }) =>
       await withBoundProject(projectContext, projectBindingId, async (context) => await executeImageTask(
         {
           operation: "generate",
-          modelProfileId,
+          modelProfileId: modelProfileId || context.activeProfile || DEFAULT_MODEL_PROFILE_ID,
           prompt,
           inputArtifactIds: [],
           annotationId: null,
@@ -496,7 +500,7 @@ export function createImagegenServer({
     "edit_image",
     {
       title: "Edit image",
-      description: "Create a new immutable image version from a parent image and prompt.",
+      description: "Create a new immutable image version from a parent image and prompt. After success, call render_image_results once with the returned child artifact ID before replying to the user.",
       inputSchema: {
         ...projectBindingInputSchema,
         parentImageId: imageIdSchema,
@@ -504,7 +508,7 @@ export function createImagegenServer({
         referenceImageIds: z.array(imageIdSchema).optional(),
         annotationId: annotationIdSchema.optional(),
         submissionId: submissionIdSchema.optional(),
-        modelProfileId: z.literal("primary/gpt-image-2").optional(),
+        modelProfileId: modelProfileIdSchema.optional(),
         transparency: transparencyInputSchema.optional(),
         ...outputSchema,
       },
@@ -517,11 +521,12 @@ export function createImagegenServer({
         parentImageId,
         referenceImageIds = [],
         prompt,
-        modelProfileId = "primary/gpt-image-2",
+        modelProfileId: requestedModelProfileId,
         transparency,
         ...output
       } = arguments_;
       const annotationId = arguments_.annotationId ?? null;
+      const modelProfileId = requestedModelProfileId || context.activeProfile || DEFAULT_MODEL_PROFILE_ID;
       delete output.projectBindingId;
       delete output.annotationId;
       delete output.submissionId;
@@ -646,7 +651,7 @@ export function createImagegenServer({
     "batch_images",
     {
       title: "Batch image tasks",
-      description: "Run independent generation and standard edit tasks, return ordered per-item results with partial success, and do not display images automatically.",
+      description: "Run independent generation and standard edit tasks with ordered partial results. After success, call render_image_results once with up to 10 final presentation IDs, preferring delivery-ready derivatives over API originals, before replying to the user.",
       inputSchema: {
         ...projectBindingInputSchema,
         items: batchItemsSchema,
@@ -672,15 +677,20 @@ export function createImagegenServer({
           },
           recordManifest: async (manifest) => await runTask({
             operation: "record_batch",
-            modelProfileId: "primary/gpt-image-2",
+            modelProfileId: context.activeProfile || DEFAULT_MODEL_PROFILE_ID,
             manifest,
           }, context),
         });
         const artifacts = batch.results.flatMap((item) => (item.ok ? item.artifacts : []));
+        const presentationIds = batch.results.flatMap((item) => {
+          if (!item.ok) return [];
+          if (item.delivery?.deliveryReady && item.delivery.artifactIds?.length) return item.delivery.artifactIds;
+          return item.artifacts.map((artifact) => artifact.id);
+        }).slice(0, 10);
         return {
           content: [{
             type: "text",
-            text: `批量图片任务完成：成功 ${batch.summary.succeeded} 项，失败 ${batch.summary.failed} 项。`,
+            text: `批量图片任务完成：成功 ${batch.summary.succeeded} 项，失败 ${batch.summary.failed} 项。${presentationIds.length ? ` 在回复用户前调用 render_image_results 显示：${presentationIds.join(", ")}。` : ""}`,
           }],
           structuredContent: batch,
           _meta: {
@@ -724,23 +734,23 @@ export function createImagegenServer({
     "deliver_image",
     {
       title: "Deliver image",
-      description: "Run local exact-size, grid, preview-board, and QA delivery for a stable image ID. Keep the original immutable, store derivatives separately, and do not attach a canvas automatically.",
+      description: "Run local exact-size, grid, preview-board, and QA delivery for a stable image ID. Keep the original immutable and store derivatives separately. When deliveryReady is true, call render_image_results with the returned derivative artifact IDs before replying to the user.",
       inputSchema: {
         ...projectBindingInputSchema,
         imageId: imageIdSchema,
-        modelProfileId: z.literal("primary/gpt-image-2").optional(),
+        modelProfileId: modelProfileIdSchema.optional(),
         delivery: deliveryInputSchema,
       },
       outputSchema: imageDeliveryOutputSchema,
       annotations: writeAnnotations(),
     },
-    async ({ projectBindingId, imageId, modelProfileId = "primary/gpt-image-2", delivery }) =>
+    async ({ projectBindingId, imageId, modelProfileId, delivery }) =>
       await withBoundProject(projectContext, projectBindingId, async (context) => {
         try {
           const result = await runTask(
             {
               operation: "deliver",
-              modelProfileId,
+              modelProfileId: modelProfileId || context.activeProfile || DEFAULT_MODEL_PROFILE_ID,
               inputArtifactIds: [imageId],
               delivery,
             },
@@ -765,7 +775,7 @@ export function createImagegenServer({
             content: [{
               type: "text",
               text: result.deliveryReady
-                ? `已完成图片 ${imageId} 的本地交付。`
+                ? `已完成图片 ${imageId} 的本地交付。在回复用户前调用 render_image_results 显示：${artifactIds.join(", ")}。`
                 : `图片 ${imageId} 已保留原图，交付条件尚未满足。`,
             }],
             structuredContent: {
@@ -1298,7 +1308,7 @@ async function readImageTaskResult(artifactIds, context, readArtifact, { recover
     return {
       content: [{
         type: "text",
-        text: recovered ? `已恢复 ${artifacts.length} 张既有图片。` : `已创建 ${artifacts.length} 张图片。`,
+        text: `${recovered ? `已恢复 ${artifacts.length} 张既有图片` : `已创建 ${artifacts.length} 张图片`}。在回复用户前调用 render_image_results 显示：${artifactIds.join(", ")}。`,
       }],
       structuredContent,
       _meta: {

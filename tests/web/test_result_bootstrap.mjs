@@ -27,6 +27,18 @@ test("input, result, and host readiness start exactly once in every order", () =
   }
 });
 
+test("valid tool input starts reading when the host is ready even if the projected result is missing", () => {
+  const bootstrap = createResultBootstrap();
+
+  assert.deepEqual(bootstrap.observe(inputEvent), [
+    { type: "bind", imageIds },
+  ]);
+  assert.deepEqual(bootstrap.observe(readyEvent), [
+    { type: "start", imageIds },
+  ]);
+  assert.deepEqual(bootstrap.observe(resultEvent), []);
+});
+
 test("the first valid input freezes image identity", () => {
   const bootstrap = createResultBootstrap();
   const originalIds = [...imageIds];

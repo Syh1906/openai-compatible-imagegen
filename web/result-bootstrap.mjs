@@ -3,7 +3,6 @@ export function createResultBootstrap() {
   let inputObserved = false;
   let imageIds = null;
   let hostReady = false;
-  let resultCompleted = false;
   let started = false;
 
   return Object.freeze({ observe });
@@ -31,14 +30,14 @@ export function createResultBootstrap() {
       imageIds = Object.freeze([...event.imageIds]);
       effects.push({ type: "bind", imageIds });
     } else if (event?.type === "tool-result") {
-      resultCompleted = true;
+      // The standard tool input already contains the stable image IDs needed to read the artifact.
     } else if (event?.type === "host-ready") {
       hostReady = true;
     } else {
       return [];
     }
 
-    if (!started && hostReady && resultCompleted && imageIds) {
+    if (!started && hostReady && imageIds) {
       started = true;
       effects.push({ type: "start", imageIds });
     }

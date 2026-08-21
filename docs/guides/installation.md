@@ -1,4 +1,4 @@
-<!-- updated: 2026-08-20 -->
+<!-- updated: 2026-08-21 -->
 # Installation
 
 > Parent: [User guides](./README.md)
@@ -54,6 +54,28 @@ codex plugin add openai-compatible-imagegen@openai-compatible-imagegen
 6. Continue with [Plugin configuration](./configuration.md#configure-the-codex-plugin).
 
 The first configuration can also be created from a new task by asking the Agent to call `initialize_image_config`. Use `inspect_image_config` to review the redacted result and `update_image_config` for supported changes; the Plugin installation directory and Skill directory do not contain the user configuration.
+
+### Transparency defaults
+
+`initialize_image_config` creates a configuration with native transparency enabled. It selects `native-alpha`, sets `transparency.native.enabled` to `true`, and enables one retry without the transparency parameter when a provider rejects it. The model ID list is only a capability declaration; the active profile and model ID remain user-configurable.
+
+Existing configurations are preserved for compatibility and are not rewritten during installation. If `inspect_image_config` reports that `transparency.native` is missing, update the configuration explicitly:
+
+```json
+{
+  "transparency": {
+    "default_route": "native-alpha",
+    "native": {
+      "enabled": true,
+      "model_ids": ["your-provider-model-id"],
+      "retry_without_parameter": true,
+      "fallback_route": "chroma-matting"
+    }
+  }
+}
+```
+
+Apply the change with `update_image_config`, then rebind the project and call `inspect_image_config` again. The tool reports the effective route, retry policy, warnings, and next steps without returning credentials.
 
 ### Install from the Plugin ZIP
 

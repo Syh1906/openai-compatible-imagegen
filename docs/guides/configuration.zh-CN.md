@@ -1,4 +1,4 @@
-<!-- updated: 2026-08-20 -->
+<!-- updated: 2026-08-21 -->
 # 配置
 
 > 上级：[用户指南](./README.zh-CN.md)
@@ -30,7 +30,7 @@ python3 "/absolute/path/to/openai-compatible-imagegen/scripts/quick-init.py"
 | 字段 | 用途 |
 | --- | --- |
 | `base_url` | OpenAI-compatible 服务的基础 URL |
-| `model` | 默认图片模型 |
+| `model` | provider 自定义的图片模型 ID；接受任意非空 ID |
 | `api_key_env` | 保存凭据的首选环境变量 |
 | `api_key` | 明确选择本地明文存储时使用的可选凭据 |
 
@@ -79,7 +79,7 @@ Plugin 从以下固定路径读取配置：
 
 从已安装 Plugin 的 `skills/openai-compatible-imagegen/references/config.example.json` 开始配置。其中的 `proxy` 对象用于演示可选 provider 代理；删除该对象即可保持环境代理行为。
 
-用户基线声明活动 profile、provider、model、认证、默认值、透明策略、资源限制和存储。凭据优先使用环境变量。
+用户基线声明活动 profile、provider、provider 自定义的 model ID、认证、默认值、透明策略、资源限制和存储。活动 profile 和 model 由用户配置决定，代码不会锁死标准名称。凭据优先使用环境变量。
 
 如需让一个 Plugin provider 使用指定代理，在用户基线的 provider 中加入：
 
@@ -114,7 +114,7 @@ Codex Plugin 提供三个配置工具，Agent 无需定位 Plugin 安装目录�
 - `inspect_image_config` 以脱敏数据读取用户文件和可选项目覆盖，绝不返回 `api_key`。
 - `update_image_config` 按运行时绑定使用的同一 schema 和范围规则更新用户或项目文件。写入前会创建或验证目标配置目录的本地 `*` 忽略规则。凭据优先使用 `api_key_env`；用户明确选择本地明文存储时，工具可以写入用户级 `api_key`，但不会返回该值。项目凭据和不允许的项目字段会被拒绝。
 
-初始化后，设置 `providers.primary.api_key_env` 指定的环境变量，再让 Agent 查询配置并绑定项目。每次配置写入都会保护用户和项目配置目录。更新后重新绑定项目，使运行时使用新的配置摘要。查询和更新结果不会输出 API key。
+初始化后，设置配置中 provider 的 `api_key_env` 指定的环境变量，再让 Agent 查询配置并绑定项目。每次配置写入都会保护用户和项目配置目录。更新后重新绑定项目，使运行时使用新的配置摘要。查询和更新结果不会输出 API key。MCP 工具还会返回活动 profile、model ID、原生透明声明、重试开关、fallback 路线、警告和下一步引导。
 
 `storage.output_directory` 必须是项目内的相对目录，默认值为 `output/imagegen/`。项目绑定会在解析后的输出目录中创建或验证内容仅为 `*` 的 `.gitignore`，让图片、提示词、标注和 metadata 保持本地。已有规则不兼容时会停止绑定，不会覆盖该规则。绝对路径、项目根目录、项目外路径、文件、符号链接、junction 和其他 reparse point 都会被拒绝。
 
@@ -127,7 +127,7 @@ Codex Plugin 提供三个配置工具，Agent 无需定位 Plugin 安装目录�
 
 响应可以返回 `data[].b64_json` 或 `data[].url`。运行时下载返回 URL 时不会转发图片 API 凭据。
 
-透明是本地交付意图。两个发行包都不会向图片 API 发送 `background=transparent`；迁移时会拒绝旧的 `transparent_background` 配置。
+透明是用户的交付意图。使用 `native-alpha` 时，只有用户提出透明需求才会发送 `background=transparent` 和 PNG 输出，并附加真实 Alpha 通道提示词。可选的 `transparency.native.model_ids` 只是能力声明，不是代码白名单；明确请求原生路线时会把请求发给配置中的模型，是否支持由 provider 决定。provider 因透明参数返回 HTTP 400/422 时，默认使用相同模型和 endpoint 去掉该参数重试一次，再按 `fallback_route` 进入本地透明处理；设置 `retry_without_parameter=false` 可关闭重试。最终结果会说明拒绝、重试、最终路线和 QA。迁移时仍会拒绝旧的 `transparent_background` 配置。
 
 ## 配置结果
 

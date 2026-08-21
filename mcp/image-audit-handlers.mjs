@@ -15,7 +15,7 @@ export function createImageAuditHandlers({ runTask, readArtifact }) {
       requireDependency(runTask, "runTask");
       const result = await runTask({
         operation: "get_batch_manifest",
-        modelProfileId: "primary/gpt-image-2",
+        modelProfileId: context.activeProfile,
         batchId,
       }, context);
       if (!result?.ok) {
@@ -43,7 +43,7 @@ export function createImageAuditHandlers({ runTask, readArtifact }) {
       requireDependency(readArtifact, "readArtifact");
       const result = await runTask({
         operation: "get_delivery_receipt",
-        modelProfileId: "primary/gpt-image-2",
+        modelProfileId: context.activeProfile,
         deliveryReceiptId,
       }, context);
       if (!result?.ok) {
