@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import replace
 import concurrent.futures
 import json
 import sys
@@ -63,11 +64,13 @@ from image_postprocess import (
 from image_resize import fit_to_canvas as fit_pixels_to_canvas, resize_pixels
 from image_transparency import (
     LOCAL_ROUTES,
+    TransparencyContext,
     TransparencyPlan,
     TransparencyUnavailableError,
     normalize_route_options,
     parse_option_assignments,
     process_file as process_transparency_file,
+    resolve_plan,
 )
 from image_transparency_runtime import (
     apply_prompt_directives,
@@ -448,6 +451,79 @@ def request_multipart(
         if exc.status_code is not None:
             raise ApiRequestError(str(exc), exc.status_code, exc.operation or path) from exc
         raise ImagegenError(str(exc)) from exc
+
+
+def is_transparency_parameter_rejection(exc: BaseException) -> bool:
+    if getattr(exc, "status_code", None) not in {400, 422}:
+        return False
+    message = str(exc).lower()
+    return any(marker in message for marker in ("background", "transparent", "transparency", "alpha channel", "output_format"))
+
+
+def fallback_transparency_plan(
+    plan: TransparencyPlan,
+    *,
+    prompt: str,
+    mode: str,
+    params: dict[str, Any],
+    cfg: Config,
+    reference_paths: list[Path] | None = None,
+) -> TransparencyPlan:
+    return resolve_plan(
+        TransparencyContext(
+            requested=True,
+            prompt=prompt,
+            model=str(params["model"]),
+            mode=mode,
+            size=str(params["size"]),
+            postprocess_allowed=True,
+            reference_paths=tuple(reference_paths or ()),
+            route=plan.native_fallback_route or "chroma-matting",
+        ),
+        cfg.transparency,
+    )
+
+
+def request_with_transparency_retry(
+    request_call: Any,
+    payload: dict[str, Any],
+    plan: TransparencyPlan,
+    *,
+    prompt: str,
+    mode: str,
+    params: dict[str, Any],
+    cfg: Config,
+    reference_paths: list[Path] | None = None,
+) -> tuple[dict[str, Any], TransparencyPlan]:
+    try:
+        return request_call(payload), plan
+    except (ApiRequestError, ImagegenError) as exc:
+        if (
+            plan.mode != "native-alpha"
+            or not plan.native_retry_without_parameter
+            or "background" not in payload
+            or not is_transparency_parameter_rejection(exc)
+        ):
+            raise
+        retry_payload = dict(payload)
+        retry_payload.pop("background", None)
+        fallback = fallback_transparency_plan(
+            plan,
+            prompt=prompt,
+            mode=mode,
+            params=params,
+            cfg=cfg,
+            reference_paths=reference_paths,
+        )
+        fallback = replace(
+            fallback,
+            native_attempted=True,
+            native_parameter="rejected",
+            retried_without_parameter=True,
+            api_attempts=2,
+            warnings=("native_transparency_rejected", "transparent_delivery_fell_back_to_local_processing"),
+        )
+        return request_call(retry_payload), fallback
     except ValueError as exc:
         raise ImagegenError(str(exc)) from exc
 
@@ -478,6 +554,9 @@ def generate(cfg: Config, args: argparse.Namespace, task: dict[str, Any] | None 
         raise ImagegenError("prompt is required")
     params = resolve_common_params(args, cfg, task)
     transparency_plan = resolve_request_transparency(prompt, "generate", params, args, cfg, task)
+    if transparency_plan.mode == "native-alpha":
+        params = dict(params)
+        params["background"] = "transparent"
     validate_postprocess_args(args, task)
     prompt = apply_prompt_directives(prompt, args, task, transparency_plan)
     out_file = resolve_output_file(args, task, params["output_format"], prompt)
@@ -492,7 +571,22 @@ def generate(cfg: Config, args: argparse.Namespace, task: dict[str, Any] | None 
         "output_format": params["output_format"],
         "output_compression": params["output_compression"],
     }
-    response = request_json(cfg, "images/generations", payload, params["timeout"])
+    response, transparency_plan = request_with_transparency_retry(
+        lambda request_payload: request_json(cfg, "images/generations", request_payload, params["timeout"]),
+        payload,
+        transparency_plan,
+        prompt=prompt,
+        mode="generate",
+        params=params,
+        cfg=cfg,
+    )
+    if transparency_plan.mode == "native-alpha":
+        transparency_plan = replace(
+            transparency_plan,
+            native_attempted=True,
+            native_parameter="sent",
+            api_attempts=1,
+        )
     delivery = write_response_images(
         response,
         out_file,
@@ -531,6 +625,9 @@ def edit(cfg: Config, args: argparse.Namespace, task: dict[str, Any] | None = No
         task,
         image_paths,
     )
+    if transparency_plan.mode == "native-alpha":
+        params = dict(params)
+        params["background"] = "transparent"
     validate_postprocess_args(args, task)
     prompt = apply_prompt_directives(prompt, args, task, transparency_plan)
     out_file = resolve_output_file(args, task, params["output_format"], prompt)
@@ -548,7 +645,23 @@ def edit(cfg: Config, args: argparse.Namespace, task: dict[str, Any] | None = No
     if mask_path:
         files.append(("mask", mask_path))
     try:
-        response = request_multipart(cfg, "images/edits", fields, files, params["timeout"])
+        response, transparency_plan = request_with_transparency_retry(
+            lambda request_fields: request_multipart(cfg, "images/edits", request_fields, files, params["timeout"]),
+            fields,
+            transparency_plan,
+            prompt=prompt,
+            mode="edit",
+            params=params,
+            cfg=cfg,
+            reference_paths=image_paths,
+        )
+        if transparency_plan.mode == "native-alpha":
+            transparency_plan = replace(
+                transparency_plan,
+                native_attempted=True,
+                native_parameter="sent",
+                api_attempts=1,
+            )
     except ApiRequestError as exc:
         exc.details["references"] = reference_report
         raise

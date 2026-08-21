@@ -1,4 +1,4 @@
-<!-- updated: 2026-08-20 -->
+<!-- updated: 2026-08-21 -->
 # Configuration
 
 > Parent: [User guides](./README.md)
@@ -30,7 +30,7 @@ python3 "/absolute/path/to/openai-compatible-imagegen/scripts/quick-init.py"
 | Field | Purpose |
 | --- | --- |
 | `base_url` | Base URL for the OpenAI-compatible service |
-| `model` | Default image model |
+| `model` | Provider-specific image model ID; any non-empty ID accepted |
 | `api_key_env` | Preferred environment variable containing the credential |
 | `api_key` | Optional local plaintext credential when explicitly chosen |
 
@@ -79,7 +79,7 @@ The Plugin reads these fixed paths:
 
 Start from `skills/openai-compatible-imagegen/references/config.example.json` in the installed Plugin. Its `proxy` object demonstrates the optional provider proxy; remove that object to retain environment proxy behavior.
 
-The user baseline declares the active profile, provider, model, authentication, defaults, transparency policy, resource limits, and storage. Prefer an environment variable for the credential.
+The user baseline declares the active profile, provider, provider-specific model ID, authentication, defaults, transparency policy, resource limits, and storage. The active profile and model are user configuration, not code constants. Prefer an environment variable for the credential.
 
 To route one Plugin provider through a specific proxy, add `proxy` to that provider in the user baseline:
 
@@ -114,7 +114,7 @@ The Codex Plugin exposes three configuration tools so an Agent can complete the 
 - `inspect_image_config` reads the user file and an optional project override as redacted data. It never returns `api_key` values.
 - `update_image_config` updates a user or project file through the same schema and scope rules as runtime binding. Before writing, it creates or verifies the target configuration directory's local `*` ignore rule. Prefer `api_key_env`; when a user explicitly chooses local plaintext storage, the tool may write user-level `api_key` but never returns it. Project credentials and forbidden project fields are rejected.
 
-After initialization, set the environment variable named by `providers.primary.api_key_env`, then ask the Agent to query the configuration and bind the project. Both user and project configuration directories are protected at every configuration write. After any update, bind the project again so the new configuration digest is used. Query and update results never print API keys.
+After initialization, set the environment variable named by the configured provider's `api_key_env`, then ask the Agent to query the configuration and bind the project. Both user and project configuration directories are protected at every configuration write. After any update, bind the project again so the new configuration digest is used. Query and update results never print API keys. The MCP tools also return the active profile, model ID, native transparency declaration, retry switch, fallback route, warnings, and next steps.
 
 `storage.output_directory` is a relative directory inside the project. The default is `output/imagegen/`. Project binding creates or verifies a `.gitignore` containing only `*` in the resolved output directory, so images, prompts, annotations, and metadata remain local. An incompatible ignore rule stops binding without being overwritten. Absolute paths, project-root output, outside paths, files, symbolic links, junctions, and other reparse points are rejected.
 
@@ -127,7 +127,7 @@ The configured service must expose:
 
 Responses may return `data[].b64_json` or `data[].url`. The runtime does not forward the image API credential when it downloads a returned URL.
 
-Transparency is delivery intent. Neither package sends `background=transparent` to the image API, and legacy `transparent_background` configuration is rejected during migration.
+Transparency is delivery intent. For `native-alpha`, the runtime sends `background=transparent` and PNG output only when transparency is requested, with a real-alpha prompt contract. The optional `transparency.native.model_ids` list is a capability declaration, not a code whitelist; an explicit native route is sent to the configured model even when the list is empty or does not contain that ID. A transparency-related provider HTTP 400/422 is retried once without the parameter by default, using the same model and endpoint, then the configured local fallback route is applied. Set `retry_without_parameter` to `false` to disable this retry. Results explain rejection, retry, final route, and QA. Legacy `transparent_background` configuration is rejected during migration.
 
 ## Configuration result
 

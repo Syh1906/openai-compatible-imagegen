@@ -12,7 +12,7 @@ export const outputSchema = {
   background: z.enum(["auto", "opaque"]).optional(),
 };
 export const transparencyInputSchema = z.object({
-  route: z.enum(["chroma-matting", "emissive-alpha", "mask-alpha", "prompt-alpha"]).optional(),
+  route: z.enum(["chroma-matting", "emissive-alpha", "mask-alpha", "prompt-alpha", "native-alpha"]).optional(),
   options: z.record(z.union([z.string(), z.number(), z.boolean()])).optional(),
   maskImageId: imageIdSchema.optional(),
 }).strict();
@@ -43,7 +43,7 @@ const batchGenerateItemSchema = z.object({
   requestId: batchRequestIdSchema,
   operation: z.literal("generate"),
   prompt: z.string().min(1),
-  modelProfileId: z.literal("primary/gpt-image-2").optional(),
+  modelProfileId: z.string().min(1).optional(),
   transparency: transparencyInputSchema.optional(),
   delivery: batchDeliverySchema.optional(),
   ...outputSchema,
@@ -55,7 +55,7 @@ const batchEditItemSchema = z.object({
   parentImageId: imageIdSchema,
   referenceImageIds: z.array(imageIdSchema).max(10).optional(),
   prompt: z.string().min(1),
-  modelProfileId: z.literal("primary/gpt-image-2").optional(),
+  modelProfileId: z.string().min(1).optional(),
   transparency: transparencyInputSchema.optional(),
   delivery: batchDeliverySchema.optional(),
   ...outputSchema,

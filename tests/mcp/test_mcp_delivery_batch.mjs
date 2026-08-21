@@ -577,6 +577,8 @@ test("deliver_image maps a stable source ID to a local delivery task without pre
       assert.deepEqual(result.structuredContent.artifacts, [derived]);
       assert.deepEqual(result.structuredContent.qa, { schema_version: "qa.v1", status: "pass" });
       assert.equal(result.content.filter((item) => item.type === "image").length, 0);
+      assert.match(result.content[0].text, new RegExp(derived.id));
+      assert.match(result.content[0].text, /render_image_results/);
       assert.equal(JSON.stringify(result).includes("F:/"), false);
       assert.equal(JSON.stringify(result).includes("runtime-secret"), false);
     },
@@ -1102,6 +1104,9 @@ test("batch_images runs heterogeneous tasks with ordered partial results and no 
       assert.equal(result.content.filter((item) => item.type === "image").length, 0);
       assert.equal(result._meta?.ui?.resourceUri, undefined);
       assert.deepEqual(result._meta.imageIds, [generated.id, edited.id]);
+      assert.match(result.content[0].text, /render_image_results/);
+      assert.match(result.content[0].text, new RegExp(generated.id));
+      assert.match(result.content[0].text, new RegExp(edited.id));
       assert.equal(JSON.stringify(result).includes(privateMessage), false);
       assert.equal(JSON.stringify(result).includes("C:/Users/private"), false);
     },

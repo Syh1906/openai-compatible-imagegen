@@ -90,7 +90,7 @@ async function executeBatchItem({ item, context, runTask, readArtifact, validate
     if (item.operation === "edit") {
       await validateEdit(item, context);
     }
-    const result = await runTask(machineTaskFor(item), context);
+    const result = await runTask(machineTaskFor(item, context), context);
     if (!result?.ok) {
       return failedBatchOutcome(item, result?.error, "image_task_failed");
     }
@@ -400,12 +400,12 @@ function manifestFailure(error) {
 }
 
 
-function machineTaskFor(item) {
+function machineTaskFor(item, context) {
   const {
     requestId: _requestId,
     operation,
     prompt,
-    modelProfileId = DEFAULT_MODEL_PROFILE_ID,
+    modelProfileId = context?.activeProfile || DEFAULT_MODEL_PROFILE_ID,
     transparency,
     delivery,
     ...rest

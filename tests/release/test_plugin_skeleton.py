@@ -274,7 +274,9 @@ class PluginSkeletonTests(unittest.TestCase):
 
         self.assertIn("batch_images", text)
         self.assertIn("call `batch_images` once", text)
-        self.assertIn("call `render_image_results` once", text)
+        self.assertIn("Before the final response, call `render_image_results` once", text)
+        self.assertIn("Do not wait for the user to request display", text)
+        self.assertIn("historical image", text)
         self.assertIn("Report item failures without retrying them", text)
         self.assertIn("Mask or canvas submissions", text)
         self.assertIn("one separate `edit_image` call", text)

@@ -290,6 +290,106 @@ class ImageRuntimeMachineModeTests(unittest.TestCase):
         self.assertTrue(all(payload["model"] == "gpt-image-2" for payload in payloads))
         self.assertTrue(all(payload["prompt"] == "two candidates" for payload in payloads))
 
+    def test_generate_uses_configured_custom_model_id(self) -> None:
+        cfg = self.imagegen.Config(
+            **{
+                **self.cfg.__dict__,
+                "model": "vendor/custom-image-model",
+                "profile_id": "vendor/custom-profile",
+            }
+        )
+        response = {
+            "data": [{"b64_json": base64.b64encode(make_png(2, 2)).decode("ascii")}],
+        }
+        task = self.task(
+            modelProfileId="vendor/custom-profile",
+            output={**self.task()["output"], "count": 1},
+        )
+
+        with mock.patch.object(self.imagegen, "request_json", return_value=response) as request:
+            result = self.imagegen.run_machine_task(task, self.project_root, self.artifact_root, cfg)
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(request.call_args.args[2]["model"], "vendor/custom-image-model")
+        self.assertEqual(result["artifacts"][0]["model"], "vendor/custom-image-model")
+
+    def test_native_transparency_rejection_retries_without_parameter_and_falls_back(self) -> None:
+        policy = self.imagegen.TransparencyPolicy(
+            default_route="native-alpha",
+            native=self.imagegen.NativeTransparencyPolicy(
+                enabled=True,
+                retry_without_parameter=True,
+                fallback_route="chroma-matting",
+            ),
+        )
+        cfg = self.imagegen.Config(**{**self.cfg.__dict__, "postprocess": {"enabled": True}, "transparency": policy})
+        rejected = self.imagegen.ProviderRequestError(
+            "API HTTP 422: background transparent is not supported",
+            status_code=422,
+            operation="images/generations",
+        )
+        response = {"data": [{"b64_json": base64.b64encode(make_png(2, 2)).decode("ascii")}]}
+        task = self.task(
+            output={**self.task()["output"], "count": 1},
+            transparency={"route": "native-alpha"},
+        )
+
+        with mock.patch.object(self.imagegen, "request_json", side_effect=[rejected, response]) as request:
+            result = self.imagegen.run_machine_task(task, self.project_root, self.artifact_root, cfg)
+
+        self.assertTrue(result["ok"])
+        self.assertEqual(request.call_count, 2)
+        first_payload = request.call_args_list[0].args[2]
+        second_payload = request.call_args_list[1].args[2]
+        self.assertEqual(first_payload["background"], "transparent")
+        self.assertNotIn("background", second_payload)
+        transparency = result["artifacts"][0]["parameters"]["transparency"]
+        self.assertEqual(transparency["mode"], "chroma-matting")
+        self.assertTrue(transparency["native_attempted"])
+        self.assertTrue(transparency["retried_without_parameter"])
+
+    def test_non_transparency_error_does_not_retry(self) -> None:
+        policy = self.imagegen.TransparencyPolicy(
+            default_route="native-alpha",
+            native=self.imagegen.NativeTransparencyPolicy(
+                enabled=True,
+                retry_without_parameter=True,
+            ),
+        )
+        cfg = self.imagegen.Config(**{**self.cfg.__dict__, "transparency": policy})
+        rejected = self.imagegen.ProviderRequestError(
+            "API HTTP 400: invalid prompt",
+            status_code=400,
+            operation="images/generations",
+        )
+        task = self.task(
+            output={**self.task()["output"], "count": 1},
+            transparency={"route": "native-alpha"},
+        )
+
+        with mock.patch.object(self.imagegen, "request_json", side_effect=rejected) as request:
+            result = self.imagegen.run_machine_task(task, self.project_root, self.artifact_root, cfg)
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(request.call_count, 1)
+
+    def test_native_transparency_retry_can_be_disabled(self) -> None:
+        policy = self.imagegen.TransparencyPolicy(
+            default_route="native-alpha",
+            native=self.imagegen.NativeTransparencyPolicy(enabled=True, retry_without_parameter=False),
+        )
+        cfg = self.imagegen.Config(**{**self.cfg.__dict__, "transparency": policy})
+        rejected = self.imagegen.ProviderRequestError(
+            "API HTTP 422: transparent background unsupported",
+            status_code=422,
+            operation="images/generations",
+        )
+        task = self.task(output={**self.task()["output"], "count": 1}, transparency={"route": "native-alpha"})
+        with mock.patch.object(self.imagegen, "request_json", side_effect=rejected) as request:
+            result = self.imagegen.run_machine_task(task, self.project_root, self.artifact_root, cfg)
+        self.assertFalse(result["ok"])
+        self.assertEqual(request.call_count, 1)
+
     def test_generate_uses_only_the_explicit_artifact_root(self) -> None:
         artifact_root = self.project_root / ".project-data" / "image-artifacts"
         response = {"data": [{"b64_json": base64.b64encode(make_png(2, 2)).decode("ascii")}]}

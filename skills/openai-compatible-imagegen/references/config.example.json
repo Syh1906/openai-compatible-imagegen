@@ -36,7 +36,13 @@
     "enabled": true
   },
   "transparency": {
-    "default_route": "chroma-matting",
+    "default_route": "native-alpha",
+    "native": {
+      "enabled": true,
+      "model_ids": ["gpt-image-1", "gpt-image-1.5", "gpt-image-2"],
+      "retry_without_parameter": true,
+      "fallback_route": "chroma-matting"
+    },
     "prompt_only_allow": [],
     "llm_assisted": {
       "enabled": false,

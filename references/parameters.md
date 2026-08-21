@@ -63,7 +63,7 @@ Returned image dimensions are measured against the resolved API `size`. A mismat
 
 `--asset` marks an explicit single visual deliverable and prefers PNG. It can represent a logo element, product cutout, sticker, interface element, game asset, diagram element, or other isolated deliverable. It does not select an industry or force a centered composition.
 
-`--transparent` marks a transparent delivery intent and forces PNG. It is never sent to the API as a background value. `--background` accepts only `auto` or `opaque`; the former transparent value was removed.
+`--transparent` marks a transparent delivery intent and forces PNG. The runtime sends `background="transparent"` only when the resolved route is `native-alpha`; local routes keep the parameter out of the API request. `--background` accepts only `auto` or `opaque`; the former transparent value was removed.
 
 An explicit `--file` extension must match the resolved output format. For example, a transparent or `--asset` request cannot target a `.jpeg` path because those intents resolve to PNG.
 
@@ -71,6 +71,7 @@ Transparency route selection is deterministic:
 
 | Condition | Route | Input contract | Result when transparency fails |
 | --- | --- | --- | --- |
+| Explicit `native-alpha` route, or selected `default_route=native-alpha` with `native.enabled=true` | `native-alpha` | API `background="transparent"`, PNG output, and a real-alpha prompt contract | On a transparency-related HTTP 400/422, retry once without the parameter when enabled, then use `native.fallback_route`; otherwise report the provider error |
 | Explicit local route, or selected `default_route=chroma-matting` | `chroma-matting` | Uniform edge-connected key-color background | Return the API image unchanged and warn |
 | Explicit local route, or selected `default_route=emissive-alpha` | `emissive-alpha` | Emissive content on a dark edge-connected background | Return the API image unchanged and warn |
 | Explicit local route, or selected `default_route=mask-alpha` | `mask-alpha` | Explicit mask matching source dimensions | Return the API image unchanged and warn |
@@ -92,10 +93,16 @@ Example configuration:
     "enabled": false
   },
   "transparency": {
-    "default_route": "chroma-matting",
+    "default_route": "native-alpha",
+    "native": {
+      "enabled": true,
+      "model_ids": ["gpt-image-1", "gpt-image-1.5", "gpt-image-2"],
+      "retry_without_parameter": true,
+      "fallback_route": "chroma-matting"
+    },
     "prompt_only_allow": [
       {
-        "model": "gpt-image-2",
+        "model": "vendor/custom-image-model",
         "mode": "generate",
         "size": "1024x1024"
       }
@@ -111,9 +118,11 @@ Example configuration:
 }
 ```
 
+`models.<profile>.model` accepts any non-empty model ID required by the provider; the runtime does not reject nonstandard names. `native.model_ids` is only a capability declaration. An empty array applies no ID prefilter, and an explicit `native-alpha` request is still sent when the configured model is absent from the list. The provider decides whether that model supports the parameter. Native requests use `background="transparent"` and PNG output. When a provider returns a transparency-related HTTP 400/422, the default policy retries the same model once without the parameter and applies `native.fallback_route` locally. Set `retry_without_parameter=false` to disable the retry. The result reports parameter rejection, retry use, final route, and QA status.
+
 `llm_assisted.max_attempts` is the total number of transparency attempts, including the first run, and must be from 1 to 3. `allow_parameter_tuning` permits documented parameter changes, `allow_route_change` permits compatible route changes, and `allow_api_retry` permits another image API request. API retry remains disabled by default.
 
-The old `capabilities.transparent_background` setting and `background=transparent` request value are not supported. Remove them instead of translating them into an API parameter. Batch `background` values are trimmed case-insensitively, but only `auto`, `opaque`, or an omitted value are accepted; every other value fails before the API request.
+The old `capabilities.transparent_background` setting and user-facing `background=transparent` request value are not supported. Remove them instead of translating them into an API parameter. The runtime may still send `background="transparent"` when the configured route is `native-alpha`. Batch `background` values are trimmed case-insensitively, but only `auto`, `opaque`, or an omitted value are accepted; every other value fails before the API request.
 
 Real alpha pixels depend on the returned image. Use `inspect-image --expect-transparent` or request `--qa` to report technical results.
 
@@ -128,7 +137,7 @@ Real alpha pixels depend on the returned image. Use `inspect-image --expect-tran
 | `--grid` | Explicit rows and columns such as `3x3` |
 | `--expected-count` | Per-source grid count, or QA output count when no grid is used |
 | `--postprocess` / `--no-postprocess` | Allow or disable local transparency pixel processing; disabled requests still call the API and inspect returned source alpha |
-| `--transparency-route` | Explicit `chroma-matting`, `emissive-alpha`, `mask-alpha`, or `prompt-alpha`; an unverified prompt route becomes source-alpha inspection |
+| `--transparency-route` | Explicit `native-alpha`, `chroma-matting`, `emissive-alpha`, `mask-alpha`, or `prompt-alpha`; an unverified prompt route becomes source-alpha inspection |
 | `--transparency-mask` | Mask file required by `mask-alpha` |
 | `--transparency-param NAME=VALUE` | Repeatable route-specific option for commands |
 | `--qa` | Attach `qa.v1` delivery checks |

@@ -116,6 +116,8 @@ test("only the result renderer and focused editor bind app resources", async () 
       assert.equal(generateTool._meta?.ui?.resourceUri, undefined);
       assert.equal(editTool._meta?.ui?.resourceUri, undefined);
       assert.equal(artifactTool._meta?.ui?.resourceUri, undefined);
+      assert.equal(tools.find((tool) => tool.name === "batch_images")._meta?.ui?.resourceUri, undefined);
+      assert.equal(tools.find((tool) => tool.name === "deliver_image")._meta?.ui?.resourceUri, undefined);
       assert.equal(resultUri, RESULT_WIDGET_URI);
       assert.notEqual(resultUri, editorUri);
       assert.deepEqual(tools.find((tool) => tool.name === "open_image_editor")._meta.ui.visibility, ["app"]);
@@ -142,6 +144,43 @@ test("only the result renderer and focused editor bind app resources", async () 
             )),
         ].sort(),
       );
+    },
+  );
+});
+
+test("server instructions require automatic result rendering after successful image production", async () => {
+  await withClient(
+    {
+      runTask: async () => { throw new Error("not used"); },
+      readArtifact: async () => { throw new Error("not used"); },
+    },
+    async (client) => {
+      const instructions = client.getInstructions();
+      assert.match(instructions, /generate_image.*edit_image.*render_image_results/is);
+      assert.match(instructions, /deliver_image.*deliveryReady.*render_image_results/is);
+      assert.match(instructions, /batch_images.*render_image_results/is);
+      assert.match(instructions, /before (?:the )?final (?:reply|response)/i);
+    },
+  );
+});
+
+test("generation result directs the agent to render stable image IDs", async () => {
+  const image = artifact("img_01J00000000000000000000000");
+  await withClient(
+    {
+      runTask: async () => ({ ok: true, artifacts: [image] }),
+      readArtifact: async () => ({ metadata: image, data: PNG_BASE64 }),
+    },
+    async (client) => {
+      const { tools } = await client.listTools();
+      assert.equal(tools.find((tool) => tool.name === "generate_image")._meta?.ui?.resourceUri, undefined);
+      const result = await client.callTool({
+        name: "generate_image",
+        arguments: { prompt: "automatic presentation" },
+      });
+      assert.deepEqual(result.structuredContent.artifacts.map(({ id }) => id), [image.id]);
+      assert.match(result.content[0].text, new RegExp(image.id));
+      assert.match(result.content[0].text, /render_image_results/);
     },
   );
 });
@@ -290,6 +329,8 @@ test("generate_image leaves candidate presentation to render_image_results", asy
       assert.deepEqual(result.structuredContent.artifacts, artifacts);
       assert.equal(result._meta?.ui?.resourceUri, undefined);
       assert.deepEqual(result._meta.imageIds, artifacts.map((item) => item.id));
+      assert.match(result.content[0].text, /render_image_results/);
+      for (const item of artifacts) assert.match(result.content[0].text, new RegExp(item.id));
       assert.equal(JSON.stringify(result).includes("runtime-secret"), false);
       assert.equal(rendered.content.filter((item) => item.type === "image").length, 2);
       assert.equal(rendered._meta.ui.resourceUri, RESULT_WIDGET_URI);

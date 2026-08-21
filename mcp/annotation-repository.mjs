@@ -18,6 +18,8 @@ const MASK_RASTER_TILE_SIZE = 64;
 
 export async function saveImageAnnotations({ imageId, items }, {
   artifactRoot,
+  modelProfileId = undefined,
+  activeProfile = "primary/gpt-image-2",
   runRepositoryOperation = runRepositoryFsOperation,
 } = {}) {
   if (!Array.isArray(items) || items.length === 0) throw new Error("at least one annotation is required");
@@ -36,7 +38,7 @@ export async function saveImageAnnotations({ imageId, items }, {
       const strategy = maskStrategy(maskItems);
       const unsignedPolicy = {
         policyVersion: "mask-policy-v2",
-        modelProfileId: "primary/gpt-image-2",
+        modelProfileId: modelProfileId || activeProfile,
         requiredCapabilities: { mask: true },
         strategy,
         parentImageId: imageId,

@@ -1,4 +1,4 @@
-<!-- updated: 2026-08-20 -->
+<!-- updated: 2026-08-21 -->
 # 安装
 
 > 上级：[用户指南](./README.zh-CN.md)
@@ -54,6 +54,28 @@ codex plugin add openai-compatible-imagegen@openai-compatible-imagegen
 6. 继续完成 [Plugin 配置](./configuration.zh-CN.md#配置-codex-plugin)。
 
 第一次配置也可以在新任务中要求 Agent 调用 `initialize_image_config`。使用 `inspect_image_config` 查看脱敏结果，使用 `update_image_config` 修改支持的字段。Plugin 安装目录和 Skill 目录不保存用户配置。
+
+### 透明配置默认值
+
+`initialize_image_config` 创建的配置默认启用原生透明。它会选择 `native-alpha`，把 `transparency.native.enabled` 设为 `true`，并在供应商拒绝透明参数时默认允许去掉该参数重试一次。模型 ID 列表只是能力声明；有效 profile 和模型 ID 仍由用户配置。
+
+已有配置会为了兼容性保留，安装时不会自动改写。如果 `inspect_image_config` 提示缺少 `transparency.native`，请显式更新配置：
+
+```json
+{
+  "transparency": {
+    "default_route": "native-alpha",
+    "native": {
+      "enabled": true,
+      "model_ids": ["供应商实际模型 ID"],
+      "retry_without_parameter": true,
+      "fallback_route": "chroma-matting"
+    }
+  }
+}
+```
+
+使用 `update_image_config` 应用变更，然后重新绑定项目，再次调用 `inspect_image_config`。工具会返回有效路线、重试策略、警告和下一步，不会返回凭据。
 
 ### 从 Plugin ZIP 安装
 

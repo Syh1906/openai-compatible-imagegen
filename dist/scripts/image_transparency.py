@@ -29,7 +29,7 @@ KEY_CANDIDATES: tuple[tuple[str, tuple[int, int, int], tuple[str, ...]], ...] = 
     ("#FF00FF", (255, 0, 255), ("magenta", "pink", "purple", "violet", "洋红", "粉色", "紫色")),
 )
 LOCAL_ROUTES = {"chroma-matting", "emissive-alpha", "mask-alpha"}
-TRANSPARENCY_ROUTES = LOCAL_ROUTES | {"prompt-alpha"}
+TRANSPARENCY_ROUTES = LOCAL_ROUTES | {"prompt-alpha", "native-alpha"}
 INSPECT_ALPHA_ROUTE = "inspect-alpha"
 MAX_TRANSPARENCY_PIXELS = 4096 * 4096
 FULL_TOLERANCE = 56.0
@@ -77,10 +77,27 @@ class LlmAssistedPolicy:
 
 
 @dataclass(frozen=True)
+class NativeTransparencyPolicy:
+    enabled: bool = False
+    model_ids: tuple[str, ...] = ()
+    retry_without_parameter: bool = True
+    fallback_route: str = "chroma-matting"
+
+    def to_record(self) -> dict[str, Any]:
+        return {
+            "enabled": self.enabled,
+            "model_ids": list(self.model_ids),
+            "retry_without_parameter": self.retry_without_parameter,
+            "fallback_route": self.fallback_route,
+        }
+
+
+@dataclass(frozen=True)
 class TransparencyPolicy:
     default_route: str = "chroma-matting"
     prompt_only_allow: tuple[PromptOnlyRule, ...] = ()
     llm_assisted: LlmAssistedPolicy = field(default_factory=LlmAssistedPolicy)
+    native: NativeTransparencyPolicy = field(default_factory=NativeTransparencyPolicy)
 
 
 @dataclass(frozen=True)
@@ -105,6 +122,13 @@ class TransparencyPlan:
     mask_path: Path | None = None
     options: dict[str, Any] = field(default_factory=dict)
     llm_assisted: LlmAssistedPolicy = field(default_factory=LlmAssistedPolicy)
+    native_retry_without_parameter: bool = False
+    native_fallback_route: str | None = None
+    native_attempted: bool = False
+    native_parameter: str | None = None
+    retried_without_parameter: bool = False
+    api_attempts: int = 0
+    warnings: tuple[str, ...] = ()
 
     def to_record(self) -> dict[str, Any]:
         return {
@@ -114,8 +138,15 @@ class TransparencyPlan:
             "mask": self.mask_path.as_posix() if self.mask_path else None,
             "options": dict(self.options),
             "llm_assisted": self.llm_assisted.to_record(),
+            "native_retry_without_parameter": self.native_retry_without_parameter,
+            "native_fallback_route": self.native_fallback_route,
+            "native_attempted": self.native_attempted,
+            "native_parameter": self.native_parameter,
+            "retried_without_parameter": self.retried_without_parameter,
+            "api_attempts": self.api_attempts,
+            "final_route": self.mode,
             "status": "pending" if self.mode != "none" else "not_requested",
-            "warnings": [],
+            "warnings": list(self.warnings),
         }
 
     @classmethod
@@ -127,6 +158,13 @@ class TransparencyPlan:
             mask_path=Path(str(value["mask"])).expanduser().resolve() if value.get("mask") else None,
             options=dict(value.get("options") or {}),
             llm_assisted=_resolve_llm_assisted(value.get("llm_assisted")),
+            native_retry_without_parameter=bool(value.get("native_retry_without_parameter", False)),
+            native_fallback_route=(str(value["native_fallback_route"]) if value.get("native_fallback_route") else None),
+            native_attempted=bool(value.get("native_attempted", False)),
+            native_parameter=(str(value["native_parameter"]) if value.get("native_parameter") else None),
+            retried_without_parameter=bool(value.get("retried_without_parameter", False)),
+            api_attempts=int(value.get("api_attempts") or 0),
+            warnings=tuple(str(item) for item in value.get("warnings", []) if isinstance(item, str)),
         )
 
 
@@ -136,11 +174,14 @@ def resolve_policy(value: Any) -> TransparencyPolicy:
     if not isinstance(value, dict):
         raise ValueError("auth.json transparency must be an object")
     default_route = str(value.get("default_route") or "chroma-matting").strip().lower()
-    if default_route not in LOCAL_ROUTES:
+    native_value = value.get("native")
+    if default_route not in LOCAL_ROUTES | {"native-alpha"}:
         raise ValueError(
-            "auth.json transparency.default_route must be chroma-matting, "
-            "emissive-alpha, or mask-alpha"
+            "auth.json transparency.default_route must be chroma-matting, emissive-alpha, mask-alpha, or native-alpha"
         )
+    native = _resolve_native_policy(native_value)
+    if default_route == "native-alpha" and not native.enabled:
+        raise ValueError("auth.json transparency.native.enabled must be true when default_route is native-alpha")
     rules_value = value.get("prompt_only_allow", [])
     if not isinstance(rules_value, list):
         raise ValueError("auth.json transparency.prompt_only_allow must be an array")
@@ -166,7 +207,35 @@ def resolve_policy(value: Any) -> TransparencyPolicy:
         default_route=default_route,
         prompt_only_allow=tuple(rules),
         llm_assisted=_resolve_llm_assisted(value.get("llm_assisted")),
+        native=native,
     )
+
+
+def _resolve_native_policy(value: Any) -> NativeTransparencyPolicy:
+    if value is None:
+        return NativeTransparencyPolicy()
+    if not isinstance(value, dict):
+        raise ValueError("auth.json transparency.native must be an object")
+    allowed = {"enabled", "model_ids", "retry_without_parameter", "fallback_route"}
+    unknown = sorted(set(value) - allowed)
+    if unknown:
+        raise ValueError(f"unsupported transparency.native option: {unknown[0]}")
+    enabled = value.get("enabled", True)
+    retry = value.get("retry_without_parameter", True)
+    if not isinstance(enabled, bool) or not isinstance(retry, bool):
+        raise ValueError("auth.json transparency.native enabled and retry_without_parameter must be boolean")
+    model_ids_value = value.get("model_ids", [])
+    if not isinstance(model_ids_value, list):
+        raise ValueError("auth.json transparency.native.model_ids must be an array")
+    model_ids: list[str] = []
+    for item in model_ids_value:
+        if not isinstance(item, str) or not item.strip() or item != item.strip() or item.strip() in model_ids:
+            raise ValueError("auth.json transparency.native.model_ids must contain unique non-empty strings")
+        model_ids.append(item)
+    fallback = str(value.get("fallback_route") or "chroma-matting").strip().lower()
+    if fallback not in LOCAL_ROUTES:
+        raise ValueError("auth.json transparency.native.fallback_route must be chroma-matting, emissive-alpha, or mask-alpha")
+    return NativeTransparencyPolicy(enabled, tuple(model_ids), retry, fallback)
 
 
 def _resolve_llm_assisted(value: Any) -> LlmAssistedPolicy:
@@ -315,7 +384,9 @@ def resolve_plan(context: TransparencyContext, policy: TransparencyPolicy) -> Tr
     route = requested_route
     if route is None:
         prompt_only_matches = _prompt_only_matches(context, policy)
-        if context.postprocess_allowed:
+        if policy.default_route == "native-alpha":
+            route = "native-alpha"
+        elif context.postprocess_allowed:
             route = policy.default_route
         elif prompt_only_matches:
             route = "prompt-alpha"
@@ -325,6 +396,19 @@ def resolve_plan(context: TransparencyContext, policy: TransparencyPolicy) -> Tr
                 prompt=context.prompt,
                 llm_assisted=policy.llm_assisted,
             )
+    if route == "native-alpha":
+        if not policy.native.enabled:
+            raise TransparencyUnavailableError(
+                "native-alpha transparency is disabled in configuration."
+            )
+        return TransparencyPlan(
+            mode="native-alpha",
+            prompt=_native_prompt(context.prompt),
+            options={"native_parameter": "transparent"},
+            llm_assisted=policy.llm_assisted,
+            native_retry_without_parameter=policy.native.retry_without_parameter,
+            native_fallback_route=policy.native.fallback_route,
+        )
     if route in LOCAL_ROUTES:
         if not context.postprocess_allowed:
             raise TransparencyUnavailableError(
@@ -420,12 +504,12 @@ def process_file(source: Path, target: Path, plan: TransparencyPlan) -> dict[str
         _copy_exact(source, target)
         return _result(source, target, plan, "pass", source_check, [])
 
-    if plan.mode in {"prompt-alpha", INSPECT_ALPHA_ROUTE}:
+    if plan.mode in {"prompt-alpha", "native-alpha", INSPECT_ALPHA_ROUTE}:
         _copy_exact(source, target)
         warning = (
             "alpha_prompt_unmet: the returned image has no usable transparent background; "
             "returned the original image"
-            if plan.mode == "prompt-alpha"
+            if plan.mode in {"prompt-alpha", "native-alpha"}
             else "source_alpha_unmet: local transparency processing was disabled and the returned image "
             "has no usable transparent background; returned the original image"
         )
@@ -748,6 +832,15 @@ def _alpha_prompt(prompt: str) -> str:
         "requested subject must have alpha 0, not a white, black, colored, or checkerboard background. Keep "
         "only the requested subject and preserve antialiased partially transparent edge pixels. No floor, "
         "backdrop, cast shadow, glow, or ambient background. The final image must contain a real alpha channel."
+    )
+
+
+def _native_prompt(prompt: str) -> str:
+    return (
+        f"{prompt}\n\n"
+        "Native transparency contract: output an isolated subject with a real alpha channel on a genuinely transparent background. "
+        "Every pixel outside the requested subject must be fully transparent. No scenery, backdrop, floor, "
+        "frame, checkerboard, cast shadow, glow, or watermark. Preserve clean antialiased subject edges."
     )
 
 

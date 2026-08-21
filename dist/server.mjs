@@ -51,7 +51,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 var define_RELEASE_IDENTITY_default;
 var init_define_RELEASE_IDENTITY = __esm({
   "<define:__RELEASE_IDENTITY__>"() {
-    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "1.1.1", serverBuildDigest: "e9a5a1419e026c077846ebc6ba9a8498ad05872b73f807f717bad44df1c0a9c4", widgetAssetDigest: "aa3ca9ecff54c3d04b2f4dd8afecd84c5f3499bbc2341acbb28668c0440c69e7", fingerprint: "2f0234ba6d731e66d281", resourceUris: { result: "ui://openai-compatible-imagegen/result-2f0234ba6d731e66d281.html", editor: "ui://openai-compatible-imagegen/editor-2f0234ba6d731e66d281.html" } };
+    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "1.1.1", serverBuildDigest: "ab5f84f47025b71f8b774394676b1e5325d0e16487ff484eb3b7c560e7a73c92", widgetAssetDigest: "e905e481df75449dd8b21c683907f9f077f0352ebbfcbd1de57552d22373c54a", fingerprint: "1d5700d0ac165427e504", resourceUris: { result: "ui://openai-compatible-imagegen/result-1d5700d0ac165427e504.html", editor: "ui://openai-compatible-imagegen/editor-1d5700d0ac165427e504.html" } };
   }
 });
 
@@ -22277,6 +22277,8 @@ var MASK_SEGMENT_LEAF_SIZE = 8;
 var MASK_RASTER_TILE_SIZE = 64;
 async function saveImageAnnotations({ imageId, items }, {
   artifactRoot,
+  modelProfileId = void 0,
+  activeProfile = "primary/gpt-image-2",
   runRepositoryOperation = runRepositoryFsOperation
 } = {}) {
   if (!Array.isArray(items) || items.length === 0) throw new Error("at least one annotation is required");
@@ -22295,7 +22297,7 @@ async function saveImageAnnotations({ imageId, items }, {
     const strategy = maskStrategy(maskItems);
     const unsignedPolicy = {
       policyVersion: "mask-policy-v2",
-      modelProfileId: "primary/gpt-image-2",
+      modelProfileId: modelProfileId || activeProfile,
       requiredCapabilities: { mask: true },
       strategy,
       parentImageId: imageId,
@@ -32181,7 +32183,7 @@ async function executeBatchItem({ item, context, runTask, readArtifact, validate
     if (item.operation === "edit") {
       await validateEdit(item, context);
     }
-    const result = await runTask(machineTaskFor(item), context);
+    const result = await runTask(machineTaskFor(item, context), context);
     if (!result?.ok) {
       return failedBatchOutcome(item, result?.error, "image_task_failed");
     }
@@ -32427,12 +32429,12 @@ function manifestFailure(error40) {
     }
   };
 }
-function machineTaskFor(item) {
+function machineTaskFor(item, context) {
   const {
     requestId: _requestId,
     operation,
     prompt,
-    modelProfileId = DEFAULT_MODEL_PROFILE_ID,
+    modelProfileId = context?.activeProfile || DEFAULT_MODEL_PROFILE_ID,
     transparency,
     delivery,
     ...rest
@@ -32553,7 +32555,7 @@ var outputSchema = {
   background: external_exports2.enum(["auto", "opaque"]).optional()
 };
 var transparencyInputSchema = external_exports2.object({
-  route: external_exports2.enum(["chroma-matting", "emissive-alpha", "mask-alpha", "prompt-alpha"]).optional(),
+  route: external_exports2.enum(["chroma-matting", "emissive-alpha", "mask-alpha", "prompt-alpha", "native-alpha"]).optional(),
   options: external_exports2.record(external_exports2.union([external_exports2.string(), external_exports2.number(), external_exports2.boolean()])).optional(),
   maskImageId: imageIdSchema.optional()
 }).strict();
@@ -32582,7 +32584,7 @@ var batchGenerateItemSchema = external_exports2.object({
   requestId: batchRequestIdSchema,
   operation: external_exports2.literal("generate"),
   prompt: external_exports2.string().min(1),
-  modelProfileId: external_exports2.literal("primary/gpt-image-2").optional(),
+  modelProfileId: external_exports2.string().min(1).optional(),
   transparency: transparencyInputSchema.optional(),
   delivery: batchDeliverySchema.optional(),
   ...outputSchema,
@@ -32594,7 +32596,7 @@ var batchEditItemSchema = external_exports2.object({
   parentImageId: imageIdSchema,
   referenceImageIds: external_exports2.array(imageIdSchema).max(10).optional(),
   prompt: external_exports2.string().min(1),
-  modelProfileId: external_exports2.literal("primary/gpt-image-2").optional(),
+  modelProfileId: external_exports2.string().min(1).optional(),
   transparency: transparencyInputSchema.optional(),
   delivery: batchDeliverySchema.optional(),
   ...outputSchema,
@@ -32771,7 +32773,7 @@ function createImageAuditHandlers({ runTask, readArtifact }) {
       requireDependency(runTask, "runTask");
       const result = await runTask({
         operation: "get_batch_manifest",
-        modelProfileId: "primary/gpt-image-2",
+        modelProfileId: context.activeProfile,
         batchId
       }, context);
       if (!result?.ok) {
@@ -32796,7 +32798,7 @@ function createImageAuditHandlers({ runTask, readArtifact }) {
       requireDependency(readArtifact, "readArtifact");
       const result = await runTask({
         operation: "get_delivery_receipt",
-        modelProfileId: "primary/gpt-image-2",
+        modelProfileId: context.activeProfile,
         deliveryReceiptId
       }, context);
       if (!result?.ok) {
@@ -33127,7 +33129,12 @@ var CONFIG_TEMPLATE = Object.freeze({
   } },
   defaults: { size: "1536x1024", quality: "auto", output_format: "png" },
   postprocess: { enabled: true },
-  transparency: { default_route: "chroma-matting", prompt_only_allow: [], llm_assisted: {
+  transparency: { default_route: "native-alpha", native: {
+    enabled: true,
+    model_ids: ["gpt-image-1", "gpt-image-1.5", "gpt-image-2"],
+    retry_without_parameter: true,
+    fallback_route: "chroma-matting"
+  }, prompt_only_allow: [], llm_assisted: {
     enabled: false,
     max_attempts: 2,
     allow_parameter_tuning: true,
@@ -33169,15 +33176,64 @@ async function initializeImageConfig({ userHome = os.homedir(), projectRoot } = 
     if (error40?.code === "EEXIST") throw new ImageConfigManagementError("image_config_exists");
     throw new ImageConfigManagementError("image_config_write_failed");
   }
-  return { created: true, path: target, config: redactConfig(CONFIG_TEMPLATE), gitignoreUpdated: true };
+  return {
+    created: true,
+    path: target,
+    config: redactConfig(CONFIG_TEMPLATE),
+    gitignoreUpdated: true,
+    nextSteps: [
+      "\u8BBE\u7F6E provider.api_key_env \u5BF9\u5E94\u7684\u73AF\u5883\u53D8\u91CF",
+      "\u6309\u4F9B\u5E94\u5546\u5B9E\u9645\u503C\u4FEE\u6539 active_profile \u548C models.<profile>.model\uFF0C\u6A21\u578B ID \u4E0D\u8981\u6C42\u4F7F\u7528\u6807\u51C6\u540D\u79F0",
+      "\u65B0\u914D\u7F6E\u9ED8\u8BA4\u542F\u7528 native-alpha\uFF1B\u5982\u679C\u4FDD\u7559\u65E7\u914D\u7F6E\uFF0C\u8BF7\u5728 inspect_image_config \u7684\u63D0\u793A\u4E0B\u663E\u5F0F\u66F4\u65B0\u900F\u660E\u7B56\u7565",
+      "\u786E\u8BA4 transparency.native.model_ids \u53EA\u662F\u80FD\u529B\u58F0\u660E\uFF1B\u4E0D\u786E\u5B9A\u65F6\u53EF\u7559\u7A7A\u6570\u7EC4",
+      "\u8C03\u7528 inspect_image_config \u68C0\u67E5\u6709\u6548\u914D\u7F6E\uFF0C\u7136\u540E\u91CD\u65B0\u7ED1\u5B9A\u9879\u76EE"
+    ],
+    guidance: {
+      modelIdIsUserConfigured: true,
+      nativeModelIdsAreCapabilityDeclaration: true,
+      retryWithoutParameterDefault: true,
+      requiresRebind: true
+    }
+  };
 }
 async function inspectImageConfig({ userHome = os.homedir(), projectRoot } = {}) {
   const userPath = userConfigPath(userHome);
   const user = await readManagedConfig(userPath, "image_config_invalid", false);
   const project = projectRoot ? await readManagedConfig(projectConfigPath(projectRoot), "project_config_invalid", true) : null;
+  const activeProfile = user?.active_profile || null;
+  const activeModel = activeProfile && user?.models?.[activeProfile];
+  const transparency = user?.transparency || {};
+  const native = transparency.native || {};
+  const warnings = [];
+  const nextSteps = [];
+  if (!isRecord2(transparency.native) && transparency.default_route !== "native-alpha") {
+    warnings.push("\u5F53\u524D\u914D\u7F6E\u672A\u58F0\u660E transparency.native\uFF1B\u4E3A\u4FDD\u6301\u517C\u5BB9\u4ECD\u4F7F\u7528\u65E7\u900F\u660E\u8DEF\u7EBF\u3002\u82E5\u8981\u542F\u7528\u539F\u751F\u900F\u660E\uFF0C\u8BF7\u66F4\u65B0\u900F\u660E\u914D\u7F6E\u5E76\u91CD\u65B0\u7ED1\u5B9A\u9879\u76EE\u3002");
+    nextSteps.push("\u5C06 transparency.default_route \u8BBE\u7F6E\u4E3A native-alpha\uFF0C\u5E76\u786E\u8BA4 transparency.native.enabled=true");
+  }
+  if (activeModel?.model && Array.isArray(native.model_ids) && native.model_ids.length && !native.model_ids.includes(activeModel.model)) {
+    warnings.push("\u5F53\u524D\u6A21\u578B ID \u672A\u5217\u5165 transparency.native.model_ids\uFF1B\u660E\u786E\u8BF7\u6C42 native-alpha \u4ECD\u4F1A\u4EA4\u7531\u4F9B\u5E94\u5546\u5224\u5B9A\u3002");
+  }
+  if (!nextSteps.length) nextSteps.push("\u786E\u8BA4\u5F53\u524D\u6A21\u578B\u548C\u900F\u660E\u7B56\u7565\u540E\u91CD\u65B0\u7ED1\u5B9A\u9879\u76EE");
   return {
     user: { path: userPath, exists: Boolean(user), config: user ? redactConfig(user) : null },
-    project: { path: projectRoot ? projectConfigPath(projectRoot) : null, exists: Boolean(project), config: project ? redactConfig(project) : null }
+    project: { path: projectRoot ? projectConfigPath(projectRoot) : null, exists: Boolean(project), config: project ? redactConfig(project) : null },
+    activeProfile,
+    provider: activeModel?.provider || null,
+    modelId: activeModel?.model || null,
+    transparencySummary: {
+      defaultRoute: transparency.default_route || "chroma-matting",
+      nativeEnabled: native.enabled === true,
+      nativeModelIds: Array.isArray(native.model_ids) ? native.model_ids : [],
+      retryWithoutParameter: native.retry_without_parameter !== false,
+      fallbackRoute: native.fallback_route || "chroma-matting"
+    },
+    capabilitySummary: {
+      modelIdConfiguredByUser: true,
+      nativeModelIdsAreDeclarationOnly: true,
+      providerValidationPending: true
+    },
+    warnings,
+    nextSteps
   };
 }
 async function updateImageConfig({ userHome = os.homedir(), projectRoot, scope = "user", changes }) {
@@ -33192,7 +33248,15 @@ async function updateImageConfig({ userHome = os.homedir(), projectRoot, scope =
   else validateUserConfig(next);
   await ensureConfigIgnored(target);
   await writeManagedConfig(target, next);
-  return { scope, path: target, config: redactConfig(next) };
+  return {
+    scope,
+    path: target,
+    config: redactConfig(next),
+    changeSummary: Object.keys(changes),
+    validation: { ok: true },
+    requiresRebind: true,
+    nextSteps: ["\u91CD\u65B0\u7ED1\u5B9A\u9879\u76EE\u4EE5\u5237\u65B0\u6709\u6548\u914D\u7F6E\u5FEB\u7167", "\u8C03\u7528 inspect_image_config \u786E\u8BA4\u6A21\u578B\u548C\u900F\u660E\u7B56\u7565"]
+  };
 }
 var ImageConfigManagementError = class extends Error {
   constructor(code) {
@@ -33234,7 +33298,7 @@ async function resolveImageConfigBinding({
     projectConfigSha256: projectBytes === null ? null : sha256(projectBytes),
     effectiveConfigJson,
     effectiveConfigSha256: sha256(Buffer.from(effectiveConfigJson, "utf8")),
-    activeProfile: ACTIVE_PROFILE,
+    activeProfile: userConfig.active_profile,
     runtimeDefaults: Object.freeze({
       timeout_seconds: defaults.timeout_seconds ?? DEFAULT_TIMEOUT_SECONDS,
       concurrency: defaults.concurrency ?? DEFAULT_CONCURRENCY
@@ -33369,14 +33433,14 @@ function parseConfigSnapshot(configBytes, errorCode) {
 }
 function validateUserConfig(config2) {
   requireExactKeys(config2, USER_TOP_LEVEL_KEYS, "image_config_invalid");
-  if (config2.config_version !== 1 || config2.active_profile !== ACTIVE_PROFILE) {
+  if (config2.config_version !== 1 || typeof config2.active_profile !== "string" || !config2.active_profile.trim()) {
     throw invalidImageConfigError();
   }
   if (!isRecord2(config2.providers) || !isRecord2(config2.models)) throw invalidImageConfigError();
-  const model = config2.models[ACTIVE_PROFILE];
+  const model = config2.models[config2.active_profile];
   if (!isRecord2(model)) throw invalidImageConfigError();
   requireExactKeys(model, MODEL_KEYS, "image_config_invalid");
-  if (model.model !== "gpt-image-2" || typeof model.provider !== "string") {
+  if (typeof model.model !== "string" || !model.model.trim() || model.model.trim() !== model.model || typeof model.provider !== "string") {
     throw invalidImageConfigError();
   }
   const providerId = stripPythonWhitespace(model.provider);
@@ -33482,11 +33546,19 @@ function validatePostprocess(value) {
 function validateTransparency(value) {
   if (value === void 0) return;
   if (!isRecord2(value)) throw invalidImageConfigError();
-  const allowed = /* @__PURE__ */ new Set(["default_route", "prompt_only_allow", "llm_assisted"]);
+  const allowed = /* @__PURE__ */ new Set(["default_route", "native", "prompt_only_allow", "llm_assisted"]);
   if (unknownKeys(value, allowed).length) throw invalidImageConfigError();
   if (value.default_route !== void 0) {
     const route = String(value.default_route || "chroma-matting").trim().toLowerCase();
-    if (!(/* @__PURE__ */ new Set(["chroma-matting", "emissive-alpha", "mask-alpha"])).has(route)) throw invalidImageConfigError();
+    if (!(/* @__PURE__ */ new Set(["chroma-matting", "emissive-alpha", "mask-alpha", "native-alpha"])).has(route)) throw invalidImageConfigError();
+    if (route === "native-alpha" && (!isRecord2(value.native) || value.native.enabled !== true)) throw invalidImageConfigError();
+  }
+  if (value.native !== void 0) {
+    if (!isRecord2(value.native) || unknownKeys(value.native, /* @__PURE__ */ new Set(["enabled", "model_ids", "retry_without_parameter", "fallback_route"])).length) throw invalidImageConfigError();
+    if (value.native.enabled !== void 0 && typeof value.native.enabled !== "boolean") throw invalidImageConfigError();
+    if (value.native.retry_without_parameter !== void 0 && typeof value.native.retry_without_parameter !== "boolean") throw invalidImageConfigError();
+    if (value.native.model_ids !== void 0 && (!Array.isArray(value.native.model_ids) || value.native.model_ids.some((model) => typeof model !== "string" || !model.trim() || model !== model.trim()) || new Set(value.native.model_ids).size !== value.native.model_ids.length)) throw invalidImageConfigError();
+    if (value.native.fallback_route !== void 0 && !(/* @__PURE__ */ new Set(["chroma-matting", "emissive-alpha", "mask-alpha"])).has(value.native.fallback_route)) throw invalidImageConfigError();
   }
   if (value.prompt_only_allow !== void 0) {
     if (!Array.isArray(value.prompt_only_allow)) throw invalidImageConfigError();
@@ -35059,7 +35131,7 @@ function registerConfigTools(server2, configManager, toolError2) {
     title: "Initialize image configuration",
     description: "Create an image configuration template at the fixed user path without overwriting an existing file. Protect user and optional project configuration directories with a local .gitignore containing only *, and prefer api_key_env in the template.",
     inputSchema: { projectRoot: external_exports2.string().min(1).optional() },
-    outputSchema: external_exports2.object({ created: external_exports2.literal(true), path: external_exports2.string().min(1), config: external_exports2.record(external_exports2.any()), gitignoreUpdated: external_exports2.boolean() }).strict(),
+    outputSchema: external_exports2.object({ created: external_exports2.literal(true), path: external_exports2.string().min(1), config: external_exports2.record(external_exports2.any()), gitignoreUpdated: external_exports2.boolean() }).passthrough(),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }
   }, async ({ projectRoot }) => {
     try {
@@ -35073,7 +35145,7 @@ function registerConfigTools(server2, configManager, toolError2) {
     title: "Inspect image configuration",
     description: "Return redacted user configuration, optional project overrides, and fixed paths without returning api_key or other credentials.",
     inputSchema: { projectRoot: external_exports2.string().min(1).optional() },
-    outputSchema: external_exports2.object({ user: external_exports2.record(external_exports2.any()), project: external_exports2.record(external_exports2.any()) }).strict(),
+    outputSchema: external_exports2.object({ user: external_exports2.record(external_exports2.any()), project: external_exports2.any() }).passthrough(),
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
   }, async ({ projectRoot }) => {
     try {
@@ -35087,7 +35159,7 @@ function registerConfigTools(server2, configManager, toolError2) {
     title: "Update image configuration",
     description: "Update allowlisted user or project configuration fields and protect the target configuration directory with a local .gitignore containing only *. User-level api_key writes require an explicit request and remain redacted; project scope rejects credentials and non-allowlisted fields. Rebind the project after an update.",
     inputSchema: { scope: external_exports2.enum(["user", "project"]).default("user"), projectRoot: external_exports2.string().min(1).optional(), changes: external_exports2.record(external_exports2.any()) },
-    outputSchema: external_exports2.object({ scope: external_exports2.enum(["user", "project"]), path: external_exports2.string().min(1), config: external_exports2.record(external_exports2.any()) }).strict(),
+    outputSchema: external_exports2.object({ scope: external_exports2.enum(["user", "project"]), path: external_exports2.string().min(1), config: external_exports2.record(external_exports2.any()) }).passthrough(),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }
   }, async ({ scope, projectRoot, changes }) => {
     try {
@@ -35107,6 +35179,7 @@ var legacyWidgetResourceFingerprints = [
 var editorSessionIdSchema = external_exports2.string().regex(/^eds_[0-9a-f]{32}$/).describe("Open canvas session ID");
 var projectBindingIdSchema = external_exports2.string().regex(/^pbind_[0-9a-f]{64}$/).describe("Image project binding ID");
 var projectBindingInputSchema = { projectBindingId: projectBindingIdSchema };
+var modelProfileIdSchema = external_exports2.string().min(1);
 var annotationIdSchema = external_exports2.string().regex(/^ann_[0-9A-HJKMNP-TV-Z]{26}$/);
 var submissionIdSchema = external_exports2.string().regex(/^sub_[0-9a-f]{32}$/);
 var deliveryReceiptIdPattern = /^delivery_[0-9a-f]{64}$/;
@@ -35129,7 +35202,7 @@ var editorSessionOutputSchema = external_exports2.object({
 }).strict();
 var maskPolicyOutputSchema = external_exports2.object({
   policyVersion: external_exports2.literal("mask-policy-v2"),
-  modelProfileId: external_exports2.literal("primary/gpt-image-2"),
+  modelProfileId: modelProfileIdSchema,
   requiredCapabilities: external_exports2.object({ mask: external_exports2.literal(true) }).strict(),
   strategy: external_exports2.enum(["edit-only", "protect-only", "mixed"]),
   parentImageId: imageIdSchema,
@@ -35284,6 +35357,8 @@ var retainedHostErrorCodes = /* @__PURE__ */ new Set([
 ]);
 var sensitiveHostFieldKeyPattern = /(api[_-]?key|authorization|credential|password|secret|token|cookie)/i;
 var hostObservationProvenance = "unverified_widget_report";
+var DEFAULT_MODEL_PROFILE_ID2 = "primary/gpt-image-2";
+var SERVER_INSTRUCTIONS = "After generate_image or edit_image succeeds, call render_image_results once with the returned artifact IDs in order before the final response. After deliver_image succeeds with deliveryReady=true, call render_image_results with the returned derivative artifact IDs. After batch_images succeeds, call render_image_results once with up to 10 final presentation IDs, preferring delivery-ready derivatives over API originals. Do not ask the user to request this display step, and do not render the same result twice.";
 function createImagegenServer({
   releaseIdentity,
   launchContext,
@@ -35311,6 +35386,7 @@ function createImagegenServer({
       version: releaseIdentity.pluginVersion
     },
     {
+      instructions: SERVER_INSTRUCTIONS,
       capabilities: {
         experimental: {
           // Development-only: release-bound widget URIs require a fresh tools/list during pre-release validation.
@@ -35524,7 +35600,7 @@ function createImagegenServer({
     async ({ projectBindingId }) => await withBoundProject(projectContext, projectBindingId, async (context) => {
       try {
         const result = await runTask(
-          { operation: "list_models", modelProfileId: "primary/gpt-image-2" },
+          { operation: "list_models", modelProfileId: context.activeProfile || DEFAULT_MODEL_PROFILE_ID2 },
           context
         );
         if (!result?.ok) return toolError(new Error(result?.error?.message || "model catalog unavailable"), result?.error?.code);
@@ -35542,21 +35618,21 @@ function createImagegenServer({
     "generate_image",
     {
       title: "Generate images",
-      description: "Generate one or more independent candidate images with the configured gpt-image-2 model. Multiple candidates run as ordered single-image requests and return only after the full group succeeds.",
+      description: "Generate one or more independent candidate images with the configured model. Multiple candidates run as ordered single-image requests and return only after the full group succeeds. After success, call render_image_results once with the returned artifact IDs before replying to the user.",
       inputSchema: {
         ...projectBindingInputSchema,
         prompt: external_exports2.string().min(1),
-        modelProfileId: external_exports2.literal("primary/gpt-image-2").optional(),
+        modelProfileId: modelProfileIdSchema.optional(),
         transparency: transparencyInputSchema.optional(),
         ...outputSchema
       },
       outputSchema: imageArtifactsOutputSchema,
       annotations: writeAnnotations()
     },
-    async ({ projectBindingId, prompt, modelProfileId = "primary/gpt-image-2", transparency, ...output }) => await withBoundProject(projectContext, projectBindingId, async (context) => await executeImageTask(
+    async ({ projectBindingId, prompt, modelProfileId, transparency, ...output }) => await withBoundProject(projectContext, projectBindingId, async (context) => await executeImageTask(
       {
         operation: "generate",
-        modelProfileId,
+        modelProfileId: modelProfileId || context.activeProfile || DEFAULT_MODEL_PROFILE_ID2,
         prompt,
         inputArtifactIds: [],
         annotationId: null,
@@ -35572,7 +35648,7 @@ function createImagegenServer({
     "edit_image",
     {
       title: "Edit image",
-      description: "Create a new immutable image version from a parent image and prompt.",
+      description: "Create a new immutable image version from a parent image and prompt. After success, call render_image_results once with the returned child artifact ID before replying to the user.",
       inputSchema: {
         ...projectBindingInputSchema,
         parentImageId: imageIdSchema,
@@ -35580,7 +35656,7 @@ function createImagegenServer({
         referenceImageIds: external_exports2.array(imageIdSchema).optional(),
         annotationId: annotationIdSchema.optional(),
         submissionId: submissionIdSchema.optional(),
-        modelProfileId: external_exports2.literal("primary/gpt-image-2").optional(),
+        modelProfileId: modelProfileIdSchema.optional(),
         transparency: transparencyInputSchema.optional(),
         ...outputSchema
       },
@@ -35592,11 +35668,12 @@ function createImagegenServer({
         parentImageId,
         referenceImageIds = [],
         prompt,
-        modelProfileId = "primary/gpt-image-2",
+        modelProfileId: requestedModelProfileId,
         transparency,
         ...output
       } = arguments_;
       const annotationId = arguments_.annotationId ?? null;
+      const modelProfileId = requestedModelProfileId || context.activeProfile || DEFAULT_MODEL_PROFILE_ID2;
       delete output.projectBindingId;
       delete output.annotationId;
       delete output.submissionId;
@@ -35710,7 +35787,7 @@ function createImagegenServer({
     "batch_images",
     {
       title: "Batch image tasks",
-      description: "Run independent generation and standard edit tasks, return ordered per-item results with partial success, and do not display images automatically.",
+      description: "Run independent generation and standard edit tasks with ordered partial results. After success, call render_image_results once with up to 10 final presentation IDs, preferring delivery-ready derivatives over API originals, before replying to the user.",
       inputSchema: {
         ...projectBindingInputSchema,
         items: batchItemsSchema,
@@ -35735,15 +35812,20 @@ function createImagegenServer({
         },
         recordManifest: async (manifest) => await runTask({
           operation: "record_batch",
-          modelProfileId: "primary/gpt-image-2",
+          modelProfileId: context.activeProfile || DEFAULT_MODEL_PROFILE_ID2,
           manifest
         }, context)
       });
       const artifacts = batch.results.flatMap((item) => item.ok ? item.artifacts : []);
+      const presentationIds = batch.results.flatMap((item) => {
+        if (!item.ok) return [];
+        if (item.delivery?.deliveryReady && item.delivery.artifactIds?.length) return item.delivery.artifactIds;
+        return item.artifacts.map((artifact) => artifact.id);
+      }).slice(0, 10);
       return {
         content: [{
           type: "text",
-          text: `\u6279\u91CF\u56FE\u7247\u4EFB\u52A1\u5B8C\u6210\uFF1A\u6210\u529F ${batch.summary.succeeded} \u9879\uFF0C\u5931\u8D25 ${batch.summary.failed} \u9879\u3002`
+          text: `\u6279\u91CF\u56FE\u7247\u4EFB\u52A1\u5B8C\u6210\uFF1A\u6210\u529F ${batch.summary.succeeded} \u9879\uFF0C\u5931\u8D25 ${batch.summary.failed} \u9879\u3002${presentationIds.length ? ` \u5728\u56DE\u590D\u7528\u6237\u524D\u8C03\u7528 render_image_results \u663E\u793A\uFF1A${presentationIds.join(", ")}\u3002` : ""}`
         }],
         structuredContent: batch,
         _meta: {
@@ -35780,22 +35862,22 @@ function createImagegenServer({
     "deliver_image",
     {
       title: "Deliver image",
-      description: "Run local exact-size, grid, preview-board, and QA delivery for a stable image ID. Keep the original immutable, store derivatives separately, and do not attach a canvas automatically.",
+      description: "Run local exact-size, grid, preview-board, and QA delivery for a stable image ID. Keep the original immutable and store derivatives separately. When deliveryReady is true, call render_image_results with the returned derivative artifact IDs before replying to the user.",
       inputSchema: {
         ...projectBindingInputSchema,
         imageId: imageIdSchema,
-        modelProfileId: external_exports2.literal("primary/gpt-image-2").optional(),
+        modelProfileId: modelProfileIdSchema.optional(),
         delivery: deliveryInputSchema
       },
       outputSchema: imageDeliveryOutputSchema,
       annotations: writeAnnotations()
     },
-    async ({ projectBindingId, imageId, modelProfileId = "primary/gpt-image-2", delivery }) => await withBoundProject(projectContext, projectBindingId, async (context) => {
+    async ({ projectBindingId, imageId, modelProfileId, delivery }) => await withBoundProject(projectContext, projectBindingId, async (context) => {
       try {
         const result = await runTask(
           {
             operation: "deliver",
-            modelProfileId,
+            modelProfileId: modelProfileId || context.activeProfile || DEFAULT_MODEL_PROFILE_ID2,
             inputArtifactIds: [imageId],
             delivery
           },
@@ -35819,7 +35901,7 @@ function createImagegenServer({
         return {
           content: [{
             type: "text",
-            text: result.deliveryReady ? `\u5DF2\u5B8C\u6210\u56FE\u7247 ${imageId} \u7684\u672C\u5730\u4EA4\u4ED8\u3002` : `\u56FE\u7247 ${imageId} \u5DF2\u4FDD\u7559\u539F\u56FE\uFF0C\u4EA4\u4ED8\u6761\u4EF6\u5C1A\u672A\u6EE1\u8DB3\u3002`
+            text: result.deliveryReady ? `\u5DF2\u5B8C\u6210\u56FE\u7247 ${imageId} \u7684\u672C\u5730\u4EA4\u4ED8\u3002\u5728\u56DE\u590D\u7528\u6237\u524D\u8C03\u7528 render_image_results \u663E\u793A\uFF1A${artifactIds.join(", ")}\u3002` : `\u56FE\u7247 ${imageId} \u5DF2\u4FDD\u7559\u539F\u56FE\uFF0C\u4EA4\u4ED8\u6761\u4EF6\u5C1A\u672A\u6EE1\u8DB3\u3002`
           }],
           structuredContent: {
             sourceArtifactId: imageId,
@@ -36328,7 +36410,7 @@ async function readImageTaskResult(artifactIds, context, readArtifact, { recover
     return {
       content: [{
         type: "text",
-        text: recovered ? `\u5DF2\u6062\u590D ${artifacts.length} \u5F20\u65E2\u6709\u56FE\u7247\u3002` : `\u5DF2\u521B\u5EFA ${artifacts.length} \u5F20\u56FE\u7247\u3002`
+        text: `${recovered ? `\u5DF2\u6062\u590D ${artifacts.length} \u5F20\u65E2\u6709\u56FE\u7247` : `\u5DF2\u521B\u5EFA ${artifacts.length} \u5F20\u56FE\u7247`}\u3002\u5728\u56DE\u590D\u7528\u6237\u524D\u8C03\u7528 render_image_results \u663E\u793A\uFF1A${artifactIds.join(", ")}\u3002`
       }],
       structuredContent,
       _meta: {

@@ -27,11 +27,15 @@ test("configuration management initializes, redacts, and updates the fixed user 
     assert.equal(initialized.config.providers.primary.api_key, undefined);
     assert.equal(initialized.config.providers.primary.api_key_env, "IMAGE_API_KEY");
     assert.equal(initialized.config.providers.primary.proxy, undefined);
+    assert.equal(initialized.guidance.modelIdIsUserConfigured, true);
+    assert.equal(initialized.guidance.nativeModelIdsAreCapabilityDeclaration, true);
 
     const inspected = await inspectImageConfig({ userHome, projectRoot });
     assert.equal(inspected.user.exists, true);
     assert.equal(inspected.user.config.providers.primary.api_key, undefined);
     assert.equal(inspected.project.exists, false);
+    assert.equal(inspected.activeProfile, "primary/gpt-image-2");
+    assert.equal(inspected.transparencySummary.retryWithoutParameter, true);
 
     const updated = await updateImageConfig({
       userHome,
@@ -50,10 +54,50 @@ test("configuration management initializes, redacts, and updates the fixed user 
     assert.equal(updated.config.defaults.quality, "high");
     assert.equal(updated.config.providers.primary.base_url, "https://images.example.test/v1");
     assert.equal(updated.config.providers.primary.api_key_env, "NEW_IMAGE_KEY");
+    assert.equal(updated.requiresRebind, true);
     assert.deepEqual(updated.config.providers.primary.proxy, { configured: true });
     assert.equal(JSON.stringify(updated).includes("127.0.0.1:7890"), false);
     const stored = JSON.parse(await readFile(userConfigPath(userHome), "utf8"));
     assert.deepEqual(stored.providers.primary.proxy, { url: "http://127.0.0.1:7890" });
+  });
+});
+
+test("custom profile and model IDs remain valid and are exposed by inspection", async () => {
+  await withConfigRoots(async ({ projectRoot, userHome }) => {
+    const config = userConfig({
+      active_profile: "vendor/profile",
+      models: {
+        "primary/gpt-image-2": undefined,
+        "vendor/profile": { provider: "primary", model: "vendor-image-v7", capabilities: { generate: true } },
+      },
+      transparency: {
+        default_route: "native-alpha",
+        native: { enabled: true, model_ids: [], retry_without_parameter: false, fallback_route: "emissive-alpha" },
+      },
+    });
+    delete config.models["primary/gpt-image-2"];
+    await writeJson(userConfigPath(userHome), config);
+    const binding = await resolveImageConfigBinding({ projectRoot, userHome });
+    assert.equal(binding.activeProfile, "vendor/profile");
+    const inspected = await inspectImageConfig({ projectRoot, userHome });
+    assert.equal(inspected.modelId, "vendor-image-v7");
+    assert.equal(inspected.transparencySummary.retryWithoutParameter, false);
+    assert.equal(inspected.transparencySummary.fallbackRoute, "emissive-alpha");
+  });
+});
+
+test("inspection guides legacy transparency migration without rewriting the file", async () => {
+  await withConfigRoots(async ({ projectRoot, userHome }) => {
+    const configPath = userConfigPath(userHome);
+    await writeJson(configPath, userConfig());
+    const before = await readFile(configPath, "utf8");
+    const inspected = await inspectImageConfig({ projectRoot, userHome });
+
+    assert.equal(inspected.transparencySummary.defaultRoute, "chroma-matting");
+    assert.equal(inspected.transparencySummary.nativeEnabled, false);
+    assert.match(inspected.warnings.join("\n"), /未声明 transparency\.native/);
+    assert.match(inspected.nextSteps.join("\n"), /default_route 设置为 native-alpha/);
+    assert.equal(await readFile(configPath, "utf8"), before);
   });
 });
 
@@ -289,7 +333,6 @@ test("user config validates schema, active profile and resource bounds", async (
       { active_profile: "other-profile" },
       { providers: [] },
       { models: [] },
-      { models: { "primary/gpt-image-2": { provider: "primary", model: "other" } } },
       { defaults: { timeout_seconds: 0 } },
       { defaults: { timeout_seconds: 601 } },
       { defaults: { concurrency: 0 } },

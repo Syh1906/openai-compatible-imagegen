@@ -1,4 +1,4 @@
-<!-- updated: 2026-08-20 -->
+<!-- updated: 2026-08-21 -->
 # Update the Plugin or Skill
 
 > Parent: [User guides](./README.md)
@@ -13,6 +13,14 @@ Use this guide to move an existing installation to a newer Git revision or relea
 - For a fixed version, read the target release notes for breaking configuration changes.
 - Keep the current installation and local configuration until the new version passes its smoke check.
 - Download release ZIP files and `SHA256SUMS` from the same GitHub Release when you need a fixed local package.
+
+## Migrate transparency settings
+
+New configurations enable native transparency by default. Updates preserve an existing `config.json` so that an upgrade does not silently change image routing. After updating, call `inspect_image_config`; if it warns that `transparency.native` is missing, use `update_image_config` to set `transparency.default_route` to `native-alpha` and `transparency.native.enabled` to `true`.
+
+The default `transparency.native.retry_without_parameter` value is `true`. Set it to `false` only when you want a provider rejection to stop without a second request. In either case, the final image result reports whether the native parameter was sent, whether a retry occurred, and which route produced the result.
+
+After changing configuration, rebind the project and run `inspect_image_config` again. Keep the previous installation and configuration until this check succeeds.
 
 ## Update a Git marketplace Plugin
 
