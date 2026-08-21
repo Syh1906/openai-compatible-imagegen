@@ -93,6 +93,12 @@ jobs:
           echo "default_branch=$repository_default_branch" >> "$GITHUB_OUTPUT"
           echo "run_attempt=$run_attempt" >> "$GITHUB_OUTPUT"
           echo "source_sha=$source_sha" >> "$GITHUB_OUTPUT"
+      - name: Check out the authenticated preflight SHA
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.preflight.outputs.source_sha }}
+          fetch-depth: 0
+          persist-credentials: false
       - name: Download verified preflight metadata
         uses: actions/download-artifact@v4
         with:
@@ -100,12 +106,6 @@ jobs:
           path: preflight-metadata
           run-id: ${{ inputs.preflight_run_id }}
           github-token: ${{ github.token }}
-      - name: Check out the authenticated preflight SHA
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ steps.preflight.outputs.source_sha }}
-          fetch-depth: 0
-          persist-credentials: false
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
