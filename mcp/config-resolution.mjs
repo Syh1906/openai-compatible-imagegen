@@ -13,6 +13,7 @@ const DEFAULT_OUTPUT_DIRECTORY = path.join("output", "imagegen");
 const ACTIVE_PROFILE = "primary/gpt-image-2";
 const USER_TOP_LEVEL_KEYS = new Set([
   "config_version",
+  "auth_mode",
   "active_profile",
   "providers",
   "models",
@@ -44,10 +45,11 @@ const MODEL_KEYS = new Set(["provider", "model", "capabilities"]);
 const CAPABILITY_KEYS = new Set(["generate", "edit", "mask", "multi_reference"]);
 const DEFAULT_TIMEOUT_SECONDS = 600;
 const DEFAULT_CONCURRENCY = 3;
-const USER_UPDATE_KEYS = new Set(["providers", "models", "defaults", "postprocess", "transparency", "storage"]);
+const USER_UPDATE_KEYS = new Set(["auth_mode", "providers", "models", "defaults", "postprocess", "transparency", "storage"]);
 const PROJECT_UPDATE_KEYS = new Set(["defaults", "storage"]);
 const CONFIG_TEMPLATE = Object.freeze({
   config_version: 1,
+  auth_mode: "apikey",
   active_profile: ACTIVE_PROFILE,
   providers: { primary: {
     protocol: "openai-compatible",
@@ -73,6 +75,15 @@ const CONFIG_TEMPLATE = Object.freeze({
   } },
   storage: { output_directory: DEFAULT_OUTPUT_DIRECTORY },
 });
+const CHATGPT_CONFIG_TEMPLATE = Object.freeze({
+  config_version: 1,
+  auth_mode: "chatgpt",
+  defaults: structuredClone(CONFIG_TEMPLATE.defaults),
+  postprocess: structuredClone(CONFIG_TEMPLATE.postprocess),
+  transparency: structuredClone(CONFIG_TEMPLATE.transparency),
+  storage: structuredClone(CONFIG_TEMPLATE.storage),
+});
+const CHATGPT_REQUIREMENT = "codex_app_imagegen_handoff";
 
 
 export class ImageConfigResolutionError extends Error {
@@ -96,9 +107,13 @@ export function projectConfigPath(projectRoot) {
   return path.resolve(projectRoot, ".codex", CONFIG_DIRECTORY, "config.json");
 }
 
-export async function initializeImageConfig({ userHome = os.homedir(), projectRoot } = {}) {
+export async function initializeImageConfig({ userHome = os.homedir(), projectRoot, authMode = "apikey" } = {}) {
+  if (!new Set(["apikey", "chatgpt"]).has(authMode)) {
+    throw new ImageConfigManagementError("image_config_update_invalid");
+  }
   const resolvedProjectRoot = projectRoot ? requireAbsoluteProjectRoot(projectRoot) : null;
   const target = userConfigPath(userHome);
+  const template = authMode === "chatgpt" ? CHATGPT_CONFIG_TEMPLATE : CONFIG_TEMPLATE;
   await ensureConfigIgnored(target);
   if (resolvedProjectRoot) await ensureConfigIgnored(projectConfigPath(resolvedProjectRoot));
   try {
@@ -110,7 +125,7 @@ export async function initializeImageConfig({ userHome = os.homedir(), projectRo
     if (error?.code !== "ENOENT") throw new ImageConfigManagementError("image_config_write_failed");
   }
   try {
-    await writeFile(target, `${JSON.stringify(CONFIG_TEMPLATE, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
+    await writeFile(target, `${JSON.stringify(template, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
   } catch (error) {
     if (error?.code === "EEXIST") throw new ImageConfigManagementError("image_config_exists");
     throw new ImageConfigManagementError("image_config_write_failed");
@@ -118,19 +133,22 @@ export async function initializeImageConfig({ userHome = os.homedir(), projectRo
   return {
     created: true,
     path: target,
-    config: redactConfig(CONFIG_TEMPLATE),
+    config: redactConfig(template),
     gitignoreUpdated: true,
     nextSteps: [
-      "设置 provider.api_key_env 对应的环境变量",
-      "按供应商实际值修改 active_profile 和 models.<profile>.model，模型 ID 不要求使用标准名称",
+      ...(authMode === "apikey" ? ["设置 provider.api_key_env 对应的环境变量"] : []),
+      ...(authMode === "apikey"
+        ? ["按供应商实际值修改 active_profile 和 models.<profile>.model，模型 ID 不要求使用标准名称"]
+        : []),
       "新配置默认启用 native-alpha；如果保留旧配置，请在 inspect_image_config 的提示下显式更新透明策略",
       "确认 transparency.native.model_ids 只是能力声明；不确定时可留空数组",
       "调用 inspect_image_config 检查有效配置，然后重新绑定项目",
     ],
     guidance: {
-      modelIdIsUserConfigured: true,
+      modelIdIsUserConfigured: authMode === "apikey",
       nativeModelIdsAreCapabilityDeclaration: true,
       retryWithoutParameterDefault: true,
+      requiresApiProvider: authMode === "apikey",
       requiresRebind: true,
     },
   };
@@ -144,6 +162,8 @@ export async function inspectImageConfig({ userHome = os.homedir(), projectRoot 
     : null;
   const activeProfile = user?.active_profile || null;
   const activeModel = activeProfile && user?.models?.[activeProfile];
+  const defaultAuthMode = normalizeAuthMode(user?.auth_mode);
+  const apiKeyConfigured = hasCompleteApiDeclaration(user);
   const transparency = user?.transparency || {};
   const native = transparency.native || {};
   const warnings = [];
@@ -160,6 +180,9 @@ export async function inspectImageConfig({ userHome = os.homedir(), projectRoot 
     user: { path: userPath, exists: Boolean(user), config: user ? redactConfig(user) : null },
     project: { path: projectRoot ? projectConfigPath(projectRoot) : null, exists: Boolean(project), config: project ? redactConfig(project) : null },
     activeProfile,
+    defaultAuthMode,
+    apiKeyConfigured,
+    chatgptRequirement: CHATGPT_REQUIREMENT,
     provider: activeModel?.provider || null,
     modelId: activeModel?.model || null,
     transparencySummary: {
@@ -233,7 +256,11 @@ export async function resolveImageConfigBinding({
   validateUserConfig(userConfig);
 
   const effectiveConfig = mergeEffectiveConfig(userConfig, projectConfig);
-  const effectiveConfigJson = JSON.stringify(effectiveConfig);
+  const localRuntimeConfig = createLocalRuntimeConfig(effectiveConfig);
+  const apiRuntimeConfig = hasCompleteApiDeclaration(effectiveConfig)
+    ? createApiRuntimeConfig(effectiveConfig)
+    : null;
+  const effectiveConfigJson = JSON.stringify(apiRuntimeConfig ?? localRuntimeConfig);
   const artifactRoot = resolveArtifactRoot(effectiveConfig, resolvedProjectRoot);
   await validateArtifactRoot(artifactRoot, resolvedProjectRoot);
   const defaults = effectiveConfig.defaults || {};
@@ -245,7 +272,12 @@ export async function resolveImageConfigBinding({
     projectConfigSha256: projectBytes === null ? null : sha256(projectBytes),
     effectiveConfigJson,
     effectiveConfigSha256: sha256(Buffer.from(effectiveConfigJson, "utf8")),
-    activeProfile: userConfig.active_profile,
+    activeProfile: apiRuntimeConfig?.active_profile ?? null,
+    defaultAuthMode: normalizeAuthMode(userConfig.auth_mode),
+    apiKeyConfigured: apiRuntimeConfig !== null,
+    chatgptRequirement: CHATGPT_REQUIREMENT,
+    localRuntimeConfig: Object.freeze(localRuntimeConfig),
+    apiRuntimeConfig: apiRuntimeConfig === null ? null : Object.freeze(apiRuntimeConfig),
     runtimeDefaults: Object.freeze({
       timeout_seconds: defaults.timeout_seconds ?? DEFAULT_TIMEOUT_SECONDS,
       concurrency: defaults.concurrency ?? DEFAULT_CONCURRENCY,
@@ -336,6 +368,13 @@ function redactConfig(config) {
 function mergeConfigChanges(current, changes) {
   const result = structuredClone(current);
   for (const [key, value] of Object.entries(changes)) {
+    if (key === "auth_mode") {
+      if (!new Set(["apikey", "chatgpt"]).has(value)) {
+        throw new ImageConfigManagementError("image_config_update_invalid");
+      }
+      result[key] = value;
+      continue;
+    }
     if (!isRecord(value)) throw new ImageConfigManagementError("image_config_update_invalid");
     result[key] = mergeRecords(result[key], value);
   }
@@ -395,10 +434,26 @@ function parseConfigSnapshot(configBytes, errorCode) {
 
 function validateUserConfig(config) {
   requireExactKeys(config, USER_TOP_LEVEL_KEYS, "image_config_invalid");
-  if (config.config_version !== 1 || typeof config.active_profile !== "string" || !config.active_profile.trim()) {
+  if (config.config_version !== 1) throw invalidImageConfigError();
+  const authMode = normalizeAuthMode(config.auth_mode);
+  if (authMode === null) throw invalidImageConfigError();
+  const hasAnyApiDeclaration = ["active_profile", "providers", "models"]
+    .some((key) => config[key] !== undefined);
+  const hasCompleteApiConfig = hasCompleteApiDeclaration(config);
+  if ((authMode === "apikey" && !hasCompleteApiConfig) || (hasAnyApiDeclaration && !hasCompleteApiConfig)) {
     throw invalidImageConfigError();
   }
-  if (!isRecord(config.providers) || !isRecord(config.models)) throw invalidImageConfigError();
+
+  if (hasCompleteApiConfig) validateApiConfig(config);
+  validateDefaults(config.defaults, USER_DEFAULT_KEYS, "image_config_invalid");
+  validatePostprocess(config.postprocess);
+  validateTransparency(config.transparency);
+  validateStorageShape(config.storage, "image_config_invalid");
+}
+
+
+function validateApiConfig(config) {
+  if (typeof config.active_profile !== "string" || !config.active_profile.trim()) throw invalidImageConfigError();
 
   const model = config.models[config.active_profile];
   if (!isRecord(model)) throw invalidImageConfigError();
@@ -411,10 +466,6 @@ function validateUserConfig(config) {
   const provider = config.providers[providerId];
   validateProvider(provider);
   validateCapabilities(model.capabilities);
-  validateDefaults(config.defaults, USER_DEFAULT_KEYS, "image_config_invalid");
-  validatePostprocess(config.postprocess);
-  validateTransparency(config.transparency);
-  validateStorageShape(config.storage, "image_config_invalid");
 }
 
 
@@ -608,6 +659,35 @@ function mergeEffectiveConfig(userConfig, projectConfig) {
 }
 
 
+function createLocalRuntimeConfig(config) {
+  return Object.fromEntries(
+    ["config_version", "defaults", "postprocess", "transparency", "storage"]
+      .filter((key) => config[key] !== undefined)
+      .map((key) => [key, structuredClone(config[key])]),
+  );
+}
+
+
+function createApiRuntimeConfig(config) {
+  const runtimeConfig = structuredClone(config);
+  delete runtimeConfig.auth_mode;
+  return runtimeConfig;
+}
+
+
+function hasCompleteApiDeclaration(config) {
+  return typeof config?.active_profile === "string"
+    && isRecord(config?.providers)
+    && isRecord(config?.models);
+}
+
+
+function normalizeAuthMode(value) {
+  if (value === undefined) return "apikey";
+  return new Set(["apikey", "chatgpt"]).has(value) ? value : null;
+}
+
+
 function resolveArtifactRoot(config, projectRoot) {
   const configured = config.storage?.output_directory ?? DEFAULT_OUTPUT_DIRECTORY;
   if (typeof configured !== "string" || path.isAbsolute(configured)) throw outputDirectoryError();
@@ -671,7 +751,7 @@ function outputDirectoryError() {
 function invalidImageConfigError() {
   return new ImageConfigResolutionError(
     "image_config_invalid",
-    "用户图片配置缺少有效的版本、活动档案、provider 或 model 声明。",
+    "用户图片配置缺少有效的版本、认证路线，或包含不完整的 provider/model 声明。",
   );
 }
 

@@ -25,6 +25,7 @@ DELIVERY_RECEIPT_ID_PATTERN = re.compile(r"^delivery_[0-9a-f]{64}$")
 BATCH_ID_PATTERN = re.compile(r"^batch_[0-9A-HJKMNP-TV-Z]{26}$")
 BATCH_REQUEST_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
 TRANSACTION_ID_PATTERN = re.compile(r"^txn_[0-9a-f]{64}$")
+HANDOFF_ID_PATTERN = re.compile(r"^handoff_[0-9a-f]{64}$")
 MAX_PENDING_TRANSACTIONS = 64
 CROCKFORD_BASE32 = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 MIME_EXTENSIONS = {
@@ -245,6 +246,103 @@ class ArtifactRepository:
                 )
                 self._finish_transaction(mutation, marker_dir)
                 return records
+
+    def store_imported_image(
+        self,
+        *,
+        image: bytes,
+        mime_type: str,
+        prompt: str,
+        handoff_id: str,
+        acquisition: dict[str, Any],
+    ) -> ArtifactRecord:
+        if not HANDOFF_ID_PATTERN.fullmatch(handoff_id):
+            raise ValueError("invalid host image handoff ID")
+        if acquisition != {
+            "route": "chatgpt",
+            "provenance": "agent-declared-host-output",
+            "trustLevel": "declared",
+        }:
+            raise ValueError("host image acquisition metadata is invalid")
+        dimensions = inspect_image(image, mime_type)
+        parameters = {
+            "acquisition": {
+                **acquisition,
+                "handoffId": handoff_id,
+            }
+        }
+        artifact_id: str | None = None
+        with ensure_directory_tree_safely(self.project_root, self.data_root) as lease:
+            with RepositoryMutation(self.data_root, directory_lease=lease) as mutation:
+                index = self._read_index(lease=lease)
+                self._recover_incomplete_transactions(mutation, index)
+                existing_id = self._find_import_id(index, handoff_id)
+                if existing_id is not None:
+                    entry = self._require_artifact_entry(index, existing_id)
+                    if (
+                        entry.get("mimeType") != mime_type
+                        or entry.get("prompt") != prompt
+                        or entry.get("parameters") != parameters
+                    ):
+                        raise ValueError("host image handoff does not match the existing import")
+                    image_name = self._require_image_name(entry, existing_id)
+                    with mutation.open_file(Path("artifacts") / existing_id / image_name) as verified_file:
+                        if verified_file.read_bytes() != image:
+                            raise ValueError("host image handoff does not match the existing import")
+                    artifact_id = existing_id
+                else:
+                    artifact_id = self.id_factory()
+                    validate_artifact_id(artifact_id)
+                    marker_dir = self._begin_transaction(
+                        mutation,
+                        transaction_resources([artifact_id], [mime_type]),
+                    )
+                    mutation.create_directory("artifacts")
+                    self._store_images_locked(
+                        mutation=mutation,
+                        images=[image],
+                        mime_types=[mime_type],
+                        provider="codex-host",
+                        model="unreported",
+                        operation="import",
+                        prompt=prompt,
+                        parameters=parameters,
+                        parent_ids=[],
+                        annotation_id=None,
+                        inspected=[dimensions],
+                        artifact_ids=[artifact_id],
+                        derived_from=None,
+                        delivery_kinds=None,
+                        parameters_by_image=None,
+                        directory_lease=lease,
+                    )
+                    self._finish_transaction(mutation, marker_dir)
+        if artifact_id is None:
+            raise RuntimeError("host image import did not produce an artifact")
+        return self.get_artifact(artifact_id)
+
+    def get_import_by_handoff_id(self, handoff_id: str) -> ArtifactRecord | None:
+        if not HANDOFF_ID_PATTERN.fullmatch(handoff_id):
+            raise ValueError("invalid host image handoff ID")
+        self._reject_unsafe_repository_paths()
+        try:
+            with DirectoryLease(self.data_root) as lease:
+                index = self._read_index(lease=lease)
+                artifact_id = self._find_import_id(index, handoff_id)
+                return None if artifact_id is None else self._read_artifact_with_lease(lease, artifact_id)
+        except FileNotFoundError:
+            return None
+
+    @staticmethod
+    def _find_import_id(index: dict[str, Any], handoff_id: str) -> str | None:
+        matches = []
+        for artifact_id, entry in index.get("artifacts", {}).items():
+            acquisition = entry.get("parameters", {}).get("acquisition", {}) if isinstance(entry, dict) else {}
+            if entry.get("operation") == "import" and acquisition.get("handoffId") == handoff_id:
+                matches.append(artifact_id)
+        if len(matches) > 1:
+            raise ValueError("host image handoff has multiple imported artifacts")
+        return matches[0] if matches else None
 
     def store_derived_images(
         self,

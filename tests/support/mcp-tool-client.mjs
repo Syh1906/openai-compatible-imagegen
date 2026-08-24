@@ -20,6 +20,14 @@ const TEST_RELEASE_IDENTITY = createReleaseBundle({
 export const RESULT_WIDGET_URI = TEST_RELEASE_IDENTITY.resourceUris.result;
 export const EDITOR_WIDGET_URI = TEST_RELEASE_IDENTITY.resourceUris.editor;
 const PROJECT_BINDING_ID = `pbind_${"0".repeat(64)}`;
+const PROJECT_BINDING_RECEIPT = Object.freeze({
+  status: "bound",
+  projectBindingId: PROJECT_BINDING_ID,
+  distribution: "plugin",
+  defaultAuthMode: "apikey",
+  apiKeyConfigured: true,
+  chatgptRequirement: "codex_app_imagegen_handoff",
+});
 
 export function artifact(id, parentIds = []) {
   return {
@@ -55,7 +63,7 @@ export async function withClient(dependencies, callback) {
   const projectContext = {
     async bind() {
       bound = true;
-      return { status: "bound", projectBindingId: PROJECT_BINDING_ID };
+      return PROJECT_BINDING_RECEIPT;
     },
     async require(projectBindingId) {
       if (!bound || projectBindingId !== PROJECT_BINDING_ID) {
@@ -77,13 +85,16 @@ export async function withClient(dependencies, callback) {
       };
     },
   };
+  const expectedBindingReceipt = dependencies.expectedBindingReceipt ?? PROJECT_BINDING_RECEIPT;
+  const serverDependencies = { ...dependencies };
+  delete serverDependencies.expectedBindingReceipt;
   const server = createImagegenServer({
     releaseIdentity: TEST_RELEASE_IDENTITY,
     launchContext: { cwd: pluginRoot, pluginRoot },
     readWidgetHtml: async () => "<html>editor</html>",
     deleteAnnotation: async () => {},
     projectContext,
-    ...dependencies,
+    ...serverDependencies,
   });
   const client = new Client({ name: "mcp-contract-test", version: "0.1.0" });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -97,7 +108,7 @@ export async function withClient(dependencies, callback) {
       arguments: { projectRoot },
       _meta: requestMeta,
     });
-    assert.deepEqual(binding.structuredContent, { status: "bound", projectBindingId: PROJECT_BINDING_ID });
+    assert.deepEqual(binding.structuredContent, expectedBindingReceipt);
     client.callTool = async (request, ...rest) => await originalCallTool(
       {
         ...request,

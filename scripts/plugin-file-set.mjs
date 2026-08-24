@@ -32,6 +32,7 @@ export const standaloneRuntimeFileNames = Object.freeze([
 
 export const pluginAdapterFileNames = Object.freeze([
   "artifact_repository.py",
+  "host_image_import.py",
   "image_delivery.py",
   "image_delivery_ops.py",
   "image_runtime.py",
@@ -48,6 +49,7 @@ export const pluginAdapterFileNames = Object.freeze([
 
 export const runtimeFileNames = Object.freeze([
   "artifact_repository.py",
+  "host_image_import.py",
   "image_alpha.py",
   "image_batch.py",
   "image_cli.py",

@@ -1,6 +1,6 @@
 ---
 name: openai-compatible-imagegen
-description: Generate, edit, annotate, and deliver OpenAI-compatible images in Codex App, and open a focused canvas from a concrete image result. Use for generation, reference edits, mask edits, transparent delivery, batches, version inspection, exact sizing, grid splitting, preview boards, deterministic QA, and continued work on historical images. Model IDs and providers come from user configuration. Do not switch to the built-in image_gen capability or another image route.
+description: Generate, edit, annotate, and deliver images in Codex App through the configured API Key or ChatGPT subscription route, and open a focused canvas from a concrete image result. Use for generation, reference edits, mask edits, transparent delivery, batches, version inspection, exact sizing, grid splitting, preview boards, deterministic QA, and continued work on historical images.
 ---
 
 # OpenAI-Compatible Images
@@ -14,6 +14,12 @@ Before calling any project-scoped tool, call `bind_imagegen_project` with the cu
 The first bind without an ID issues a new random binding, so do not repeat an initial bind in the same task. After configuration changes, rebind with the existing `projectBindingId` and the same `projectRoot`; rebinding the same project is idempotent and refreshes the configuration digest, while changing roots conflicts. MCP persists only a domain-separated digest of the binding ID, not the raw ID. Never substitute, recover, or guess a binding ID from the transport `sessionId`, roots, MCP `cwd`, a recent project, or other local state.
 
 A `projectBindingId` survives MCP process and server restarts. Stop the current operation on `project_binding_required` or `project_binding_invalid`; do not scan old state or guess another ID. If a fresh start is required, create a new isolated binding only from the current task project root and continue with the new ID. Old canvas and submission state does not migrate automatically. App-only tools obtain the same ID from standard `tool-input.arguments.projectBindingId`, not private host fields.
+
+## Authentication routes
+
+Read the binding receipt before the first image operation and keep its `defaultAuthMode` for the task. `apikey` uses the existing API image tools and supports generation, editing, masks, batches, delivery, and canvas submissions. `chatgpt` uses the Codex host image handoff for one ordinary single-image generation: call `prepare_host_image_import`, invoke the host image generation capability once, pass the exact returned local `savedPath` to `stage_host_image_import`, then call `finalize_host_image_import` and deliver or render the committed artifact. The handoff accepts only the image produced by the current host call; do not search session JSONL, caches, or historical output directories.
+
+The ChatGPT route does not accept edits, mask submissions, batches, or `count` greater than one. Report the route's supported operation boundary and do not change to the API Key route automatically. Canvas edit controls remain available for API Key projects and are blocked for ChatGPT projects until that route adds edit support.
 
 ## Platform runtime
 

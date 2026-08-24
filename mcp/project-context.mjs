@@ -111,6 +111,10 @@ export function createProjectContext({
             ? "bound"
             : stored.status === "rebound" ? "rebound" : "already_bound",
           projectBindingId: requestedBindingId,
+          distribution: "plugin",
+          defaultAuthMode: configBinding.defaultAuthMode,
+          apiKeyConfigured: configBinding.apiKeyConfigured,
+          chatgptRequirement: configBinding.chatgptRequirement,
         };
       });
     },

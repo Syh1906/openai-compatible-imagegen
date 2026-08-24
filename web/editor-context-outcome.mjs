@@ -54,6 +54,7 @@ export function composerSubmissionStatus(result, updatingTaskInput) {
 
 export function submissionErrorStatus(stage) {
   return {
+    route: "当前图片生成路线暂不支持画布编辑",
     capabilities: "当前 Codex App 不支持将图片和文字作为同一请求提交",
     busy: "上一次任务输入框更新仍在确认中，请稍后再提交",
     preview: "标注预览生成失败，请重试",

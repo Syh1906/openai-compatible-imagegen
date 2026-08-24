@@ -157,6 +157,7 @@ class PluginSkeletonTests(unittest.TestCase):
 
         self.assertIn("conversation", manifest_copy)
         self.assertIn("focused canvas", manifest_copy)
+        self.assertIn("ChatGPT route", manifest_copy)
         self.assertNotIn("standalone canvas", manifest_copy)
         self.assertNotIn("image workspace", manifest_copy)
 
@@ -322,6 +323,7 @@ class PluginSkeletonTests(unittest.TestCase):
                 "deliver_image",
                 "destroy_image_editor",
                 "edit_image",
+                "finalize_host_image_import",
                 "finalize_image_editor_session",
                 "generate_image",
                 "get_image_artifact",
@@ -333,6 +335,7 @@ class PluginSkeletonTests(unittest.TestCase):
                 "inspect_imagegen_runtime",
                 "list_image_models",
                 "open_image_editor",
+                "prepare_host_image_import",
                 "prepare_image_edit_submission",
                 "read_image_artifact_data",
                 "render_image_results",
@@ -340,6 +343,7 @@ class PluginSkeletonTests(unittest.TestCase):
                 "reveal_image_artifact",
                 "save_image_annotations",
                 "save_image_editor_draft",
+                "stage_host_image_import",
                 "update_image_config",
             ],
         )

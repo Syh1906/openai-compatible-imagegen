@@ -623,6 +623,51 @@ test("submission stops before side effects when the host has no atomic text and 
   assert.deepEqual(calls, []);
 });
 
+
+test("ChatGPT canvas edits stop before preview, tools, context, or messages", async () => {
+  const effects = [];
+  const coordinator = createSubmissionCoordinator({
+    app: {
+      getHostCapabilities: () => ({
+        message: { text: {}, image: {} },
+        updateModelContext: { structuredContent: {} },
+      }),
+      callServerTool: async () => effects.push("tool"),
+      updateModelContext: async () => effects.push("context"),
+      sendMessage: async () => effects.push("message"),
+    },
+    rasterizePreview: async () => effects.push("preview"),
+  });
+
+  await assert.rejects(
+    coordinator.submit(editorState(), () => {}, { authMode: "chatgpt" }),
+    (error) => error.stage === "route",
+  );
+  assert.deepEqual(effects, []);
+});
+
+
+test("API Key canvas submission freezes its route and actual edit parent", async () => {
+  const app = {
+    getHostCapabilities: () => ({
+      message: { text: {}, image: {} },
+      updateModelContext: { structuredContent: {} },
+    }),
+    callServerTool: async () => preparedResponse(),
+    updateModelContext: async () => ({}),
+    sendMessage: async () => ({}),
+  };
+  const coordinator = createSubmissionCoordinator({
+    app,
+    rasterizePreview: async () => ({ mimeType: "image/png", data: "preview" }),
+  });
+
+  const result = await coordinator.submit(editorState(), () => {}, { authMode: "apikey" });
+
+  assert.equal(result.snapshot.authMode, "apikey");
+  assert.equal(result.snapshot.parentImageId, editorState().image.id);
+});
+
 test("retry after a message failure does not save or publish context twice", async () => {
   const counts = { save: 0, context: 0, message: 0 };
   const app = {

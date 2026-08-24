@@ -3,13 +3,13 @@ import { z } from "zod";
 export function registerConfigTools(server, configManager, toolError) {
   server.registerTool("initialize_image_config", {
     title: "Initialize image configuration",
-    description: "Create an image configuration template at the fixed user path without overwriting an existing file. Protect user and optional project configuration directories with a local .gitignore containing only *, and prefer api_key_env in the template.",
-    inputSchema: { projectRoot: z.string().min(1).optional() },
+    description: "Create an API Key or ChatGPT image configuration template at the fixed user path without overwriting an existing file. Protect user and optional project configuration directories with a local .gitignore containing only *; the API Key template prefers api_key_env.",
+    inputSchema: { projectRoot: z.string().min(1).optional(), authMode: z.enum(["apikey", "chatgpt"]).optional() },
     outputSchema: z.object({ created: z.literal(true), path: z.string().min(1), config: z.record(z.any()), gitignoreUpdated: z.boolean() }).passthrough(),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
-  }, async ({ projectRoot }) => {
+  }, async ({ projectRoot, authMode }) => {
     try {
-      const result = await configManager.initialize({ projectRoot });
+      const result = await configManager.initialize({ projectRoot, ...(authMode ? { authMode } : {}) });
       return { content: [{ type: "text", text: "已创建图片配置模板。请编辑固定用户配置文件并设置对应环境变量后重新绑定项目。" }], structuredContent: result };
     } catch (error) { return toolError(error); }
   });

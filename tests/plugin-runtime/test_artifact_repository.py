@@ -654,6 +654,38 @@ class ArtifactRepositoryTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "invalid artifact ID"):
             self.repository.get_artifact("../auth.json")
 
+    def test_imported_image_is_atomic_and_idempotent_by_handoff(self) -> None:
+        acquisition = {
+            "route": "chatgpt",
+            "provenance": "agent-declared-host-output",
+            "trustLevel": "declared",
+        }
+        first = self.repository.store_imported_image(
+            image=make_png(3, 2),
+            mime_type="image/png",
+            prompt="host generated sample",
+            handoff_id="handoff_" + "a" * 64,
+            acquisition=acquisition,
+        )
+        replay = self.repository.store_imported_image(
+            image=make_png(3, 2),
+            mime_type="image/png",
+            prompt="host generated sample",
+            handoff_id="handoff_" + "a" * 64,
+            acquisition=acquisition,
+        )
+
+        self.assertEqual(replay.metadata, first.metadata)
+        self.assertEqual(first.metadata["operation"], "import")
+        self.assertEqual(first.metadata["provider"], "codex-host")
+        self.assertEqual(first.metadata["model"], "unreported")
+        self.assertEqual(
+            first.metadata["parameters"]["acquisition"],
+            {**acquisition, "handoffId": "handoff_" + "a" * 64},
+        )
+        index = json.loads((self.artifact_root / "index.json").read_text(encoding="utf-8"))
+        self.assertEqual(len(index["artifacts"]), 1)
+
     def test_concurrent_writes_preserve_every_index_entry(self) -> None:
         from scripts.artifact_repository import ArtifactRepository
 

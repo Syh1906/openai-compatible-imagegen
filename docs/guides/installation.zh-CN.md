@@ -1,4 +1,4 @@
-<!-- updated: 2026-08-21 -->
+<!-- updated: 2026-08-25 -->
 # 安装
 
 > 上级：[用户指南](./README.zh-CN.md)
@@ -24,7 +24,7 @@
 - Git
 - Node.js 20 或更高版本
 - Python 3.12 或更高版本
-- OpenAI-compatible 图片服务和你自己的凭据
+- API Key 路线所需的 OpenAI-compatible 图片服务和你自己的凭据，或提供图片生成能力的 Codex App 宿主
 
 Plugin 已包含预构建的 MCP server 和 Widget。无需运行 `npm install`、构建仓库或启动本地 Web server。同一个 Plugin 压缩包支持 Windows、macOS 和 Linux。
 

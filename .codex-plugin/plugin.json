@@ -1,7 +1,7 @@
 {
   "name": "openai-compatible-imagegen",
-  "version": "1.1.1",
-  "description": "Generate, annotate, edit, and manage OpenAI-compatible image artifacts in Codex App.",
+  "version": "1.2.0",
+  "description": "Generate and manage image artifacts through API Key or ChatGPT routes in Codex App.",
   "author": {
     "name": "\u5c0f\u4e3a",
     "email": "1053122090@qq.com",
@@ -19,7 +19,7 @@
   "interface": {
     "displayName": "OpenAI-Compatible Images",
     "shortDescription": "Generate, edit, refine images",
-    "longDescription": "Connect to a local OpenAI-compatible image runtime through MCP, keep image results in the current conversation, and open a focused canvas for multi-area annotation, editing, and version navigation.",
+    "longDescription": "Generate through a configured OpenAI-compatible API or the Codex App ChatGPT route, keep image results in the current conversation, and use the focused canvas for API-backed annotation, editing, and version navigation.",
     "developerName": "Syh1906",
     "websiteURL": "https://github.com/Syh1906/openai-compatible-imagegen",
     "category": "Productivity",

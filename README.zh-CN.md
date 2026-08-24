@@ -2,7 +2,7 @@
 
 # OpenAI 兼容图片
 
-**通过你自己的 OpenAI 兼容图片 API 生成、编辑、批处理、检查并交付图片。**
+**通过 OpenAI 兼容图片 API 或 Codex App 的 ChatGPT 路线生成、检查并交付图片；编辑和批处理由 API 路线提供。**
 
 [![Release](https://img.shields.io/github/v/release/Syh1906/openai-compatible-imagegen?style=flat-square)](https://github.com/Syh1906/openai-compatible-imagegen/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
@@ -37,7 +37,7 @@ OpenAI 兼容图片把同一套图片核心发布为两种安装形态。Standal
 
 ## 安装 Codex Plugin
 
-需要：支持 Plugin 的 Codex、Git、Node.js 20+、Python 3.12 或更高版本，以及你自己的 OpenAI 兼容图片服务。Plugin ZIP 与平台无关，支持 Windows、macOS 和 Linux。
+需要：支持 Plugin 的 Codex、Git、Node.js 20+、Python 3.12 或更高版本。Plugin ZIP 与平台无关，支持 Windows、macOS 和 Linux。你可以选择配置自己的 OpenAI 兼容图片服务使用 API Key 路线，也可以在 Codex App 提供图片生成能力时选择 ChatGPT 路线。
 
 ```text
 codex plugin marketplace add Syh1906/openai-compatible-imagegen
@@ -55,6 +55,10 @@ Plugin 在 Windows 默认调用 `python`，在 macOS/Linux 默认调用 `python3
 需要从 GitHub Releases 安装指定版本的 Plugin ZIP 时，请按[本地 Plugin ZIP 安装流程](docs/guides/installation.zh-CN.md#从-plugin-zip-安装)操作。
 
 [Plugin 安装与配置](docs/guides/installation.zh-CN.md#安装-codex-plugin)
+
+### 图片路线
+
+Codex Plugin 将 API Key 和 ChatGPT 订阅生图作为可分别选择的路线。API Key 项目支持完整的生成、编辑、批处理、交付和画布工作流。ChatGPT 项目支持通过 Codex App 宿主完成一次普通单图生成，并沿用现有产物、交付、结果卡和画布展示流程；当前不包含 ChatGPT 编辑、mask、批处理和多候选生成。
 
 ## 安装 Standalone Skill
 

@@ -1,4 +1,4 @@
-<!-- updated: 2026-08-21 -->
+<!-- updated: 2026-08-25 -->
 # 配置
 
 > 上级：[用户指南](./README.zh-CN.md)
@@ -79,7 +79,21 @@ Plugin 从以下固定路径读取配置：
 
 从已安装 Plugin 的 `skills/openai-compatible-imagegen/references/config.example.json` 开始配置。其中的 `proxy` 对象用于演示可选 provider 代理；删除该对象即可保持环境代理行为。
 
-用户基线声明活动 profile、provider、provider 自定义的 model ID、认证、默认值、透明策略、资源限制和存储。活动 profile 和 model 由用户配置决定，代码不会锁死标准名称。凭据优先使用环境变量。
+API Key 用户基线声明活动 profile、provider、provider 自定义的 model ID、认证、默认值、透明策略、资源限制和存储。仅使用 ChatGPT 的基线可以省略活动 profile、providers 和 models。活动 profile 和 model 由用户配置决定，代码不会锁死标准名称。API 凭据优先使用环境变量。
+
+使用 `auth_mode` 选择默认图片路线：
+
+```json
+{
+  "config_version": 1,
+  "auth_mode": "chatgpt",
+  "defaults": { "size": "1536x1024", "quality": "auto", "output_format": "png" },
+  "postprocess": { "enabled": true },
+  "storage": { "output_directory": "output/imagegen" }
+}
+```
+
+使用 `"apikey"` 走已配置的 OpenAI 兼容 provider，使用 `"chatgpt"` 通过 Codex App 宿主完成一次普通单图生成。ChatGPT 项目可以省略 provider 和 model 字段。ChatGPT 路线当前不包含编辑、mask、批处理或多候选；API Key 项目继续支持这些能力。路线由用户明确选择，某条路线不可用时不会自动切换。
 
 如需让一个 Plugin provider 使用指定代理，在用户基线的 provider 中加入：
 
@@ -110,7 +124,7 @@ Plugin 从以下固定路径读取配置：
 
 Codex Plugin 提供三个配置工具，Agent 无需定位 Plugin 安装目录即可完成设置：
 
-- `initialize_image_config` 仅在文件不存在时创建 `~/.codex/openai-compatible-imagegen/config.json`。它会在用户配置目录中创建或验证内容仅为 `*` 的 `.gitignore`。传入 `projectRoot` 时，它会用相同方式保护项目配置目录，不修改项目根 `.gitignore`。
+- `initialize_image_config` 仅在文件不存在时创建 `~/.codex/openai-compatible-imagegen/config.json`。把 `authMode` 设为 `"apikey"` 或 `"chatgpt"`；默认值为 `"apikey"`。它会在用户配置目录中创建或验证内容仅为 `*` 的 `.gitignore`。传入 `projectRoot` 时，它会用相同方式保护项目配置目录，不修改项目根 `.gitignore`。
 - `inspect_image_config` 以脱敏数据读取用户文件和可选项目覆盖，绝不返回 `api_key`。
 - `update_image_config` 按运行时绑定使用的同一 schema 和范围规则更新用户或项目文件。写入前会创建或验证目标配置目录的本地 `*` 忽略规则。凭据优先使用 `api_key_env`；用户明确选择本地明文存储时，工具可以写入用户级 `api_key`，但不会返回该值。项目凭据和不允许的项目字段会被拒绝。
 

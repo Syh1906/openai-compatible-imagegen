@@ -48,6 +48,26 @@ test("tool results expose artifact metadata without payload bytes", () => {
   ]);
 });
 
+
+test("result tools preserve imported artifact metadata for cards and canvas", () => {
+  const [artifact] = extractResultArtifacts({
+    structuredContent: {
+      artifacts: [{
+        id: firstId,
+        mimeType: "image/png",
+        width: 1024,
+        height: 1024,
+        operation: "import",
+        parentIds: [],
+        childIds: [],
+      }],
+    },
+  });
+
+  assert.equal(artifact.operation, "import");
+  assert.deepEqual(artifactLineage(artifact), { parent: null, current: artifact, children: [] });
+});
+
 test("artifact hydration reads each binary through the app-only MCP tool", async () => {
   const toolCalls = [];
   const artifacts = [firstId, secondId].map((id) => ({

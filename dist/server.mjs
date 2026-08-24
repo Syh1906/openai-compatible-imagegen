@@ -51,7 +51,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 var define_RELEASE_IDENTITY_default;
 var init_define_RELEASE_IDENTITY = __esm({
   "<define:__RELEASE_IDENTITY__>"() {
-    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "1.1.1", serverBuildDigest: "ab5f84f47025b71f8b774394676b1e5325d0e16487ff484eb3b7c560e7a73c92", widgetAssetDigest: "e905e481df75449dd8b21c683907f9f077f0352ebbfcbd1de57552d22373c54a", fingerprint: "1d5700d0ac165427e504", resourceUris: { result: "ui://openai-compatible-imagegen/result-1d5700d0ac165427e504.html", editor: "ui://openai-compatible-imagegen/editor-1d5700d0ac165427e504.html" } };
+    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "1.2.0", serverBuildDigest: "ed99f47da02dadb891df341defb9daf54b50ddffe61b0c77bd4294b6dbb40615", widgetAssetDigest: "d3e74efb2f3153b6536e29b61fd9b803b6ad3e75c6194f1251dd394c29d104ae", fingerprint: "88b0a9bd0ef05485061a", resourceUris: { result: "ui://openai-compatible-imagegen/result-88b0a9bd0ef05485061a.html", editor: "ui://openai-compatible-imagegen/editor-88b0a9bd0ef05485061a.html" } };
   }
 });
 
@@ -20273,7 +20273,7 @@ var require_proper_lockfile = __commonJS({
 // mcp/server.mjs
 init_define_RELEASE_IDENTITY();
 import { readFile as readFile3 } from "node:fs/promises";
-import { fileURLToPath as fileURLToPath5 } from "node:url";
+import { fileURLToPath as fileURLToPath6 } from "node:url";
 
 // node_modules/@modelcontextprotocol/sdk/dist/esm/server/stdio.js
 init_define_RELEASE_IDENTITY();
@@ -22226,6 +22226,8 @@ function decodeRuntimeOutput(chunks) {
 }
 function safeRuntimeError(error40, stderr) {
   const value = String(error40 || stderr || "repository operation failed");
+  const hostImportCode = /^(host_image_(?:request_invalid|output_invalid|handoff_not_found|handoff_state_invalid|import_failed))(?::|$)/.exec(value)?.[1];
+  if (hostImportCode) return hostImportCode;
   if (/not found|cannot find|no such file/i.test(value) || /找不到/.test(value)) return "repository entry not found";
   if (/reparse point/i.test(value)) return "repository path contains a reparse point";
   if (/locked by another image task/i.test(value)) return "repository is locked by another image task";
@@ -31658,6 +31660,7 @@ var STABLE_TOOL_ERROR_ENTRIES = [
   ["annotation_image_mismatch", "\u6807\u6CE8\u4E0E\u7236\u56FE\u7247\u4E0D\u5339\u914D\u3002"],
   ["annotation_not_found", "\u672A\u627E\u5230\u6307\u5B9A\u6807\u6CE8\u3002"],
   ["annotation_save_failed", "\u4FDD\u5B58\u56FE\u7247\u6807\u6CE8\u5931\u8D25\u3002"],
+  ["api_provider_not_configured", "API Key \u56FE\u7247 Provider \u5C1A\u672A\u914D\u7F6E\u3002"],
   ["artifact_not_found", "\u672A\u627E\u5230\u6307\u5B9A\u56FE\u7247\u4EA7\u7269\u3002"],
   ["artifact_ignore_write_failed", "\u65E0\u6CD5\u5B89\u5168\u4FDD\u62A4\u56FE\u7247\u4EA7\u7269\u76EE\u5F55\u3002"],
   ["artifact_read_failed", "\u8BFB\u53D6\u56FE\u7247\u4EA7\u7269\u5931\u8D25\u3002"],
@@ -31672,6 +31675,11 @@ var STABLE_TOOL_ERROR_ENTRIES = [
   ["edit_submission_state_unavailable", "\u753B\u5E03\u63D0\u4EA4\u72B6\u6001\u6682\u65F6\u4E0D\u53EF\u7528\u3002"],
   ["host_observation_state_invalid", "\u5BBF\u4E3B\u89C2\u5BDF\u72B6\u6001\u65E0\u6548\u3002"],
   ["host_observation_unavailable", "\u5BBF\u4E3B\u89C2\u5BDF\u72B6\u6001\u6682\u65F6\u4E0D\u53EF\u7528\u3002"],
+  ["host_image_handoff_not_found", "\u672A\u627E\u5230\u5F53\u524D\u5BBF\u4E3B\u56FE\u7247\u4EA4\u63A5\u3002"],
+  ["host_image_handoff_state_invalid", "\u5F53\u524D\u5BBF\u4E3B\u56FE\u7247\u4EA4\u63A5\u72B6\u6001\u65E0\u6548\u3002"],
+  ["host_image_import_failed", "\u5BFC\u5165\u5BBF\u4E3B\u56FE\u7247\u5931\u8D25\u3002"],
+  ["host_image_output_invalid", "\u5BBF\u4E3B\u8FD4\u56DE\u7684\u56FE\u7247\u8F93\u51FA\u65E0\u6548\u3002"],
+  ["host_image_request_invalid", "\u5BBF\u4E3B\u56FE\u7247\u4EA4\u63A5\u53C2\u6570\u65E0\u6548\u3002"],
   ["image_canvas_destroyed", "\u5F53\u524D\u56FE\u7247\u7684\u753B\u5E03\u5DF2\u7ECF\u9500\u6BC1\u3002"],
   ["image_task_failed", "\u56FE\u7247\u4EFB\u52A1\u6267\u884C\u5931\u8D25\u3002"],
   ["invalid_json", "\u56FE\u7247\u8FD0\u884C\u65F6\u8F93\u5165\u4E0D\u662F\u6709\u6548 JSON\u3002"],
@@ -32545,6 +32553,7 @@ init_define_RELEASE_IDENTITY();
 // mcp/image-tool-schemas.mjs
 init_define_RELEASE_IDENTITY();
 var imageIdSchema = external_exports2.string().regex(/^img_[0-9A-HJKMNP-TV-Z]{26}$/).describe("Stable image ID in the project artifact repository");
+var projectBindingIdSchema = external_exports2.string().regex(/^pbind_[0-9a-f]{64}$/).describe("Image project binding ID");
 var batchIdSchema = external_exports2.string().regex(/^batch_[0-9A-HJKMNP-TV-Z]{26}$/).describe("Immutable batch manifest ID");
 var deliveryReceiptIdSchema = external_exports2.string().regex(/^delivery_[0-9a-f]{64}$/);
 var outputSchema = {
@@ -32636,7 +32645,7 @@ var imageArtifactOutputSchema = external_exports2.object({
   height: external_exports2.number().int().positive(),
   provider: external_exports2.string().min(1),
   model: external_exports2.string().min(1),
-  operation: external_exports2.enum(["generate", "edit", "derive"]),
+  operation: external_exports2.enum(["generate", "edit", "derive", "import"]),
   prompt: external_exports2.string(),
   parameters: external_exports2.record(external_exports2.unknown()),
   annotationId: external_exports2.string().regex(/^ann_[0-9A-HJKMNP-TV-Z]{26}$/).nullable(),
@@ -33079,6 +33088,7 @@ var DEFAULT_OUTPUT_DIRECTORY = path8.join("output", "imagegen");
 var ACTIVE_PROFILE = "primary/gpt-image-2";
 var USER_TOP_LEVEL_KEYS = /* @__PURE__ */ new Set([
   "config_version",
+  "auth_mode",
   "active_profile",
   "providers",
   "models",
@@ -33110,10 +33120,11 @@ var MODEL_KEYS = /* @__PURE__ */ new Set(["provider", "model", "capabilities"]);
 var CAPABILITY_KEYS = /* @__PURE__ */ new Set(["generate", "edit", "mask", "multi_reference"]);
 var DEFAULT_TIMEOUT_SECONDS = 600;
 var DEFAULT_CONCURRENCY = 3;
-var USER_UPDATE_KEYS = /* @__PURE__ */ new Set(["providers", "models", "defaults", "postprocess", "transparency", "storage"]);
+var USER_UPDATE_KEYS = /* @__PURE__ */ new Set(["auth_mode", "providers", "models", "defaults", "postprocess", "transparency", "storage"]);
 var PROJECT_UPDATE_KEYS = /* @__PURE__ */ new Set(["defaults", "storage"]);
 var CONFIG_TEMPLATE = Object.freeze({
   config_version: 1,
+  auth_mode: "apikey",
   active_profile: ACTIVE_PROFILE,
   providers: { primary: {
     protocol: "openai-compatible",
@@ -33143,6 +33154,15 @@ var CONFIG_TEMPLATE = Object.freeze({
   } },
   storage: { output_directory: DEFAULT_OUTPUT_DIRECTORY }
 });
+var CHATGPT_CONFIG_TEMPLATE = Object.freeze({
+  config_version: 1,
+  auth_mode: "chatgpt",
+  defaults: structuredClone(CONFIG_TEMPLATE.defaults),
+  postprocess: structuredClone(CONFIG_TEMPLATE.postprocess),
+  transparency: structuredClone(CONFIG_TEMPLATE.transparency),
+  storage: structuredClone(CONFIG_TEMPLATE.storage)
+});
+var CHATGPT_REQUIREMENT = "codex_app_imagegen_handoff";
 var ImageConfigResolutionError = class extends Error {
   constructor(code = "image_config_missing", message = "\u56FE\u7247\u914D\u7F6E\u7F3A\u5931\u3002\u8BF7\u521B\u5EFA\u7528\u6237\u914D\u7F6E ~/.codex/openai-compatible-imagegen/config.json\u3002") {
     super(message);
@@ -33156,9 +33176,13 @@ function userConfigPath(userHome = os.homedir()) {
 function projectConfigPath(projectRoot) {
   return path8.resolve(projectRoot, ".codex", CONFIG_DIRECTORY, "config.json");
 }
-async function initializeImageConfig({ userHome = os.homedir(), projectRoot } = {}) {
+async function initializeImageConfig({ userHome = os.homedir(), projectRoot, authMode = "apikey" } = {}) {
+  if (!(/* @__PURE__ */ new Set(["apikey", "chatgpt"])).has(authMode)) {
+    throw new ImageConfigManagementError("image_config_update_invalid");
+  }
   const resolvedProjectRoot = projectRoot ? requireAbsoluteProjectRoot(projectRoot) : null;
   const target = userConfigPath(userHome);
+  const template = authMode === "chatgpt" ? CHATGPT_CONFIG_TEMPLATE : CONFIG_TEMPLATE;
   await ensureConfigIgnored(target);
   if (resolvedProjectRoot) await ensureConfigIgnored(projectConfigPath(resolvedProjectRoot));
   try {
@@ -33170,7 +33194,7 @@ async function initializeImageConfig({ userHome = os.homedir(), projectRoot } = 
     if (error40?.code !== "ENOENT") throw new ImageConfigManagementError("image_config_write_failed");
   }
   try {
-    await writeFile2(target, `${JSON.stringify(CONFIG_TEMPLATE, null, 2)}
+    await writeFile2(target, `${JSON.stringify(template, null, 2)}
 `, { encoding: "utf8", flag: "wx" });
   } catch (error40) {
     if (error40?.code === "EEXIST") throw new ImageConfigManagementError("image_config_exists");
@@ -33179,19 +33203,20 @@ async function initializeImageConfig({ userHome = os.homedir(), projectRoot } = 
   return {
     created: true,
     path: target,
-    config: redactConfig(CONFIG_TEMPLATE),
+    config: redactConfig(template),
     gitignoreUpdated: true,
     nextSteps: [
-      "\u8BBE\u7F6E provider.api_key_env \u5BF9\u5E94\u7684\u73AF\u5883\u53D8\u91CF",
-      "\u6309\u4F9B\u5E94\u5546\u5B9E\u9645\u503C\u4FEE\u6539 active_profile \u548C models.<profile>.model\uFF0C\u6A21\u578B ID \u4E0D\u8981\u6C42\u4F7F\u7528\u6807\u51C6\u540D\u79F0",
+      ...authMode === "apikey" ? ["\u8BBE\u7F6E provider.api_key_env \u5BF9\u5E94\u7684\u73AF\u5883\u53D8\u91CF"] : [],
+      ...authMode === "apikey" ? ["\u6309\u4F9B\u5E94\u5546\u5B9E\u9645\u503C\u4FEE\u6539 active_profile \u548C models.<profile>.model\uFF0C\u6A21\u578B ID \u4E0D\u8981\u6C42\u4F7F\u7528\u6807\u51C6\u540D\u79F0"] : [],
       "\u65B0\u914D\u7F6E\u9ED8\u8BA4\u542F\u7528 native-alpha\uFF1B\u5982\u679C\u4FDD\u7559\u65E7\u914D\u7F6E\uFF0C\u8BF7\u5728 inspect_image_config \u7684\u63D0\u793A\u4E0B\u663E\u5F0F\u66F4\u65B0\u900F\u660E\u7B56\u7565",
       "\u786E\u8BA4 transparency.native.model_ids \u53EA\u662F\u80FD\u529B\u58F0\u660E\uFF1B\u4E0D\u786E\u5B9A\u65F6\u53EF\u7559\u7A7A\u6570\u7EC4",
       "\u8C03\u7528 inspect_image_config \u68C0\u67E5\u6709\u6548\u914D\u7F6E\uFF0C\u7136\u540E\u91CD\u65B0\u7ED1\u5B9A\u9879\u76EE"
     ],
     guidance: {
-      modelIdIsUserConfigured: true,
+      modelIdIsUserConfigured: authMode === "apikey",
       nativeModelIdsAreCapabilityDeclaration: true,
       retryWithoutParameterDefault: true,
+      requiresApiProvider: authMode === "apikey",
       requiresRebind: true
     }
   };
@@ -33202,6 +33227,8 @@ async function inspectImageConfig({ userHome = os.homedir(), projectRoot } = {})
   const project = projectRoot ? await readManagedConfig(projectConfigPath(projectRoot), "project_config_invalid", true) : null;
   const activeProfile = user?.active_profile || null;
   const activeModel = activeProfile && user?.models?.[activeProfile];
+  const defaultAuthMode = normalizeAuthMode(user?.auth_mode);
+  const apiKeyConfigured = hasCompleteApiDeclaration(user);
   const transparency = user?.transparency || {};
   const native = transparency.native || {};
   const warnings = [];
@@ -33218,6 +33245,9 @@ async function inspectImageConfig({ userHome = os.homedir(), projectRoot } = {})
     user: { path: userPath, exists: Boolean(user), config: user ? redactConfig(user) : null },
     project: { path: projectRoot ? projectConfigPath(projectRoot) : null, exists: Boolean(project), config: project ? redactConfig(project) : null },
     activeProfile,
+    defaultAuthMode,
+    apiKeyConfigured,
+    chatgptRequirement: CHATGPT_REQUIREMENT,
     provider: activeModel?.provider || null,
     modelId: activeModel?.model || null,
     transparencySummary: {
@@ -33287,7 +33317,9 @@ async function resolveImageConfigBinding({
   const userConfig = parseConfigSnapshot(userBytes, "image_config_invalid");
   validateUserConfig(userConfig);
   const effectiveConfig = mergeEffectiveConfig(userConfig, projectConfig);
-  const effectiveConfigJson = JSON.stringify(effectiveConfig);
+  const localRuntimeConfig = createLocalRuntimeConfig(effectiveConfig);
+  const apiRuntimeConfig = hasCompleteApiDeclaration(effectiveConfig) ? createApiRuntimeConfig(effectiveConfig) : null;
+  const effectiveConfigJson = JSON.stringify(apiRuntimeConfig ?? localRuntimeConfig);
   const artifactRoot = resolveArtifactRoot(effectiveConfig, resolvedProjectRoot);
   await validateArtifactRoot(artifactRoot, resolvedProjectRoot);
   const defaults = effectiveConfig.defaults || {};
@@ -33298,7 +33330,12 @@ async function resolveImageConfigBinding({
     projectConfigSha256: projectBytes === null ? null : sha256(projectBytes),
     effectiveConfigJson,
     effectiveConfigSha256: sha256(Buffer.from(effectiveConfigJson, "utf8")),
-    activeProfile: userConfig.active_profile,
+    activeProfile: apiRuntimeConfig?.active_profile ?? null,
+    defaultAuthMode: normalizeAuthMode(userConfig.auth_mode),
+    apiKeyConfigured: apiRuntimeConfig !== null,
+    chatgptRequirement: CHATGPT_REQUIREMENT,
+    localRuntimeConfig: Object.freeze(localRuntimeConfig),
+    apiRuntimeConfig: apiRuntimeConfig === null ? null : Object.freeze(apiRuntimeConfig),
     runtimeDefaults: Object.freeze({
       timeout_seconds: defaults.timeout_seconds ?? DEFAULT_TIMEOUT_SECONDS,
       concurrency: defaults.concurrency ?? DEFAULT_CONCURRENCY
@@ -33381,6 +33418,13 @@ function redactConfig(config2) {
 function mergeConfigChanges(current, changes) {
   const result = structuredClone(current);
   for (const [key, value] of Object.entries(changes)) {
+    if (key === "auth_mode") {
+      if (!(/* @__PURE__ */ new Set(["apikey", "chatgpt"])).has(value)) {
+        throw new ImageConfigManagementError("image_config_update_invalid");
+      }
+      result[key] = value;
+      continue;
+    }
     if (!isRecord2(value)) throw new ImageConfigManagementError("image_config_update_invalid");
     result[key] = mergeRecords(result[key], value);
   }
@@ -33433,10 +33477,22 @@ function parseConfigSnapshot(configBytes, errorCode) {
 }
 function validateUserConfig(config2) {
   requireExactKeys(config2, USER_TOP_LEVEL_KEYS, "image_config_invalid");
-  if (config2.config_version !== 1 || typeof config2.active_profile !== "string" || !config2.active_profile.trim()) {
+  if (config2.config_version !== 1) throw invalidImageConfigError();
+  const authMode = normalizeAuthMode(config2.auth_mode);
+  if (authMode === null) throw invalidImageConfigError();
+  const hasAnyApiDeclaration = ["active_profile", "providers", "models"].some((key) => config2[key] !== void 0);
+  const hasCompleteApiConfig = hasCompleteApiDeclaration(config2);
+  if (authMode === "apikey" && !hasCompleteApiConfig || hasAnyApiDeclaration && !hasCompleteApiConfig) {
     throw invalidImageConfigError();
   }
-  if (!isRecord2(config2.providers) || !isRecord2(config2.models)) throw invalidImageConfigError();
+  if (hasCompleteApiConfig) validateApiConfig(config2);
+  validateDefaults(config2.defaults, USER_DEFAULT_KEYS, "image_config_invalid");
+  validatePostprocess(config2.postprocess);
+  validateTransparency(config2.transparency);
+  validateStorageShape(config2.storage, "image_config_invalid");
+}
+function validateApiConfig(config2) {
+  if (typeof config2.active_profile !== "string" || !config2.active_profile.trim()) throw invalidImageConfigError();
   const model = config2.models[config2.active_profile];
   if (!isRecord2(model)) throw invalidImageConfigError();
   requireExactKeys(model, MODEL_KEYS, "image_config_invalid");
@@ -33448,10 +33504,6 @@ function validateUserConfig(config2) {
   const provider = config2.providers[providerId];
   validateProvider(provider);
   validateCapabilities(model.capabilities);
-  validateDefaults(config2.defaults, USER_DEFAULT_KEYS, "image_config_invalid");
-  validatePostprocess(config2.postprocess);
-  validateTransparency(config2.transparency);
-  validateStorageShape(config2.storage, "image_config_invalid");
 }
 function validateProjectConfig(config2) {
   const unknownTopLevel = unknownKeys(config2, PROJECT_TOP_LEVEL_KEYS);
@@ -33602,6 +33654,23 @@ function mergeEffectiveConfig(userConfig, projectConfig) {
   }
   return effective;
 }
+function createLocalRuntimeConfig(config2) {
+  return Object.fromEntries(
+    ["config_version", "defaults", "postprocess", "transparency", "storage"].filter((key) => config2[key] !== void 0).map((key) => [key, structuredClone(config2[key])])
+  );
+}
+function createApiRuntimeConfig(config2) {
+  const runtimeConfig = structuredClone(config2);
+  delete runtimeConfig.auth_mode;
+  return runtimeConfig;
+}
+function hasCompleteApiDeclaration(config2) {
+  return typeof config2?.active_profile === "string" && isRecord2(config2?.providers) && isRecord2(config2?.models);
+}
+function normalizeAuthMode(value) {
+  if (value === void 0) return "apikey";
+  return (/* @__PURE__ */ new Set(["apikey", "chatgpt"])).has(value) ? value : null;
+}
 function resolveArtifactRoot(config2, projectRoot) {
   const configured = config2.storage?.output_directory ?? DEFAULT_OUTPUT_DIRECTORY;
   if (typeof configured !== "string" || path8.isAbsolute(configured)) throw outputDirectoryError();
@@ -33651,7 +33720,7 @@ function outputDirectoryError() {
 function invalidImageConfigError() {
   return new ImageConfigResolutionError(
     "image_config_invalid",
-    "\u7528\u6237\u56FE\u7247\u914D\u7F6E\u7F3A\u5C11\u6709\u6548\u7684\u7248\u672C\u3001\u6D3B\u52A8\u6863\u6848\u3001provider \u6216 model \u58F0\u660E\u3002"
+    "\u7528\u6237\u56FE\u7247\u914D\u7F6E\u7F3A\u5C11\u6709\u6548\u7684\u7248\u672C\u3001\u8BA4\u8BC1\u8DEF\u7EBF\uFF0C\u6216\u5305\u542B\u4E0D\u5B8C\u6574\u7684 provider/model \u58F0\u660E\u3002"
   );
 }
 function invalidProjectConfigError() {
@@ -34830,7 +34899,11 @@ function createProjectContext({
         }
         return {
           status: stored.status === "created" ? "bound" : stored.status === "rebound" ? "rebound" : "already_bound",
-          projectBindingId: requestedBindingId
+          projectBindingId: requestedBindingId,
+          distribution: "plugin",
+          defaultAuthMode: configBinding.defaultAuthMode,
+          apiKeyConfigured: configBinding.apiKeyConfigured,
+          chatgptRequirement: configBinding.chatgptRequirement
         };
       });
     },
@@ -35129,13 +35202,13 @@ init_define_RELEASE_IDENTITY();
 function registerConfigTools(server2, configManager, toolError2) {
   server2.registerTool("initialize_image_config", {
     title: "Initialize image configuration",
-    description: "Create an image configuration template at the fixed user path without overwriting an existing file. Protect user and optional project configuration directories with a local .gitignore containing only *, and prefer api_key_env in the template.",
-    inputSchema: { projectRoot: external_exports2.string().min(1).optional() },
+    description: "Create an API Key or ChatGPT image configuration template at the fixed user path without overwriting an existing file. Protect user and optional project configuration directories with a local .gitignore containing only *; the API Key template prefers api_key_env.",
+    inputSchema: { projectRoot: external_exports2.string().min(1).optional(), authMode: external_exports2.enum(["apikey", "chatgpt"]).optional() },
     outputSchema: external_exports2.object({ created: external_exports2.literal(true), path: external_exports2.string().min(1), config: external_exports2.record(external_exports2.any()), gitignoreUpdated: external_exports2.boolean() }).passthrough(),
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }
-  }, async ({ projectRoot }) => {
+  }, async ({ projectRoot, authMode }) => {
     try {
-      const result = await configManager.initialize({ projectRoot });
+      const result = await configManager.initialize({ projectRoot, ...authMode ? { authMode } : {} });
       return { content: [{ type: "text", text: "\u5DF2\u521B\u5EFA\u56FE\u7247\u914D\u7F6E\u6A21\u677F\u3002\u8BF7\u7F16\u8F91\u56FA\u5B9A\u7528\u6237\u914D\u7F6E\u6587\u4EF6\u5E76\u8BBE\u7F6E\u5BF9\u5E94\u73AF\u5883\u53D8\u91CF\u540E\u91CD\u65B0\u7ED1\u5B9A\u9879\u76EE\u3002" }], structuredContent: result };
     } catch (error40) {
       return toolError2(error40);
@@ -35171,13 +35244,152 @@ function registerConfigTools(server2, configManager, toolError2) {
   });
 }
 
+// mcp/host-image-import.mjs
+init_define_RELEASE_IDENTITY();
+import { fileURLToPath as fileURLToPath4 } from "node:url";
+var runtimeRelativePath3 = import.meta.url.replaceAll("\\", "/").includes("/dist/server.mjs") ? "./scripts/host_image_import.py" : "../scripts/host_image_import.py";
+var defaultRuntimePath3 = fileURLToPath4(new URL(runtimeRelativePath3, import.meta.url));
+var HOST_IMPORT_ERROR_CODES = /* @__PURE__ */ new Set([
+  "host_image_request_invalid",
+  "host_image_output_invalid",
+  "host_image_handoff_not_found",
+  "host_image_handoff_state_invalid",
+  "host_image_import_failed"
+]);
+function createHostImageImporter({ runOperation = runHostImageImportOperation } = {}) {
+  return Object.freeze({
+    async prepare(input, context) {
+      return await stableOperation(runOperation, { operation: "prepare", ...runtimeContext(context), ...input });
+    },
+    async stage(input, context) {
+      return await stableOperation(runOperation, { operation: "stage", ...runtimeContext(context), ...input });
+    },
+    async finalize(input, context) {
+      return await stableOperation(runOperation, { operation: "finalize", ...runtimeContext(context), ...input });
+    }
+  });
+}
+async function runHostImageImportOperation(request, options = {}) {
+  return await runRepositoryFsOperation(request, {
+    runtimePath: defaultRuntimePath3,
+    ...options
+  });
+}
+function runtimeContext(context) {
+  if (!context || typeof context.projectRoot !== "string" || typeof context.artifactRoot !== "string") {
+    throw new Error("host image import requires a bound project");
+  }
+  return { projectRoot: context.projectRoot, artifactRoot: context.artifactRoot };
+}
+async function stableOperation(runOperation, request) {
+  try {
+    return await runOperation(request);
+  } catch (error40) {
+    const code = HOST_IMPORT_ERROR_CODES.has(error40?.message) ? error40.message : "host_image_import_failed";
+    const stableError = new Error(code);
+    stableError.code = code;
+    throw stableError;
+  }
+}
+
+// mcp/host-image-import-tools.mjs
+init_define_RELEASE_IDENTITY();
+var handoffIdSchema = external_exports2.string().regex(/^handoff_[0-9a-f]{64}$/);
+function registerHostImageImportTools(server2, { projectContext, importer, toolError: toolError2 }) {
+  server2.registerTool("prepare_host_image_import", {
+    title: "Prepare host image import",
+    description: "Freeze one ChatGPT image generation intent before invoking the Codex host image generation capability.",
+    inputSchema: {
+      projectBindingId: projectBindingIdSchema,
+      route: external_exports2.literal("chatgpt"),
+      intent: external_exports2.literal("generate"),
+      prompt: external_exports2.string().trim().min(1),
+      count: external_exports2.literal(1).default(1)
+    },
+    outputSchema: external_exports2.object({ handoffId: handoffIdSchema, status: external_exports2.literal("prepared") }).strict(),
+    annotations: writeAnnotations(false)
+  }, async ({ projectBindingId, ...input }) => await withProject(
+    projectContext,
+    projectBindingId,
+    toolError2,
+    async (context) => ({
+      content: [{ type: "text", text: "\u5DF2\u51C6\u5907\u672C\u6B21\u5BBF\u4E3B\u56FE\u7247\u751F\u6210\u4EA4\u63A5\u3002" }],
+      structuredContent: await importer.prepare(input, context)
+    })
+  ));
+  server2.registerTool("stage_host_image_import", {
+    title: "Stage host image import",
+    description: "Snapshot the exact local path returned by the current Codex host image generation call into its prepared handoff.",
+    inputSchema: {
+      projectBindingId: projectBindingIdSchema,
+      handoffId: handoffIdSchema,
+      hostOutput: external_exports2.object({
+        type: external_exports2.literal("codex-imagegen-saved-path"),
+        savedPath: external_exports2.string().min(1)
+      }).strict()
+    },
+    outputSchema: external_exports2.object({
+      handoffId: handoffIdSchema,
+      status: external_exports2.literal("staged"),
+      imageCount: external_exports2.literal(1)
+    }).strict(),
+    annotations: writeAnnotations(false)
+  }, async ({ projectBindingId, ...input }) => await withProject(
+    projectContext,
+    projectBindingId,
+    toolError2,
+    async (context) => ({
+      content: [{ type: "text", text: "\u5DF2\u6682\u5B58\u672C\u6B21\u5BBF\u4E3B\u56FE\u7247\u8F93\u51FA\u3002" }],
+      structuredContent: await importer.stage(input, context)
+    })
+  ));
+  server2.registerTool("finalize_host_image_import", {
+    title: "Finalize host image import",
+    description: "Commit or abort a prepared host image handoff without accepting another path, prompt, or source declaration.",
+    inputSchema: {
+      projectBindingId: projectBindingIdSchema,
+      handoffId: handoffIdSchema,
+      action: external_exports2.enum(["commit", "abort"])
+    },
+    outputSchema: external_exports2.object({
+      handoffId: handoffIdSchema,
+      status: external_exports2.enum(["committed", "aborted"]),
+      artifacts: external_exports2.array(imageArtifactOutputSchema).min(1).max(1).optional()
+    }).strict(),
+    annotations: writeAnnotations(true)
+  }, async ({ projectBindingId, ...input }) => await withProject(
+    projectContext,
+    projectBindingId,
+    toolError2,
+    async (context) => {
+      const result = await importer.finalize(input, context);
+      return {
+        content: [{
+          type: "text",
+          text: result.status === "committed" ? "\u5DF2\u5C06\u5BBF\u4E3B\u56FE\u7247\u53D1\u5E03\u4E3A\u9879\u76EE\u5DE5\u4EF6\u3002\u8BF7\u4F7F\u7528 render_image_results \u5C55\u793A\u8FD4\u56DE\u7684\u56FE\u7247 ID\u3002" : "\u5DF2\u7EC8\u6B62\u672C\u6B21\u5BBF\u4E3B\u56FE\u7247\u4EA4\u63A5\u3002"
+        }],
+        structuredContent: result
+      };
+    }
+  ));
+}
+async function withProject(projectContext, projectBindingId, toolError2, operation) {
+  try {
+    return await operation(await projectContext.require(projectBindingId));
+  } catch (error40) {
+    return toolError2(error40);
+  }
+}
+function writeAnnotations(idempotentHint) {
+  return { readOnlyHint: false, destructiveHint: false, idempotentHint, openWorldHint: false };
+}
+
 // mcp/create-server.mjs
 var legacyWidgetResourceFingerprints = [
   "43c3a69a85db10633692",
   "9caad8c28a921a55611b"
 ];
 var editorSessionIdSchema = external_exports2.string().regex(/^eds_[0-9a-f]{32}$/).describe("Open canvas session ID");
-var projectBindingIdSchema = external_exports2.string().regex(/^pbind_[0-9a-f]{64}$/).describe("Image project binding ID");
 var projectBindingInputSchema = { projectBindingId: projectBindingIdSchema };
 var modelProfileIdSchema = external_exports2.string().min(1);
 var annotationIdSchema = external_exports2.string().regex(/^ann_[0-9A-HJKMNP-TV-Z]{26}$/);
@@ -35373,6 +35585,7 @@ function createImagegenServer({
   readAnnotation,
   saveAnnotations,
   deleteAnnotation,
+  hostImageImporter = createHostImageImporter(),
   configManager = { initialize: initializeImageConfig, inspect: inspectImageConfig, update: updateImageConfig }
 }) {
   requireReleaseIdentity(releaseIdentity);
@@ -35397,6 +35610,7 @@ function createImagegenServer({
   );
   const imageAuditHandlers = createImageAuditHandlers({ runTask, readArtifact });
   registerConfigTools(server2, configManager, toolError);
+  registerHostImageImportTools(server2, { projectContext, importer: hostImageImporter, toolError });
   registerWidgetResource(server2, {
     name: "image-result",
     uri: resultWidgetUri,
@@ -35458,7 +35672,11 @@ function createImagegenServer({
       },
       outputSchema: external_exports2.object({
         status: external_exports2.enum(["bound", "already_bound", "rebound"]),
-        projectBindingId: projectBindingIdSchema
+        projectBindingId: projectBindingIdSchema,
+        distribution: external_exports2.literal("plugin"),
+        defaultAuthMode: external_exports2.enum(["apikey", "chatgpt"]),
+        apiKeyConfigured: external_exports2.boolean(),
+        chatgptRequirement: external_exports2.literal("codex_app_imagegen_handoff")
       }).strict(),
       annotations: {
         readOnlyHint: false,
@@ -35598,6 +35816,7 @@ function createImagegenServer({
       annotations: readAnnotations()
     },
     async ({ projectBindingId }) => await withBoundProject(projectContext, projectBindingId, async (context) => {
+      if (context.apiKeyConfigured === false) return apiProviderNotConfigured();
       try {
         const result = await runTask(
           { operation: "list_models", modelProfileId: context.activeProfile || DEFAULT_MODEL_PROFILE_ID2 },
@@ -35627,22 +35846,25 @@ function createImagegenServer({
         ...outputSchema
       },
       outputSchema: imageArtifactsOutputSchema,
-      annotations: writeAnnotations()
+      annotations: writeAnnotations2()
     },
-    async ({ projectBindingId, prompt, modelProfileId, transparency, ...output }) => await withBoundProject(projectContext, projectBindingId, async (context) => await executeImageTask(
-      {
-        operation: "generate",
-        modelProfileId: modelProfileId || context.activeProfile || DEFAULT_MODEL_PROFILE_ID2,
-        prompt,
-        inputArtifactIds: [],
-        annotationId: null,
-        ...transparency ? { transparency } : {},
-        output
-      },
-      context,
-      runTask,
-      readArtifact
-    ))
+    async ({ projectBindingId, prompt, modelProfileId, transparency, ...output }) => await withBoundProject(projectContext, projectBindingId, async (context) => {
+      if (context.apiKeyConfigured === false) return apiProviderNotConfigured();
+      return await executeImageTask(
+        {
+          operation: "generate",
+          modelProfileId: modelProfileId || context.activeProfile || DEFAULT_MODEL_PROFILE_ID2,
+          prompt,
+          inputArtifactIds: [],
+          annotationId: null,
+          ...transparency ? { transparency } : {},
+          output
+        },
+        context,
+        runTask,
+        readArtifact
+      );
+    })
   );
   server2.registerTool(
     "edit_image",
@@ -35661,9 +35883,10 @@ function createImagegenServer({
         ...outputSchema
       },
       outputSchema: imageArtifactsOutputSchema,
-      annotations: writeAnnotations()
+      annotations: writeAnnotations2()
     },
     async (arguments_) => await withBoundProject(projectContext, arguments_.projectBindingId, async (context) => {
+      if (context.apiKeyConfigured === false) return apiProviderNotConfigured();
       const {
         parentImageId,
         referenceImageIds = [],
@@ -35794,9 +36017,10 @@ function createImagegenServer({
         concurrency: external_exports2.number().int().min(1).max(8).optional()
       },
       outputSchema: imageBatchOutputSchema,
-      annotations: writeAnnotations()
+      annotations: writeAnnotations2()
     },
     async ({ projectBindingId, items, concurrency = 3 }) => await withBoundProject(projectContext, projectBindingId, async (context) => {
+      if (context.apiKeyConfigured === false) return apiProviderNotConfigured();
       const batch = await executeImageBatch({
         items,
         concurrency,
@@ -35870,14 +36094,14 @@ function createImagegenServer({
         delivery: deliveryInputSchema
       },
       outputSchema: imageDeliveryOutputSchema,
-      annotations: writeAnnotations()
+      annotations: writeAnnotations2()
     },
     async ({ projectBindingId, imageId, modelProfileId, delivery }) => await withBoundProject(projectContext, projectBindingId, async (context) => {
       try {
         const result = await runTask(
           {
             operation: "deliver",
-            modelProfileId: modelProfileId || context.activeProfile || DEFAULT_MODEL_PROFILE_ID2,
+            ...modelProfileId || context.activeProfile ? { modelProfileId: modelProfileId || context.activeProfile } : {},
             inputArtifactIds: [imageId],
             delivery
           },
@@ -36102,7 +36326,12 @@ function createImagegenServer({
       inputSchema: { ...projectBindingInputSchema, imageId: imageIdSchema },
       outputSchema: external_exports2.object({
         editorSession: openEditorSessionOutputSchema,
-        artifact: imageArtifactOutputSchema
+        artifact: imageArtifactOutputSchema,
+        auth: external_exports2.object({
+          defaultAuthMode: external_exports2.enum(["apikey", "chatgpt"]),
+          apiKeyConfigured: external_exports2.boolean(),
+          chatgptRequirement: external_exports2.literal("codex_app_imagegen_handoff")
+        }).strict().optional()
       }).strict(),
       annotations: {
         readOnlyHint: false,
@@ -36132,7 +36361,14 @@ function createImagegenServer({
           content: [{ type: "text", text: `\u5DF2\u6253\u5F00\u56FE\u7247 ${imageId} \u7684\u805A\u7126\u753B\u5E03\uFF0C\u753B\u5E03\u4F1A\u8BDD ID \u4E3A ${editorSession.id}\u3002` }],
           structuredContent: {
             editorSession: editorSessionOutput(editorSession),
-            artifact: imageArtifactMetadata(artifact.metadata)
+            artifact: imageArtifactMetadata(artifact.metadata),
+            ...context.defaultAuthMode ? {
+              auth: {
+                defaultAuthMode: context.defaultAuthMode,
+                apiKeyConfigured: context.apiKeyConfigured,
+                chatgptRequirement: context.chatgptRequirement
+              }
+            } : {}
           },
           _meta: {
             ui: { resourceUri: editorWidgetUri },
@@ -36157,7 +36393,7 @@ function createImagegenServer({
         items: external_exports2.array(annotationItemSchema).min(1).max(100)
       },
       outputSchema: external_exports2.object({ annotation: annotationOutputSchema }).strict(),
-      annotations: writeAnnotations(),
+      annotations: writeAnnotations2(),
       _meta: { ui: { visibility: ["app"] } }
     },
     async ({ projectBindingId, imageId, items }) => await withBoundProject(projectContext, projectBindingId, async (context) => {
@@ -36188,7 +36424,7 @@ function createImagegenServer({
         annotation: annotationOutputSchema.nullable(),
         submission: editSubmissionOutputSchema
       }).strict(),
-      annotations: writeAnnotations(),
+      annotations: writeAnnotations2(),
       _meta: { ui: { visibility: ["app"] } }
     },
     async ({ projectBindingId, parentImageId, items, sourcePrompt }) => await withBoundProject(
@@ -36443,6 +36679,9 @@ async function withBoundProject(projectContext, projectBindingId, callback) {
     return toolError(error40);
   }
 }
+function apiProviderNotConfigured() {
+  return toolError(new Error("API provider is not configured"), "api_provider_not_configured");
+}
 function registerWidgetResource(server2, { name, uri, title, description, releaseIdentity, readWidgetHtml }) {
   const resourceDomains = ["data:", "blob:"];
   const metadata = {
@@ -36540,7 +36779,7 @@ function toolError(error40, code = error40?.code) {
 function readAnnotations() {
   return { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 }
-function writeAnnotations() {
+function writeAnnotations2() {
   return { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true };
 }
 
@@ -37209,9 +37448,9 @@ function invalidStateError2() {
 init_define_RELEASE_IDENTITY();
 import { spawn as spawn3 } from "node:child_process";
 import path15 from "node:path";
-import { fileURLToPath as fileURLToPath4 } from "node:url";
-var runtimeRelativePath3 = import.meta.url.replaceAll("\\", "/").includes("/dist/server.mjs") ? "./scripts/image_runtime.py" : "../scripts/image_runtime.py";
-var runtimePath = fileURLToPath4(new URL(runtimeRelativePath3, import.meta.url));
+import { fileURLToPath as fileURLToPath5 } from "node:url";
+var runtimeRelativePath4 = import.meta.url.replaceAll("\\", "/").includes("/dist/server.mjs") ? "./scripts/image_runtime.py" : "../scripts/image_runtime.py";
+var runtimePath = fileURLToPath5(new URL(runtimeRelativePath4, import.meta.url));
 async function runImageTask(task, options = {}) {
   const {
     projectRoot,
@@ -37291,8 +37530,8 @@ async function runImageTask(task, options = {}) {
 }
 
 // mcp/server.mjs
-var widgetPath = fileURLToPath5(new URL("../dist/widget/index.html", import.meta.url));
-var pluginRoot = fileURLToPath5(new URL("..", import.meta.url));
+var widgetPath = fileURLToPath6(new URL("../dist/widget/index.html", import.meta.url));
+var pluginRoot = fileURLToPath6(new URL("..", import.meta.url));
 var server = createImagegenServer({
   releaseIdentity: define_RELEASE_IDENTITY_default,
   launchContext: {

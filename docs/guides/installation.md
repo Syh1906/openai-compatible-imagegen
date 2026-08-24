@@ -1,4 +1,4 @@
-<!-- updated: 2026-08-21 -->
+<!-- updated: 2026-08-25 -->
 # Installation
 
 > Parent: [User guides](./README.md)
@@ -24,7 +24,7 @@ You do not need to install both. The Codex Plugin does not depend on the Standal
 - Git
 - Node.js 20 or later
 - Python 3.12 or newer
-- An OpenAI-compatible image service and your own credential
+- An OpenAI-compatible image service and your own credential for the API Key route, or a Codex App host with image generation for the ChatGPT route
 
 The Plugin includes its prebuilt MCP server and widget. You do not run `npm install`, build the repository, or start a local web server. The same Plugin archive supports Windows, macOS, and Linux.
 

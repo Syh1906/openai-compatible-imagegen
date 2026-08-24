@@ -2,7 +2,7 @@
 
 # OpenAI-Compatible Images
 
-**Generate, edit, batch-process, inspect, and deliver images through your OpenAI-compatible image API.**
+**Generate, inspect, and deliver images through an OpenAI-compatible API or the Codex App ChatGPT route, with editing and batch workflows on the API route.**
 
 [![Release](https://img.shields.io/github/v/release/Syh1906/openai-compatible-imagegen?style=flat-square)](https://github.com/Syh1906/openai-compatible-imagegen/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
@@ -37,7 +37,7 @@ Generate an image in the conversation, then open its focused canvas to mark regi
 
 ## Install the Codex Plugin
 
-Requirements: a Codex version with Plugin support, Git, Node.js 20+, Python 3.12 or newer, and your own OpenAI-compatible image service. The Plugin ZIP is platform-neutral and supports Windows, macOS, and Linux.
+Requirements: a Codex version with Plugin support, Git, Node.js 20+, and Python 3.12 or newer. The Plugin ZIP is platform-neutral and supports Windows, macOS, and Linux. Choose the API Key route with your own OpenAI-compatible image service, or choose the ChatGPT route when the Codex App host provides its image generation capability.
 
 ```text
 codex plugin marketplace add Syh1906/openai-compatible-imagegen
@@ -55,6 +55,10 @@ The Plugin selects `python` on Windows and `python3` on macOS/Linux, then requir
 To install a versioned Plugin ZIP from GitHub Releases, follow the [local Plugin ZIP installation](docs/guides/installation.md#install-from-the-plugin-zip) steps.
 
 [Plugin installation and configuration](docs/guides/installation.md#install-the-codex-plugin)
+
+### Image routes
+
+The Codex Plugin keeps API Key and ChatGPT subscription generation as separate selectable routes. API Key projects support the full generation, editing, batch, delivery, and canvas workflow. ChatGPT projects support one ordinary single-image generation through the Codex App host, followed by the same artifact, delivery, result-card, and canvas presentation flow. ChatGPT editing, mask operations, batches, and multi-candidate generation are not part of the current route.
 
 ## Install the Standalone Skill
 
