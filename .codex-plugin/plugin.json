@@ -19,7 +19,7 @@
   "interface": {
     "displayName": "OpenAI-Compatible Images",
     "shortDescription": "Generate, edit, refine images",
-    "longDescription": "Generate through a configured OpenAI-compatible API or the Codex App ChatGPT route, keep image results in the current conversation, and use the focused canvas for API-backed annotation, editing, and version navigation.",
+    "longDescription": "Generate through a configured OpenAI-compatible API or the Codex App ChatGPT route, keep image results in the current conversation, and use the focused canvas for annotation, editing, and version navigation.",
     "developerName": "Syh1906",
     "websiteURL": "https://github.com/Syh1906/openai-compatible-imagegen",
     "category": "Productivity",

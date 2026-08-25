@@ -51,7 +51,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 var define_RELEASE_IDENTITY_default;
 var init_define_RELEASE_IDENTITY = __esm({
   "<define:__RELEASE_IDENTITY__>"() {
-    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "1.2.0", serverBuildDigest: "ed99f47da02dadb891df341defb9daf54b50ddffe61b0c77bd4294b6dbb40615", widgetAssetDigest: "d3e74efb2f3153b6536e29b61fd9b803b6ad3e75c6194f1251dd394c29d104ae", fingerprint: "88b0a9bd0ef05485061a", resourceUris: { result: "ui://openai-compatible-imagegen/result-88b0a9bd0ef05485061a.html", editor: "ui://openai-compatible-imagegen/editor-88b0a9bd0ef05485061a.html" } };
+    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "1.2.0", serverBuildDigest: "29c4fe122f6acd6d2787d9ea05871851ce694a0d4832e3c40ecbf26d91d928f1", widgetAssetDigest: "bd048823372c3dd1fbe3c8f2c966ce4d9f5092d6d42b181d73e5afe2c2e4fdb6", fingerprint: "2c16fd16da2f61428a9c", resourceUris: { result: "ui://openai-compatible-imagegen/result-2c16fd16da2f61428a9c.html", editor: "ui://openai-compatible-imagegen/editor-2c16fd16da2f61428a9c.html" } };
   }
 });
 
@@ -35295,16 +35295,28 @@ async function stableOperation(runOperation, request) {
 // mcp/host-image-import-tools.mjs
 init_define_RELEASE_IDENTITY();
 var handoffIdSchema = external_exports2.string().regex(/^handoff_[0-9a-f]{64}$/);
-function registerHostImageImportTools(server2, { projectContext, importer, toolError: toolError2 }) {
+var imageIdSchema2 = external_exports2.string().regex(/^img_[0-9A-HJKMNP-TV-Z]{26}$/);
+var annotationIdSchema = external_exports2.string().regex(/^ann_[0-9A-HJKMNP-TV-Z]{26}$/);
+var submissionIdSchema = external_exports2.string().regex(/^sub_[0-9a-f]{32}$/);
+function registerHostImageImportTools(server2, {
+  projectContext,
+  importer,
+  editSubmissions,
+  readArtifact,
+  toolError: toolError2
+}) {
   server2.registerTool("prepare_host_image_import", {
     title: "Prepare host image import",
-    description: "Freeze one ChatGPT image generation intent before invoking the Codex host image generation capability.",
+    description: "Freeze one ChatGPT image generation or canvas edit intent before invoking the Codex host image generation capability. Edit preparation returns the clean parent image as model-visible content.",
     inputSchema: {
       projectBindingId: projectBindingIdSchema,
       route: external_exports2.literal("chatgpt"),
-      intent: external_exports2.literal("generate"),
+      intent: external_exports2.enum(["generate", "edit"]),
       prompt: external_exports2.string().trim().min(1),
-      count: external_exports2.literal(1).default(1)
+      count: external_exports2.literal(1).default(1),
+      parentImageId: imageIdSchema2.optional(),
+      annotationId: annotationIdSchema.nullable().optional(),
+      submissionId: submissionIdSchema.optional()
     },
     outputSchema: external_exports2.object({ handoffId: handoffIdSchema, status: external_exports2.literal("prepared") }).strict(),
     annotations: writeAnnotations(false)
@@ -35312,9 +35324,10 @@ function registerHostImageImportTools(server2, { projectContext, importer, toolE
     projectContext,
     projectBindingId,
     toolError2,
-    async (context) => ({
-      content: [{ type: "text", text: "\u5DF2\u51C6\u5907\u672C\u6B21\u5BBF\u4E3B\u56FE\u7247\u751F\u6210\u4EA4\u63A5\u3002" }],
-      structuredContent: await importer.prepare(input, context)
+    async (context) => await prepareImport(input, context, {
+      importer,
+      editSubmissions,
+      readArtifact
     })
   ));
   server2.registerTool("stage_host_image_import", {
@@ -35363,15 +35376,102 @@ function registerHostImageImportTools(server2, { projectContext, importer, toolE
     toolError2,
     async (context) => {
       const result = await importer.finalize(input, context);
+      await settleEditSubmission(result, input.action, context, editSubmissions);
+      const publicResult = withoutEditContext(result);
       return {
         content: [{
           type: "text",
-          text: result.status === "committed" ? "\u5DF2\u5C06\u5BBF\u4E3B\u56FE\u7247\u53D1\u5E03\u4E3A\u9879\u76EE\u5DE5\u4EF6\u3002\u8BF7\u4F7F\u7528 render_image_results \u5C55\u793A\u8FD4\u56DE\u7684\u56FE\u7247 ID\u3002" : "\u5DF2\u7EC8\u6B62\u672C\u6B21\u5BBF\u4E3B\u56FE\u7247\u4EA4\u63A5\u3002"
+          text: publicResult.status === "committed" ? "\u5DF2\u5C06\u5BBF\u4E3B\u56FE\u7247\u53D1\u5E03\u4E3A\u9879\u76EE\u5DE5\u4EF6\u3002\u8BF7\u4F7F\u7528 render_image_results \u5C55\u793A\u8FD4\u56DE\u7684\u56FE\u7247 ID\u3002" : "\u5DF2\u7EC8\u6B62\u672C\u6B21\u5BBF\u4E3B\u56FE\u7247\u4EA4\u63A5\u3002"
         }],
-        structuredContent: result
+        structuredContent: publicResult
       };
     }
   ));
+}
+async function prepareImport(input, context, { importer, editSubmissions, readArtifact }) {
+  if (input.intent === "generate") {
+    assertNoEditFields(input);
+    return {
+      content: [{ type: "text", text: "\u5DF2\u51C6\u5907\u672C\u6B21\u5BBF\u4E3B\u56FE\u7247\u751F\u6210\u4EA4\u63A5\u3002" }],
+      structuredContent: await importer.prepare(input, context)
+    };
+  }
+  if (!input.parentImageId || !input.submissionId || !Object.hasOwn(input, "annotationId")) {
+    throw new Error("ChatGPT canvas edit requires parentImageId, annotationId, and submissionId");
+  }
+  let claimed;
+  try {
+    claimed = await editSubmissions.claimForEdit({
+      artifactRoot: context.artifactRoot,
+      bindingKey: context.bindingKey,
+      parentImageId: input.parentImageId,
+      submissionId: input.submissionId,
+      annotationId: input.annotationId
+    });
+    if (!claimed || claimed.completedArtifactIds) {
+      throw new Error("ChatGPT canvas edit submission is not available");
+    }
+    const parent = await readArtifact(input.parentImageId, context);
+    const structuredContent = await importer.prepare({
+      ...input,
+      annotationId: claimed.receipt.annotationId,
+      submissionId: claimed.receipt.id,
+      revisionSha256: claimed.receipt.revisionSha256,
+      claimGeneration: claimed.claimGeneration
+    }, context);
+    return {
+      content: [
+        {
+          type: "text",
+          text: "\u5DF2\u51C6\u5907\u672C\u6B21 ChatGPT \u753B\u5E03\u7F16\u8F91\u4EA4\u63A5\u3002\u4EE5\u4E0B\u56FE\u7247\u662F\u65E0\u6807\u6CE8\u7684\u5E72\u51C0\u7236\u56FE\uFF1B\u4F1A\u8BDD\u4E2D\u7684\u753B\u5E03\u9884\u89C8\u53EA\u7528\u4E8E\u5B9A\u4F4D\u4FEE\u6539\u533A\u57DF\u3002"
+        },
+        imageContent(parent)
+      ],
+      structuredContent
+    };
+  } catch (error40) {
+    if (claimed && !claimed.completedArtifactIds) {
+      await editSubmissions.releaseForEdit({
+        artifactRoot: context.artifactRoot,
+        bindingKey: context.bindingKey,
+        parentImageId: claimed.receipt.parentImageId,
+        submissionId: claimed.receipt.id,
+        claimGeneration: claimed.claimGeneration
+      });
+    }
+    throw error40;
+  }
+}
+function assertNoEditFields(input) {
+  if (input.parentImageId !== void 0 || input.annotationId !== void 0 || input.submissionId !== void 0) {
+    throw new Error("ChatGPT generation handoff does not accept canvas edit fields");
+  }
+}
+async function settleEditSubmission(result, action, context, editSubmissions) {
+  const edit = result?.editContext;
+  if (!edit) return;
+  const request = {
+    artifactRoot: context.artifactRoot,
+    bindingKey: context.bindingKey,
+    parentImageId: edit.parentImageId,
+    submissionId: edit.submissionId,
+    claimGeneration: edit.claimGeneration
+  };
+  if (action === "commit") {
+    await editSubmissions.complete({
+      ...request,
+      artifactIds: result.artifacts.map((artifact) => artifact.id)
+    });
+    return;
+  }
+  await editSubmissions.releaseForEdit(request);
+}
+function withoutEditContext(result) {
+  const { editContext: _editContext, ...publicResult } = result;
+  return publicResult;
+}
+function imageContent(artifact) {
+  return { type: "image", data: artifact.data, mimeType: artifact.metadata.mimeType };
 }
 async function withProject(projectContext, projectBindingId, toolError2, operation) {
   try {
@@ -35392,8 +35492,8 @@ var legacyWidgetResourceFingerprints = [
 var editorSessionIdSchema = external_exports2.string().regex(/^eds_[0-9a-f]{32}$/).describe("Open canvas session ID");
 var projectBindingInputSchema = { projectBindingId: projectBindingIdSchema };
 var modelProfileIdSchema = external_exports2.string().min(1);
-var annotationIdSchema = external_exports2.string().regex(/^ann_[0-9A-HJKMNP-TV-Z]{26}$/);
-var submissionIdSchema = external_exports2.string().regex(/^sub_[0-9a-f]{32}$/);
+var annotationIdSchema2 = external_exports2.string().regex(/^ann_[0-9A-HJKMNP-TV-Z]{26}$/);
+var submissionIdSchema2 = external_exports2.string().regex(/^sub_[0-9a-f]{32}$/);
 var deliveryReceiptIdPattern = /^delivery_[0-9a-f]{64}$/;
 var imageModelCapabilitiesOutputSchema = external_exports2.object({
   generate: external_exports2.boolean().optional(),
@@ -35418,7 +35518,7 @@ var maskPolicyOutputSchema = external_exports2.object({
   requiredCapabilities: external_exports2.object({ mask: external_exports2.literal(true) }).strict(),
   strategy: external_exports2.enum(["edit-only", "protect-only", "mixed"]),
   parentImageId: imageIdSchema,
-  annotationId: annotationIdSchema,
+  annotationId: annotationIdSchema2,
   width: external_exports2.number().int().positive(),
   height: external_exports2.number().int().positive(),
   masks: external_exports2.array(external_exports2.object({
@@ -35461,7 +35561,7 @@ var openEditorSessionOutputSchema = external_exports2.object({
   draft: editorDraftSchema.optional()
 }).strict();
 var annotationOutputSchema = external_exports2.object({
-  id: annotationIdSchema,
+  id: annotationIdSchema2,
   imageId: imageIdSchema,
   itemCount: external_exports2.number().int().min(1).max(100),
   previewMimeType: external_exports2.literal("image/svg+xml"),
@@ -35470,9 +35570,9 @@ var annotationOutputSchema = external_exports2.object({
   maskPolicy: maskPolicyOutputSchema.nullable()
 }).strict();
 var editSubmissionOutputSchema = external_exports2.object({
-  id: submissionIdSchema,
+  id: submissionIdSchema2,
   parentImageId: imageIdSchema,
-  annotationId: annotationIdSchema.nullable(),
+  annotationId: annotationIdSchema2.nullable(),
   revisionSha256: external_exports2.string().regex(/^[a-f0-9]{64}$/)
 }).strict();
 var fingerprintSchema = external_exports2.string().regex(/^[a-f0-9]{20}$/);
@@ -35610,7 +35710,13 @@ function createImagegenServer({
   );
   const imageAuditHandlers = createImageAuditHandlers({ runTask, readArtifact });
   registerConfigTools(server2, configManager, toolError);
-  registerHostImageImportTools(server2, { projectContext, importer: hostImageImporter, toolError });
+  registerHostImageImportTools(server2, {
+    projectContext,
+    importer: hostImageImporter,
+    editSubmissions,
+    readArtifact,
+    toolError
+  });
   registerWidgetResource(server2, {
     name: "image-result",
     uri: resultWidgetUri,
@@ -35876,8 +35982,8 @@ function createImagegenServer({
         parentImageId: imageIdSchema,
         prompt: external_exports2.string().min(1),
         referenceImageIds: external_exports2.array(imageIdSchema).optional(),
-        annotationId: annotationIdSchema.optional(),
-        submissionId: submissionIdSchema.optional(),
+        annotationId: annotationIdSchema2.optional(),
+        submissionId: submissionIdSchema2.optional(),
         modelProfileId: modelProfileIdSchema.optional(),
         transparency: transparencyInputSchema.optional(),
         ...outputSchema
@@ -35935,6 +36041,9 @@ function createImagegenServer({
           }
         }
         let taskOutput = output;
+        const useDedicatedMask = Boolean(
+          annotation?.maskPath && modelHasCapability(context, modelProfileId, "mask")
+        );
         if (annotation?.maskPath) {
           if (!annotation.maskPolicy) {
             return toolError(new Error("legacy mask has no signed policy"), "mask_policy_missing");
@@ -35951,13 +36060,15 @@ function createImagegenServer({
           if (claimedSubmission.maskSha256 !== annotation.maskPolicy.maskSha256 || claimedSubmission.maskPolicySha256 !== annotation.maskPolicy.policySha256 || annotation.maskPolicy.parentImageId !== parentImageId || annotation.maskPolicy.annotationId !== annotationId) {
             return toolError(new Error("submission mask policy mismatch"), "edit_submission_mismatch");
           }
-          if (annotation.maskPolicy.modelProfileId !== modelProfileId) {
+          if (useDedicatedMask && annotation.maskPolicy.modelProfileId !== modelProfileId) {
             return toolError(new Error("mask policy model profile mismatch"), "invalid_task");
           }
-          try {
-            taskOutput = deriveMaskedEditOutput(output, annotation.maskPolicy);
-          } catch (error40) {
-            return toolError(error40, "invalid_task");
+          if (useDedicatedMask) {
+            try {
+              taskOutput = deriveMaskedEditOutput(output, annotation.maskPolicy);
+            } catch (error40) {
+              return toolError(error40, "invalid_task");
+            }
           }
         } else if (annotation?.maskPolicy || claimedSubmission?.maskSha256 || claimedSubmission?.maskPolicySha256) {
           return toolError(new Error("submission mask metadata mismatch"), "edit_submission_mismatch");
@@ -35970,8 +36081,7 @@ function createImagegenServer({
             inputArtifactIds: [parentImageId, ...referenceImageIds],
             annotationId,
             ...claimedSubmission ? { submissionId: claimedSubmission.receipt.id } : {},
-            ...annotation?.maskPath ? { mask: annotation.maskPath } : {},
-            ...annotation?.maskPolicy ? { maskPolicy: annotation.maskPolicy } : {},
+            ...useDedicatedMask ? { mask: annotation.maskPath, maskPolicy: annotation.maskPolicy } : {},
             ...transparency ? { transparency } : {},
             output: taskOutput
           },
@@ -36163,7 +36273,7 @@ function createImagegenServer({
       try {
         const artifact = await readArtifact(imageId, context);
         return {
-          content: [imageContent(artifact), { type: "text", text: `\u5DF2\u8BFB\u53D6\u56FE\u7247 ${imageId}\u3002` }],
+          content: [imageContent2(artifact), { type: "text", text: `\u5DF2\u8BFB\u53D6\u56FE\u7247 ${imageId}\u3002` }],
           structuredContent: {
             artifact: imageArtifactMetadata(artifact.metadata),
             canvasStatus: (await editorState.getCanvasStatuses({
@@ -36301,7 +36411,7 @@ function createImagegenServer({
         return {
           content: [
             { type: "text", text: `\u5DF2\u663E\u793A ${imageIds.length} \u5F20\u56FE\u7247\u3002` },
-            ...records.map(imageContent)
+            ...records.map(imageContent2)
           ],
           structuredContent: { imageIds, artifacts },
           _meta: {
@@ -36679,6 +36789,10 @@ async function withBoundProject(projectContext, projectBindingId, callback) {
     return toolError(error40);
   }
 }
+function modelHasCapability(context, modelProfileId, capability) {
+  const runtimeConfig = context.apiRuntimeConfig ?? JSON.parse(context.effectiveConfigJson);
+  return runtimeConfig?.models?.[modelProfileId]?.capabilities?.[capability] === true;
+}
 function apiProviderNotConfigured() {
   return toolError(new Error("API provider is not configured"), "api_provider_not_configured");
 }
@@ -36732,7 +36846,7 @@ async function optionalProjectContext(projectContext, projectBindingId) {
   if (projectBindingId === void 0) return null;
   return await projectContext.require(projectBindingId);
 }
-function imageContent(artifact) {
+function imageContent2(artifact) {
   return { type: "image", data: artifact.data, mimeType: artifact.metadata.mimeType };
 }
 function imageArtifactMetadata(metadata) {

@@ -79,7 +79,7 @@ const MESSAGE_PAIRS = Object.freeze({
   "auth.chatgptValidatedOnSubmit": ["Validated by the host when submitted", "提交时由宿主验证"],
   "auth.routeUnavailable": ["Route information unavailable", "路线信息暂不可用"],
   "auth.configurationRequired": ["Configuration required", "需要配置"],
-  "auth.canvasEditUnsupported": ["The selected image generation route does not support canvas editing", "当前图片生成路线暂不支持画布编辑"],
+  "auth.routeInvalid": ["The selected image generation route is unavailable", "所选图片生成路线不可用"],
   "intent.promptPlaceholder": ["For example: keep the overall style and subject proportions unchanged", "例如：保持整体风格一致，避免改变主体比例"],
   "common.optional": ["Optional", "可选"],
   "intent.summary": ["{count} annotations", "已标注 {count} 处"],

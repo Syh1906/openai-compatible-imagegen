@@ -238,7 +238,13 @@ export function createImagegenServer({
   );
   const imageAuditHandlers = createImageAuditHandlers({ runTask, readArtifact });
   registerConfigTools(server, configManager, toolError);
-  registerHostImageImportTools(server, { projectContext, importer: hostImageImporter, toolError });
+  registerHostImageImportTools(server, {
+    projectContext,
+    importer: hostImageImporter,
+    editSubmissions,
+    readArtifact,
+    toolError,
+  });
 
   registerWidgetResource(server, {
     name: "image-result",
@@ -578,6 +584,10 @@ export function createImagegenServer({
           }
         }
         let taskOutput = output;
+        const useDedicatedMask = Boolean(
+          annotation?.maskPath
+          && modelHasCapability(context, modelProfileId, "mask"),
+        );
         if (annotation?.maskPath) {
           if (!annotation.maskPolicy) {
             return toolError(new Error("legacy mask has no signed policy"), "mask_policy_missing");
@@ -599,13 +609,15 @@ export function createImagegenServer({
           ) {
             return toolError(new Error("submission mask policy mismatch"), "edit_submission_mismatch");
           }
-          if (annotation.maskPolicy.modelProfileId !== modelProfileId) {
+          if (useDedicatedMask && annotation.maskPolicy.modelProfileId !== modelProfileId) {
             return toolError(new Error("mask policy model profile mismatch"), "invalid_task");
           }
-          try {
-            taskOutput = deriveMaskedEditOutput(output, annotation.maskPolicy);
-          } catch (error) {
-            return toolError(error, "invalid_task");
+          if (useDedicatedMask) {
+            try {
+              taskOutput = deriveMaskedEditOutput(output, annotation.maskPolicy);
+            } catch (error) {
+              return toolError(error, "invalid_task");
+            }
           }
         } else if (
           annotation?.maskPolicy
@@ -623,8 +635,7 @@ export function createImagegenServer({
             inputArtifactIds: [parentImageId, ...referenceImageIds],
             annotationId,
             ...(claimedSubmission ? { submissionId: claimedSubmission.receipt.id } : {}),
-            ...(annotation?.maskPath ? { mask: annotation.maskPath } : {}),
-            ...(annotation?.maskPolicy ? { maskPolicy: annotation.maskPolicy } : {}),
+            ...(useDedicatedMask ? { mask: annotation.maskPath, maskPolicy: annotation.maskPolicy } : {}),
             ...(transparency ? { transparency } : {}),
             output: taskOutput,
           },
@@ -1372,6 +1383,11 @@ async function withBoundProject(projectContext, projectBindingId, callback) {
   } catch (error) {
     return toolError(error);
   }
+}
+
+function modelHasCapability(context, modelProfileId, capability) {
+  const runtimeConfig = context.apiRuntimeConfig ?? JSON.parse(context.effectiveConfigJson);
+  return runtimeConfig?.models?.[modelProfileId]?.capabilities?.[capability] === true;
 }
 
 

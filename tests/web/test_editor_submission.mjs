@@ -624,7 +624,7 @@ test("submission stops before side effects when the host has no atomic text and 
 });
 
 
-test("ChatGPT canvas edits stop before preview, tools, context, or messages", async () => {
+test("ChatGPT canvas edits publish the same frozen annotation context without calling API tools", async () => {
   const effects = [];
   const coordinator = createSubmissionCoordinator({
     app: {
@@ -632,18 +632,29 @@ test("ChatGPT canvas edits stop before preview, tools, context, or messages", as
         message: { text: {}, image: {} },
         updateModelContext: { structuredContent: {} },
       }),
-      callServerTool: async () => effects.push("tool"),
-      updateModelContext: async () => effects.push("context"),
-      sendMessage: async () => effects.push("message"),
+      callServerTool: async ({ name }) => {
+        effects.push(name);
+        return preparedResponse();
+      },
+      updateModelContext: async (request) => {
+        effects.push("context");
+        assert.equal(request.structuredContent.submissionId, "sub_01");
+      },
+      sendMessage: async (request) => {
+        effects.push("message");
+        assert.deepEqual(request.content.map((item) => item.type), ["text", "image"]);
+      },
     },
-    rasterizePreview: async () => effects.push("preview"),
+    rasterizePreview: async () => {
+      effects.push("preview");
+      return { mimeType: "image/png", data: "preview-data" };
+    },
   });
 
-  await assert.rejects(
-    coordinator.submit(editorState(), () => {}, { authMode: "chatgpt" }),
-    (error) => error.stage === "route",
-  );
-  assert.deepEqual(effects, []);
+  const result = await coordinator.submit(editorState(), () => {}, { authMode: "chatgpt" });
+
+  assert.equal(result.snapshot.authMode, "chatgpt");
+  assert.deepEqual(effects, ["preview", "prepare_image_edit_submission", "context", "message"]);
 });
 
 

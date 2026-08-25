@@ -2,23 +2,19 @@
 
 这里记录 `openai-compatible-imagegen` 每个版本面向用户的变化。
 
-## [1.2.0] - 2026-08-24
+## [1.2.0] - 2026-08-25
 
 ### 新增
 
 - Codex Plugin 支持 API Key 与 ChatGPT 订阅两条可选图片路线，并通过 `auth_mode` 保存默认选择。
-- ChatGPT 路线支持在 Codex App 中完成普通单图生成，生成结果进入现有产物、交付、结果卡和聚焦画布流程。
-- 新增宿主图片导入事务，支持对当前宿主生成结果进行安全校验、暂存、提交和幂等恢复。
-- 纯 ChatGPT 配置可以省略 Provider、模型和 API Key；API Key 路线继续支持生成、编辑、mask、批处理和多候选。
+- ChatGPT 路线支持在 Codex App 中生成图片、提交语义画布编辑，结果进入现有产物、交付、结果卡和版本流程。
+- ChatGPT 路线的宿主生成结果进入不可变图片产物，并可继续交付、展示和建立版本关系。
+- 纯 ChatGPT 配置可以省略 Provider、模型和 API Key；API Key 路线继续支持批处理和多候选。
 
 ### 变更
 
-- 画布显示两条认证路线，并在 ChatGPT 路线下限制当前不支持的编辑、mask、批处理和多候选操作。
-- Standalone Skill 继续使用独立的 API Key 配置；ChatGPT 宿主 handoff 由 Codex Plugin 提供。
-
-### 已知限制
-
-- ChatGPT 路线当前支持普通单图生成；编辑、mask、批处理和多候选将在后续兼容能力完善后开放。
+- 画布支持在 API Key 与 ChatGPT 路线之间选择；两条路线都可提交 mask 标注和文字要求，并保留父子版本关系。
+- 所选 API 模型声明专用 mask 能力时，API Key 编辑会传递对应参数；其他情况把标记区域作为语义编辑提示发送。结果遵循程度由所选生图模型决定。
 
 ## [1.1.1] - 2026-08-22
 

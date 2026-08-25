@@ -138,6 +138,90 @@ test("host image handoff tools keep the host path confined to the stage call", a
 });
 
 
+test("ChatGPT edit handoff returns the clean parent and completes the canvas submission", async () => {
+  const handoffId = `handoff_${"b".repeat(64)}`;
+  const parentImageId = "img_01J00000000000000000000000";
+  const childImageId = "img_01J00000000000000000000001";
+  const annotationId = "ann_01J00000000000000000000000";
+  const submissionId = "sub_0123456789abcdef0123456789abcdef";
+  const receipt = { id: submissionId, parentImageId, annotationId, revisionSha256: "a".repeat(64) };
+  const registryCalls = [];
+  const imported = {
+    ...artifact(childImageId, [parentImageId]),
+    operation: "import",
+    provider: "codex-host",
+    model: "unreported",
+    annotationId,
+    parameters: { submissionId },
+  };
+  await withClient({
+    editSubmissions: {
+      async claimForEdit(input) {
+        registryCalls.push(["claim", input]);
+        return { receipt, claimGeneration: 3, maskSha256: null, maskPolicySha256: null };
+      },
+      async complete(input) {
+        registryCalls.push(["complete", input]);
+        return receipt;
+      },
+      async releaseForEdit(input) {
+        registryCalls.push(["release", input]);
+        return receipt;
+      },
+      async resolveForEdit() { return null; },
+      async issue() { throw new Error("not used"); },
+    },
+    hostImageImporter: {
+      async prepare(input) {
+        assert.equal(input.intent, "edit");
+        assert.equal(input.claimGeneration, 3);
+        return { handoffId, status: "prepared" };
+      },
+      async stage() { return { handoffId, status: "staged", imageCount: 1 }; },
+      async finalize() {
+        return {
+          handoffId,
+          status: "committed",
+          artifacts: [imported],
+          editContext: { parentImageId, annotationId, submissionId, claimGeneration: 3 },
+        };
+      },
+    },
+    runTask: async () => { throw new Error("not used"); },
+    readArtifact: async (imageId) => {
+      assert.equal(imageId, parentImageId);
+      return { metadata: artifact(parentImageId), data: PNG_BASE64 };
+    },
+  }, async (client) => {
+    const prepared = await client.callTool({
+      name: "prepare_host_image_import",
+      arguments: {
+        route: "chatgpt",
+        intent: "edit",
+        prompt: "提亮标注区域",
+        count: 1,
+        parentImageId,
+        annotationId,
+        submissionId,
+      },
+    });
+    assert.equal(prepared.isError, undefined, JSON.stringify(prepared));
+    assert.equal(prepared.content[0].type, "text");
+    assert.equal(prepared.content[1].type, "image");
+    assert.equal(prepared.content[1].data, PNG_BASE64);
+
+    const committed = await client.callTool({
+      name: "finalize_host_image_import",
+      arguments: { handoffId, action: "commit" },
+    });
+    assert.equal(committed.isError, undefined, JSON.stringify(committed));
+    assert.equal(committed.structuredContent.artifacts[0].parentIds[0], parentImageId);
+    assert.equal(JSON.stringify(committed).includes("claimGeneration"), false);
+  });
+  assert.deepEqual(registryCalls.map(([name]) => name), ["claim", "complete"]);
+});
+
+
 test("ChatGPT-only projects reject API tools before any provider runtime call", async () => {
   const projectBindingId = `pbind_${"0".repeat(64)}`;
   const receipt = {

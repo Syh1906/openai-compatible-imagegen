@@ -2,7 +2,7 @@
 
 # OpenAI 兼容图片
 
-**通过 OpenAI 兼容图片 API 或 Codex App 的 ChatGPT 路线生成、检查并交付图片；编辑和批处理由 API 路线提供。**
+**通过 OpenAI 兼容图片 API 或 Codex App 的 ChatGPT 路线生成、检查、编辑并交付图片。**
 
 [![Release](https://img.shields.io/github/v/release/Syh1906/openai-compatible-imagegen?style=flat-square)](https://github.com/Syh1906/openai-compatible-imagegen/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
@@ -19,7 +19,7 @@ OpenAI 兼容图片把同一套图片核心发布为两种安装形态。Standal
 | 安装形态 | 适合场景 | 包含内容 |
 | --- | --- | --- |
 | **Standalone Skill** | Codex CLI、Claude Code、OpenCode 和其他 Agent Skills 客户端 | 生成、编辑、JSONL 批处理、透明处理、交付和 QA |
-| **Codex Plugin** | 需要完整图片工作流的 Codex App 用户 | 共享能力，以及 MCP 工具、结果卡、画布编辑、产物和版本 |
+| **Codex Plugin** | 需要结果卡和聚焦画布的 Codex App 用户 | API Key：完整图片工作流；ChatGPT：宿主生成和语义画布编辑，以及产物、交付和版本 |
 
 每个使用环境选择一种安装形态。两者共享代码和版本，但使用各自的本地配置与产物目录。将已有配置迁移到 Codex Plugin 时，请按[迁移指南](docs/guides/migration.zh-CN.md)操作。
 
@@ -58,7 +58,7 @@ Plugin 在 Windows 默认调用 `python`，在 macOS/Linux 默认调用 `python3
 
 ### 图片路线
 
-Codex Plugin 将 API Key 和 ChatGPT 订阅生图作为可分别选择的路线。API Key 项目支持完整的生成、编辑、批处理、交付和画布工作流。ChatGPT 项目支持通过 Codex App 宿主完成一次普通单图生成，并沿用现有产物、交付、结果卡和画布展示流程；当前不包含 ChatGPT 编辑、mask、批处理和多候选生成。
+Codex Plugin 将 API Key 和 ChatGPT 订阅生图作为可分别选择的路线。两条路线都支持用画布 mask 标注表达改图区域和保护内容。所选 API 模型声明专用 mask 能力时，API Key 编辑会传递对应参数；未声明时，标记区域仍会作为语义编辑提示发送。结果对区域提示的遵循程度由所选生图模型决定。API Key 项目还支持批处理和多候选。
 
 ## 安装 Standalone Skill
 

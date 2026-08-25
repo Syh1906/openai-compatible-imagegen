@@ -19,8 +19,8 @@ test("editor auth route honors the bound project default without automatic switc
   assert.equal(selectEditorAuthMode(route, "apikey").selectedAuthMode, "apikey");
   assert.equal(route.selectedAuthMode, "chatgpt");
   assert.deepEqual(authRouteStatus(route), {
-    label: "当前图片生成路线暂不支持画布编辑",
-    tone: "warning",
+    label: "ChatGPT 已选择",
+    tone: "success",
   });
 });
 

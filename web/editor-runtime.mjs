@@ -452,6 +452,10 @@ async function connectHost() {
 async function loadModelCapabilities() {
   if (modelCapabilities !== null) return;
   modelCapabilities = {};
+  if (authRoute?.apiKeyConfigured === false) {
+    render();
+    return;
+  }
   try {
     const result = await boundToolClient.callServerTool({ name: "list_image_models", arguments: {} });
     if (!resourceActive) return;
@@ -459,12 +463,10 @@ async function loadModelCapabilities() {
     const model = result?.structuredContent?.models?.find((item) => item.id === "primary/gpt-image-2");
     if (result.isError || !model?.capabilities) throw new Error("model capabilities unavailable");
     modelCapabilities = model.capabilities;
-    if (!modelCapabilities.mask && editor.activeTool === "mask") editor = { ...editor, activeTool: "select" };
     render();
   } catch (error) {
     if (!resourceActive) return;
     modelCapabilities = {};
-    if (editor.activeTool === "mask") editor = { ...editor, activeTool: "select" };
     render();
     toast("无法读取当前模型能力");
   }

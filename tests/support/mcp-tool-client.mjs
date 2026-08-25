@@ -79,7 +79,10 @@ export async function withClient(dependencies, callback) {
           config_version: 1,
           active_profile: "primary/gpt-image-2",
           providers: {},
-          models: {},
+          models: {
+            "primary/gpt-image-2": { capabilities: { mask: true } },
+            "secondary/no-mask": { capabilities: { mask: false } },
+          },
         }),
         effectiveConfigSha256: "0".repeat(64),
       };

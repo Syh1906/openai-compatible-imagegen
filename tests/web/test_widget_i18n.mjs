@@ -35,10 +35,7 @@ test("widget locales have identical keys and use English outside Chinese locales
   }
   assert.equal(english.localizeText("路线信息暂不可用"), "Route information unavailable");
   assert.equal(english.localizeText("需要配置"), "Configuration required");
-  assert.equal(
-    english.localizeText("当前图片生成路线暂不支持画布编辑"),
-    "The selected image generation route does not support canvas editing",
-  );
+  assert.equal(english.localizeText("所选图片生成路线不可用"), "The selected image generation route is unavailable");
 });
 
 test("runtime toasts use the active widget locale", () => {

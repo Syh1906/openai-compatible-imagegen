@@ -10,6 +10,9 @@ import zlib
 
 HANDOFF_ID = "handoff_" + "a" * 64
 IMAGE_ID = "img_01J00000000000000000000000"
+PARENT_IMAGE_ID = "img_01J00000000000000000000001"
+ANNOTATION_ID = "ann_01J00000000000000000000000"
+SUBMISSION_ID = "sub_0123456789abcdef0123456789abcdef"
 
 
 def make_png(width: int, height: int) -> bytes:
@@ -83,6 +86,85 @@ class HostImageImportTests(unittest.TestCase):
         self.assertNotIn(str(source), json.dumps(committed))
         self.assertFalse((self.artifact_root / ".handoffs" / HANDOFF_ID / "image.bin").exists())
 
+    def test_edit_import_preserves_parent_annotation_and_submission_relationships(self) -> None:
+        parent_repository = self.manager.repository
+        parent_repository.id_factory = lambda: PARENT_IMAGE_ID
+        parent_repository.store_images(
+            images=[make_png(3, 2)],
+            mime_type="image/png",
+            provider="test",
+            model="test",
+            operation="generate",
+            prompt="parent",
+            parameters={},
+        )
+        parent_repository.id_factory = lambda: IMAGE_ID
+        self.manager.prepare(
+            route="chatgpt",
+            intent="edit",
+            prompt="brighten the marked area",
+            count=1,
+            parentImageId=PARENT_IMAGE_ID,
+            annotationId=ANNOTATION_ID,
+            submissionId=SUBMISSION_ID,
+            revisionSha256="a" * 64,
+            claimGeneration=1,
+        )
+        source = self.project_root / "host-edit.png"
+        source.write_bytes(make_png(3, 2))
+        os.utime(source, ns=(self.clock * 1_000_000, self.clock * 1_000_000))
+        self.manager.stage(
+            HANDOFF_ID,
+            host_output={"type": "codex-imagegen-saved-path", "savedPath": str(source)},
+        )
+
+        committed = self.manager.finalize(HANDOFF_ID, action="commit")
+        metadata = committed["artifacts"][0]
+
+        self.assertEqual(metadata["operation"], "import")
+        self.assertEqual(metadata["parentIds"], [PARENT_IMAGE_ID])
+        self.assertEqual(metadata["annotationId"], ANNOTATION_ID)
+        self.assertEqual(metadata["parameters"]["submissionId"], SUBMISSION_ID)
+        self.assertEqual(committed["editContext"]["claimGeneration"], 1)
+
+    def test_edit_import_allows_a_text_only_submission_without_annotation(self) -> None:
+        parent_repository = self.manager.repository
+        parent_repository.id_factory = lambda: PARENT_IMAGE_ID
+        parent_repository.store_images(
+            images=[make_png(2, 2)],
+            mime_type="image/png",
+            provider="test",
+            model="test",
+            operation="generate",
+            prompt="parent",
+            parameters={},
+        )
+        parent_repository.id_factory = lambda: IMAGE_ID
+        self.manager.prepare(
+            route="chatgpt",
+            intent="edit",
+            prompt="make the image warmer",
+            count=1,
+            parentImageId=PARENT_IMAGE_ID,
+            annotationId=None,
+            submissionId=SUBMISSION_ID,
+            revisionSha256="b" * 64,
+            claimGeneration=1,
+        )
+        source = self.project_root / "host-text-only.png"
+        source.write_bytes(make_png(2, 2))
+        os.utime(source, ns=(self.clock * 1_000_000, self.clock * 1_000_000))
+        self.manager.stage(
+            HANDOFF_ID,
+            host_output={"type": "codex-imagegen-saved-path", "savedPath": str(source)},
+        )
+
+        committed = self.manager.finalize(HANDOFF_ID, action="commit")
+
+        self.assertEqual(committed["artifacts"][0]["parentIds"], [PARENT_IMAGE_ID])
+        self.assertIsNone(committed["artifacts"][0]["annotationId"])
+        self.assertEqual(committed["artifacts"][0]["parameters"]["submissionId"], SUBMISSION_ID)
+
     def test_stage_rejects_stale_non_image_and_linked_outputs(self) -> None:
         self.manager.prepare(route="chatgpt", intent="generate", prompt="sample", count=1)
         stale = self.project_root / "stale.png"
@@ -137,7 +219,16 @@ class HostImageImportTests(unittest.TestCase):
     def test_prepare_rejects_unimplemented_routes_and_capabilities(self) -> None:
         cases = [
             {"route": "apikey", "intent": "generate", "prompt": "sample", "count": 1},
-            {"route": "chatgpt", "intent": "edit", "prompt": "sample", "count": 1},
+            {
+                "route": "chatgpt",
+                "intent": "edit",
+                "prompt": "sample",
+                "count": 1,
+                "parentImageId": None,
+                "annotationId": None,
+                "submissionId": None,
+                "claimGeneration": None,
+            },
             {"route": "chatgpt", "intent": "generate", "prompt": "sample", "count": 2},
         ]
         for case in cases:

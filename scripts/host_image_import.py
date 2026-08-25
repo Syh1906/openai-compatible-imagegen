@@ -26,6 +26,9 @@ from scripts.repository_fs import DirectoryLease, RepositoryMutation, ensure_dir
 
 
 HANDOFF_ID_PATTERN = re.compile(r"^handoff_[0-9a-f]{64}$")
+IMAGE_ID_PATTERN = re.compile(r"^img_[0-9A-HJKMNP-TV-Z]{26}$")
+ANNOTATION_ID_PATTERN = re.compile(r"^ann_[0-9A-HJKMNP-TV-Z]{26}$")
+SUBMISSION_ID_PATTERN = re.compile(r"^sub_[0-9a-f]{32}$")
 MAX_IMAGE_BYTES = 64 * 1024 * 1024
 MAX_IMAGE_PIXELS = 100_000_000
 ACQUISITION = {
@@ -63,15 +66,45 @@ class HostImageImportManager:
         )
         self.epoch_ms_factory = epoch_ms_factory or (lambda: time.time_ns() // 1_000_000)
 
-    def prepare(self, *, route: str, intent: str, prompt: str, count: int) -> dict[str, Any]:
+    def prepare(
+        self,
+        *,
+        route: str,
+        intent: str,
+        prompt: str,
+        count: int,
+        parentImageId: str | None = None,
+        annotationId: str | None = None,
+        submissionId: str | None = None,
+        revisionSha256: str | None = None,
+        claimGeneration: int | None = None,
+    ) -> dict[str, Any]:
         if route != "chatgpt":
             raise ValueError("host image import route is invalid")
-        if intent != "generate":
-            raise ValueError("host image import intent is not implemented")
         if count != 1:
             raise ValueError("host image import count must be one")
         if not isinstance(prompt, str) or not prompt.strip() or prompt != prompt.strip():
             raise ValueError("host image import prompt is invalid")
+        if intent == "generate":
+            if any(value is not None for value in (parentImageId, annotationId, submissionId, revisionSha256, claimGeneration)):
+                raise ValueError("host image generation does not accept edit context")
+        elif intent == "edit":
+            if (
+                not isinstance(parentImageId, str) or not IMAGE_ID_PATTERN.fullmatch(parentImageId)
+                or (
+                    annotationId is not None
+                    and (
+                        not isinstance(annotationId, str)
+                        or not ANNOTATION_ID_PATTERN.fullmatch(annotationId)
+                    )
+                )
+                or not isinstance(submissionId, str) or not SUBMISSION_ID_PATTERN.fullmatch(submissionId)
+                or not isinstance(revisionSha256, str) or not re.fullmatch(r"[0-9a-f]{64}", revisionSha256)
+                or not isinstance(claimGeneration, int) or claimGeneration < 1
+            ):
+                raise ValueError("host image edit context is invalid")
+        else:
+            raise ValueError("host image import intent is invalid")
         handoff_id = self.handoff_id_factory()
         self._require_handoff_id(handoff_id)
         record = {
@@ -84,6 +117,14 @@ class HostImageImportManager:
             "count": count,
             "preparedEpochMs": self.epoch_ms_factory(),
         }
+        if intent == "edit":
+            record["editContext"] = {
+                "parentImageId": parentImageId,
+                "annotationId": annotationId,
+                "submissionId": submissionId,
+                "revisionSha256": revisionSha256,
+                "claimGeneration": claimGeneration,
+            }
         relative_root = self._relative_root(handoff_id)
         with ensure_directory_tree_safely(self.project_root, self.artifact_root) as lease:
             with RepositoryMutation(self.artifact_root, directory_lease=lease) as mutation:
@@ -154,7 +195,7 @@ class HostImageImportManager:
                     raise ValueError("host image handoff is aborted")
                 if record["status"] == "committed":
                     artifact = self.repository.get_artifact(record["artifactId"])
-                    return self._committed_result(handoff_id, artifact.metadata)
+                    return self._committed_result(handoff_id, artifact.metadata, record.get("editContext"))
                 if record["status"] != "staged":
                     raise ValueError("host image handoff has not been staged")
                 with lease.open_file(relative_root / "image.bin") as verified_file:
@@ -163,14 +204,22 @@ class HostImageImportManager:
             recovered = self.repository.get_import_by_handoff_id(handoff_id)
             if recovered is None:
                 raise ValueError("host image handoff was not found")
-            return self._committed_result(handoff_id, recovered.metadata)
+            return self._committed_result(
+                handoff_id,
+                recovered.metadata,
+                recovered.metadata.get("parameters", {}).get("editContext"),
+            )
 
+        edit_context = record.get("editContext")
         artifact = self.repository.store_imported_image(
             image=snapshot,
             mime_type=record["mimeType"],
             prompt=record["prompt"],
             handoff_id=handoff_id,
             acquisition=ACQUISITION,
+            parent_ids=[edit_context["parentImageId"]] if edit_context else [],
+            annotation_id=edit_context["annotationId"] if edit_context else None,
+            submission_id=edit_context["submissionId"] if edit_context else None,
         )
         terminal = {
             "schemaVersion": "host-image-handoff.v1",
@@ -178,12 +227,14 @@ class HostImageImportManager:
             "status": "committed",
             "artifactId": artifact.metadata["id"],
         }
+        if edit_context is not None:
+            terminal["editContext"] = edit_context
         self._replace_with_terminal_record(
             relative_root,
             terminal,
             {"handoff.json", "staged.json", "image.bin"},
         )
-        return self._committed_result(handoff_id, artifact.metadata)
+        return self._committed_result(handoff_id, artifact.metadata, edit_context)
 
     def _abort(self, handoff_id: str) -> dict[str, Any]:
         relative_root = self._relative_root(handoff_id)
@@ -266,8 +317,20 @@ class HostImageImportManager:
         return record
 
     @staticmethod
-    def _committed_result(handoff_id: str, metadata: dict[str, Any]) -> dict[str, Any]:
-        return {"handoffId": handoff_id, "status": "committed", "artifacts": [metadata]}
+    def _committed_result(
+        handoff_id: str,
+        metadata: dict[str, Any],
+        edit_context: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        result = {"handoffId": handoff_id, "status": "committed", "artifacts": [metadata]}
+        if edit_context is not None:
+            result["editContext"] = {
+                "parentImageId": edit_context["parentImageId"],
+                "annotationId": edit_context["annotationId"],
+                "submissionId": edit_context["submissionId"],
+                "claimGeneration": edit_context["claimGeneration"],
+            }
+        return result
 
     @staticmethod
     def _relative_root(handoff_id: str) -> Path:
@@ -299,6 +362,11 @@ def execute(request: dict[str, Any]) -> dict[str, Any]:
                 intent=request.get("intent"),
                 prompt=request.get("prompt"),
                 count=request.get("count"),
+                parentImageId=request.get("parentImageId"),
+                annotationId=request.get("annotationId"),
+                submissionId=request.get("submissionId"),
+                revisionSha256=request.get("revisionSha256"),
+                claimGeneration=request.get("claimGeneration"),
             )
         if operation == "stage":
             return manager.stage(request.get("handoffId"), host_output=request.get("hostOutput"))

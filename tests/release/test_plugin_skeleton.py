@@ -252,11 +252,13 @@ class PluginSkeletonTests(unittest.TestCase):
         self.assertIn("batch_images", plugin_text)
         self.assertIn("open_image_editor", plugin_text)
 
-    def test_skill_routes_canvas_submissions_back_to_edit_image(self) -> None:
+    def test_skill_routes_canvas_submissions_to_the_selected_edit_route(self) -> None:
         text = SKILL_PATH.read_text(encoding="utf-8")
         self.assertIn("On a canvas submission message", text)
         self.assertIn("prepare_image_edit_submission", text)
         self.assertIn("edit_image.submissionId", text)
+        self.assertIn("prepare_host_image_import", text)
+        self.assertIn('intent: "edit"', text)
         self.assertIn("annotationId", text)
         self.assertIn("MASK_GUARD_V2_BY_STRATEGY", text)
         self.assertIn("complete target image", text)
@@ -279,8 +281,9 @@ class PluginSkeletonTests(unittest.TestCase):
         self.assertIn("Do not wait for the user to request display", text)
         self.assertIn("historical image", text)
         self.assertIn("Report item failures without retrying them", text)
+        self.assertIn("For API Key requests", text)
         self.assertIn("Mask or canvas submissions", text)
-        self.assertIn("one separate `edit_image` call", text)
+        self.assertIn("one separate selected-route edit operation", text)
 
     def test_static_widget_is_packaged(self) -> None:
         self.assertTrue(WIDGET_PATH.is_file())

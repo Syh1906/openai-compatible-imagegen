@@ -93,7 +93,7 @@ API Key 用户基线声明活动 profile、provider、provider 自定义的 mode
 }
 ```
 
-使用 `"apikey"` 走已配置的 OpenAI 兼容 provider，使用 `"chatgpt"` 通过 Codex App 宿主完成一次普通单图生成。ChatGPT 项目可以省略 provider 和 model 字段。ChatGPT 路线当前不包含编辑、mask、批处理或多候选；API Key 项目继续支持这些能力。路线由用户明确选择，某条路线不可用时不会自动切换。
+使用 `"apikey"` 走已配置的 OpenAI 兼容 provider，使用 `"chatgpt"` 通过 Codex App 宿主生成图片并提交语义画布编辑。ChatGPT 项目可以省略 provider 和 model 字段。两条路线都支持把画布 mask 标注作为编辑提示。所选模型声明专用 mask 能力时，API Key 编辑会传递对应参数；未声明时，标记区域仍作为语义提示发送。结果对提示的遵循程度由所选生图模型决定。API Key 项目还可以使用批处理和多候选。路线由用户明确选择，某条路线不可用时不会自动切换。
 
 如需让一个 Plugin provider 使用指定代理，在用户基线的 provider 中加入：
 
@@ -128,7 +128,7 @@ Codex Plugin 提供三个配置工具，Agent 无需定位 Plugin 安装目录�
 - `inspect_image_config` 以脱敏数据读取用户文件和可选项目覆盖，绝不返回 `api_key`。
 - `update_image_config` 按运行时绑定使用的同一 schema 和范围规则更新用户或项目文件。写入前会创建或验证目标配置目录的本地 `*` 忽略规则。凭据优先使用 `api_key_env`；用户明确选择本地明文存储时，工具可以写入用户级 `api_key`，但不会返回该值。项目凭据和不允许的项目字段会被拒绝。
 
-初始化后，设置配置中 provider 的 `api_key_env` 指定的环境变量，再让 Agent 查询配置并绑定项目。每次配置写入都会保护用户和项目配置目录。更新后重新绑定项目，使运行时使用新的配置摘要。查询和更新结果不会输出 API key。MCP 工具还会返回活动 profile、model ID、原生透明声明、重试开关、fallback 路线、警告和下一步引导。
+初始化后，API Key 用户设置配置中 provider 的 `api_key_env` 环境变量；仅使用 ChatGPT 的用户可以在没有 provider 和 API key 时直接绑定项目。然后让 Agent 查询配置并绑定项目。每次配置写入都会保护用户和项目配置目录。更新后重新绑定项目，使运行时使用新的配置摘要。查询和更新结果不会输出 API key。API Key 配置结果包含活动 profile、model ID、透明声明、重试开关和本地交付设置；仅使用 ChatGPT 的结果报告选中的宿主路线和本地交付设置。
 
 `storage.output_directory` 必须是项目内的相对目录，默认值为 `output/imagegen/`。项目绑定会在解析后的输出目录中创建或验证内容仅为 `*` 的 `.gitignore`，让图片、提示词、标注和 metadata 保持本地。已有规则不兼容时会停止绑定，不会覆盖该规则。绝对路径、项目根目录、项目外路径、文件、符号链接、junction 和其他 reparse point 都会被拒绝。
 

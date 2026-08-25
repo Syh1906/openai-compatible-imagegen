@@ -255,6 +255,9 @@ class ArtifactRepository:
         prompt: str,
         handoff_id: str,
         acquisition: dict[str, Any],
+        parent_ids: list[str] | None = None,
+        annotation_id: str | None = None,
+        submission_id: str | None = None,
     ) -> ArtifactRecord:
         if not HANDOFF_ID_PATTERN.fullmatch(handoff_id):
             raise ValueError("invalid host image handoff ID")
@@ -265,12 +268,21 @@ class ArtifactRepository:
         }:
             raise ValueError("host image acquisition metadata is invalid")
         dimensions = inspect_image(image, mime_type)
+        parent_ids = list(parent_ids or [])
+        for parent_id in parent_ids:
+            validate_artifact_id(parent_id)
+        if annotation_id is not None and not isinstance(annotation_id, str):
+            raise ValueError("host image annotation ID is invalid")
+        if submission_id is not None and not isinstance(submission_id, str):
+            raise ValueError("host image submission ID is invalid")
         parameters = {
             "acquisition": {
                 **acquisition,
                 "handoffId": handoff_id,
             }
         }
+        if submission_id is not None:
+            parameters["submissionId"] = submission_id
         artifact_id: str | None = None
         with ensure_directory_tree_safely(self.project_root, self.data_root) as lease:
             with RepositoryMutation(self.data_root, directory_lease=lease) as mutation:
@@ -307,8 +319,8 @@ class ArtifactRepository:
                         operation="import",
                         prompt=prompt,
                         parameters=parameters,
-                        parent_ids=[],
-                        annotation_id=None,
+                        parent_ids=parent_ids,
+                        annotation_id=annotation_id,
                         inspected=[dimensions],
                         artifact_ids=[artifact_id],
                         derived_from=None,

@@ -57,7 +57,7 @@ The first configuration can also be created from a new task by asking the Agent 
 
 ### Transparency defaults
 
-`initialize_image_config` creates a configuration with native transparency enabled. It selects `native-alpha`, sets `transparency.native.enabled` to `true`, and enables one retry without the transparency parameter when a provider rejects it. The model ID list is only a capability declaration; the active profile and model ID remain user-configurable.
+For an API Key configuration, `initialize_image_config` creates a configuration with native transparency enabled. It selects `native-alpha`, sets `transparency.native.enabled` to `true`, and enables one retry without the transparency parameter when a provider rejects it. The model ID list is only a capability declaration; the active profile and model ID remain user-configurable. A ChatGPT-only configuration does not use provider transparency settings.
 
 Existing configurations are preserved for compatibility and are not rewritten during installation. If `inspect_image_config` reports that `transparency.native` is missing, update the configuration explicitly:
 

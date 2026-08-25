@@ -32,5 +32,5 @@ export function authRouteStatus(route) {
       ? { label: "API Key 已配置", tone: "success" }
       : { label: "需要配置", tone: "warning" };
   }
-  return { label: "当前图片生成路线暂不支持画布编辑", tone: "warning" };
+  return { label: "ChatGPT 已选择", tone: "success" };
 }

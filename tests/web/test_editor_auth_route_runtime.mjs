@@ -5,12 +5,13 @@ import {
   installDomGlobals,
   installHost,
   restoreDomGlobals,
+  sendToApp,
   waitFor,
 } from "../support/widget-runtime-host.mjs";
 import { JSDOM } from "jsdom";
 
 
-test("canvas keeps both routes visible and blocks ChatGPT edits before side effects", async () => {
+test("canvas keeps both routes visible and submits ChatGPT edits", async () => {
   const dom = new JSDOM("<!doctype html><html><head></head><body><main></main></body></html>", {
     url: "https://widget.local/",
     pretendToBeVisual: true,
@@ -33,7 +34,8 @@ test("canvas keeps both routes visible and blocks ChatGPT edits before side effe
     assert.ok(apiKey);
     assert.ok(chatgpt);
     assert.equal(chatgpt.getAttribute("aria-pressed"), "true");
-    assert.equal(document.querySelector("[data-auth-route-status]").textContent, "当前图片生成路线暂不支持画布编辑");
+    assert.equal(document.querySelector("[data-auth-route-status]").textContent, "ChatGPT 已选择");
+    assert.equal(document.querySelector("[data-tool=mask]").hidden, false);
 
     apiKey.click();
     assert.equal(apiKey.getAttribute("aria-pressed"), "true");
@@ -43,12 +45,18 @@ test("canvas keeps both routes visible and blocks ChatGPT edits before side effe
     prompt.value = "保持主体，调整光线";
     prompt.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
     document.querySelector("[data-action=submit]").click();
-    await waitFor(() => document.querySelector("[data-submit-status]").textContent.includes("暂不支持画布编辑"));
+    await waitFor(() => host.toolCalls.some(({ name }) => name === "prepare_image_edit_submission"));
+    await waitFor(() => host.messages.length + host.modelContexts.length > 0);
 
-    assert.equal(host.toolCalls.some(({ name }) => name === "prepare_image_edit_submission"), false);
-    assert.equal(host.messages.length, 0);
-    assert.equal(host.modelContexts.length, 0);
+    assert.equal(host.messages.length + host.modelContexts.length > 0, true);
   } finally {
+    sendToApp(dom.window, {
+      jsonrpc: "2.0",
+      id: "chatgpt-auth-route-teardown",
+      method: "ui/resource-teardown",
+      params: {},
+    });
+    await new Promise((resolve) => setTimeout(resolve, 1000));
     host.dispose();
     restoreDomGlobals(previous);
     dom.window.close();

@@ -339,9 +339,9 @@ function updateStyleControls(root, editor, modelCapabilities, interactionLocked,
     button.classList.toggle("active", active);
     button.setAttribute("aria-pressed", String(active));
   });
-  root.querySelector("[data-tool=mask]").hidden = modelCapabilities?.mask !== true;
+  root.querySelector("[data-tool=mask]").hidden = false;
   const selectedAnnotation = editor.annotations.find((item) => item.id === editor.selectedAnnotationId);
-  const maskContext = modelCapabilities?.mask === true && editor.activeTool === "mask";
+  const maskContext = editor.activeTool === "mask";
   const maskStyleLocked = maskContext || selectedAnnotation?.type === "mask";
   const maskMode = editor.maskMode;
   const maskOperation = editor.maskOperation;

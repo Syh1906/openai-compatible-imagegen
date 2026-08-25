@@ -136,6 +136,29 @@ test("editor renderer presents mask modes, brush size, version loading, and dest
   });
 });
 
+test("editor renderer keeps mask annotations available without a dedicated model mask parameter", () => {
+  withRenderer(({ document, renderer }) => {
+    renderer.mountEditor();
+    const editor = createEditorState({ image: image("img_current", { data: "AA==" }) });
+
+    renderer.updateEditor({
+      editor,
+      imageUrl: "data:image/png;base64,AA==",
+      submissionInFlight: false,
+      artifactLoadInFlight: false,
+      undoCount: 0,
+      redoCount: 0,
+      modelCapabilities: {},
+      intentPanelOpen: false,
+      destroyConfirmOpen: false,
+      submissionStatus: "",
+      submissionStatusTone: "neutral",
+    });
+
+    assert.equal(document.querySelector("[data-tool=mask]")?.hidden, false);
+  });
+});
+
 test("editor lineage gives repeated revisions unique accessible names with status and image suffix", () => {
   withRenderer(({ document, renderer }) => {
     renderer.mountEditor();

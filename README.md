@@ -2,7 +2,7 @@
 
 # OpenAI-Compatible Images
 
-**Generate, inspect, and deliver images through an OpenAI-compatible API or the Codex App ChatGPT route, with editing and batch workflows on the API route.**
+**Generate, inspect, edit, and deliver images through an OpenAI-compatible API or the Codex App ChatGPT route.**
 
 [![Release](https://img.shields.io/github/v/release/Syh1906/openai-compatible-imagegen?style=flat-square)](https://github.com/Syh1906/openai-compatible-imagegen/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
@@ -19,7 +19,7 @@ OpenAI-Compatible Images ships one image core in two installation shapes. Use th
 | Package | Best for | Includes |
 | --- | --- | --- |
 | **Standalone Skill** | Codex CLI, Claude Code, OpenCode, and other Agent Skills clients | Generation, editing, JSONL batches, transparency, delivery, and QA |
-| **Codex Plugin** | Codex App users who want the complete image workflow | All shared capabilities plus MCP tools, result cards, canvas editing, artifacts, and versions |
+| **Codex Plugin** | Codex App users who want result cards and a focused canvas | API Key: full image workflow. ChatGPT: host generation and semantic canvas edits, with artifacts, delivery, and versions |
 
 Choose one installation shape for each environment. The packages share code and versions but keep separate local configuration and artifact directories. Follow the [migration guide](docs/guides/migration.md) when moving an existing configuration to the Codex Plugin.
 
@@ -58,7 +58,7 @@ To install a versioned Plugin ZIP from GitHub Releases, follow the [local Plugin
 
 ### Image routes
 
-The Codex Plugin keeps API Key and ChatGPT subscription generation as separate selectable routes. API Key projects support the full generation, editing, batch, delivery, and canvas workflow. ChatGPT projects support one ordinary single-image generation through the Codex App host, followed by the same artifact, delivery, result-card, and canvas presentation flow. ChatGPT editing, mask operations, batches, and multi-candidate generation are not part of the current route.
+The Codex Plugin keeps API Key and ChatGPT subscription generation as separate selectable routes. Both routes accept canvas mask annotations for edit and protect guidance. When the selected API model declares a dedicated mask capability, API Key edits send that parameter; otherwise the marked regions remain part of the semantic edit request. How closely the result follows those regions depends on the selected image model. API Key projects also support batches and multiple candidates.
 
 ## Install the Standalone Skill
 

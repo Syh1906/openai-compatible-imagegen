@@ -33,13 +33,10 @@ export function createSubmissionCoordinator({
       assertActive(isActive);
       const payload = serializeSubmission(editor, editor.prompt);
       const authMode = options.authMode || "apikey";
-      if (authMode === "chatgpt") {
-        throw new SubmissionError("route", new Error("ChatGPT route does not support canvas edits in this release"));
-      }
-      if (authMode !== "apikey") {
+      if (authMode !== "apikey" && authMode !== "chatgpt") {
         throw new SubmissionError("route", new Error("unknown image authentication route"));
       }
-      if (options.apiKeyConfigured === false) {
+      if (authMode === "apikey" && options.apiKeyConfigured === false) {
         throw new SubmissionError("route", new Error("API Key route requires configuration"));
       }
       let delivery;

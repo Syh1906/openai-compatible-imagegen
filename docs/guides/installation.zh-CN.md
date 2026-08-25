@@ -57,7 +57,7 @@ codex plugin add openai-compatible-imagegen@openai-compatible-imagegen
 
 ### 透明配置默认值
 
-`initialize_image_config` 创建的配置默认启用原生透明。它会选择 `native-alpha`，把 `transparency.native.enabled` 设为 `true`，并在供应商拒绝透明参数时默认允许去掉该参数重试一次。模型 ID 列表只是能力声明；有效 profile 和模型 ID 仍由用户配置。
+对于 API Key 配置，`initialize_image_config` 默认启用原生透明。它会选择 `native-alpha`，把 `transparency.native.enabled` 设为 `true`，并在供应商拒绝透明参数时默认允许去掉该参数重试一次。模型 ID 列表只是能力声明；有效 profile 和模型 ID 仍由用户配置。仅使用 ChatGPT 的配置不使用 provider 透明设置。
 
 已有配置会为了兼容性保留，安装时不会自动改写。如果 `inspect_image_config` 提示缺少 `transparency.native`，请显式更新配置：
 
