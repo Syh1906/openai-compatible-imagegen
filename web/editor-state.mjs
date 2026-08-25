@@ -4,6 +4,14 @@ import { constrainTextAnnotation, textAnnotationBounds } from "./editor-text-geo
 
 const ANNOTATION_TYPES = new Set(["select", "pen", "arrow", "rectangle", "text", "eraser", "mask"]);
 export const DEFAULT_ANNOTATION_COLOR_SLOTS = Object.freeze(["#ef4444", "#2563eb", "#16a34a", "#111827"]);
+export const DEFAULT_EDITOR_IMAGE = Object.freeze({
+  id: "",
+  mimeType: "image/png",
+  width: 1,
+  height: 1,
+  operation: "generate",
+  parentIds: [],
+});
 
 export function createEditorState({ image, parent = null, children = [] } = {}) {
   if (!image) throw new Error("image is required");

@@ -67,6 +67,12 @@
       "platforms": ["windows"]
     },
     {
+      "name": "cross-platform-repository-tests",
+      "files": ["tests/plugin-runtime/test_cross_platform_repository_fs.py"],
+      "suites": ["plugin-runtime"],
+      "platforms": ["macos", "windows"]
+    },
+    {
       "name": "windows-adapter",
       "files": ["scripts/windows_repository_fs.py"],
       "suites": ["plugin-runtime", "release"],
@@ -145,6 +151,12 @@
       "checks": ["build", "plugin"]
     },
     {
+      "name": "mcp-host-image-import",
+      "files": ["mcp/host-image-import.mjs", "mcp/host-image-import-tools.mjs", "scripts/host_image_import.py"],
+      "suites": ["mcp", "plugin-runtime", "release"],
+      "checks": ["build", "diff", "plugin"]
+    },
+    {
       "name": "web-release-contract",
       "files": ["web/result-state.mjs"],
       "suites": ["release", "web"],
@@ -156,6 +168,12 @@
       "suites": ["web"],
       "checks": ["build", "plugin"],
       "platforms": ["macos", "windows"]
+    },
+    {
+      "name": "widget-auth-route",
+      "files": ["web/editor-auth-route.mjs", "web/editor-submission.mjs", "web/editor-renderer.mjs", "web/editor-context-outcome.mjs"],
+      "suites": ["web", "release"],
+      "checks": ["build", "plugin"]
     },
     {
       "name": "widget-runtime",
@@ -207,6 +225,11 @@
       "files": ["tests/web/test_widget_i18n.mjs"],
       "suites": ["web"],
       "platforms": ["macos", "windows"]
+    },
+    {
+      "name": "test-widget-auth-route",
+      "files": ["tests/web/test_editor_auth_route.mjs", "tests/web/test_editor_auth_route_runtime.mjs"],
+      "suites": ["web"]
     },
     {
       "name": "test-web",

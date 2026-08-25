@@ -33,6 +33,9 @@ test("widget locales have identical keys and use English outside Chinese locales
   for (const key of messageKeys()) {
     assert.doesNotMatch(english.t(key), /\p{Script=Han}/u, key);
   }
+  assert.equal(english.localizeText("路线信息暂不可用"), "Route information unavailable");
+  assert.equal(english.localizeText("需要配置"), "Configuration required");
+  assert.equal(english.localizeText("所选图片生成路线不可用"), "The selected image generation route is unavailable");
 });
 
 test("runtime toasts use the active widget locale", () => {

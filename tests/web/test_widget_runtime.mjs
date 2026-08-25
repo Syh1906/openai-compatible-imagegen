@@ -1194,7 +1194,7 @@ test("the annotation panel has an explicit narrow-window toggle", async () => {
   }
 });
 
-test("mask is shown only when the configured model declares mask support", async () => {
+test("mask annotations stay available when the configured model has no dedicated mask parameter", async () => {
   const dom = new JSDOM(
     '<!doctype html><html><body><main><p>正在加载图片...</p></main></body></html>',
     { pretendToBeVisual: true, url: "https://widget.local/" },
@@ -1205,7 +1205,7 @@ test("mask is shown only when the configured model declares mask support", async
   try {
     await import(`../../web/editor-runtime.mjs?capabilities=${Date.now()}`);
     await waitFor(() => host.toolCalls.some(({ name }) => name === "list_image_models"));
-    assert.equal(document.querySelector("[data-tool=mask]").hidden, true);
+    assert.equal(document.querySelector("[data-tool=mask]").hidden, false);
   } finally {
     document.querySelector("[data-action=back]")?.click();
     await waitFor(() => document.querySelector(".inline-result") !== null).catch(() => {});

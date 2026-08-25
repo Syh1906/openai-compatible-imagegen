@@ -13,6 +13,40 @@ import {
   resolveImageConfigBinding,
   userConfigPath,
 } from "../../mcp/config-resolution.mjs";
+import { withClient } from "../support/mcp-tool-client.mjs";
+
+
+test("configuration MCP tools initialize, inspect, and update without exposing credentials", async () => {
+  const calls = [];
+  await withClient({
+    configManager: {
+      async initialize(input) {
+        calls.push(["initialize", input]);
+        return { created: true, path: "user-config", config: { providers: { primary: { api_key_env: "IMAGE_API_KEY" } } }, gitignoreUpdated: true };
+      },
+      async inspect(input) {
+        calls.push(["inspect", input]);
+        return { user: { exists: true, config: {} }, project: { exists: false, config: null } };
+      },
+      async update(input) {
+        calls.push(["update", input]);
+        return { scope: input.scope, path: "user-config", config: input.changes };
+      },
+    },
+    runTask: async () => { throw new Error("not used"); },
+    readArtifact: async () => { throw new Error("not used"); },
+  }, async (client) => {
+    const initialized = await client.callTool({ name: "initialize_image_config", arguments: { authMode: "chatgpt" } });
+    assert.equal(initialized.structuredContent.created, true);
+    const inspected = await client.callTool({ name: "inspect_image_config", arguments: {} });
+    assert.equal(inspected.structuredContent.user.exists, true);
+    const updated = await client.callTool({ name: "update_image_config", arguments: { changes: { defaults: { quality: "high" } } } });
+    assert.equal(updated.structuredContent.scope, "user");
+  });
+  assert.deepEqual(calls.map(([name]) => name), ["initialize", "inspect", "update"]);
+  assert.equal(calls[0][1].authMode, "chatgpt");
+  assert.equal(JSON.stringify(calls).includes('"api_key":"'), false);
+});
 
 test("configuration management initializes, redacts, and updates the fixed user file", async () => {
   await withConfigRoots(async ({ projectRoot, userHome }) => {
@@ -59,6 +93,79 @@ test("configuration management initializes, redacts, and updates the fixed user 
     assert.equal(JSON.stringify(updated).includes("127.0.0.1:7890"), false);
     const stored = JSON.parse(await readFile(userConfigPath(userHome), "utf8"));
     assert.deepEqual(stored.providers.primary.proxy, { url: "http://127.0.0.1:7890" });
+  });
+});
+
+test("configuration initialization supports an explicit ChatGPT-only template", async () => {
+  await withConfigRoots(async ({ projectRoot, userHome }) => {
+    const initialized = await initializeImageConfig({ userHome, projectRoot, authMode: "chatgpt" });
+    const stored = JSON.parse(await readFile(userConfigPath(userHome), "utf8"));
+
+    assert.equal(initialized.config.auth_mode, "chatgpt");
+    assert.equal(stored.auth_mode, "chatgpt");
+    assert.equal(stored.active_profile, undefined);
+    assert.equal(stored.providers, undefined);
+    assert.equal(stored.models, undefined);
+    assert.equal(initialized.guidance.requiresApiProvider, false);
+    assert.equal(initialized.guidance.modelIdIsUserConfigured, false);
+    assert.equal(
+      initialized.nextSteps.some((step) => /active_profile|models\./.test(step)),
+      false,
+    );
+  });
+});
+
+test("configuration routes preserve legacy API Key defaults and allow ChatGPT-only local settings", async () => {
+  await withConfigRoots(async ({ projectRoot, userHome }) => {
+    await writeJson(userConfigPath(userHome), userConfig());
+    const legacyBinding = await resolveImageConfigBinding({ projectRoot, userHome });
+    assert.equal(legacyBinding.defaultAuthMode, "apikey");
+    assert.equal(legacyBinding.apiKeyConfigured, true);
+    assert.equal(legacyBinding.chatgptRequirement, "codex_app_imagegen_handoff");
+    assert.notEqual(legacyBinding.localRuntimeConfig, null);
+    assert.notEqual(legacyBinding.apiRuntimeConfig, null);
+
+    await writeJson(userConfigPath(userHome), chatgptOnlyConfig());
+    const chatgptBinding = await resolveImageConfigBinding({ projectRoot, userHome });
+    assert.equal(chatgptBinding.defaultAuthMode, "chatgpt");
+    assert.equal(chatgptBinding.apiKeyConfigured, false);
+    assert.equal(chatgptBinding.activeProfile, null);
+    assert.notEqual(chatgptBinding.localRuntimeConfig, null);
+    assert.equal(chatgptBinding.apiRuntimeConfig, null);
+
+    const inspected = await inspectImageConfig({ projectRoot, userHome });
+    assert.equal(inspected.defaultAuthMode, "chatgpt");
+    assert.equal(inspected.apiKeyConfigured, false);
+    assert.equal(inspected.chatgptRequirement, "codex_app_imagegen_handoff");
+  });
+});
+
+test("ChatGPT configuration accepts a complete API route and rejects partial API declarations", async () => {
+  await withConfigRoots(async ({ projectRoot, userHome }) => {
+    await writeJson(userConfigPath(userHome), userConfig({ auth_mode: "chatgpt" }));
+    const binding = await resolveImageConfigBinding({ projectRoot, userHome });
+    assert.equal(binding.defaultAuthMode, "chatgpt");
+    assert.equal(binding.apiKeyConfigured, true);
+    assert.notEqual(binding.apiRuntimeConfig, null);
+
+    for (const config of [
+      { ...chatgptOnlyConfig(), providers: userConfig().providers },
+      { ...chatgptOnlyConfig(), active_profile: "primary/gpt-image-2", models: userConfig().models },
+    ]) {
+      await writeJson(userConfigPath(userHome), config);
+      await assert.rejects(resolveImageConfigBinding({ projectRoot, userHome }), { code: "image_config_invalid" });
+    }
+  });
+});
+
+test("API Key configuration still requires a complete provider and project config cannot select a route", async () => {
+  await withConfigRoots(async ({ projectRoot, userHome }) => {
+    await writeJson(userConfigPath(userHome), { ...chatgptOnlyConfig(), auth_mode: "apikey" });
+    await assert.rejects(resolveImageConfigBinding({ projectRoot, userHome }), { code: "image_config_invalid" });
+
+    await writeJson(userConfigPath(userHome), userConfig());
+    await writeJson(projectConfigPath(projectRoot), { config_version: 1, auth_mode: "chatgpt" });
+    await assert.rejects(resolveImageConfigBinding({ projectRoot, userHome }), { code: "project_config_forbidden" });
   });
 });
 
@@ -461,6 +568,18 @@ async function withConfigRoots(callback) {
 
 function userConfig(overrides = {}) {
   return mergeUserConfig(overrides);
+}
+
+
+function chatgptOnlyConfig(overrides = {}) {
+  return deepMerge({
+    config_version: 1,
+    auth_mode: "chatgpt",
+    defaults: { size: "1024x1024", quality: "medium", output_format: "png" },
+    postprocess: { enabled: true },
+    transparency: { default_route: "chroma-matting", prompt_only_allow: [], llm_assisted: { enabled: false } },
+    storage: { output_directory: "output/imagegen" },
+  }, overrides);
 }
 
 

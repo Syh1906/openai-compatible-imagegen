@@ -256,6 +256,12 @@
       textarea:focus { border-color: var(--accent); outline: 2px solid var(--color-ring-info, var(--selection-border)); }
       textarea::placeholder { color: var(--subtle); }
       .prompt-meta { display: flex; justify-content: space-between; margin-top: 4px; color: var(--muted); font-size: 9px; }
+      .auth-route-panel { display: grid; gap: 5px; padding: 10px 0 11px; border-bottom: 1px solid var(--line); }
+      .auth-route-control { width: 100%; padding: 2px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface-muted); }
+      .auth-route-control button { flex: 1; min-width: 0; }
+      .auth-route-status { min-height: 14px; margin: 0; color: var(--muted); font-size: 9px; }
+      .auth-route-status[data-status-tone="success"] { color: var(--success-text); }
+      .auth-route-status[data-status-tone="warning"] { color: var(--warning-text); }
       .bottom-bar { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: stretch; min-width: 0; border-top: 1px solid var(--line); background: var(--surface); }
       .version-strip { display: flex; align-items: center; gap: 10px; min-width: 0; overflow-x: auto; padding: 12px 18px; }
       .version-strip:empty::after { content: "版本关系将在图片加载后显示"; color: var(--muted); font-size: 11px; }

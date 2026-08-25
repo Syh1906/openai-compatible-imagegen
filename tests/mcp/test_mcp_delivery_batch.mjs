@@ -1484,6 +1484,10 @@ async function withClient(dependencies, callback) {
     assert.deepEqual(binding.structuredContent, {
       status: "bound",
       projectBindingId: FIXTURE_PROJECT_BINDING_ID,
+      distribution: "plugin",
+      defaultAuthMode: "apikey",
+      apiKeyConfigured: true,
+      chatgptRequirement: "codex_app_imagegen_handoff",
     });
     client.callTool = async (request, ...rest) => await originalCallTool(
       {

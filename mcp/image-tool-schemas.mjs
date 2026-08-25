@@ -2,6 +2,7 @@ import { z } from "zod";
 
 
 export const imageIdSchema = z.string().regex(/^img_[0-9A-HJKMNP-TV-Z]{26}$/).describe("Stable image ID in the project artifact repository");
+export const projectBindingIdSchema = z.string().regex(/^pbind_[0-9a-f]{64}$/).describe("Image project binding ID");
 export const batchIdSchema = z.string().regex(/^batch_[0-9A-HJKMNP-TV-Z]{26}$/).describe("Immutable batch manifest ID");
 export const deliveryReceiptIdSchema = z.string().regex(/^delivery_[0-9a-f]{64}$/);
 export const outputSchema = {
@@ -96,7 +97,7 @@ export const imageArtifactOutputSchema = z.object({
   height: z.number().int().positive(),
   provider: z.string().min(1),
   model: z.string().min(1),
-  operation: z.enum(["generate", "edit", "derive"]),
+  operation: z.enum(["generate", "edit", "derive", "import"]),
   prompt: z.string(),
   parameters: z.record(z.unknown()),
   annotationId: z.string().regex(/^ann_[0-9A-HJKMNP-TV-Z]{26}$/).nullable(),

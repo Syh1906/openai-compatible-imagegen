@@ -1,6 +1,7 @@
 import {
   addAnnotation,
   createEditorState,
+  DEFAULT_EDITOR_IMAGE,
   normalizeMaskOperationState,
   normalizeEditorColorState,
   normalizeAnnotation,
@@ -52,14 +53,7 @@ import { createEditorKeyboardController } from "./editor-keyboard-controller.mjs
 import { createEditorConfirmationController } from "./editor-confirmation-controller.mjs";
 import { App, PostMessageTransport } from "@modelcontextprotocol/ext-apps";
 import { createBoundToolClient } from "./bound-tool-client.mjs";
-const defaultImage = {
-  id: "",
-  mimeType: "image/png",
-  width: 1,
-  height: 1,
-  operation: "generate",
-  parentIds: [],
-};
+import { createEditorAuthRoute, selectEditorAuthMode } from "./editor-auth-route.mjs";
 const root = document.querySelector("main");
 const widgetI18n = createWidgetI18n();
 const renderer = createEditorRenderer(root, { i18n: widgetI18n });
@@ -76,7 +70,7 @@ const pointerCoalescer = createFrameCoalescer({
   cancelFrame: window.cancelAnimationFrame.bind(window),
   onFrame: applyPointerSamples,
 });
-let editor = createEditorState({ image: defaultImage });
+let editor = createEditorState({ image: DEFAULT_EDITOR_IMAGE });
 let interaction = null;
 let undoStack = [];
 let redoStack = [];
@@ -110,6 +104,7 @@ const artifactRecordCache = createArtifactLoadRegistry({
   clearTimeoutFn: window.clearTimeout.bind(window),
 });
 let modelCapabilities = null;
+let authRoute = createEditorAuthRoute({ defaultAuthMode: "apikey", apiKeyConfigured: true, chatgptRequirement: "codex_app_imagegen_handoff" });
 let uiCleanup = null;
 let uiAbortController = null;
 let resourceActive = true;
@@ -281,6 +276,7 @@ function bindUi() {
     { selector: "[data-action]", skip: (button) => button.dataset.action === "open-editor", handle: (button, event) => void handleAction(button.dataset.action, event) },
     { selector: ".tool-button[data-tool]", handle: activateTool },
     { selector: "[data-mask-mode], [data-mask-operation], [data-mask-radius]", handle: applyMaskControl },
+    { selector: "[data-auth-mode]", handle: (button) => { if (interactionLocked() || !authRoute) return; authRoute = selectEditorAuthMode(authRoute, button.dataset.authMode); clearSubmissionStatus(); render(); } },
   ], uiAbortController.signal);
   uiCleanup = () => {
     colorCleanup?.();
@@ -456,6 +452,10 @@ async function connectHost() {
 async function loadModelCapabilities() {
   if (modelCapabilities !== null) return;
   modelCapabilities = {};
+  if (authRoute?.apiKeyConfigured === false) {
+    render();
+    return;
+  }
   try {
     const result = await boundToolClient.callServerTool({ name: "list_image_models", arguments: {} });
     if (!resourceActive) return;
@@ -463,12 +463,10 @@ async function loadModelCapabilities() {
     const model = result?.structuredContent?.models?.find((item) => item.id === "primary/gpt-image-2");
     if (result.isError || !model?.capabilities) throw new Error("model capabilities unavailable");
     modelCapabilities = model.capabilities;
-    if (!modelCapabilities.mask && editor.activeTool === "mask") editor = { ...editor, activeTool: "select" };
     render();
   } catch (error) {
     if (!resourceActive) return;
     modelCapabilities = {};
-    if (editor.activeTool === "mask") editor = { ...editor, activeTool: "select" };
     render();
     toast("无法读取当前模型能力");
   }
@@ -576,7 +574,7 @@ function ingestToolInput(input) {
   const imageId = input?._meta?.imageId || input?.imageId || input?.arguments?.imageId;
   if (imageId) {
     pendingImageId = imageId;
-    if (!editor.image.id) editor = createEditorState({ image: { ...defaultImage, id: imageId } });
+    if (!editor.image.id) editor = createEditorState({ image: { ...DEFAULT_EDITOR_IMAGE, id: imageId } });
     artifactLoadInFlight = true;
   }
   if (bindingObserved && hostReady && widgetRole === "editor") loadModelCapabilities();
@@ -784,6 +782,7 @@ async function hydrateArtifacts(metadata, { selectedImageId = metadata.find((art
   }
 }
 function ingestToolResult(result) {
+  authRoute = createEditorAuthRoute(result?.structuredContent?.auth) || authRoute;
   const editorSession = result?.structuredContent?.editorSession;
   if (editorSession?.id) {
     const newUiOwner = !sessionController.isUiOwner(editorSession.id);
@@ -795,7 +794,7 @@ function ingestToolResult(result) {
     }
     if (editorSession.imageId && !editor.image.id) {
       pendingImageId = editorSession.imageId;
-      editor = createEditorState({ image: { ...defaultImage, id: editorSession.imageId } });
+      editor = createEditorState({ image: { ...DEFAULT_EDITOR_IMAGE, id: editorSession.imageId } });
     }
     if (hostReady && widgetRole === "editor") sessionController.start(editorSession.status);
     const artifacts = extractResultArtifacts(result);
@@ -840,7 +839,7 @@ function applyResultBootstrapEffects(effects) {
   for (const effect of effects) {
     if (effect.type === "bind") {
       pendingImageIds = [...effect.imageIds]; pendingImageId = "";
-      resultCandidates = effect.imageIds.map((id) => ({ ...defaultImage, id }));
+      resultCandidates = effect.imageIds.map((id) => ({ ...DEFAULT_EDITOR_IMAGE, id }));
       if (!editor.image.id || !effect.imageIds.includes(editor.image.id)) editor = createEditorState({ image: resultCandidates[0] });
       artifactLoadInFlight = true; inlineStatus = ""; inlineStatusTone = "neutral";
       render();
@@ -907,7 +906,7 @@ function applyArtifacts(artifacts, { candidates = artifacts, selectedImageId = "
   }
   const cached = currentId ? artifactRecordCache.get(currentId) : null;
   const metadata = { ...cached, ...selected };
-  const image = { ...defaultImage, ...metadata, id: metadata.id || currentId };
+  const image = { ...DEFAULT_EDITOR_IMAGE, ...metadata, id: metadata.id || currentId };
   if (!image.id) return;
   const preserveActiveEditor = editor.image.id === image.id && Boolean(editor.image.data && imageUrl) && !completedDraftImageIds.has(image.id);
   const imageIdentityChanged = Boolean(editor.image.id && editor.image.id !== image.id);
@@ -1310,7 +1309,7 @@ async function submitChanges() {
       submissionStatus = submissionProgressStatus(stage, Boolean(editor.annotations.length));
       submissionStatusTone = "progress";
       render();
-    });
+    }, { authMode: authRoute?.selectedAuthMode, apiKeyConfigured: authRoute?.apiKeyConfigured });
     submissionInFlight = false;
     if (!resourceActive) return;
     const composerAcknowledged = result.delivery !== "composer" || result.contextAcknowledged;
@@ -1407,6 +1406,7 @@ function render() {
     undoCount: undoStack.length,
     redoCount: redoStack.length,
     modelCapabilities,
+    authRoute,
     intentPanelOpen,
     destroyConfirmOpen: destroyConfirmation.isOpen(),
     clearConfirmOpen: clearConfirmation.isOpen(),

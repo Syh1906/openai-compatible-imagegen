@@ -135,6 +135,24 @@ test("repository client does not disclose helper paths in runtime errors", async
 });
 
 
+test("repository client preserves allowlisted host import codes without details", async () => {
+  await assert.rejects(
+    runRepositoryFsOperation(
+      { operation: "stage" },
+      {
+        runtimePath: path.resolve("scripts/host_image_import.py"),
+        spawnProcess() {
+          return completedChild({
+            stdout: '{"ok":false,"error":"host_image_output_invalid: C:/private/source.png"}\n',
+          });
+        },
+      },
+    ),
+    { message: "host_image_output_invalid" },
+  );
+});
+
+
 test("repository client recognizes the standard English Windows missing-file error", async () => {
   await assert.rejects(
     runRepositoryFsOperation(

@@ -13,37 +13,6 @@ import {
   withClient,
 } from "../support/mcp-tool-client.mjs";
 
-test("configuration MCP tools initialize, inspect, and update without exposing credentials", async () => {
-  const calls = [];
-  await withClient({
-    configManager: {
-      async initialize() {
-        calls.push(["initialize"]);
-        return { created: true, path: "user-config", config: { providers: { primary: { api_key_env: "IMAGE_API_KEY" } } }, gitignoreUpdated: true };
-      },
-      async inspect(input) {
-        calls.push(["inspect", input]);
-        return { user: { exists: true, config: {} }, project: { exists: false, config: null } };
-      },
-      async update(input) {
-        calls.push(["update", input]);
-        return { scope: input.scope, path: "user-config", config: input.changes };
-      },
-    },
-    runTask: async () => { throw new Error("not used"); },
-    readArtifact: async () => { throw new Error("not used"); },
-  }, async (client) => {
-    const initialized = await client.callTool({ name: "initialize_image_config", arguments: {} });
-    assert.equal(initialized.structuredContent.created, true);
-    const inspected = await client.callTool({ name: "inspect_image_config", arguments: {} });
-    assert.equal(inspected.structuredContent.user.exists, true);
-    const updated = await client.callTool({ name: "update_image_config", arguments: { changes: { defaults: { quality: "high" } } } });
-    assert.equal(updated.structuredContent.scope, "user");
-  });
-  assert.deepEqual(calls.map(([name]) => name), ["initialize", "inspect", "update"]);
-  assert.equal(JSON.stringify(calls).includes('"api_key":"'), false);
-});
-
 test("widget resources read the current bundle for each request", async () => {
   let widgetHtml = "<html>first</html>";
   await withClient(
@@ -226,7 +195,14 @@ test("all product tools declare precise structured output schemas", async () => 
         assert.equal(schemas.get(name).additionalProperties, false, `${name} outputSchema must be strict`);
       }
 
-      assert.deepEqual(schemas.get("bind_imagegen_project").required.sort(), ["projectBindingId", "status"]);
+      assert.deepEqual(schemas.get("bind_imagegen_project").required.sort(), [
+        "apiKeyConfigured",
+        "chatgptRequirement",
+        "defaultAuthMode",
+        "distribution",
+        "projectBindingId",
+        "status",
+      ]);
 
       assert.deepEqual(schemas.get("list_image_models").required, ["models"]);
       assert.deepEqual(schemas.get("list_image_models").properties.models.items.required.sort(), ["capabilities", "id", "model", "provider"]);
@@ -555,6 +531,90 @@ test("a server-issued edit submission binds the exact parent annotation and mask
     },
   );
   assert.equal(runtimeCalls, 1);
+});
+
+test("API Key edits keep mask annotations semantic when the selected model has no mask parameter", async () => {
+  const parentId = "img_01J00000000000000000000000";
+  const annotationId = "ann_01J00000000000000000000000";
+  const child = artifact("img_01J00000000000000000000001", [parentId]);
+  const maskPath = "F:/private/imagegen/annotations/mask.png";
+  const policy = {
+    policyVersion: "mask-policy-v2",
+    modelProfileId: "primary/gpt-image-2",
+    requiredCapabilities: { mask: true },
+    strategy: "edit-only",
+    parentImageId: parentId,
+    annotationId,
+    width: 1,
+    height: 1,
+    masks: [{ id: "mask-1", mode: "edit", operation: "paint", radiusPx: 0.04 }],
+    hardBoundary: { source: "edit-strokes", postprocess: "parent-blend" },
+    semanticProtection: {
+      enabled: false,
+      source: "protect-strokes",
+      preserve: ["identity", "geometry", "text", "texture"],
+      allowAdaptation: ["lighting", "shadow", "tone"],
+    },
+    transitionBand: { kind: "outer-feather", featherRatio: 0.35, minimumWidthPx: 1 },
+    maskSha256: "a".repeat(64),
+    policySha256: "c".repeat(64),
+  };
+  const items = [{
+    id: "mask-1",
+    type: "mask",
+    mode: "edit",
+    brushRadius: 0.04,
+    points: [{ x: 0.2, y: 0.2 }, { x: 0.8, y: 0.8 }],
+  }];
+  let runtimeTask;
+
+  await withClient(
+    {
+      runTask: async (task) => {
+        runtimeTask = task;
+        return { ok: true, artifacts: [child] };
+      },
+      readArtifact: async (id) => ({ metadata: id === child.id ? child : artifact(id), data: PNG_BASE64 }),
+      saveAnnotations: async () => ({
+        id: annotationId,
+        imageId: parentId,
+        itemCount: 1,
+        previewMimeType: "image/svg+xml",
+        hasMask: true,
+        maskMimeType: "image/png",
+        maskPolicy: policy,
+      }),
+      readAnnotation: async () => ({
+        id: annotationId,
+        imageId: parentId,
+        maskPath,
+        maskPolicy: policy,
+      }),
+    },
+    async (client) => {
+      const prepared = await client.callTool({
+        name: "prepare_image_edit_submission",
+        arguments: { parentImageId: parentId, items, sourcePrompt: "adjust the marked region" },
+      });
+      const edited = await client.callTool({
+        name: "edit_image",
+        arguments: {
+          parentImageId: parentId,
+          annotationId,
+          submissionId: prepared.structuredContent.submission.id,
+          modelProfileId: "secondary/no-mask",
+          prompt: "adjust the marked region and keep everything else consistent",
+        },
+      });
+
+      assert.equal(edited.isError, undefined);
+      assert.equal(runtimeTask.annotationId, annotationId);
+      assert.equal(runtimeTask.submissionId, prepared.structuredContent.submission.id);
+      assert.equal(runtimeTask.mask, undefined);
+      assert.equal(runtimeTask.maskPolicy, undefined);
+      assert.deepEqual(runtimeTask.output, {});
+    },
+  );
 });
 
 test("prompt-only canvas submissions bind and complete without an annotation", async () => {

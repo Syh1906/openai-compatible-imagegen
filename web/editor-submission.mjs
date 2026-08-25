@@ -29,16 +29,23 @@ export function createSubmissionCoordinator({
       savedSubmission = null;
     },
 
-    async submit(editor, onProgress = () => {}) {
+    async submit(editor, onProgress = () => {}, options = {}) {
       assertActive(isActive);
       const payload = serializeSubmission(editor, editor.prompt);
+      const authMode = options.authMode || "apikey";
+      if (authMode !== "apikey" && authMode !== "chatgpt") {
+        throw new SubmissionError("route", new Error("unknown image authentication route"));
+      }
+      if (authMode === "apikey" && options.apiKeyConfigured === false) {
+        throw new SubmissionError("route", new Error("API Key route requires configuration"));
+      }
       let delivery;
       try {
         delivery = resolveDelivery(app.getHostCapabilities?.());
       } catch (error) {
         throw new SubmissionError("capabilities", error);
       }
-      const submissionKey = JSON.stringify({ imageId: payload.imageId, items: payload.items, prompt: payload.prompt, delivery });
+      const submissionKey = JSON.stringify({ authMode, imageId: payload.imageId, items: payload.items, prompt: payload.prompt, delivery });
       if (activeSubmission) {
         if (activeSubmission.key === submissionKey) return activeSubmission.promise;
         throw new SubmissionError("busy", new Error("another submission is already in progress"));
@@ -92,7 +99,7 @@ export function createSubmissionCoordinator({
               annotationId,
               submissionId: prepared.submission.id,
               revisionSha256: prepared.submission.revisionSha256,
-              snapshot: submissionSnapshot(payload),
+              snapshot: submissionSnapshot(payload, authMode),
               contextPublished: false,
               contextAcknowledged: false,
               contextRequest: null,
@@ -215,9 +222,11 @@ function validatePreparedSubmission(result, payload) {
   return prepared;
 }
 
-function submissionSnapshot(payload) {
+function submissionSnapshot(payload, authMode = "apikey") {
   return {
+    authMode,
     imageId: payload.imageId,
+    parentImageId: payload.parentImageId || payload.imageId,
     annotations: payload.annotations.map((item) => ({ ...item })),
     items: payload.items.map((item) => structuredClone(item)),
     prompt: payload.prompt,

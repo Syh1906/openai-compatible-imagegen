@@ -44,6 +44,7 @@ const PNG_BYTES = Buffer.from(
 );
 const EXPECTED_RUNTIME_FILES = [
   "artifact_repository.py",
+  "host_image_import.py",
   "image_alpha.py",
   "image_batch.py",
   "image_cli.py",

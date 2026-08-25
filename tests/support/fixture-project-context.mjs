@@ -45,6 +45,9 @@ export function createFixtureProjectContext({
     effectiveConfigJson,
     effectiveConfigSha256: sha256(effectiveConfigJson),
     activeProfile: "primary/gpt-image-2",
+    apiKeyConfigured: true,
+    defaultAuthMode: "apikey",
+    chatgptRequirement: "codex_app_imagegen_handoff",
     runtimeDefaults: Object.freeze({ timeout_seconds: 600, concurrency: 3 }),
   });
   let bound = false;
@@ -55,9 +58,9 @@ export function createFixtureProjectContext({
       if (projectBindingId !== null && projectBindingId !== FIXTURE_PROJECT_BINDING_ID) {
         throw contextError("project_binding_required");
       }
-      if (bound) return { status: "already_bound", projectBindingId: FIXTURE_PROJECT_BINDING_ID };
+      if (bound) return bindingReceipt("already_bound");
       bound = true;
-      return { status: "bound", projectBindingId: FIXTURE_PROJECT_BINDING_ID };
+      return bindingReceipt("bound");
     },
     async require(projectBindingId) {
       if (!bound || projectBindingId !== FIXTURE_PROJECT_BINDING_ID) {
@@ -66,6 +69,18 @@ export function createFixtureProjectContext({
       return context;
     },
   });
+}
+
+
+function bindingReceipt(status) {
+  return {
+    status,
+    projectBindingId: FIXTURE_PROJECT_BINDING_ID,
+    distribution: "plugin",
+    defaultAuthMode: "apikey",
+    apiKeyConfigured: true,
+    chatgptRequirement: "codex_app_imagegen_handoff",
+  };
 }
 
 

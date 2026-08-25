@@ -157,6 +157,7 @@ class PluginSkeletonTests(unittest.TestCase):
 
         self.assertIn("conversation", manifest_copy)
         self.assertIn("focused canvas", manifest_copy)
+        self.assertIn("ChatGPT route", manifest_copy)
         self.assertNotIn("standalone canvas", manifest_copy)
         self.assertNotIn("image workspace", manifest_copy)
 
@@ -251,11 +252,13 @@ class PluginSkeletonTests(unittest.TestCase):
         self.assertIn("batch_images", plugin_text)
         self.assertIn("open_image_editor", plugin_text)
 
-    def test_skill_routes_canvas_submissions_back_to_edit_image(self) -> None:
+    def test_skill_routes_canvas_submissions_to_the_selected_edit_route(self) -> None:
         text = SKILL_PATH.read_text(encoding="utf-8")
         self.assertIn("On a canvas submission message", text)
         self.assertIn("prepare_image_edit_submission", text)
         self.assertIn("edit_image.submissionId", text)
+        self.assertIn("prepare_host_image_import", text)
+        self.assertIn('intent: "edit"', text)
         self.assertIn("annotationId", text)
         self.assertIn("MASK_GUARD_V2_BY_STRATEGY", text)
         self.assertIn("complete target image", text)
@@ -278,8 +281,9 @@ class PluginSkeletonTests(unittest.TestCase):
         self.assertIn("Do not wait for the user to request display", text)
         self.assertIn("historical image", text)
         self.assertIn("Report item failures without retrying them", text)
+        self.assertIn("For API Key requests", text)
         self.assertIn("Mask or canvas submissions", text)
-        self.assertIn("one separate `edit_image` call", text)
+        self.assertIn("one separate selected-route edit operation", text)
 
     def test_static_widget_is_packaged(self) -> None:
         self.assertTrue(WIDGET_PATH.is_file())
@@ -322,6 +326,7 @@ class PluginSkeletonTests(unittest.TestCase):
                 "deliver_image",
                 "destroy_image_editor",
                 "edit_image",
+                "finalize_host_image_import",
                 "finalize_image_editor_session",
                 "generate_image",
                 "get_image_artifact",
@@ -333,6 +338,7 @@ class PluginSkeletonTests(unittest.TestCase):
                 "inspect_imagegen_runtime",
                 "list_image_models",
                 "open_image_editor",
+                "prepare_host_image_import",
                 "prepare_image_edit_submission",
                 "read_image_artifact_data",
                 "render_image_results",
@@ -340,6 +346,7 @@ class PluginSkeletonTests(unittest.TestCase):
                 "reveal_image_artifact",
                 "save_image_annotations",
                 "save_image_editor_draft",
+                "stage_host_image_import",
                 "update_image_config",
             ],
         )

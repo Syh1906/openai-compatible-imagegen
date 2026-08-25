@@ -1,4 +1,4 @@
-<!-- updated: 2026-08-21 -->
+<!-- updated: 2026-08-25 -->
 # Installation
 
 > Parent: [User guides](./README.md)
@@ -24,7 +24,7 @@ You do not need to install both. The Codex Plugin does not depend on the Standal
 - Git
 - Node.js 20 or later
 - Python 3.12 or newer
-- An OpenAI-compatible image service and your own credential
+- An OpenAI-compatible image service and your own credential for the API Key route, or a Codex App host with image generation for the ChatGPT route
 
 The Plugin includes its prebuilt MCP server and widget. You do not run `npm install`, build the repository, or start a local web server. The same Plugin archive supports Windows, macOS, and Linux.
 
@@ -57,7 +57,7 @@ The first configuration can also be created from a new task by asking the Agent 
 
 ### Transparency defaults
 
-`initialize_image_config` creates a configuration with native transparency enabled. It selects `native-alpha`, sets `transparency.native.enabled` to `true`, and enables one retry without the transparency parameter when a provider rejects it. The model ID list is only a capability declaration; the active profile and model ID remain user-configurable.
+For an API Key configuration, `initialize_image_config` creates a configuration with native transparency enabled. It selects `native-alpha`, sets `transparency.native.enabled` to `true`, and enables one retry without the transparency parameter when a provider rejects it. The model ID list is only a capability declaration; the active profile and model ID remain user-configurable. A ChatGPT-only configuration does not use provider transparency settings.
 
 Existing configurations are preserved for compatibility and are not rewritten during installation. If `inspect_image_config` reports that `transparency.native` is missing, update the configuration explicitly:
 

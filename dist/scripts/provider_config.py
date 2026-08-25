@@ -54,6 +54,13 @@ class EffectiveImageConfig:
     proxy: dict[str, str] = field(default_factory=lambda: dict(DEFAULT_PROXY))
 
 
+@dataclass(frozen=True)
+class LocalImageConfig:
+    defaults: dict[str, Any]
+    postprocess: dict[str, Any]
+    transparency: TransparencyPolicy = field(default_factory=TransparencyPolicy)
+
+
 Config = EffectiveImageConfig
 
 
@@ -123,6 +130,23 @@ def parse_plugin_config(
         user_agent=resolve_user_agent(provider.get("user_agent"), config_label="user config"),
         url_download=resolve_url_download_config(provider.get("url_download")),
         proxy=resolve_proxy_config(provider.get("proxy"), config_label="user config"),
+    )
+
+
+def parse_plugin_local_config(raw: dict[str, Any]) -> LocalImageConfig:
+    if raw.get("config_version") != 1:
+        raise ProviderConfigError("image config requires config_version 1")
+    defaults = raw.get("defaults")
+    if defaults is not None and not isinstance(defaults, dict):
+        raise ProviderConfigError("image config defaults must be an object")
+    try:
+        transparency = resolve_transparency_policy(raw.get("transparency"))
+    except ValueError as exc:
+        raise ProviderConfigError(str(exc)) from exc
+    return LocalImageConfig(
+        defaults=dict(defaults or {}),
+        postprocess=resolve_postprocess_config(raw.get("postprocess")),
+        transparency=transparency,
     )
 
 

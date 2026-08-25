@@ -2,7 +2,7 @@
 
 # OpenAI 兼容图片
 
-**通过你自己的 OpenAI 兼容图片 API 生成、编辑、批处理、检查并交付图片。**
+**通过 OpenAI 兼容图片 API 或 Codex App 的 ChatGPT 路线生成、检查、编辑并交付图片。**
 
 [![Release](https://img.shields.io/github/v/release/Syh1906/openai-compatible-imagegen?style=flat-square)](https://github.com/Syh1906/openai-compatible-imagegen/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
@@ -19,7 +19,7 @@ OpenAI 兼容图片把同一套图片核心发布为两种安装形态。Standal
 | 安装形态 | 适合场景 | 包含内容 |
 | --- | --- | --- |
 | **Standalone Skill** | Codex CLI、Claude Code、OpenCode 和其他 Agent Skills 客户端 | 生成、编辑、JSONL 批处理、透明处理、交付和 QA |
-| **Codex Plugin** | 需要完整图片工作流的 Codex App 用户 | 共享能力，以及 MCP 工具、结果卡、画布编辑、产物和版本 |
+| **Codex Plugin** | 需要结果卡和聚焦画布的 Codex App 用户 | API Key：完整图片工作流；ChatGPT：宿主生成和语义画布编辑，以及产物、交付和版本 |
 
 每个使用环境选择一种安装形态。两者共享代码和版本，但使用各自的本地配置与产物目录。将已有配置迁移到 Codex Plugin 时，请按[迁移指南](docs/guides/migration.zh-CN.md)操作。
 
@@ -37,7 +37,7 @@ OpenAI 兼容图片把同一套图片核心发布为两种安装形态。Standal
 
 ## 安装 Codex Plugin
 
-需要：支持 Plugin 的 Codex、Git、Node.js 20+、Python 3.12 或更高版本，以及你自己的 OpenAI 兼容图片服务。Plugin ZIP 与平台无关，支持 Windows、macOS 和 Linux。
+需要：支持 Plugin 的 Codex、Git、Node.js 20+、Python 3.12 或更高版本。Plugin ZIP 与平台无关，支持 Windows、macOS 和 Linux。你可以选择配置自己的 OpenAI 兼容图片服务使用 API Key 路线，也可以在 Codex App 提供图片生成能力时选择 ChatGPT 路线。
 
 ```text
 codex plugin marketplace add Syh1906/openai-compatible-imagegen
@@ -55,6 +55,10 @@ Plugin 在 Windows 默认调用 `python`，在 macOS/Linux 默认调用 `python3
 需要从 GitHub Releases 安装指定版本的 Plugin ZIP 时，请按[本地 Plugin ZIP 安装流程](docs/guides/installation.zh-CN.md#从-plugin-zip-安装)操作。
 
 [Plugin 安装与配置](docs/guides/installation.zh-CN.md#安装-codex-plugin)
+
+### 图片路线
+
+Codex Plugin 将 API Key 和 ChatGPT 订阅生图作为可分别选择的路线。两条路线都支持用画布 mask 标注表达改图区域和保护内容。所选 API 模型声明专用 mask 能力时，API Key 编辑会传递对应参数；未声明时，标记区域仍会作为语义编辑提示发送。结果对区域提示的遵循程度由所选生图模型决定。API Key 项目还支持批处理和多候选。
 
 ## 安装 Standalone Skill
 

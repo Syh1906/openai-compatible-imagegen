@@ -62,6 +62,9 @@ test("public plugin metadata uses English defaults", async () => {
     assert.equal(typeof value, "string", field);
     assert.doesNotMatch(value, /\p{Script=Han}/u, field);
   }
+  assert.match(manifest.interface.longDescription, /ChatGPT route/);
+  assert.match(manifest.interface.longDescription, /focused canvas for annotation, editing/);
+  assert.doesNotMatch(manifest.interface.longDescription, /API-backed annotation/);
 });
 
 test("CI gives push and pull request checks distinct names", async () => {

@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import concurrent.futures
 import os
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import threading
+from types import SimpleNamespace
 import unittest
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -50,9 +54,8 @@ for module_name in (
         self.assertEqual(result.returncode, 0, result.stderr)
 
 
-@unittest.skipIf(sys.platform == "win32", "POSIX filesystem semantics require Linux or macOS")
-class PosixRepositoryFsTests(unittest.TestCase):
-    def test_repository_mutation_publishes_and_replaces_files(self) -> None:
+class RepositoryFsContractTests(unittest.TestCase):
+    def test_repository_mutation_publishes_immutable_artifacts_and_replaces_the_index(self) -> None:
         from scripts.repository_fs import DirectoryLease, RepositoryMutation, ensure_directory_tree_safely
 
         with tempfile.TemporaryDirectory() as root:
@@ -63,30 +66,15 @@ class PosixRepositoryFsTests(unittest.TestCase):
             with RepositoryMutation(repository) as mutation:
                 mutation.create_directory("artifacts")
                 mutation.create_new_directory(Path("artifacts") / "candidate")
-                mutation.publish_new_file(Path("artifacts") / "candidate" / "image.png", b"first")
-                mutation.publish_replace_file(Path("artifacts") / "candidate" / "image.png", b"second")
+                mutation.publish_new_file(Path("artifacts") / "candidate" / "image.png", b"image")
+                mutation.publish_new_file("index.json", b"first")
+                mutation.publish_replace_file("index.json", b"second")
 
             with DirectoryLease(repository) as lease:
                 with lease.open_file(Path("artifacts") / "candidate" / "image.png") as snapshot:
+                    self.assertEqual(snapshot.read_bytes(), b"image")
+                with lease.open_file("index.json") as snapshot:
                     self.assertEqual(snapshot.read_bytes(), b"second")
-
-    def test_repository_mutation_uses_the_verified_directory_after_path_replacement(self) -> None:
-        from scripts.repository_fs import RepositoryMutation, ensure_directory_tree_safely
-
-        with tempfile.TemporaryDirectory() as root:
-            project_root = Path(root).absolute()
-            repository = project_root / "output" / "imagegen"
-            moved_repository = project_root / "output" / "verified-imagegen"
-
-            with ensure_directory_tree_safely(project_root, repository) as lease:
-                repository.rename(moved_repository)
-                repository.mkdir()
-
-                with RepositoryMutation(repository, directory_lease=lease) as mutation:
-                    mutation.create_directory("artifacts")
-
-            self.assertEqual(list(repository.iterdir()), [])
-            self.assertTrue((moved_repository / "artifacts").is_dir())
 
     def test_repository_and_submission_locks_reject_conflicting_owners(self) -> None:
         from scripts.repository_fs import RepositoryLock, SubmissionLock, ensure_directory_tree_safely
@@ -107,6 +95,27 @@ class PosixRepositoryFsTests(unittest.TestCase):
                     with self.assertRaisesRegex(TimeoutError, "edit submission is still in progress"):
                         SubmissionLock(repository, first_id, timeout=0).acquire()
 
+
+@unittest.skipIf(sys.platform == "win32", "POSIX filesystem semantics require Linux or macOS")
+class PosixRepositoryFsTests(unittest.TestCase):
+    def test_repository_mutation_uses_the_verified_directory_after_path_replacement(self) -> None:
+        from scripts.repository_fs import RepositoryMutation, ensure_directory_tree_safely
+
+        with tempfile.TemporaryDirectory() as root:
+            project_root = Path(root).absolute()
+            repository = project_root / "output" / "imagegen"
+            moved_repository = project_root / "output" / "verified-imagegen"
+
+            with ensure_directory_tree_safely(project_root, repository) as lease:
+                repository.rename(moved_repository)
+                repository.mkdir()
+
+                with RepositoryMutation(repository, directory_lease=lease) as mutation:
+                    mutation.create_directory("artifacts")
+
+            self.assertEqual(list(repository.iterdir()), [])
+            self.assertTrue((moved_repository / "artifacts").is_dir())
+
     def test_repository_rejects_symbolic_link_components(self) -> None:
         from scripts.repository_fs import DirectoryLease
 
@@ -119,6 +128,74 @@ class PosixRepositoryFsTests(unittest.TestCase):
 
             with self.assertRaises((OSError, ValueError)):
                 DirectoryLease(linked)
+
+
+class PosixRepositoryLockCoordinationTests(unittest.TestCase):
+    def test_repository_lock_serializes_lock_file_opening_between_threads(self) -> None:
+        from scripts import posix_repository_fs
+
+        repository = Path("/")
+        lease = SimpleNamespace(path=repository, _handles=[101])
+        first_open_started = threading.Event()
+        second_worker_started = threading.Event()
+        release_first_open = threading.Event()
+        overlap_observed = threading.Event()
+        state_guard = threading.Lock()
+        active_open = 0
+        next_descriptor = 200
+
+        def open_lock_file(parent_fd: int, name: str, flags: int, mode: int = 0o600) -> int:
+            del parent_fd, flags, mode
+            nonlocal active_open, next_descriptor
+            self.assertEqual(name, ".repository.lock")
+            with state_guard:
+                if active_open:
+                    overlap_observed.set()
+                    raise FileNotFoundError(2, "No such file or directory", name)
+                active_open += 1
+                descriptor = next_descriptor
+                next_descriptor += 1
+            first_open_started.set()
+            if not release_first_open.wait(timeout=2):
+                raise TimeoutError("test did not release the first lock-file open")
+            with state_guard:
+                active_open -= 1
+            return descriptor
+
+        def acquire_repository_lock(*, second: bool) -> None:
+            if second:
+                second_worker_started.set()
+            with posix_repository_fs.RepositoryLock(
+                repository,
+                timeout=1,
+                directory_lease=lease,
+            ):
+                pass
+
+        fake_fcntl = SimpleNamespace(LOCK_UN=8, flock=lambda descriptor, operation: None)
+        with (
+            mock.patch.object(posix_repository_fs, "_absolute_path", return_value=repository),
+            mock.patch.object(posix_repository_fs, "_open_regular_file_at", side_effect=open_lock_file),
+            mock.patch.object(posix_repository_fs, "_acquire_lock", return_value=None),
+            mock.patch.object(posix_repository_fs, "_fcntl_module", return_value=fake_fcntl),
+            mock.patch.object(
+                posix_repository_fs.os,
+                "fstat",
+                return_value=SimpleNamespace(st_dev=1, st_ino=2),
+            ),
+            mock.patch.object(posix_repository_fs.os, "close", return_value=None),
+            concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor,
+        ):
+            first = executor.submit(acquire_repository_lock, second=False)
+            self.assertTrue(first_open_started.wait(timeout=1))
+            second = executor.submit(acquire_repository_lock, second=True)
+            self.assertTrue(second_worker_started.wait(timeout=1))
+            overlap_observed.wait(timeout=0.5)
+            release_first_open.set()
+            first.result(timeout=2)
+            second.result(timeout=2)
+
+        self.assertFalse(overlap_observed.is_set())
 
 
 if __name__ == "__main__":

@@ -143,6 +143,10 @@ test("native platform consumers select their required runners", () => {
   assert.ok(selectImpactPlan(["scripts/reveal_in_explorer.py"], projectManifest).platforms.includes("windows"));
   assert.ok(selectImpactPlan(["mcp/filesystem-path-safety.mjs"], projectManifest).platforms.includes("macos"));
   assert.ok(selectImpactPlan(["tests/plugin-runtime/test_windows_repository_fs.py"], projectManifest).platforms.includes("windows"));
+  assert.deepEqual(
+    selectImpactPlan(["tests/plugin-runtime/test_cross_platform_repository_fs.py"], projectManifest).platforms,
+    ["linux", "macos", "windows"],
+  );
 });
 
 

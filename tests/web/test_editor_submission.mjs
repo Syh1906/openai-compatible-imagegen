@@ -623,6 +623,62 @@ test("submission stops before side effects when the host has no atomic text and 
   assert.deepEqual(calls, []);
 });
 
+
+test("ChatGPT canvas edits publish the same frozen annotation context without calling API tools", async () => {
+  const effects = [];
+  const coordinator = createSubmissionCoordinator({
+    app: {
+      getHostCapabilities: () => ({
+        message: { text: {}, image: {} },
+        updateModelContext: { structuredContent: {} },
+      }),
+      callServerTool: async ({ name }) => {
+        effects.push(name);
+        return preparedResponse();
+      },
+      updateModelContext: async (request) => {
+        effects.push("context");
+        assert.equal(request.structuredContent.submissionId, "sub_01");
+      },
+      sendMessage: async (request) => {
+        effects.push("message");
+        assert.deepEqual(request.content.map((item) => item.type), ["text", "image"]);
+      },
+    },
+    rasterizePreview: async () => {
+      effects.push("preview");
+      return { mimeType: "image/png", data: "preview-data" };
+    },
+  });
+
+  const result = await coordinator.submit(editorState(), () => {}, { authMode: "chatgpt" });
+
+  assert.equal(result.snapshot.authMode, "chatgpt");
+  assert.deepEqual(effects, ["preview", "prepare_image_edit_submission", "context", "message"]);
+});
+
+
+test("API Key canvas submission freezes its route and actual edit parent", async () => {
+  const app = {
+    getHostCapabilities: () => ({
+      message: { text: {}, image: {} },
+      updateModelContext: { structuredContent: {} },
+    }),
+    callServerTool: async () => preparedResponse(),
+    updateModelContext: async () => ({}),
+    sendMessage: async () => ({}),
+  };
+  const coordinator = createSubmissionCoordinator({
+    app,
+    rasterizePreview: async () => ({ mimeType: "image/png", data: "preview" }),
+  });
+
+  const result = await coordinator.submit(editorState(), () => {}, { authMode: "apikey" });
+
+  assert.equal(result.snapshot.authMode, "apikey");
+  assert.equal(result.snapshot.parentImageId, editorState().image.id);
+});
+
 test("retry after a message failure does not save or publish context twice", async () => {
   const counts = { save: 0, context: 0, message: 0 };
   const app = {

@@ -18,29 +18,36 @@ _FILE_READ_FLAGS = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0)
 _FILE_WRITE_FLAGS = os.O_WRONLY | getattr(os, "O_CLOEXEC", 0)
 _NOFOLLOW = getattr(os, "O_NOFOLLOW", 0)
 
-_SUBMISSION_THREAD_LOCKS_GUARD = threading.Lock()
-_SUBMISSION_THREAD_LOCKS: dict[tuple[int, int, str], tuple[threading.Lock, int]] = {}
+_THREAD_LOCKS_GUARD = threading.Lock()
+_THREAD_LOCKS: dict[tuple[int, int, str], tuple[threading.Lock, int]] = {}
 _SUBMISSION_FILE_HANDLES: dict[tuple[int, int], tuple[int, int]] = {}
 
 
-def _retain_submission_thread_lock(key: tuple[int, int, str]) -> threading.Lock:
-    with _SUBMISSION_THREAD_LOCKS_GUARD:
-        lock, users = _SUBMISSION_THREAD_LOCKS.get(key, (threading.Lock(), 0))
-        _SUBMISSION_THREAD_LOCKS[key] = (lock, users + 1)
+def _retain_thread_lock(key: tuple[int, int, str]) -> threading.Lock:
+    with _THREAD_LOCKS_GUARD:
+        lock, users = _THREAD_LOCKS.get(key, (threading.Lock(), 0))
+        _THREAD_LOCKS[key] = (lock, users + 1)
         return lock
 
 
-def _discard_submission_thread_lock(key: tuple[int, int, str]) -> None:
-    with _SUBMISSION_THREAD_LOCKS_GUARD:
-        lock, users = _SUBMISSION_THREAD_LOCKS[key]
+def _discard_thread_lock(key: tuple[int, int, str]) -> None:
+    with _THREAD_LOCKS_GUARD:
+        lock, users = _THREAD_LOCKS[key]
         if users == 1:
-            del _SUBMISSION_THREAD_LOCKS[key]
+            del _THREAD_LOCKS[key]
         else:
-            _SUBMISSION_THREAD_LOCKS[key] = (lock, users - 1)
+            _THREAD_LOCKS[key] = (lock, users - 1)
+
+
+def _release_thread_lock(lock: threading.Lock, key: tuple[int, int, str]) -> None:
+    try:
+        lock.release()
+    finally:
+        _discard_thread_lock(key)
 
 
 def _retain_submission_file_handle(lease: "DirectoryLease", key: tuple[int, int]) -> int:
-    with _SUBMISSION_THREAD_LOCKS_GUARD:
+    with _THREAD_LOCKS_GUARD:
         existing = _SUBMISSION_FILE_HANDLES.get(key)
         if existing is None:
             descriptor = _open_regular_file_at(
@@ -56,7 +63,7 @@ def _retain_submission_file_handle(lease: "DirectoryLease", key: tuple[int, int]
 
 
 def _discard_submission_file_handle(key: tuple[int, int]) -> None:
-    with _SUBMISSION_THREAD_LOCKS_GUARD:
+    with _THREAD_LOCKS_GUARD:
         descriptor, users = _SUBMISSION_FILE_HANDLES[key]
         if users == 1:
             del _SUBMISSION_FILE_HANDLES[key]
@@ -367,27 +374,56 @@ class RepositoryLock(AbstractContextManager["RepositoryLock"]):
         self._owns_lease = False
         self._lease: DirectoryLease | None = None
         self._handle: int | None = None
+        self._thread_lock: threading.Lock | None = None
+        self._thread_lock_key: tuple[int, int, str] | None = None
 
     def acquire(self) -> Self:
         if self._handle is not None:
             raise RuntimeError("repository lock is already acquired")
+        deadline = time.monotonic() + self.timeout
         lease = self._provided_lease or DirectoryLease(self.repository)
         owns_lease = self._provided_lease is None
-        descriptor = _open_regular_file_at(
-            lease._handles[-1],
-            ".repository.lock",
-            os.O_RDWR | os.O_CREAT | getattr(os, "O_CLOEXEC", 0),
-        )
         try:
-            _acquire_lock(descriptor, self.timeout, self.poll_interval, "repository is locked by another image task")
+            repository_metadata = os.fstat(lease._handles[-1])
+        except BaseException:
+            if owns_lease:
+                lease.close()
+            raise
+        thread_lock_key = (repository_metadata.st_dev, repository_metadata.st_ino, ".repository.lock")
+        thread_lock = _retain_thread_lock(thread_lock_key)
+        thread_lock_acquired = thread_lock.acquire(timeout=max(0.0, deadline - time.monotonic()))
+        if not thread_lock_acquired:
+            _discard_thread_lock(thread_lock_key)
+            if owns_lease:
+                lease.close()
+            raise TimeoutError("repository is locked by another image task")
+        descriptor: int | None = None
+        try:
+            descriptor = _open_regular_file_at(
+                lease._handles[-1],
+                ".repository.lock",
+                os.O_RDWR | os.O_CREAT | getattr(os, "O_CLOEXEC", 0),
+            )
+            _acquire_lock(
+                descriptor,
+                max(0.0, deadline - time.monotonic()),
+                self.poll_interval,
+                "repository is locked by another image task",
+            )
             self._lease = lease
             self._owns_lease = owns_lease
             self._handle = descriptor
+            self._thread_lock = thread_lock
+            self._thread_lock_key = thread_lock_key
             return self
         except BaseException:
-            os.close(descriptor)
-            if owns_lease:
-                lease.close()
+            try:
+                if descriptor is not None:
+                    os.close(descriptor)
+                if owns_lease:
+                    lease.close()
+            finally:
+                _release_thread_lock(thread_lock, thread_lock_key)
             raise
 
     def release(self) -> None:
@@ -396,6 +432,8 @@ class RepositoryLock(AbstractContextManager["RepositoryLock"]):
         descriptor, self._handle = self._handle, None
         lease, self._lease = self._lease, None
         owns_lease, self._owns_lease = self._owns_lease, False
+        thread_lock, self._thread_lock = self._thread_lock, None
+        thread_lock_key, self._thread_lock_key = self._thread_lock_key, None
         first_error: BaseException | None = None
         try:
             _fcntl_module().flock(descriptor, _fcntl_module().LOCK_UN)
@@ -409,6 +447,12 @@ class RepositoryLock(AbstractContextManager["RepositoryLock"]):
         if owns_lease and lease is not None:
             try:
                 lease.close()
+            except BaseException as exc:
+                if first_error is None:
+                    first_error = exc
+        if thread_lock is not None and thread_lock_key is not None:
+            try:
+                _release_thread_lock(thread_lock, thread_lock_key)
             except BaseException as exc:
                 if first_error is None:
                     first_error = exc
@@ -472,10 +516,10 @@ class SubmissionLock(AbstractContextManager["SubmissionLock"]):
         repository_metadata = os.fstat(lease._handles[-1])
         file_handle_key = (repository_metadata.st_dev, repository_metadata.st_ino)
         thread_lock_key = (*file_handle_key, self.submission_id)
-        thread_lock = _retain_submission_thread_lock(thread_lock_key)
+        thread_lock = _retain_thread_lock(thread_lock_key)
         thread_lock_acquired = thread_lock.acquire(timeout=max(0.0, deadline - time.monotonic()))
         if not thread_lock_acquired:
-            _discard_submission_thread_lock(thread_lock_key)
+            _discard_thread_lock(thread_lock_key)
             lease.close()
             raise TimeoutError("edit submission is still in progress")
         descriptor: int | None = None
@@ -495,11 +539,14 @@ class SubmissionLock(AbstractContextManager["SubmissionLock"]):
                         raise TimeoutError("edit submission is still in progress") from exc
                     time.sleep(min(self.poll_interval, max(0, deadline - time.monotonic())))
         except BaseException:
-            if descriptor is not None:
-                _discard_submission_file_handle(file_handle_key)
-            lease.close()
-            thread_lock.release()
-            _discard_submission_thread_lock(thread_lock_key)
+            try:
+                try:
+                    if descriptor is not None:
+                        _discard_submission_file_handle(file_handle_key)
+                finally:
+                    lease.close()
+            finally:
+                _release_thread_lock(thread_lock, thread_lock_key)
             raise
 
     def release(self) -> None:
@@ -527,8 +574,7 @@ class SubmissionLock(AbstractContextManager["SubmissionLock"]):
             if first_error is None:
                 first_error = exc
         if thread_lock is not None and thread_lock_key is not None:
-            thread_lock.release()
-            _discard_submission_thread_lock(thread_lock_key)
+            _release_thread_lock(thread_lock, thread_lock_key)
         if first_error is not None:
             raise first_error
 

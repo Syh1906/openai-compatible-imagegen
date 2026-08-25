@@ -101,6 +101,7 @@ export function artifactLineageWithRecords(artifact, records = null) {
   };
   return {
     parent: parentId ? resolve(parentId) : null,
+    ...(artifact?.operation === "import" && artifact?.id ? { current: { ...artifact } } : {}),
     children: childIds.filter((id) => id && id !== artifact?.id).map(resolve).filter(Boolean),
   };
 }

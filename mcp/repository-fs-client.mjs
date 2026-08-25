@@ -260,6 +260,8 @@ function decodeRuntimeOutput(chunks) {
 
 function safeRuntimeError(error, stderr) {
   const value = String(error || stderr || "repository operation failed");
+  const hostImportCode = /^(host_image_(?:request_invalid|output_invalid|handoff_not_found|handoff_state_invalid|import_failed))(?::|$)/.exec(value)?.[1];
+  if (hostImportCode) return hostImportCode;
   if (/not found|cannot find|no such file/i.test(value) || /找不到/.test(value)) return "repository entry not found";
   if (/reparse point/i.test(value)) return "repository path contains a reparse point";
   if (/locked by another image task/i.test(value)) return "repository is locked by another image task";

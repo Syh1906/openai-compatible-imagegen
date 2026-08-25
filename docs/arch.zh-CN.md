@@ -1,5 +1,4 @@
 # 架构
-
 > 上级：[文档](./README.zh-CN.md)
 
 [English](./arch.md) | 简体中文
@@ -96,13 +95,10 @@ Standalone Skill -> Standalone adapter -> shared image core -> provider
 
 ## 变更矩阵
 
-Codex App 验收按实际变化的边界判断，不只看文件路径。Plugin manifest、marketplace、宿主加载、安装或缓存身份、工具注入、MCP Apps bridge，或确定性自动化无法观察的行为发生变化时，在开发阶段执行验收。其他 Plugin 改动可以推迟到最终发布候选。每个最终发布候选都在可用目标平台执行验收；没有真实设备的平台明确标记为未验证，并按当前发布计划的平台矩阵处理。
-
-| 变更 | 必须检查的实现 | 必须执行的验证 |
+| 变更 | 负责边界 | 证据 |
 | --- | --- | --- |
-| 共享图片行为 | 共享核心和两个适配器 | Python 测试、Plugin bridge 测试、双发行证据 |
-| Standalone CLI 或配置 | Standalone 适配器和指南 | Python 测试和 Standalone 压缩包 |
-| MCP 或产物行为 | MCP 和 Plugin 指南 | Node 测试、构建、Plugin 检查、按风险执行 Codex App 验收 |
-| 结果卡或画布 | `web/`、MCP Apps bridge | Widget 测试、按风险执行 Codex App 验收 |
-| Widget 可见文本 | 英文/中文消息目录、公开 metadata、受影响的 README 对 | locale 测试、英文无汉字检查、metadata 检查、按风险执行 Codex App 验收 |
-| 发行 metadata | 两个 manifest 和发布构建器 | 版本、文件集、压缩包、marketplace 检查、按风险执行 Codex App 验收 |
+| 共享图片行为 | 共享核心和两个适配器 | 共享测试与适配器测试 |
+| Standalone 配置或 CLI | Standalone 适配器与指南 | Standalone 测试与包检查 |
+| MCP 或产物行为 | MCP 工具与产物运行时 | MCP 测试与 Plugin 检查 |
+| 结果卡或画布 | `web/` 与 MCP Apps bridge | Widget 与编辑器测试 |
+| 发行 metadata | Manifest 与发布构建器 | 版本、文件集与压缩包检查 |

@@ -37,6 +37,9 @@ const HOST_OBSERVATIONS = [
 ];
 
 const PROJECT_BOUND_TOOL_NAMES = [
+  "prepare_host_image_import",
+  "stage_host_image_import",
+  "finalize_host_image_import",
   "report_imagegen_host_observation",
   "list_image_models",
   "generate_image",
@@ -85,6 +88,10 @@ test("explicit project binding IDs restore one project across MCP processes with
       );
 
       assert.equal(bound.structuredContent.status, "bound");
+      assert.equal(bound.structuredContent.distribution, "plugin");
+      assert.equal(bound.structuredContent.defaultAuthMode, "apikey");
+      assert.equal(bound.structuredContent.apiKeyConfigured, true);
+      assert.equal(bound.structuredContent.chatgptRequirement, "codex_app_imagegen_handoff");
       assert.deepEqual(catalog.structuredContent, { models: [] });
       assertValuesHidden([bound, catalog], [projectA]);
     } finally {
@@ -134,7 +141,7 @@ test("all project-bound tools require an explicit project binding ID", async () 
   await withProjectRoots(async ({ pluginRoot }) => {
     const server = createTestServer({ pluginRoot });
     try {
-      assert.equal(Object.keys(server._registeredTools).length, 24);
+      assert.equal(Object.keys(server._registeredTools).length, 27);
       for (const name of PROJECT_BOUND_TOOL_NAMES) {
         const schema = server._registeredTools[name]?.inputSchema;
         assert.notEqual(schema, undefined, `${name} input schema missing`);
@@ -298,8 +305,8 @@ test("explicit project binding is idempotent when callers reuse its ID", async (
       const second = await bind({ projectRoot: path.join(projectA, "."), projectBindingId });
       const catalog = await listModels({ projectBindingId });
 
-      assert.deepEqual(first.structuredContent, { status: "bound", projectBindingId });
-      assert.deepEqual(second.structuredContent, { status: "already_bound", projectBindingId });
+      assert.deepEqual(first.structuredContent, bindingReceipt("bound", projectBindingId));
+      assert.deepEqual(second.structuredContent, bindingReceipt("already_bound", projectBindingId));
       assert.deepEqual(catalog.structuredContent, { models: [] });
       assert.equal(taskCalls.length, 1);
       assert.equal(taskCalls[0].context.projectRoot, path.resolve(projectA));
@@ -346,7 +353,7 @@ test("project binding freezes the selected config and rejects later changes", as
 
       const rebound = await bind({ projectRoot: projectA, projectBindingId });
       const recovered = await listModels({ projectBindingId });
-      assert.deepEqual(rebound.structuredContent, { status: "rebound", projectBindingId });
+      assert.deepEqual(rebound.structuredContent, bindingReceipt("rebound", projectBindingId));
       assert.equal(rebound.content?.[0]?.text, "已更新当前图片项目的配置绑定。");
       assert.deepEqual(recovered.structuredContent, { models: [] });
       assert.equal(taskCalls, 1);
@@ -781,6 +788,18 @@ async function writeUserConfig(userHome, providerOverrides = {}) {
     transparency: { default_route: "chroma-matting", prompt_only_allow: [], llm_assisted: { enabled: false } },
     storage: { output_directory: "output/imagegen" },
   }));
+}
+
+
+function bindingReceipt(status, projectBindingId) {
+  return {
+    status,
+    projectBindingId,
+    distribution: "plugin",
+    defaultAuthMode: "apikey",
+    apiKeyConfigured: true,
+    chatgptRequirement: "codex_app_imagegen_handoff",
+  };
 }
 
 

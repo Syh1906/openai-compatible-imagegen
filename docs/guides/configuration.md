@@ -1,4 +1,4 @@
-<!-- updated: 2026-08-21 -->
+<!-- updated: 2026-08-25 -->
 # Configuration
 
 > Parent: [User guides](./README.md)
@@ -79,7 +79,21 @@ The Plugin reads these fixed paths:
 
 Start from `skills/openai-compatible-imagegen/references/config.example.json` in the installed Plugin. Its `proxy` object demonstrates the optional provider proxy; remove that object to retain environment proxy behavior.
 
-The user baseline declares the active profile, provider, provider-specific model ID, authentication, defaults, transparency policy, resource limits, and storage. The active profile and model are user configuration, not code constants. Prefer an environment variable for the credential.
+An API Key user baseline declares the active profile, provider, provider-specific model ID, authentication, defaults, transparency policy, resource limits, and storage. A ChatGPT-only baseline may omit the active profile, providers, and models. The active profile and model are user configuration, not code constants. Prefer an environment variable for API credentials.
+
+Set `auth_mode` to choose the default image route:
+
+```json
+{
+  "config_version": 1,
+  "auth_mode": "chatgpt",
+  "defaults": { "size": "1536x1024", "quality": "auto", "output_format": "png" },
+  "postprocess": { "enabled": true },
+  "storage": { "output_directory": "output/imagegen" }
+}
+```
+
+Use `"apikey"` for the configured OpenAI-compatible provider route, or `"chatgpt"` for host generation and semantic canvas edits through the Codex App. ChatGPT projects may omit provider and model fields. Both routes accept canvas mask annotations as edit guidance. API Key edits use a dedicated mask parameter when the selected model declares that capability; otherwise the marked regions remain semantic guidance. The selected image model determines how closely the result follows the guidance. API Key projects can also request batches and multiple candidates. The route is selected explicitly and is not changed automatically when another route is unavailable.
 
 To route one Plugin provider through a specific proxy, add `proxy` to that provider in the user baseline:
 
@@ -110,11 +124,11 @@ The project file cannot replace the active profile, provider, model, endpoint, p
 
 The Codex Plugin exposes three configuration tools so an Agent can complete the setup without locating the Plugin installation directory:
 
-- `initialize_image_config` creates the user template at `~/.codex/openai-compatible-imagegen/config.json` only when the file does not exist. It always creates or verifies a `.gitignore` containing only `*` in the user configuration directory. When called with `projectRoot`, it protects the project configuration directory the same way; the project root `.gitignore` is not changed.
+- `initialize_image_config` creates the user template at `~/.codex/openai-compatible-imagegen/config.json` only when the file does not exist. Set `authMode` to `"apikey"` or `"chatgpt"`; the default is `"apikey"`. It always creates or verifies a `.gitignore` containing only `*` in the user configuration directory. When called with `projectRoot`, it protects the project configuration directory the same way; the project root `.gitignore` is not changed.
 - `inspect_image_config` reads the user file and an optional project override as redacted data. It never returns `api_key` values.
 - `update_image_config` updates a user or project file through the same schema and scope rules as runtime binding. Before writing, it creates or verifies the target configuration directory's local `*` ignore rule. Prefer `api_key_env`; when a user explicitly chooses local plaintext storage, the tool may write user-level `api_key` but never returns it. Project credentials and forbidden project fields are rejected.
 
-After initialization, set the environment variable named by the configured provider's `api_key_env`, then ask the Agent to query the configuration and bind the project. Both user and project configuration directories are protected at every configuration write. After any update, bind the project again so the new configuration digest is used. Query and update results never print API keys. The MCP tools also return the active profile, model ID, native transparency declaration, retry switch, fallback route, warnings, and next steps.
+After initialization, API Key users set the environment variable named by the configured provider's `api_key_env`; ChatGPT-only users can bind the project without a provider or API key. Then ask the Agent to query the configuration and bind the project. Both configuration directories are protected at every write. After any update, bind the project again so the new configuration digest is used. Query and update results never print API keys. API Key configuration results include the active profile, model ID, transparency declaration, retry switch, and local delivery settings; ChatGPT-only results report the selected host route and local delivery settings.
 
 `storage.output_directory` is a relative directory inside the project. The default is `output/imagegen/`. Project binding creates or verifies a `.gitignore` containing only `*` in the resolved output directory, so images, prompts, annotations, and metadata remain local. An incompatible ignore rule stops binding without being overwritten. Absolute paths, project-root output, outside paths, files, symbolic links, junctions, and other reparse points are rejected.
 

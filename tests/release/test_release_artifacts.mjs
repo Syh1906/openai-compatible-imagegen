@@ -209,6 +209,13 @@ test("release file sets separate shared core from distribution adapters", () => 
 });
 
 
+test("Plugin distribution includes the host image import runtime", () => {
+  assert.equal(pluginAdapterFileNames.includes("host_image_import.py"), true);
+  assert.equal(runtimeFileNames.includes("host_image_import.py"), true);
+  assert.equal(standaloneRuntimeFileNames.includes("host_image_import.py"), false);
+});
+
+
 test("Standalone release carries a Git ignore rule for local auth", async (t) => {
   const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "imagegen-release-ignore-"));
   const gitRoot = await mkdtemp(path.join(os.tmpdir(), "imagegen-release-git-"));
@@ -281,18 +288,18 @@ test("release mode rejects baseline metadata and publishes clean artifacts for t
 });
 
 
-test("the release source builds the current v1.1.1 artifact set", async (t) => {
+test("the release source builds the current v1.2.0 artifact set", async (t) => {
   const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "imagegen-release-candidate-"));
   t.after(() => rm(outputDirectory, { recursive: true, force: true }));
 
   const result = await runBuild(outputDirectory);
 
-  assert.equal(result.version, "1.1.1");
+  assert.equal(result.version, "1.2.0");
   assert.deepEqual(result.files, [
     "SHA256SUMS",
-    "openai-compatible-imagegen-codex-plugin-1.1.1.zip",
-    "openai-compatible-imagegen-shared-python-sha256-1.1.1.json",
-    "openai-compatible-imagegen-skill-1.1.1.zip",
+    "openai-compatible-imagegen-codex-plugin-1.2.0.zip",
+    "openai-compatible-imagegen-shared-python-sha256-1.2.0.json",
+    "openai-compatible-imagegen-skill-1.2.0.zip",
   ]);
   assert.deepEqual((await readdir(outputDirectory)).sort(), result.files);
 });

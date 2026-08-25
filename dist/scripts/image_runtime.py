@@ -61,9 +61,11 @@ from scripts.mask_policy import (
 from scripts.provider_config import (
     Config,
     DEFAULT_USER_AGENT,
+    LocalImageConfig,
     ProviderConfigError,
     normalize_model_capabilities,
     parse_plugin_config,
+    parse_plugin_local_config,
 )
 from scripts.repository_fs import SubmissionLock
 
@@ -120,6 +122,21 @@ def load_config(
             require_api_key=require_api_key,
             model_profile_id=model_profile_id,
         )
+    except ProviderConfigError as exc:
+        raise ImagegenError(str(exc)) from exc
+
+
+def load_local_config(config_snapshot: bytes | None) -> LocalImageConfig:
+    if config_snapshot is None:
+        raise ImagegenError("image configuration snapshot is required")
+    try:
+        raw = json.loads(config_snapshot.decode("utf-8-sig"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ImagegenError(f"image config is not valid JSON: {exc}") from exc
+    if not isinstance(raw, dict):
+        raise ImagegenError("image config must be a JSON object")
+    try:
+        return parse_plugin_local_config(raw)
     except ProviderConfigError as exc:
         raise ImagegenError(str(exc)) from exc
 
@@ -448,7 +465,7 @@ def run_machine_task(
     task: dict[str, Any],
     project_root: Path,
     artifact_root: Path,
-    cfg: Config | None = None,
+    cfg: Config | LocalImageConfig | None = None,
     config_snapshot: bytes | None = None,
     config_sha256: str | None = None,
 ) -> dict[str, Any]:
@@ -457,12 +474,6 @@ def run_machine_task(
     try:
         if not isinstance(task, dict):
             raise MachineTaskError("invalid_task", "machine task must be a JSON object")
-        profile_id = str(task.get("modelProfileId") or "")
-        if not profile_id:
-            raise MachineTaskError(
-                "unsupported_model_profile",
-                f"unsupported model profile: {profile_id or '(missing)'}",
-            )
         operation = str(task.get("operation") or "").strip().lower()
         if operation not in {
             "generate",
@@ -474,6 +485,13 @@ def run_machine_task(
             "get_delivery_receipt",
         }:
             raise MachineTaskError("invalid_task", f"unsupported operation: {operation or '(missing)'}")
+        local_operations = {"deliver", "get_delivery_receipt"}
+        profile_id = str(task.get("modelProfileId") or "")
+        if operation not in local_operations and not profile_id:
+            raise MachineTaskError(
+                "unsupported_model_profile",
+                f"unsupported model profile: {profile_id or '(missing)'}",
+            )
         execution_mode = task.get("executionMode") if "executionMode" in task else None
         if "executionMode" in task and execution_mode != "batch-item":
             raise MachineTaskError(
@@ -493,20 +511,22 @@ def run_machine_task(
             raise MachineTaskError("image_config_changed", "Image configuration snapshot is unavailable")
         if effective_cfg is None:
             try:
-                effective_cfg = load_config(
-                    require_api_key=operation not in {
-                        "list_models",
-                        "deliver",
-                        "record_batch",
-                        "get_batch_manifest",
-                        "get_delivery_receipt",
-                    },
-                    model_profile_id=profile_id,
-                    config_snapshot=config_snapshot,
+                effective_cfg = (
+                    load_local_config(config_snapshot)
+                    if operation in local_operations
+                    else load_config(
+                        require_api_key=operation not in {
+                            "list_models",
+                            "record_batch",
+                            "get_batch_manifest",
+                        },
+                        model_profile_id=profile_id,
+                        config_snapshot=config_snapshot,
+                    )
                 )
             except ImagegenError as exc:
                 raise MachineTaskError("image_config_invalid", str(exc)) from exc
-        if profile_id != effective_cfg.profile_id:
+        if operation not in local_operations and profile_id != effective_cfg.profile_id:
             raise MachineTaskError(
                 "unsupported_model_profile",
                 f"unsupported model profile: {profile_id}",
@@ -935,7 +955,7 @@ def run_delivery_task(
     task: dict[str, Any],
     project_root: Path,
     artifact_root: Path,
-    cfg: Config,
+    cfg: Config | LocalImageConfig,
 ) -> dict[str, Any]:
     input_ids = task.get("inputArtifactIds") or []
     if not isinstance(input_ids, list) or len(input_ids) != 1 or not isinstance(input_ids[0], str):
@@ -1061,7 +1081,7 @@ def run_inline_deliveries(
     profile_id: str,
     project_root: Path,
     artifact_root: Path,
-    cfg: Config,
+    cfg: Config | LocalImageConfig,
     submission_id: str | None,
     request_fingerprint: str | None,
 ) -> list[dict[str, Any]]:
@@ -1251,7 +1271,7 @@ def validate_inline_transparency_override(
 def resolve_delivery_transparency(
     source: Any,
     explicit_request: Any,
-    cfg: Config,
+    cfg: Config | LocalImageConfig,
     repository: ArtifactRepository,
 ) -> tuple[ResolvedTransparency | None, bytes | None]:
     metadata = source.metadata
@@ -1282,7 +1302,7 @@ def resolve_delivery_transparency(
         resolved = resolve_transparency_request(
             request_value,
             prompt=str(metadata.get("prompt") or ""),
-            model=str(metadata.get("model") or cfg.model),
+            model=str(metadata.get("model") or getattr(cfg, "model", "")),
             mode=str(metadata.get("operation") or "derive"),
             size=size,
             postprocess_enabled=bool(cfg.postprocess.get("enabled")),
@@ -1376,7 +1396,7 @@ def machine_mime_type(output_format: str) -> str:
 
 def redact_machine_error(
     message: str,
-    cfg: Config | None,
+    cfg: Config | LocalImageConfig | None,
     project_root: Path,
     *,
     config_path: Path | None = None,
@@ -1386,8 +1406,8 @@ def redact_machine_error(
     if config_path is not None:
         secrets_to_remove.append(str(Path(config_path).absolute()))
     if cfg is not None:
-        secrets_to_remove.extend([cfg.api_key, cfg.base_url])
-        secrets_to_remove.append(cfg.proxy.get("url", ""))
+        secrets_to_remove.extend([getattr(cfg, "api_key", ""), getattr(cfg, "base_url", "")])
+        secrets_to_remove.append(getattr(cfg, "proxy", {}).get("url", ""))
     for value in secrets_to_remove:
         if value:
             redacted = redacted.replace(value, "[REDACTED]")

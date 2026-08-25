@@ -24,6 +24,7 @@ import {
   imageDeliveryOutputSchema,
   imageIdSchema,
   outputSchema,
+  projectBindingIdSchema,
   transparencyInputSchema,
 } from "./image-tool-schemas.mjs";
 import {
@@ -42,12 +43,13 @@ import { createInMemoryHostObservationStore } from "./host-observation-store.mjs
 import { isStableToolErrorCode, stableToolErrorMessages } from "./tool-errors.mjs";
 import { registerConfigTools } from "./config-tools.mjs";
 import { initializeImageConfig, inspectImageConfig, updateImageConfig } from "./config-resolution.mjs";
+import { createHostImageImporter } from "./host-image-import.mjs";
+import { registerHostImageImportTools } from "./host-image-import-tools.mjs";
 const legacyWidgetResourceFingerprints = [
   "43c3a69a85db10633692",
   "9caad8c28a921a55611b",
 ];
 const editorSessionIdSchema = z.string().regex(/^eds_[0-9a-f]{32}$/).describe("Open canvas session ID");
-const projectBindingIdSchema = z.string().regex(/^pbind_[0-9a-f]{64}$/).describe("Image project binding ID");
 const projectBindingInputSchema = { projectBindingId: projectBindingIdSchema };
 const modelProfileIdSchema = z.string().min(1);
 const annotationIdSchema = z.string().regex(/^ann_[0-9A-HJKMNP-TV-Z]{26}$/);
@@ -211,6 +213,7 @@ export function createImagegenServer({
   readAnnotation,
   saveAnnotations,
   deleteAnnotation,
+  hostImageImporter = createHostImageImporter(),
   configManager = { initialize: initializeImageConfig, inspect: inspectImageConfig, update: updateImageConfig },
 }) {
   requireReleaseIdentity(releaseIdentity);
@@ -235,6 +238,13 @@ export function createImagegenServer({
   );
   const imageAuditHandlers = createImageAuditHandlers({ runTask, readArtifact });
   registerConfigTools(server, configManager, toolError);
+  registerHostImageImportTools(server, {
+    projectContext,
+    importer: hostImageImporter,
+    editSubmissions,
+    readArtifact,
+    toolError,
+  });
 
   registerWidgetResource(server, {
     name: "image-result",
@@ -299,6 +309,10 @@ export function createImagegenServer({
       outputSchema: z.object({
         status: z.enum(["bound", "already_bound", "rebound"]),
         projectBindingId: projectBindingIdSchema,
+        distribution: z.literal("plugin"),
+        defaultAuthMode: z.enum(["apikey", "chatgpt"]),
+        apiKeyConfigured: z.boolean(),
+        chatgptRequirement: z.literal("codex_app_imagegen_handoff"),
       }).strict(),
       annotations: {
         readOnlyHint: false,
@@ -447,6 +461,7 @@ export function createImagegenServer({
       annotations: readAnnotations(),
     },
     async ({ projectBindingId }) => await withBoundProject(projectContext, projectBindingId, async (context) => {
+      if (context.apiKeyConfigured === false) return apiProviderNotConfigured();
       try {
         const result = await runTask(
           { operation: "list_models", modelProfileId: context.activeProfile || DEFAULT_MODEL_PROFILE_ID },
@@ -480,20 +495,23 @@ export function createImagegenServer({
       annotations: writeAnnotations(),
     },
     async ({ projectBindingId, prompt, modelProfileId, transparency, ...output }) =>
-      await withBoundProject(projectContext, projectBindingId, async (context) => await executeImageTask(
-        {
-          operation: "generate",
-          modelProfileId: modelProfileId || context.activeProfile || DEFAULT_MODEL_PROFILE_ID,
-          prompt,
-          inputArtifactIds: [],
-          annotationId: null,
-          ...(transparency ? { transparency } : {}),
-          output,
-        },
-        context,
-        runTask,
-        readArtifact,
-      )),
+      await withBoundProject(projectContext, projectBindingId, async (context) => {
+        if (context.apiKeyConfigured === false) return apiProviderNotConfigured();
+        return await executeImageTask(
+          {
+            operation: "generate",
+            modelProfileId: modelProfileId || context.activeProfile || DEFAULT_MODEL_PROFILE_ID,
+            prompt,
+            inputArtifactIds: [],
+            annotationId: null,
+            ...(transparency ? { transparency } : {}),
+            output,
+          },
+          context,
+          runTask,
+          readArtifact,
+        );
+      }),
   );
 
   server.registerTool(
@@ -517,6 +535,7 @@ export function createImagegenServer({
     },
     async (arguments_) =>
       await withBoundProject(projectContext, arguments_.projectBindingId, async (context) => {
+      if (context.apiKeyConfigured === false) return apiProviderNotConfigured();
       const {
         parentImageId,
         referenceImageIds = [],
@@ -565,6 +584,10 @@ export function createImagegenServer({
           }
         }
         let taskOutput = output;
+        const useDedicatedMask = Boolean(
+          annotation?.maskPath
+          && modelHasCapability(context, modelProfileId, "mask"),
+        );
         if (annotation?.maskPath) {
           if (!annotation.maskPolicy) {
             return toolError(new Error("legacy mask has no signed policy"), "mask_policy_missing");
@@ -586,13 +609,15 @@ export function createImagegenServer({
           ) {
             return toolError(new Error("submission mask policy mismatch"), "edit_submission_mismatch");
           }
-          if (annotation.maskPolicy.modelProfileId !== modelProfileId) {
+          if (useDedicatedMask && annotation.maskPolicy.modelProfileId !== modelProfileId) {
             return toolError(new Error("mask policy model profile mismatch"), "invalid_task");
           }
-          try {
-            taskOutput = deriveMaskedEditOutput(output, annotation.maskPolicy);
-          } catch (error) {
-            return toolError(error, "invalid_task");
+          if (useDedicatedMask) {
+            try {
+              taskOutput = deriveMaskedEditOutput(output, annotation.maskPolicy);
+            } catch (error) {
+              return toolError(error, "invalid_task");
+            }
           }
         } else if (
           annotation?.maskPolicy
@@ -610,8 +635,7 @@ export function createImagegenServer({
             inputArtifactIds: [parentImageId, ...referenceImageIds],
             annotationId,
             ...(claimedSubmission ? { submissionId: claimedSubmission.receipt.id } : {}),
-            ...(annotation?.maskPath ? { mask: annotation.maskPath } : {}),
-            ...(annotation?.maskPolicy ? { maskPolicy: annotation.maskPolicy } : {}),
+            ...(useDedicatedMask ? { mask: annotation.maskPath, maskPolicy: annotation.maskPolicy } : {}),
             ...(transparency ? { transparency } : {}),
             output: taskOutput,
           },
@@ -662,6 +686,7 @@ export function createImagegenServer({
     },
     async ({ projectBindingId, items, concurrency = 3 }) =>
       await withBoundProject(projectContext, projectBindingId, async (context) => {
+        if (context.apiKeyConfigured === false) return apiProviderNotConfigured();
         const batch = await executeImageBatch({
           items,
           concurrency,
@@ -750,7 +775,9 @@ export function createImagegenServer({
           const result = await runTask(
             {
               operation: "deliver",
-              modelProfileId: modelProfileId || context.activeProfile || DEFAULT_MODEL_PROFILE_ID,
+              ...(modelProfileId || context.activeProfile
+                ? { modelProfileId: modelProfileId || context.activeProfile }
+                : {}),
               inputArtifactIds: [imageId],
               delivery,
             },
@@ -985,6 +1012,11 @@ export function createImagegenServer({
       outputSchema: z.object({
         editorSession: openEditorSessionOutputSchema,
         artifact: imageArtifactOutputSchema,
+        auth: z.object({
+          defaultAuthMode: z.enum(["apikey", "chatgpt"]),
+          apiKeyConfigured: z.boolean(),
+          chatgptRequirement: z.literal("codex_app_imagegen_handoff"),
+        }).strict().optional(),
       }).strict(),
       annotations: {
         readOnlyHint: false,
@@ -1015,6 +1047,13 @@ export function createImagegenServer({
           structuredContent: {
             editorSession: editorSessionOutput(editorSession),
             artifact: imageArtifactMetadata(artifact.metadata),
+            ...(context.defaultAuthMode ? {
+              auth: {
+                defaultAuthMode: context.defaultAuthMode,
+                apiKeyConfigured: context.apiKeyConfigured,
+                chatgptRequirement: context.chatgptRequirement,
+              },
+            } : {}),
           },
           _meta: {
             ui: { resourceUri: editorWidgetUri },
@@ -1346,6 +1385,16 @@ async function withBoundProject(projectContext, projectBindingId, callback) {
   }
 }
 
+function modelHasCapability(context, modelProfileId, capability) {
+  const runtimeConfig = context.apiRuntimeConfig ?? JSON.parse(context.effectiveConfigJson);
+  return runtimeConfig?.models?.[modelProfileId]?.capabilities?.[capability] === true;
+}
+
+
+function apiProviderNotConfigured() {
+  return toolError(new Error("API provider is not configured"), "api_provider_not_configured");
+}
+
 function registerWidgetResource(server, { name, uri, title, description, releaseIdentity, readWidgetHtml }) {
   const resourceDomains = ["data:", "blob:"];
   const metadata = {
@@ -1402,8 +1451,6 @@ function requireLaunchContext(launchContext) {
     throw new Error("launchContext is required to create the MCP server");
   }
 }
-
-
 function requireProjectContext(projectContext) {
   if (
     !projectContext
@@ -1413,28 +1460,22 @@ function requireProjectContext(projectContext) {
     throw new Error("projectContext must provide bind and require");
   }
 }
-
-
 async function optionalProjectContext(projectContext, projectBindingId) {
   if (projectBindingId === undefined) return null;
   return await projectContext.require(projectBindingId);
 }
-
 function imageContent(artifact) {
   return { type: "image", data: artifact.data, mimeType: artifact.metadata.mimeType };
 }
-
 function imageArtifactMetadata(metadata) {
   return { ...metadata };
 }
-
 function getHostObservationScope(context) {
   return {
     key: `project-binding:${context.bindingKey}`,
     label: "project_binding_latest",
   };
 }
-
 function copyHostObservation(observation) {
   return {
     source: observation.source,
@@ -1446,14 +1487,12 @@ function copyHostObservation(observation) {
     truncated: observation.truncated,
   };
 }
-
 function sanitizeHostFieldPath(path) {
   return path.replace(/\.([A-Za-z_][A-Za-z0-9_-]{0,63})/g, (_match, key) => {
     if (sensitiveHostFieldKeyPattern.test(key)) return ".redacted";
     return retainedHostFieldKeys.has(key) ? `.${key}` : ".field";
   });
 }
-
 function stableToolError(code, extraStructuredContent = {}) {
   return {
     isError: true,
@@ -1461,7 +1500,6 @@ function stableToolError(code, extraStructuredContent = {}) {
     structuredContent: { accepted: 0, ...extraStructuredContent, error: { code } },
   };
 }
-
 function toolError(error, code = error?.code) {
   const stableCode = isStableToolErrorCode(code) ? code : "image_task_failed";
   const message = stableToolErrorMessages.get(stableCode);
@@ -1470,11 +1508,9 @@ function toolError(error, code = error?.code) {
     content: [{ type: "text", text: `${stableCode}: ${message}` }],
   };
 }
-
 function readAnnotations() {
   return { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 }
-
 function writeAnnotations() {
   return { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true };
 }

@@ -137,6 +137,7 @@ test("tool catalog exposes the model and app-only tool groups", async () => {
       "deliver_image",
       "destroy_image_editor",
       "edit_image",
+      "finalize_host_image_import",
       "generate_image",
       "get_image_artifact",
       "get_image_batch_manifest",
@@ -145,7 +146,9 @@ test("tool catalog exposes the model and app-only tool groups", async () => {
       "inspect_image_config",
       "inspect_imagegen_runtime",
       "list_image_models",
+      "prepare_host_image_import",
       "render_image_results",
+      "stage_host_image_import",
       "update_image_config",
     ]);
     assert.deepEqual(appOnlyTools, [
@@ -159,7 +162,7 @@ test("tool catalog exposes the model and app-only tool groups", async () => {
       "save_image_annotations",
       "save_image_editor_draft",
     ]);
-    assert.equal(tools.length, 24);
+    assert.equal(tools.length, 27);
   });
 });
 
@@ -191,7 +194,14 @@ async function withClient(dependencies, callback) {
       arguments: { projectRoot },
       _meta: requestMeta,
     });
-    assert.deepEqual(binding.structuredContent, { status: "bound", projectBindingId: PROJECT_BINDING_ID });
+    assert.deepEqual(binding.structuredContent, {
+      status: "bound",
+      projectBindingId: PROJECT_BINDING_ID,
+      distribution: "plugin",
+      defaultAuthMode: "apikey",
+      apiKeyConfigured: true,
+      chatgptRequirement: "codex_app_imagegen_handoff",
+    });
     client.callTool = async (request, ...rest) => await originalCallTool(
       {
         ...request,
@@ -218,11 +228,21 @@ function createFixtureProjectContext(projectRoot) {
     effectiveConfigSha256: "0".repeat(64),
     userConfigSha256: "1".repeat(64),
     projectConfigSha256: null,
+    defaultAuthMode: "apikey",
+    apiKeyConfigured: true,
+    chatgptRequirement: "codex_app_imagegen_handoff",
   };
   return {
     async bind() {
       bound = true;
-      return { status: "bound", projectBindingId: PROJECT_BINDING_ID };
+      return {
+        status: "bound",
+        projectBindingId: PROJECT_BINDING_ID,
+        distribution: "plugin",
+        defaultAuthMode: "apikey",
+        apiKeyConfigured: true,
+        chatgptRequirement: "codex_app_imagegen_handoff",
+      };
     },
     async require(projectBindingId) {
       if (!bound || projectBindingId !== PROJECT_BINDING_ID) {

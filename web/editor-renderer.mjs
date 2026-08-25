@@ -28,6 +28,7 @@ import { hexToHsv, hexToRgb, normalizeHexColor } from "./editor-color.mjs";
 import { computeCanvasGeometry } from "./editor-layout.mjs";
 import { DEFAULT_ANNOTATION_COLOR_SLOTS, hasMaskPaintStroke } from "./editor-state.mjs";
 import { createWidgetI18n } from "./widget-i18n.mjs";
+import { authRouteStatus } from "./editor-auth-route.mjs";
 
 
 const toolDefinitions = [
@@ -111,7 +112,7 @@ export function createEditorRenderer(root, { i18n = createWidgetI18n("zh-CN") } 
           <div class="workspace">
             <aside class="tool-rail" aria-label="标注工具">${toolDefinitions.map(([tool, icon, label]) => `<button class="tool-button" data-tool="${tool}" aria-label="${label}" title="${label}" aria-pressed="false" ${tool === "mask" ? "hidden" : ""}><i data-lucide="${icon}"></i></button>`).join("")}<div class="rail-style-controls" data-standard-style><span class="rail-rule"></span>${foregroundColorControlsMarkup()}<button class="stroke-button" data-stroke="3" aria-label="细线" title="细线" aria-pressed="false">—</button><button class="stroke-button active" data-stroke="5" aria-label="中线" title="中线" aria-pressed="true">━</button></div></aside>
             <section class="canvas-zone"><div class="canvas-options" data-mask-options hidden><span class="canvas-options-label">下一笔</span><div class="segmented-control mask-actions" role="group" aria-label="下一笔蒙版操作"><button data-mask-operation="paint" aria-label="绘制蒙版" title="绘制蒙版" aria-pressed="true"><i data-lucide="paintbrush"></i></button><button data-mask-operation="erase" aria-label="局部擦除蒙版" title="局部擦除蒙版" aria-pressed="false"><i data-lucide="eraser"></i></button><span class="sr-only" id="mask-erase-hint" data-mask-erase-hint role="status" aria-live="polite"></span></div><span class="canvas-options-rule" aria-hidden="true"></span><div class="segmented-control mask-modes" role="group" aria-label="下一笔蒙版模式"><button data-mask-mode="edit" aria-pressed="true" title="下一笔只允许模型修改该区域">改图区域</button><button data-mask-mode="protect" aria-pressed="false" title="下一笔标记要保留的内容；光影可随整体自然适配">保护内容</button></div><span class="canvas-options-rule" aria-hidden="true"></span><div class="segmented-control brush-sizes" role="group" aria-label="下一笔蒙版笔刷大小"><button data-mask-radius="0.02" aria-label="小号蒙版笔刷" title="下一笔使用小号笔刷" aria-pressed="false">小</button><button data-mask-radius="0.035" aria-label="中号蒙版笔刷" title="下一笔使用中号笔刷" aria-pressed="true">中</button><button data-mask-radius="0.06" aria-label="大号蒙版笔刷" title="下一笔使用大号笔刷" aria-pressed="false">大</button></div></div><span class="sr-only" id="canvas-keyboard-hint">选择工具后将焦点移到画布。画笔、箭头、矩形和蒙版按空格开始，方向键绘制，Enter 完成；文字按 Enter 创建；选中标注后方向键移动。</span><div class="canvas-frame"><div class="canvas-content" data-canvas tabindex="0" aria-label="图片标注画布" aria-describedby="canvas-keyboard-hint"><div class="empty-state" data-empty>正在等待会话图片...</div><img class="source-image" data-image alt="当前图片" draggable="false" hidden><svg class="annotation-layer" data-layer viewBox="0 0 1000 1000" preserveAspectRatio="none" hidden></svg></div></div></section>
-            <aside class="intent-panel" id="intent-panel" data-intent-panel><div class="panel-heading"><div><span class="eyebrow">本次修改</span><h1 data-intent-count>尚未标注</h1></div><div class="panel-heading-actions"><button class="quiet-button panel-close" data-action="toggle-intents" aria-label="关闭修改意图面板" title="关闭"><i data-lucide="x"></i></button><button class="quiet-button" data-action="clear" type="button" aria-label="清除当前工作草稿" title="清除当前工作草稿" aria-haspopup="dialog" aria-controls="clear-confirm-dialog">清除草稿</button></div></div><div class="intent-list" data-intents><p class="muted">在图片上标出要处理的位置。</p></div><label class="prompt-label" for="prompt">补充要求</label><textarea id="prompt" data-prompt maxlength="600" placeholder="例如：保持整体风格一致，避免改变主体比例"></textarea><div class="prompt-meta"><span>可选</span><span data-prompt-count>0/600</span></div></aside>
+          <aside class="intent-panel" id="intent-panel" data-intent-panel><div class="panel-heading"><div><span class="eyebrow">本次修改</span><h1 data-intent-count>尚未标注</h1></div><div class="panel-heading-actions"><button class="quiet-button panel-close" data-action="toggle-intents" aria-label="关闭修改意图面板" title="关闭"><i data-lucide="x"></i></button><button class="quiet-button" data-action="clear" type="button" aria-label="清除当前工作草稿" title="清除当前工作草稿" aria-haspopup="dialog" aria-controls="clear-confirm-dialog">清除草稿</button></div></div><section class="auth-route-panel" data-auth-route aria-label="图片生成路线"><span class="prompt-label">图片生成路线</span><div class="segmented-control auth-route-control" role="group" aria-label="选择图片生成路线"><button type="button" data-auth-mode="apikey">API Key</button><button type="button" data-auth-mode="chatgpt">ChatGPT</button></div><p class="auth-route-status" data-auth-route-status role="status"></p></section><div class="intent-list" data-intents><p class="muted">在图片上标出要处理的位置。</p></div><label class="prompt-label" for="prompt">补充要求</label><textarea id="prompt" data-prompt maxlength="600" placeholder="例如：保持整体风格一致，避免改变主体比例"></textarea><div class="prompt-meta"><span>可选</span><span data-prompt-count>0/600</span></div></aside>
           </div>
           <footer class="bottom-bar"><div class="version-strip" data-lineage></div><div class="submit-row"><div class="submit-copy"><span class="annotation-summary" data-summary>已标注 0 处</span><span class="submit-status" data-submit-status data-destroyed-terminal="false" role="status" aria-live="polite"></span></div><button class="submit-button" data-action="submit" type="button" disabled>提交修改</button></div></footer>
           <div class="toast" data-toast role="status" aria-live="polite"></div>
@@ -137,6 +138,7 @@ export function createEditorRenderer(root, { i18n = createWidgetI18n("zh-CN") } 
       destroyConfirmOpen = false,
       clearConfirmOpen = false,
       draftState = { kind: "empty" },
+      authRoute = null,
       submissionStatus,
       submissionStatusTone,
       colorEditorSlot = null,
@@ -168,6 +170,15 @@ export function createEditorRenderer(root, { i18n = createWidgetI18n("zh-CN") } 
       annotationVisibility.querySelector("[data-visible-icon]").hidden = !editor.annotationVisible;
       annotationVisibility.querySelector("[data-hidden-icon]").hidden = editor.annotationVisible;
       const visibleAnnotations = editor.annotations.filter(isUserFacingAnnotation);
+      const routeStatus = authRouteStatus(authRoute);
+      root.querySelectorAll("[data-auth-mode]").forEach((button) => {
+        const selected = button.dataset.authMode === authRoute?.selectedAuthMode;
+        button.classList.toggle("active", selected);
+        button.setAttribute("aria-pressed", String(selected));
+        button.disabled = interactionLocked || !authRoute;
+      });
+      root.querySelector("[data-auth-route-status]").textContent = routeStatus.label;
+      root.querySelector("[data-auth-route-status]").dataset.statusTone = routeStatus.tone;
       root.querySelector("[data-summary]").textContent = `已标注 ${visibleAnnotations.length} 处`;
       root.querySelector("[data-intent-count]").textContent = visibleAnnotations.length ? `${visibleAnnotations.length} 处修改意图` : "尚未标注";
       root.querySelector("[data-prompt]").value = editor.prompt;
@@ -328,9 +339,9 @@ function updateStyleControls(root, editor, modelCapabilities, interactionLocked,
     button.classList.toggle("active", active);
     button.setAttribute("aria-pressed", String(active));
   });
-  root.querySelector("[data-tool=mask]").hidden = modelCapabilities?.mask !== true;
+  root.querySelector("[data-tool=mask]").hidden = false;
   const selectedAnnotation = editor.annotations.find((item) => item.id === editor.selectedAnnotationId);
-  const maskContext = modelCapabilities?.mask === true && editor.activeTool === "mask";
+  const maskContext = editor.activeTool === "mask";
   const maskStyleLocked = maskContext || selectedAnnotation?.type === "mask";
   const maskMode = editor.maskMode;
   const maskOperation = editor.maskOperation;
