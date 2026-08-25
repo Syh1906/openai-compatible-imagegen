@@ -67,6 +67,12 @@
       "platforms": ["windows"]
     },
     {
+      "name": "cross-platform-repository-tests",
+      "files": ["tests/plugin-runtime/test_cross_platform_repository_fs.py"],
+      "suites": ["plugin-runtime"],
+      "platforms": ["macos", "windows"]
+    },
+    {
       "name": "windows-adapter",
       "files": ["scripts/windows_repository_fs.py"],
       "suites": ["plugin-runtime", "release"],
