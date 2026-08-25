@@ -163,6 +163,23 @@ def request_json(cfg: Config, path: str, payload: dict[str, Any], timeout: int) 
         raise ImagegenError(str(exc)) from exc
 
 
+def request_atlas_image(cfg: Config, payload: dict[str, Any], timeout: int) -> dict[str, Any]:
+    try:
+        return image_transport.request_atlas_image(
+            base_url=cfg.base_url,
+            api_key=cfg.api_key,
+            user_agent=cfg.user_agent,
+            payload=payload,
+            timeout=timeout,
+            response_limit=MAX_JSON_RESPONSE_BYTES,
+            proxy_url=cfg.proxy.get("url"),
+        )
+    except image_transport.TransportError as exc:
+        raise _provider_image_error(exc) from exc
+    except ValueError as exc:
+        raise ImagegenError(str(exc)) from exc
+
+
 def request_multipart(
     cfg: Config,
     path: str,
@@ -608,6 +625,11 @@ def run_machine_task(
                 "unsupported_capability",
                 f"configured model profile does not support {operation}",
             )
+        if effective_cfg.protocol == "atlas" and operation == "edit":
+            raise MachineTaskError(
+                "unsupported_capability",
+                "Atlas protocol does not support image edits",
+            )
         if len(input_ids) > 1 and not has_strict_capability(
             effective_cfg.capabilities,
             "multi_reference",
@@ -693,6 +715,11 @@ def run_machine_task(
             params = dict(params)
             params["format"] = "png"
             params["compression"] = None
+            if effective_cfg.protocol == "atlas" and transparency.plan.mode == "native-alpha":
+                raise MachineTaskError(
+                    "unsupported_capability",
+                    "Atlas protocol does not support native-alpha generation",
+                )
         validate_inline_delivery(task, transparency)
         planned_prompt = transparency.plan.prompt if transparency is not None else prompt
         try:
@@ -728,7 +755,48 @@ def run_machine_task(
         transparency_attempts = 1
         native_fallback_used = False
         if operation == "generate":
-            if is_batch_item:
+            if effective_cfg.protocol == "atlas":
+                images = []
+                batch_items: list[dict[str, Any]] = []
+                atlas_payload = {
+                    "model": effective_cfg.model,
+                    "prompt": request_prompt,
+                    "size": params["size"],
+                    "quality": params["quality"],
+                    "moderation": params.get("moderation"),
+                    "output_format": params["format"],
+                }
+                for candidate_index in range(params["count"]):
+                    response = request_atlas_image(
+                        effective_cfg,
+                        atlas_payload,
+                        params["timeout"],
+                    )
+                    response_items = response.get("data")
+                    if not isinstance(response_items, list) or len(response_items) != 1:
+                        actual_count = len(response_items) if isinstance(response_items, list) else 0
+                        raise MachineTaskError(
+                            "image_task_failed",
+                            f"provider returned {actual_count} image(s) for candidate "
+                            f"{candidate_index + 1} of {params['count']}",
+                        )
+                    if is_batch_item:
+                        batch_items.extend(response_items)
+                    else:
+                        images.extend(
+                            decode_response_images(
+                                response,
+                                effective_cfg.user_agent,
+                                effective_cfg.url_download.get("proxy_mode") == "direct",
+                                effective_cfg.proxy.get("url"),
+                                max_items=1,
+                                total_limit=MAX_TOTAL_IMAGE_RESPONSE_BYTES,
+                            )
+                        )
+                if is_batch_item:
+                    batch_response = {"data": batch_items}
+                native_fallback_used = transparency is not None
+            elif is_batch_item:
                 batch_response, transparency, transparency_attempts = request_with_transparency_retry(
                     lambda request_payload: request_json(
                         effective_cfg,

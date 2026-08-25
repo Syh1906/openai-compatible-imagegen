@@ -728,6 +728,7 @@ class RequestHeaderTests(unittest.TestCase):
             self.imagegen.info(self.cfg)
 
         summary = json.loads(print_mock.call_args.args[0])
+        self.assertEqual(summary["protocol"], "openai-compatible")
         self.assertEqual(summary["user_agent"], "Micu-Compatible-Client/1.0")
         self.assertEqual(
             summary["script_path"],
@@ -957,6 +958,65 @@ class ParameterResolutionTests(unittest.TestCase):
         self.assertNotIn("background", payload)
         self.assertIn("#00FF00", payload["prompt"])
         self.assertEqual(result["transparency"]["mode"], "chroma-matting")
+
+    def test_generate_routes_atlas_protocol_through_async_adapter(self) -> None:
+        cfg = self.imagegen.Config(**{**self.cfg.__dict__, "protocol": "atlas"})
+        args = self.make_args(
+            prompt="A red enamel badge",
+            file=str(ROOT / "unused-atlas-result.png"),
+        )
+
+        with (
+            mock.patch.object(
+                self.imagegen.image_transport,
+                "request_atlas_image",
+                return_value={"data": []},
+            ) as request_atlas_image,
+            mock.patch.object(self.imagegen, "request_json") as request_json,
+            mock.patch.object(
+                self.imagegen,
+                "write_response_images",
+                return_value={"files": [], "warnings": [], "api_delivery": {"status": "published", "items": []}},
+            ),
+        ):
+            self.imagegen.generate(cfg, args)
+
+        request_atlas_image.assert_called_once()
+        request_json.assert_not_called()
+        payload = self.imagegen.drop_none(request_atlas_image.call_args.kwargs["payload"])
+        self.assertEqual(payload["model"], "gpt-image-2")
+        self.assertEqual(payload["prompt"], "A red enamel badge")
+
+    def test_atlas_unsupported_operations_stop_before_provider_requests(self) -> None:
+        from image_transparency import resolve_policy
+
+        atlas_cfg = self.imagegen.Config(**{**self.cfg.__dict__, "protocol": "atlas"})
+        native_cfg = self.imagegen.Config(
+            **{
+                **atlas_cfg.__dict__,
+                "transparency": resolve_policy(
+                    {
+                        "default_route": "native-alpha",
+                        "native": {"enabled": True, "retry_without_parameter": True},
+                    }
+                ),
+            }
+        )
+
+        with mock.patch.object(self.imagegen.image_transport, "request_atlas_image") as request:
+            with self.assertRaisesRegex(self.imagegen.ImagegenError, "native-alpha"):
+                self.imagegen.generate(
+                    native_cfg,
+                    self.make_args(
+                        transparent=True,
+                        prompt="A red enamel badge",
+                        file=str(ROOT / "unused-atlas-native.png"),
+                    ),
+                )
+            with self.assertRaisesRegex(self.imagegen.ImagegenError, "image edits"):
+                self.imagegen.edit(atlas_cfg, self.make_args())
+
+        request.assert_not_called()
 
     def test_generate_native_alpha_sends_transparent_background_only_for_transparent_intent(self) -> None:
         from image_transparency import resolve_policy

@@ -29,6 +29,7 @@ python3 "/absolute/path/to/openai-compatible-imagegen/scripts/quick-init.py"
 
 | 字段 | 用途 |
 | --- | --- |
+| `protocol` | `openai-compatible`（默认）或 `atlas` |
 | `base_url` | OpenAI-compatible 服务的基础 URL |
 | `model` | provider 自定义的图片模型 ID；接受任意非空 ID |
 | `api_key_env` | 保存凭据的首选环境变量 |
@@ -49,6 +50,65 @@ python3 "/absolute/path/to/openai-compatible-imagegen/scripts/imagegen.py" info
 ```
 
 命令参数覆盖 `auth.json` 默认值。每行 JSONL 字段覆盖共享批处理参数。
+
+### 配置 Atlas Cloud
+
+Atlas Cloud 是可选的 API Key 文生图 provider。Standalone `auth.json` 可以配置为：
+
+```json
+{
+  "protocol": "atlas",
+  "base_url": "https://api.atlascloud.ai",
+  "api_key_env": "ATLASCLOUD_API_KEY",
+  "model": "openai/gpt-image-2/text-to-image",
+  "capabilities": {
+    "generate": true,
+    "edit": false,
+    "mask": false,
+    "multi_reference": false
+  },
+  "defaults": {
+    "size": "1024x1024",
+    "quality": "medium",
+    "output_format": "png"
+  }
+}
+```
+
+Codex Plugin 在用户基线中配置同一个 provider 和 model：
+
+```json
+{
+  "config_version": 1,
+  "auth_mode": "apikey",
+  "active_profile": "primary/gpt-image-2",
+  "providers": {
+    "primary": {
+      "protocol": "atlas",
+      "base_url": "https://api.atlascloud.ai",
+      "api_key_env": "ATLASCLOUD_API_KEY"
+    }
+  },
+  "models": {
+    "primary/gpt-image-2": {
+      "provider": "primary",
+      "model": "openai/gpt-image-2/text-to-image",
+      "capabilities": {
+        "generate": true,
+        "edit": false,
+        "mask": false,
+        "multi_reference": false
+      }
+    }
+  },
+  "defaults": { "size": "1024x1024", "quality": "medium", "output_format": "png" },
+  "postprocess": { "enabled": false },
+  "transparency": { "default_route": "chroma-matting" },
+  "storage": { "output_directory": "output/imagegen" }
+}
+```
+
+生成前在环境变量中设置 `ATLASCLOUD_API_KEY`。示例不会把凭据写入文件。
 
 ### 配置 provider 代理
 
@@ -134,12 +194,14 @@ Codex Plugin 提供三个配置工具，Agent 无需定位 Plugin 安装目录�
 
 ## 后端契约
 
-配置的服务必须提供：
+默认 `openai-compatible` 协议要求：
 
 - `POST /v1/images/generations`
 - `POST /v1/images/edits`
 
 响应可以返回 `data[].b64_json` 或 `data[].url`。运行时下载返回 URL 时不会转发图片 API 凭据。
+
+`atlas` 协议对每个候选只提交一次 `POST /api/v1/model/generateImage`，再通过 `GET /api/v1/model/result/{request_id}` 有界退避轮询到完成。提交失败不会自动重试；只有结果 GET 的临时失败可以重试。Atlas 输出 URL 会进入现有响应处理流程。当前 Atlas 适配器支持输出 JPEG 或 PNG 的文生图；编辑和原生透明请求会在任何网络请求前停止。
 
 透明是用户的交付意图。使用 `native-alpha` 时，只有用户提出透明需求才会发送 `background=transparent` 和 PNG 输出，并附加真实 Alpha 通道提示词。可选的 `transparency.native.model_ids` 只是能力声明，不是代码白名单；明确请求原生路线时会把请求发给配置中的模型，是否支持由 provider 决定。provider 因透明参数返回 HTTP 400/422 时，默认使用相同模型和 endpoint 去掉该参数重试一次，再按 `fallback_route` 进入本地透明处理；设置 `retry_without_parameter=false` 可关闭重试。最终结果会说明拒绝、重试、最终路线和 QA。迁移时仍会拒绝旧的 `transparent_background` 配置。
 

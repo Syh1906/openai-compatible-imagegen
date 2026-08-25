@@ -51,7 +51,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 var define_RELEASE_IDENTITY_default;
 var init_define_RELEASE_IDENTITY = __esm({
   "<define:__RELEASE_IDENTITY__>"() {
-    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "1.2.0", serverBuildDigest: "d8276177c844da1015cc83604288ee48aaa1db2be9ef939db0f584eb445dc51f", widgetAssetDigest: "bd048823372c3dd1fbe3c8f2c966ce4d9f5092d6d42b181d73e5afe2c2e4fdb6", fingerprint: "8d7db3afafe1d5ac8fb6", resourceUris: { result: "ui://openai-compatible-imagegen/result-8d7db3afafe1d5ac8fb6.html", editor: "ui://openai-compatible-imagegen/editor-8d7db3afafe1d5ac8fb6.html" } };
+    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "1.2.0", serverBuildDigest: "9fd5c6d894d77bcf9b1657a2b1f9b6011ca23648d645b6642d9b3b2e9ab8e34b", widgetAssetDigest: "bd048823372c3dd1fbe3c8f2c966ce4d9f5092d6d42b181d73e5afe2c2e4fdb6", fingerprint: "c23b0f98f00bd4c136ac", resourceUris: { result: "ui://openai-compatible-imagegen/result-c23b0f98f00bd4c136ac.html", editor: "ui://openai-compatible-imagegen/editor-c23b0f98f00bd4c136ac.html" } };
   }
 });
 
@@ -33118,6 +33118,7 @@ var PROVIDER_KEYS = /* @__PURE__ */ new Set([
 ]);
 var MODEL_KEYS = /* @__PURE__ */ new Set(["provider", "model", "capabilities"]);
 var CAPABILITY_KEYS = /* @__PURE__ */ new Set(["generate", "edit", "mask", "multi_reference"]);
+var PROVIDER_PROTOCOLS = /* @__PURE__ */ new Set(["openai-compatible", "atlas"]);
 var DEFAULT_TIMEOUT_SECONDS = 600;
 var DEFAULT_CONCURRENCY = 3;
 var USER_UPDATE_KEYS = /* @__PURE__ */ new Set(["auth_mode", "providers", "models", "defaults", "postprocess", "transparency", "storage"]);
@@ -33523,7 +33524,7 @@ function validateProjectConfig(config2) {
 function validateProvider(provider) {
   if (!isRecord2(provider)) throw invalidImageConfigError();
   requireExactKeys(provider, PROVIDER_KEYS, "image_config_invalid");
-  if (provider.protocol !== "openai-compatible") throw invalidImageConfigError();
+  if (!PROVIDER_PROTOCOLS.has(provider.protocol)) throw invalidImageConfigError();
   if (typeof provider.base_url !== "string" || !isValidBaseUrl(stripPythonWhitespace(provider.base_url).replace(/\/+$/, ""))) {
     throw invalidImageConfigError();
   }

@@ -10,6 +10,107 @@ from scripts import image_transport
 
 
 class ImageTransportTests(unittest.TestCase):
+    def test_atlas_generation_submits_once_and_polls_until_completed(self) -> None:
+        responses = [
+            {"id": "req_123"},
+            {"status": "processing"},
+            {"status": "completed", "outputs": ["https://cdn.example.test/image.png"]},
+        ]
+
+        with (
+            mock.patch.object(image_transport, "_send_request", side_effect=responses) as send_request,
+            mock.patch.object(image_transport.time, "sleep") as sleep,
+        ):
+            result = image_transport.request_atlas_image(
+                base_url="https://api.atlascloud.ai",
+                api_key="secret",
+                user_agent="test-client",
+                payload={"model": "openai/gpt-image-2/text-to-image", "prompt": "test"},
+                timeout=10,
+                poll_interval=0.01,
+                max_poll_attempts=3,
+            )
+
+        self.assertEqual(result, {"data": [{"url": "https://cdn.example.test/image.png"}]})
+        self.assertEqual(send_request.call_count, 3)
+        requests = [call.args[0] for call in send_request.call_args_list]
+        self.assertEqual([request.get_method() for request in requests], ["POST", "GET", "GET"])
+        self.assertEqual(
+            [request.full_url for request in requests],
+            [
+                "https://api.atlascloud.ai/api/v1/model/generateImage",
+                "https://api.atlascloud.ai/api/v1/model/result/req_123",
+                "https://api.atlascloud.ai/api/v1/model/result/req_123",
+            ],
+        )
+        sleep.assert_called_once_with(0.01)
+
+    def test_atlas_generation_retries_only_transient_result_get_failures(self) -> None:
+        transient = image_transport.TransportError(
+            "temporarily unavailable",
+            status_code=503,
+            operation="atlas generation result",
+        )
+        responses = [
+            {"id": "req_456"},
+            transient,
+            {"status": "completed", "outputs": ["https://cdn.example.test/image.png"]},
+        ]
+
+        with (
+            mock.patch.object(image_transport, "_send_request", side_effect=responses) as send_request,
+            mock.patch.object(image_transport.time, "sleep") as sleep,
+        ):
+            result = image_transport.request_atlas_image(
+                base_url="https://api.atlascloud.ai",
+                api_key="secret",
+                user_agent="test-client",
+                payload={"model": "openai/gpt-image-2/text-to-image", "prompt": "test"},
+                timeout=10,
+                poll_interval=0.01,
+                max_poll_attempts=3,
+            )
+
+        self.assertEqual(result, {"data": [{"url": "https://cdn.example.test/image.png"}]})
+        self.assertEqual(send_request.call_count, 3)
+        self.assertEqual([call.args[0].get_method() for call in send_request.call_args_list], ["POST", "GET", "GET"])
+        sleep.assert_called_once_with(0.01)
+
+    def test_atlas_generation_does_not_retry_submit_failures(self) -> None:
+        failure = image_transport.TransportError("submit failed", operation="atlas generation submit")
+
+        with mock.patch.object(image_transport, "_send_request", side_effect=failure) as send_request:
+            with self.assertRaisesRegex(image_transport.TransportError, "submit failed"):
+                image_transport.request_atlas_image(
+                    base_url="https://api.atlascloud.ai",
+                    api_key="secret",
+                    user_agent="test-client",
+                    payload={"model": "openai/gpt-image-2/text-to-image", "prompt": "test"},
+                    timeout=10,
+                )
+
+        send_request.assert_called_once()
+
+    def test_atlas_generation_rejects_unsupported_options_before_submit(self) -> None:
+        invalid_payloads = (
+            {"model": "openai/gpt-image-2/text-to-image", "prompt": "test", "quality": "auto"},
+            {"model": "openai/gpt-image-2/text-to-image", "prompt": "test", "output_format": "webp"},
+        )
+
+        with mock.patch.object(image_transport, "_send_request") as send_request:
+            for payload in invalid_payloads:
+                with self.subTest(payload=payload):
+                    with self.assertRaisesRegex(ValueError, "Atlas"):
+                        image_transport.request_atlas_image(
+                            base_url="https://api.atlascloud.ai",
+                            api_key="secret",
+                            user_agent="test-client",
+                            payload=payload,
+                            timeout=10,
+                        )
+
+        send_request.assert_not_called()
+
     def test_custom_proxy_failure_does_not_fall_back_or_expose_the_proxy_url(self) -> None:
         proxy_url = "http://127.0.0.1:7890"
         opener = mock.MagicMock()

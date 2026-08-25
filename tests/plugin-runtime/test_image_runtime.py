@@ -313,6 +313,71 @@ class ImageRuntimeMachineModeTests(unittest.TestCase):
         self.assertEqual(request.call_args.args[2]["model"], "vendor/custom-image-model")
         self.assertEqual(result["artifacts"][0]["model"], "vendor/custom-image-model")
 
+    def test_generate_routes_atlas_protocol_through_async_adapter(self) -> None:
+        cfg = self.imagegen.Config(
+            **{
+                **self.cfg.__dict__,
+                "protocol": "atlas",
+                "model": "openai/gpt-image-2/text-to-image",
+            }
+        )
+        response = {
+            "data": [{"b64_json": base64.b64encode(make_png(2, 2)).decode("ascii")}],
+        }
+        task = self.task(output={**self.task()["output"], "count": 1})
+
+        with (
+            mock.patch.object(
+                self.imagegen.image_transport,
+                "request_atlas_image",
+                return_value=response,
+            ) as request_atlas_image,
+            mock.patch.object(self.imagegen, "request_json") as request_json,
+        ):
+            result = self.imagegen.run_machine_task(
+                task,
+                self.project_root,
+                self.artifact_root,
+                cfg,
+            )
+
+        self.assertTrue(result["ok"], result)
+        request_atlas_image.assert_called_once()
+        request_json.assert_not_called()
+        payload = request_atlas_image.call_args.kwargs["payload"]
+        self.assertEqual(payload["model"], "openai/gpt-image-2/text-to-image")
+        self.assertEqual(payload["prompt"], "two candidates")
+        self.assertNotIn("n", payload)
+        self.assertNotIn("background", payload)
+
+    def test_atlas_native_transparency_stops_before_provider_request(self) -> None:
+        cfg = self.imagegen.Config(
+            **{
+                **self.cfg.__dict__,
+                "protocol": "atlas",
+                "transparency": self.imagegen.TransparencyPolicy(
+                    default_route="native-alpha",
+                    native=self.imagegen.NativeTransparencyPolicy(enabled=True),
+                ),
+            }
+        )
+        task = self.task(
+            output={**self.task()["output"], "count": 1},
+            transparency={"route": "native-alpha"},
+        )
+
+        with mock.patch.object(self.imagegen.image_transport, "request_atlas_image") as request:
+            result = self.imagegen.run_machine_task(
+                task,
+                self.project_root,
+                self.artifact_root,
+                cfg,
+            )
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["error"]["code"], "unsupported_capability")
+        request.assert_not_called()
+
     def test_native_transparency_rejection_retries_without_parameter_and_falls_back(self) -> None:
         policy = self.imagegen.TransparencyPolicy(
             default_route="native-alpha",

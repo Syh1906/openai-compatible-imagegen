@@ -48,6 +48,29 @@ class ProviderConfigAdapterTests(unittest.TestCase):
         self.assertEqual(standalone.model, plugin.model)
         self.assertEqual(standalone.api_key_source, "env:IMAGEGEN_TEST_KEY")
 
+    def test_standalone_and_plugin_adapters_preserve_atlas_protocol(self) -> None:
+        standalone = provider_config.parse_standalone_config(
+            {
+                "protocol": "atlas",
+                "base_url": "https://api.atlascloud.ai",
+                "api_key_env": "IMAGEGEN_TEST_KEY",
+                "model": "openai/gpt-image-2/text-to-image",
+            },
+            require_api_key=True,
+        )
+        raw = plugin_config()
+        raw["providers"]["primary"]["protocol"] = "atlas"
+        raw["providers"]["primary"]["base_url"] = "https://api.atlascloud.ai"
+        raw["models"]["primary/gpt-image-2"]["model"] = "openai/gpt-image-2/text-to-image"
+        plugin = provider_config.parse_plugin_config(
+            raw,
+            require_api_key=True,
+            model_profile_id="primary/gpt-image-2",
+        )
+
+        self.assertEqual(standalone.protocol, "atlas")
+        self.assertEqual(plugin.protocol, "atlas")
+
     def test_plugin_adapter_requires_final_schema_identity(self) -> None:
         for update in (
             {"config_version": None},

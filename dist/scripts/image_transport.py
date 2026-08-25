@@ -22,6 +22,10 @@ from network_proxy import proxy_mapping
 
 
 MultipartUpload = tuple[str, Path] | tuple[str, Path, bytes]
+ATLAS_SUBMIT_PATH = "api/v1/model/generateImage"
+ATLAS_RESULT_PATH = "api/v1/model/result/{request_id}"
+ATLAS_PENDING_STATUSES = {"created", "processing"}
+ATLAS_INPUT_KEYS = {"model", "prompt", "size", "quality", "output_format", "moderation"}
 
 
 class TransportError(Exception):
@@ -85,6 +89,110 @@ def request_multipart(
         ),
     )
     return _send_request(request, timeout, path, response_limit, proxy_url)
+
+
+def request_atlas_image(
+    *,
+    base_url: str,
+    api_key: str,
+    user_agent: str,
+    payload: dict[str, Any],
+    timeout: int,
+    poll_interval: float = 2.0,
+    max_poll_attempts: int = 300,
+    response_limit: int | None = MAX_JSON_RESPONSE_BYTES,
+    proxy_url: str | None = None,
+) -> dict[str, Any]:
+    if max_poll_attempts < 1:
+        raise ValueError("max_poll_attempts must be at least 1")
+    _validate_atlas_payload(payload)
+    submit_request = urllib.request.Request(
+        api_url(base_url, ATLAS_SUBMIT_PATH),
+        data=json.dumps(drop_none(payload)).encode("utf-8"),
+        method="POST",
+        headers=request_headers(api_key, user_agent, "application/json"),
+    )
+    submitted = _send_request(
+        submit_request,
+        timeout,
+        "atlas generation submit",
+        response_limit,
+        proxy_url,
+    )
+    request_id = str(submitted.get("id") or submitted.get("request_id") or "").strip()
+    if not request_id:
+        raise TransportError(
+            "Atlas generation response missing id",
+            operation="atlas generation submit",
+        )
+
+    result_path = ATLAS_RESULT_PATH.format(request_id=urllib.parse.quote(request_id, safe=""))
+    for attempt in range(max_poll_attempts):
+        result_request = urllib.request.Request(
+            api_url(base_url, result_path),
+            method="GET",
+            headers=request_headers(api_key, user_agent, "application/json"),
+        )
+        try:
+            result = _send_request(
+                result_request,
+                timeout,
+                "atlas generation result",
+                response_limit,
+                proxy_url,
+            )
+        except TransportError as exc:
+            if not _is_retryable_atlas_result_error(exc) or attempt + 1 >= max_poll_attempts:
+                raise
+            time.sleep(poll_interval)
+            continue
+        status = str(result.get("status") or "").strip().lower()
+        if status == "completed":
+            outputs = result.get("outputs")
+            if not isinstance(outputs, list) or not outputs:
+                raise TransportError(
+                    "Atlas generation completed without outputs",
+                    operation="atlas generation result",
+                )
+            urls = [value for value in outputs if isinstance(value, str) and value.strip()]
+            if len(urls) != len(outputs):
+                raise TransportError(
+                    "Atlas generation returned an invalid output URL",
+                    operation="atlas generation result",
+                )
+            return {"data": [{"url": value} for value in urls]}
+        if status not in ATLAS_PENDING_STATUSES:
+            detail = str(result.get("error") or result.get("message") or status or "unknown status")
+            raise TransportError(
+                f"Atlas generation failed: {detail}",
+                operation="atlas generation result",
+            )
+        if attempt + 1 < max_poll_attempts:
+            time.sleep(poll_interval)
+
+    raise TransportError(
+        "Atlas generation timed out while polling the result",
+        operation="atlas generation result",
+    )
+
+
+def _is_retryable_atlas_result_error(exc: TransportError) -> bool:
+    return exc.status_code is None or exc.status_code in {408, 425, 429} or exc.status_code >= 500
+
+
+def _validate_atlas_payload(payload: dict[str, Any]) -> None:
+    unknown = sorted(set(payload) - ATLAS_INPUT_KEYS)
+    if unknown:
+        raise ValueError(f"Atlas generation does not support input: {unknown[0]}")
+    for key in ("model", "prompt"):
+        if not isinstance(payload.get(key), str) or not payload[key].strip():
+            raise ValueError(f"Atlas generation requires {key}")
+    quality = payload.get("quality")
+    if quality is not None and quality not in {"low", "medium", "high"}:
+        raise ValueError("Atlas generation quality must be low, medium, or high")
+    output_format = payload.get("output_format")
+    if output_format is not None and output_format not in {"jpeg", "png"}:
+        raise ValueError("Atlas generation output_format must be jpeg or png")
 
 
 def api_url(base_url: str, path: str) -> str:

@@ -29,6 +29,7 @@ python3 "/absolute/path/to/openai-compatible-imagegen/scripts/quick-init.py"
 
 | Field | Purpose |
 | --- | --- |
+| `protocol` | `openai-compatible` (default) or `atlas` |
 | `base_url` | Base URL for the OpenAI-compatible service |
 | `model` | Provider-specific image model ID; any non-empty ID accepted |
 | `api_key_env` | Preferred environment variable containing the credential |
@@ -49,6 +50,65 @@ python3 "/absolute/path/to/openai-compatible-imagegen/scripts/imagegen.py" info
 ```
 
 Command flags override `auth.json` defaults. Per-row JSONL fields override shared batch flags.
+
+### Configure Atlas Cloud
+
+Atlas Cloud is an optional API Key provider for text-to-image generation. A Standalone `auth.json` can use:
+
+```json
+{
+  "protocol": "atlas",
+  "base_url": "https://api.atlascloud.ai",
+  "api_key_env": "ATLASCLOUD_API_KEY",
+  "model": "openai/gpt-image-2/text-to-image",
+  "capabilities": {
+    "generate": true,
+    "edit": false,
+    "mask": false,
+    "multi_reference": false
+  },
+  "defaults": {
+    "size": "1024x1024",
+    "quality": "medium",
+    "output_format": "png"
+  }
+}
+```
+
+For the Codex Plugin, configure the same provider and model in the user baseline:
+
+```json
+{
+  "config_version": 1,
+  "auth_mode": "apikey",
+  "active_profile": "primary/gpt-image-2",
+  "providers": {
+    "primary": {
+      "protocol": "atlas",
+      "base_url": "https://api.atlascloud.ai",
+      "api_key_env": "ATLASCLOUD_API_KEY"
+    }
+  },
+  "models": {
+    "primary/gpt-image-2": {
+      "provider": "primary",
+      "model": "openai/gpt-image-2/text-to-image",
+      "capabilities": {
+        "generate": true,
+        "edit": false,
+        "mask": false,
+        "multi_reference": false
+      }
+    }
+  },
+  "defaults": { "size": "1024x1024", "quality": "medium", "output_format": "png" },
+  "postprocess": { "enabled": false },
+  "transparency": { "default_route": "chroma-matting" },
+  "storage": { "output_directory": "output/imagegen" }
+}
+```
+
+Set `ATLASCLOUD_API_KEY` in the environment before generation. The credential is not written into these examples.
 
 ### Configure a provider proxy
 
@@ -134,12 +194,14 @@ After initialization, API Key users set the environment variable named by the co
 
 ## Backend contract
 
-The configured service must expose:
+The default `openai-compatible` protocol requires:
 
 - `POST /v1/images/generations`
 - `POST /v1/images/edits`
 
 Responses may return `data[].b64_json` or `data[].url`. The runtime does not forward the image API credential when it downloads a returned URL.
+
+The `atlas` protocol submits each candidate once with `POST /api/v1/model/generateImage`, then polls `GET /api/v1/model/result/{request_id}` with bounded backoff until completion. Submit failures are never retried automatically; only transient result GET failures can be retried. Atlas output URLs are normalized into the existing response pipeline. The current Atlas adapter supports text-to-image generation with JPEG or PNG output; edits and native-alpha requests stop before any network request.
 
 Transparency is delivery intent. For `native-alpha`, the runtime sends `background=transparent` and PNG output only when transparency is requested, with a real-alpha prompt contract. The optional `transparency.native.model_ids` list is a capability declaration, not a code whitelist; an explicit native route is sent to the configured model even when the list is empty or does not contain that ID. A transparency-related provider HTTP 400/422 is retried once without the parameter by default, using the same model and endpoint, then the configured local fallback route is applied. Set `retry_without_parameter` to `false` to disable this retry. Results explain rejection, retry, final route, and QA. Legacy `transparent_background` configuration is rejected during migration.
 

@@ -2,6 +2,12 @@
 
 这里记录 `openai-compatible-imagegen` 每个版本面向用户的变化。
 
+## [Unreleased]
+
+### 新增
+
+- Standalone Skill 和 Codex Plugin 新增可选 `atlas` provider 协议，通过单次异步提交和有界结果轮询调用 Atlas Cloud 文生图模型；默认 OpenAI-compatible 路线保持不变。
+
 ## [1.2.0] - 2026-08-25
 
 ### 新增

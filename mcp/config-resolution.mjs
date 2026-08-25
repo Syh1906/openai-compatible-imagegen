@@ -43,6 +43,7 @@ const PROVIDER_KEYS = new Set([
 ]);
 const MODEL_KEYS = new Set(["provider", "model", "capabilities"]);
 const CAPABILITY_KEYS = new Set(["generate", "edit", "mask", "multi_reference"]);
+const PROVIDER_PROTOCOLS = new Set(["openai-compatible", "atlas"]);
 const DEFAULT_TIMEOUT_SECONDS = 600;
 const DEFAULT_CONCURRENCY = 3;
 const USER_UPDATE_KEYS = new Set(["auth_mode", "providers", "models", "defaults", "postprocess", "transparency", "storage"]);
@@ -489,7 +490,7 @@ function validateProjectConfig(config) {
 function validateProvider(provider) {
   if (!isRecord(provider)) throw invalidImageConfigError();
   requireExactKeys(provider, PROVIDER_KEYS, "image_config_invalid");
-  if (provider.protocol !== "openai-compatible") throw invalidImageConfigError();
+  if (!PROVIDER_PROTOCOLS.has(provider.protocol)) throw invalidImageConfigError();
   if (
     typeof provider.base_url !== "string"
     || !isValidBaseUrl(stripPythonWhitespace(provider.base_url).replace(/\/+$/, ""))
