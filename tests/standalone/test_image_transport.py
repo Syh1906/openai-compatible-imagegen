@@ -4,6 +4,8 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest import mock
+import socket
+import ssl
 import urllib.error
 
 from scripts import image_transport
@@ -75,6 +77,109 @@ class ImageTransportTests(unittest.TestCase):
         self.assertEqual(send_request.call_count, 3)
         self.assertEqual([call.args[0].get_method() for call in send_request.call_args_list], ["POST", "GET", "GET"])
         sleep.assert_called_once_with(0.01)
+
+    def test_atlas_generation_fails_fast_on_permanent_transport_error(self) -> None:
+        # A certificate/DNS/connection-refused failure arrives without a status
+        # code; it must not consume the whole polling budget.
+        permanent = image_transport.TransportError(
+            "API request failed: certificate verify failed",
+            operation="atlas generation result",
+        )
+        responses = [{"id": "req_permanent"}, permanent]
+
+        with (
+            mock.patch.object(image_transport, "_send_request", side_effect=responses) as send_request,
+            mock.patch.object(image_transport.time, "sleep") as sleep,
+        ):
+            with self.assertRaises(image_transport.TransportError) as caught:
+                image_transport.request_atlas_image(
+                    base_url="https://api.atlascloud.ai",
+                    api_key="secret",
+                    user_agent="test-client",
+                    payload={"model": "openai/gpt-image-2/text-to-image", "prompt": "test"},
+                    timeout=10,
+                    poll_interval=0.01,
+                    max_poll_attempts=300,
+                )
+
+        self.assertIn("certificate verify failed", str(caught.exception))
+        self.assertEqual(send_request.call_count, 2)
+        sleep.assert_not_called()
+
+    def test_atlas_generation_retries_transient_transport_error(self) -> None:
+        transient = image_transport.TransportError(
+            "API request failed: timed out",
+            operation="atlas generation result",
+            transient=True,
+        )
+        responses = [
+            {"id": "req_transient"},
+            transient,
+            {"status": "completed", "outputs": ["https://cdn.example.test/image.png"]},
+        ]
+
+        with (
+            mock.patch.object(image_transport, "_send_request", side_effect=responses) as send_request,
+            mock.patch.object(image_transport.time, "sleep") as sleep,
+        ):
+            result = image_transport.request_atlas_image(
+                base_url="https://api.atlascloud.ai",
+                api_key="secret",
+                user_agent="test-client",
+                payload={"model": "openai/gpt-image-2/text-to-image", "prompt": "test"},
+                timeout=10,
+                poll_interval=0.01,
+                max_poll_attempts=5,
+            )
+
+        self.assertEqual(result, {"data": [{"url": "https://cdn.example.test/image.png"}]})
+        self.assertEqual(send_request.call_count, 3)
+        sleep.assert_called_once_with(0.01)
+
+    def test_url_error_reasons_are_classified(self) -> None:
+        permanent_reasons = [
+            ssl.SSLCertVerificationError("certificate verify failed"),
+            socket.gaierror("Name or service not known"),
+            ConnectionRefusedError("connection refused"),
+        ]
+        for reason in permanent_reasons:
+            with self.subTest(reason=type(reason).__name__):
+                self.assertFalse(
+                    image_transport._is_transient_url_error(urllib.error.URLError(reason))
+                )
+        transient_reasons = [TimeoutError("timed out"), ConnectionResetError("reset by peer")]
+        for reason in transient_reasons:
+            with self.subTest(reason=type(reason).__name__):
+                self.assertTrue(
+                    image_transport._is_transient_url_error(urllib.error.URLError(reason))
+                )
+
+    def test_atlas_generation_stops_at_the_polling_deadline(self) -> None:
+        clock = iter([0.0, 0.0, 5.0, 5.0])
+
+        with (
+            mock.patch.object(
+                image_transport,
+                "_send_request",
+                side_effect=[{"id": "req_deadline"}, {"status": "processing"}],
+            ) as send_request,
+            mock.patch.object(image_transport.time, "sleep"),
+            mock.patch.object(image_transport.time, "monotonic", side_effect=lambda: next(clock)),
+        ):
+            with self.assertRaises(image_transport.TransportError) as caught:
+                image_transport.request_atlas_image(
+                    base_url="https://api.atlascloud.ai",
+                    api_key="secret",
+                    user_agent="test-client",
+                    payload={"model": "openai/gpt-image-2/text-to-image", "prompt": "test"},
+                    timeout=10,
+                    poll_interval=0.01,
+                    max_poll_attempts=300,
+                    max_poll_seconds=1.0,
+                )
+
+        self.assertIn("polling deadline", str(caught.exception))
+        self.assertEqual(send_request.call_count, 2)
 
     def test_atlas_generation_does_not_retry_submit_failures(self) -> None:
         failure = image_transport.TransportError("submit failed", operation="atlas generation submit")

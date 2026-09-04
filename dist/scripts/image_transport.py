@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 import mimetypes
 from pathlib import Path
+import socket
+import ssl
 import sys
 import time
 from typing import Any
@@ -37,10 +39,12 @@ class TransportError(Exception):
         *,
         status_code: int | None = None,
         operation: str | None = None,
+        transient: bool = False,
     ) -> None:
         super().__init__(message)
         self.status_code = status_code
         self.operation = operation
+        self.transient = transient
 
 
 def request_json(
@@ -100,11 +104,14 @@ def request_atlas_image(
     timeout: int,
     poll_interval: float = 2.0,
     max_poll_attempts: int = 300,
+    max_poll_seconds: float = 600.0,
     response_limit: int | None = MAX_JSON_RESPONSE_BYTES,
     proxy_url: str | None = None,
 ) -> dict[str, Any]:
     if max_poll_attempts < 1:
         raise ValueError("max_poll_attempts must be at least 1")
+    if max_poll_seconds <= 0:
+        raise ValueError("max_poll_seconds must be positive")
     _validate_atlas_payload(payload)
     submit_request = urllib.request.Request(
         api_url(base_url, ATLAS_SUBMIT_PATH),
@@ -127,7 +134,15 @@ def request_atlas_image(
         )
 
     result_path = ATLAS_RESULT_PATH.format(request_id=urllib.parse.quote(request_id, safe=""))
+    # Bound polling by wall clock as well as attempt count: a slow provider can
+    # otherwise keep the caller waiting max_poll_attempts * poll_interval.
+    deadline = time.monotonic() + max_poll_seconds
     for attempt in range(max_poll_attempts):
+        if time.monotonic() >= deadline:
+            raise TransportError(
+                f"Atlas generation exceeded the {max_poll_seconds:.0f}s polling deadline",
+                operation="atlas generation result",
+            )
         result_request = urllib.request.Request(
             api_url(base_url, result_path),
             method="GET",
@@ -176,8 +191,33 @@ def request_atlas_image(
     )
 
 
+def _is_transient_url_error(exc: urllib.error.URLError) -> bool:
+    """Whether a URLError is worth retrying.
+
+    urlopen reports certificate, DNS, proxy and connection-refused failures as
+    URLError as well, and those will not fix themselves: retrying them burns the
+    whole polling budget before surfacing the real cause.
+    """
+    reason = getattr(exc, "reason", None)
+    if isinstance(reason, ssl.SSLError):
+        return False
+    if isinstance(reason, socket.gaierror):
+        return False
+    if isinstance(reason, (ConnectionRefusedError, PermissionError)):
+        return False
+    return isinstance(reason, (TimeoutError, ConnectionResetError, ConnectionAbortedError))
+
+
 def _is_retryable_atlas_result_error(exc: TransportError) -> bool:
-    return exc.status_code is None or exc.status_code in {408, 425, 429} or exc.status_code >= 500
+    """Retry only failures that are explicitly transient.
+
+    A missing status code used to stand in for "retryable", but every transport
+    failure arrives without one, so permanent errors were retried for the full
+    polling budget.
+    """
+    if exc.status_code is None:
+        return exc.transient
+    return exc.status_code in {408, 425, 429} or exc.status_code >= 500
 
 
 def _validate_atlas_payload(payload: dict[str, Any]) -> None:
@@ -295,4 +335,11 @@ def _send_request(
         raise TransportError(
             f"API request failed: {reason}",
             operation=operation,
+            transient=_is_transient_url_error(exc),
+        ) from exc
+    except TimeoutError as exc:
+        raise TransportError(
+            f"API request timed out after {timeout}s",
+            operation=operation,
+            transient=True,
         ) from exc

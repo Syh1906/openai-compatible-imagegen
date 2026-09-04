@@ -605,7 +605,23 @@ def generate(cfg: Config, args: argparse.Namespace, task: dict[str, Any] | None 
             "moderation": params["moderation"],
             "output_format": params["output_format"],
         }
-        response = request_atlas_image(cfg, atlas_payload, params["timeout"])
+        # Atlas returns exactly one image per submission, so mirror the plugin
+        # path (image_runtime.run_machine_task) and submit once per requested
+        # candidate instead of publishing a partial result for n > 1.
+        atlas_items: list[dict[str, Any]] = []
+        response = {}
+        for candidate_index in range(params["n"]):
+            candidate = request_atlas_image(cfg, atlas_payload, params["timeout"])
+            candidate_items = candidate.get("data")
+            if not isinstance(candidate_items, list) or len(candidate_items) != 1:
+                actual_count = len(candidate_items) if isinstance(candidate_items, list) else 0
+                raise ImagegenError(
+                    f"provider returned {actual_count} image(s) for candidate "
+                    f"{candidate_index + 1} of {params['n']}"
+                )
+            atlas_items.extend(candidate_items)
+            response = candidate
+        response = {**response, "data": atlas_items}
     else:
         response, transparency_plan = request_with_transparency_retry(
             lambda request_payload: request_json(

@@ -970,7 +970,7 @@ class ParameterResolutionTests(unittest.TestCase):
             mock.patch.object(
                 self.imagegen.image_transport,
                 "request_atlas_image",
-                return_value={"data": []},
+                return_value={"data": [{"url": "https://cdn.example.test/atlas-1.png"}]},
             ) as request_atlas_image,
             mock.patch.object(self.imagegen, "request_json") as request_json,
             mock.patch.object(
@@ -986,6 +986,72 @@ class ParameterResolutionTests(unittest.TestCase):
         payload = self.imagegen.drop_none(request_atlas_image.call_args.kwargs["payload"])
         self.assertEqual(payload["model"], "gpt-image-2")
         self.assertEqual(payload["prompt"], "A red enamel badge")
+
+    def test_atlas_generate_submits_once_per_candidate_and_preserves_order(self) -> None:
+        cfg = self.imagegen.Config(**{**self.cfg.__dict__, "protocol": "atlas"})
+        args = self.make_args(
+            prompt="A red enamel badge",
+            file=str(ROOT / "unused-atlas-multi.png"),
+            n=3,
+        )
+        candidates = [
+            {"data": [{"url": "https://cdn.example.test/atlas-1.png"}]},
+            {"data": [{"url": "https://cdn.example.test/atlas-2.png"}]},
+            {"data": [{"url": "https://cdn.example.test/atlas-3.png"}]},
+        ]
+
+        with (
+            mock.patch.object(
+                self.imagegen.image_transport,
+                "request_atlas_image",
+                side_effect=candidates,
+            ) as request_atlas_image,
+            mock.patch.object(
+                self.imagegen,
+                "write_response_images",
+                return_value={"files": [], "warnings": [], "api_delivery": {"status": "published", "items": []}},
+            ) as write_response_images,
+        ):
+            self.imagegen.generate(cfg, args)
+
+        # one submission per requested candidate, not a single request for n=3
+        self.assertEqual(request_atlas_image.call_count, 3)
+        published = write_response_images.call_args.args[0]
+        self.assertEqual(
+            [item["url"] for item in published["data"]],
+            [
+                "https://cdn.example.test/atlas-1.png",
+                "https://cdn.example.test/atlas-2.png",
+                "https://cdn.example.test/atlas-3.png",
+            ],
+        )
+        self.assertEqual(write_response_images.call_args.kwargs["expected_count"], 3)
+
+    def test_atlas_generate_rejects_a_candidate_that_returns_no_image(self) -> None:
+        cfg = self.imagegen.Config(**{**self.cfg.__dict__, "protocol": "atlas"})
+        args = self.make_args(
+            prompt="A red enamel badge",
+            file=str(ROOT / "unused-atlas-partial.png"),
+            n=2,
+        )
+        candidates = [
+            {"data": [{"url": "https://cdn.example.test/atlas-1.png"}]},
+            {"data": []},
+        ]
+
+        with (
+            mock.patch.object(
+                self.imagegen.image_transport,
+                "request_atlas_image",
+                side_effect=candidates,
+            ),
+            mock.patch.object(self.imagegen, "write_response_images") as write_response_images,
+        ):
+            with self.assertRaises(self.imagegen.ImagegenError) as caught:
+                self.imagegen.generate(cfg, args)
+
+        self.assertIn("candidate 2 of 2", str(caught.exception))
+        write_response_images.assert_not_called()
 
     def test_atlas_unsupported_operations_stop_before_provider_requests(self) -> None:
         from image_transparency import resolve_policy
