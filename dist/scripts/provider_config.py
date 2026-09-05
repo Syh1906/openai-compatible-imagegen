@@ -45,6 +45,7 @@ class EffectiveImageConfig:
     model: str
     defaults: dict[str, Any]
     postprocess: dict[str, Any]
+    protocol: str = "openai-compatible"
     provider_id: str = "primary"
     profile_id: str = "primary/gpt-image-2"
     capabilities: dict[str, Any] = field(default_factory=dict)
@@ -98,8 +99,7 @@ def parse_plugin_config(
     provider = providers.get(provider_id)
     if not isinstance(provider, dict):
         raise ProviderConfigError(f"image config missing provider: {provider_id}")
-    if provider.get("protocol") != "openai-compatible":
-        raise ProviderConfigError(f"unsupported provider protocol: {provider.get('protocol')}")
+    protocol = resolve_provider_protocol(provider.get("protocol"))
 
     base_url = str(provider.get("base_url") or "").strip().rstrip("/")
     file_api_key = str(provider.get("api_key") or "").strip()
@@ -126,6 +126,7 @@ def parse_plugin_config(
         profile_id=model_profile_id,
         capabilities=normalize_model_capabilities(profile.get("capabilities")),
         postprocess=resolve_postprocess_config(raw.get("postprocess")),
+        protocol=protocol,
         transparency=transparency,
         user_agent=resolve_user_agent(provider.get("user_agent"), config_label="user config"),
         url_download=resolve_url_download_config(provider.get("url_download")),
@@ -151,6 +152,7 @@ def parse_plugin_local_config(raw: dict[str, Any]) -> LocalImageConfig:
 
 
 def _parse_standalone_config(raw: dict[str, Any], *, require_api_key: bool) -> EffectiveImageConfig:
+    protocol = resolve_provider_protocol(raw.get("protocol", "openai-compatible"))
     base_url = str(raw.get("base_url") or "").strip().rstrip("/")
     file_api_key = str(raw.get("api_key") or "").strip()
     api_key_env = str(raw.get("api_key_env") or "").strip()
@@ -180,6 +182,7 @@ def _parse_standalone_config(raw: dict[str, Any], *, require_api_key: bool) -> E
         defaults=raw.get("defaults") if isinstance(raw.get("defaults"), dict) else {},
         capabilities=normalize_model_capabilities(capabilities),
         postprocess=resolve_postprocess_config(raw.get("postprocess")),
+        protocol=protocol,
         transparency=transparency,
         user_agent=resolve_user_agent(raw.get("user_agent")),
         url_download=resolve_url_download_config(raw.get("url_download")),
@@ -193,6 +196,13 @@ def is_valid_base_url(value: str) -> bool:
         return parsed.scheme in {"http", "https"} and bool(parsed.hostname)
     except ValueError:
         return False
+
+
+def resolve_provider_protocol(value: Any) -> str:
+    protocol = str(value or "").strip()
+    if protocol not in {"openai-compatible", "atlas"}:
+        raise ProviderConfigError(f"unsupported provider protocol: {value}")
+    return protocol
 
 
 def normalize_model_capabilities(value: Any) -> dict[str, bool]:

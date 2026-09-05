@@ -101,6 +101,13 @@
       "platforms": ["macos", "windows"]
     },
     {
+      "name": "image-provider-runtime",
+      "files": ["scripts/image_transport.py", "scripts/provider_config.py", "scripts/image_runtime.py", "scripts/imagegen.py"],
+      "suites": ["shared", "standalone", "plugin-runtime", "mcp", "release"],
+      "checks": ["build", "diff", "plugin"],
+      "platforms": ["macos", "windows"]
+    },
+    {
       "name": "shared-runtime",
       "prefixes": ["scripts/"],
       "suites": ["shared", "standalone", "plugin-runtime", "mcp", "release"],

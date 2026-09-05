@@ -428,6 +428,29 @@ def request_json(cfg: Config, path: str, payload: dict[str, Any], timeout: int) 
         raise ImagegenError(str(exc)) from exc
 
 
+def request_atlas_image(cfg: Config, payload: dict[str, Any], timeout: int) -> dict[str, Any]:
+    try:
+        return image_transport.request_atlas_image(
+            base_url=cfg.base_url,
+            api_key=cfg.api_key,
+            user_agent=cfg.user_agent,
+            payload=payload,
+            timeout=timeout,
+            response_limit=MAX_JSON_RESPONSE_BYTES,
+            proxy_url=cfg.proxy.get("url"),
+        )
+    except image_transport.TransportError as exc:
+        if exc.status_code is not None:
+            raise ApiRequestError(
+                str(exc),
+                exc.status_code,
+                exc.operation or "atlas generation",
+            ) from exc
+        raise ImagegenError(str(exc)) from exc
+    except ValueError as exc:
+        raise ImagegenError(str(exc)) from exc
+
+
 def request_multipart(
     cfg: Config,
     path: str,
@@ -571,15 +594,49 @@ def generate(cfg: Config, args: argparse.Namespace, task: dict[str, Any] | None 
         "output_format": params["output_format"],
         "output_compression": params["output_compression"],
     }
-    response, transparency_plan = request_with_transparency_retry(
-        lambda request_payload: request_json(cfg, "images/generations", request_payload, params["timeout"]),
-        payload,
-        transparency_plan,
-        prompt=prompt,
-        mode="generate",
-        params=params,
-        cfg=cfg,
-    )
+    if cfg.protocol == "atlas":
+        if transparency_plan.mode == "native-alpha":
+            raise ImagegenError("Atlas protocol does not support native-alpha generation")
+        atlas_payload = {
+            "model": params["model"],
+            "prompt": prompt,
+            "size": params["size"],
+            "quality": params["quality"],
+            "moderation": params["moderation"],
+            "output_format": params["output_format"],
+        }
+        # Atlas returns exactly one image per submission, so mirror the plugin
+        # path (image_runtime.run_machine_task) and submit once per requested
+        # candidate instead of publishing a partial result for n > 1.
+        atlas_items: list[dict[str, Any]] = []
+        response = {}
+        for candidate_index in range(params["n"]):
+            candidate = request_atlas_image(cfg, atlas_payload, params["timeout"])
+            candidate_items = candidate.get("data")
+            if not isinstance(candidate_items, list) or len(candidate_items) != 1:
+                actual_count = len(candidate_items) if isinstance(candidate_items, list) else 0
+                raise ImagegenError(
+                    f"provider returned {actual_count} image(s) for candidate "
+                    f"{candidate_index + 1} of {params['n']}"
+                )
+            atlas_items.extend(candidate_items)
+            response = candidate
+        response = {**response, "data": atlas_items}
+    else:
+        response, transparency_plan = request_with_transparency_retry(
+            lambda request_payload: request_json(
+                cfg,
+                "images/generations",
+                request_payload,
+                params["timeout"],
+            ),
+            payload,
+            transparency_plan,
+            prompt=prompt,
+            mode="generate",
+            params=params,
+            cfg=cfg,
+        )
     if transparency_plan.mode == "native-alpha":
         transparency_plan = replace(
             transparency_plan,
@@ -603,6 +660,8 @@ def generate(cfg: Config, args: argparse.Namespace, task: dict[str, Any] | None 
 
 def edit(cfg: Config, args: argparse.Namespace, task: dict[str, Any] | None = None) -> dict[str, Any]:
     task = task or {}
+    if cfg.protocol == "atlas":
+        raise ImagegenError("Atlas protocol does not support image edits")
     prompt = str(get_value("prompt", args, task, "") or "").strip()
     if not prompt:
         raise ImagegenError("prompt is required")
@@ -1213,6 +1272,7 @@ def print_summary(results: list[dict[str, Any]], manifest: Path | None = None) -
 def info(cfg: Config) -> int:
     defaults = {
         "model": cfg.model,
+        "protocol": getattr(cfg, "protocol", "openai-compatible"),
         "base_url": cfg.base_url,
         "user_agent": cfg.user_agent,
         "defaults": cfg.defaults,

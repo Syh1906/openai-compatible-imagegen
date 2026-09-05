@@ -121,6 +121,7 @@ class StandaloneCompatibilityTests(unittest.TestCase):
             set(info),
             {
                 "model",
+                "protocol",
                 "base_url",
                 "user_agent",
                 "defaults",
@@ -134,6 +135,7 @@ class StandaloneCompatibilityTests(unittest.TestCase):
                 "api_key",
             },
         )
+        self.assertEqual(info["protocol"], "openai-compatible")
         self.assertEqual(info["api_key"], "***REDACTED***")
         self.assertEqual(info["proxy"], {"configured": False})
 

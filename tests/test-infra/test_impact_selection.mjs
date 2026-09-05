@@ -116,6 +116,21 @@ test("shared runtime changes require distribution checks", () => {
 });
 
 
+test("image provider runtime changes select all supported platforms", () => {
+  for (const changedFile of [
+    "scripts/image_transport.py",
+    "scripts/provider_config.py",
+    "scripts/image_runtime.py",
+    "scripts/imagegen.py",
+  ]) {
+    const plan = selectImpactPlan([changedFile], projectManifest);
+    assert.deepEqual(plan.platforms, ["linux", "macos", "windows"], changedFile);
+    assert.deepEqual(plan.suites, ["mcp", "plugin-runtime", "release", "shared", "standalone"]);
+    assert.deepEqual(plan.checks, ["build", "diff", "plugin"]);
+  }
+});
+
+
 test("package tooling changes cover product consumers and release checks", () => {
   const plan = selectImpactPlan(["package-lock.json"], projectManifest);
   assert.deepEqual(plan.suites, ["mcp", "release", "test-infra", "web"]);

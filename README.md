@@ -2,7 +2,7 @@
 
 # OpenAI-Compatible Images
 
-**Generate, inspect, edit, and deliver images through an OpenAI-compatible API or the Codex App ChatGPT route.**
+**Generate, inspect, edit, and deliver images through an OpenAI-compatible API, Atlas Cloud, or the Codex App ChatGPT route.**
 
 [![Release](https://img.shields.io/github/v/release/Syh1906/openai-compatible-imagegen?style=flat-square)](https://github.com/Syh1906/openai-compatible-imagegen/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
@@ -12,7 +12,7 @@ English | [简体中文](README.zh-CN.md)
 
 </div>
 
-OpenAI-Compatible Images ships one image core in two installation shapes. Use the portable Standalone Skill with Agent clients and command-line workflows, or install the Codex Plugin for result cards, focused canvas editing, annotations, immutable artifacts, and version history.
+OpenAI-Compatible Images ships one image core in two installation shapes. Use the portable Standalone Skill with Agent clients and command-line workflows, or install the Codex Plugin for result cards, focused canvas editing, annotations, immutable artifacts, and version history. API Key routes support the default OpenAI-compatible protocol and optional Atlas Cloud image generation.
 
 ## Choose your package
 
@@ -109,7 +109,7 @@ For update commands, package replacement, and credential-preserving Skill switch
 - Keep credentials local and return only safe error summaries.
 - In Codex App, review results in conversation and continue through a focused annotation canvas.
 
-The backend must expose `POST /v1/images/generations` and `POST /v1/images/edits`, returning `data[].b64_json` or `data[].url`.
+The default backend contract uses `POST /v1/images/generations` and `POST /v1/images/edits`. The optional Atlas protocol uses its asynchronous image generation endpoints and supports text-to-image generation only. See [configuration](docs/guides/configuration.md#configure-atlas-cloud).
 
 ## Use it
 

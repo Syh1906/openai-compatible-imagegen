@@ -2,7 +2,7 @@
 
 # OpenAI 兼容图片
 
-**通过 OpenAI 兼容图片 API 或 Codex App 的 ChatGPT 路线生成、检查、编辑并交付图片。**
+**通过 OpenAI 兼容图片 API、Atlas Cloud 或 Codex App 的 ChatGPT 路线生成、检查、编辑并交付图片。**
 
 [![Release](https://img.shields.io/github/v/release/Syh1906/openai-compatible-imagegen?style=flat-square)](https://github.com/Syh1906/openai-compatible-imagegen/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
@@ -12,7 +12,7 @@
 
 </div>
 
-OpenAI 兼容图片把同一套图片核心发布为两种安装形态。Standalone Skill 适合 Agent 客户端和命令行工作流；Codex Plugin 在此基础上增加结果卡、聚焦画布、标注、不可变产物和版本历史。
+OpenAI 兼容图片把同一套图片核心发布为两种安装形态。Standalone Skill 适合 Agent 客户端和命令行工作流；Codex Plugin 在此基础上增加结果卡、聚焦画布、标注、不可变产物和版本历史。API Key 路线支持默认的 OpenAI-compatible 协议和可选的 Atlas Cloud 图片生成。
 
 ## 选择安装形态
 
@@ -109,7 +109,7 @@ npx --yes skills@latest add /path/to/openai-compatible-imagegen --global --agent
 - 凭据留在本地，只返回安全错误摘要。
 - 在 Codex App 会话中查看结果，并进入聚焦标注画布继续编辑。
 
-后端必须提供 `POST /v1/images/generations` 和 `POST /v1/images/edits`，响应包含 `data[].b64_json` 或 `data[].url`。
+默认后端契约使用 `POST /v1/images/generations` 和 `POST /v1/images/edits`。可选 Atlas 协议使用其异步图片生成端点，仅支持文生图。详见[配置指南](docs/guides/configuration.zh-CN.md#配置-atlas-cloud)。
 
 ## 怎么使用
 

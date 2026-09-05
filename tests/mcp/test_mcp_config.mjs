@@ -378,6 +378,35 @@ test("project config applies only safe defaults and output directory", async () 
 });
 
 
+test("user config accepts an Atlas image provider", async () => {
+  await withConfigRoots(async ({ projectRoot, userHome }) => {
+    await writeJson(userConfigPath(userHome), mergeUserConfig({
+      providers: {
+        primary: {
+          protocol: "atlas",
+          base_url: "https://api.atlascloud.ai",
+          api_key_env: "ATLASCLOUD_API_KEY",
+        },
+      },
+      models: {
+        "primary/gpt-image-2": {
+          provider: "primary",
+          model: "openai/gpt-image-2/text-to-image",
+          capabilities: { generate: true, edit: false, mask: false, multi_reference: false },
+        },
+      },
+    }));
+
+    const binding = await resolveImageConfigBinding({ projectRoot, userHome });
+    const effective = JSON.parse(binding.effectiveConfigJson);
+
+    assert.equal(effective.providers.primary.protocol, "atlas");
+    assert.equal(effective.providers.primary.base_url, "https://api.atlascloud.ai");
+    assert.equal(effective.models["primary/gpt-image-2"].model, "openai/gpt-image-2/text-to-image");
+  });
+});
+
+
 test("project violations fail before the user config is read", async () => {
   await withConfigRoots(async ({ projectRoot, userHome }) => {
     const projectPath = projectConfigPath(projectRoot);
