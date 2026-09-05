@@ -201,7 +201,7 @@ Codex Plugin 提供三个配置工具，Agent 无需定位 Plugin 安装目录�
 
 响应可以返回 `data[].b64_json` 或 `data[].url`。运行时下载返回 URL 时不会转发图片 API 凭据。
 
-`atlas` 协议对每个候选只提交一次 `POST /api/v1/model/generateImage`，再通过 `GET /api/v1/model/result/{request_id}` 有界退避轮询到完成。提交失败不会自动重试；只有结果 GET 的临时失败可以重试。Atlas 输出 URL 会进入现有响应处理流程。当前 Atlas 适配器支持输出 JPEG 或 PNG 的文生图；编辑和原生透明请求会在任何网络请求前停止。
+`atlas` 协议对每个候选只提交一次 `POST /api/v1/model/generateImage`，再通过 `GET /api/v1/model/prediction/{request_id}` 有界退避轮询到完成。提交失败不会自动重试；只有结果 GET 的临时失败可以重试。Atlas 输出 URL 会进入现有响应处理流程。当前 Atlas 适配器支持输出 JPEG 或 PNG 的文生图；编辑和原生透明请求会在任何网络请求前停止。
 
 透明是用户的交付意图。使用 `native-alpha` 时，只有用户提出透明需求才会发送 `background=transparent` 和 PNG 输出，并附加真实 Alpha 通道提示词。可选的 `transparency.native.model_ids` 只是能力声明，不是代码白名单；明确请求原生路线时会把请求发给配置中的模型，是否支持由 provider 决定。provider 因透明参数返回 HTTP 400/422 时，默认使用相同模型和 endpoint 去掉该参数重试一次，再按 `fallback_route` 进入本地透明处理；设置 `retry_without_parameter=false` 可关闭重试。最终结果会说明拒绝、重试、最终路线和 QA。迁移时仍会拒绝旧的 `transparent_background` 配置。
 
