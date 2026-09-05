@@ -25,7 +25,7 @@ from network_proxy import proxy_mapping
 
 MultipartUpload = tuple[str, Path] | tuple[str, Path, bytes]
 ATLAS_SUBMIT_PATH = "api/v1/model/generateImage"
-ATLAS_RESULT_PATH = "api/v1/model/result/{request_id}"
+ATLAS_RESULT_PATH = "api/v1/model/prediction/{request_id}"
 ATLAS_PENDING_STATUSES = {"created", "processing"}
 ATLAS_INPUT_KEYS = {"model", "prompt", "size", "quality", "output_format", "moderation"}
 
@@ -95,6 +95,33 @@ def request_multipart(
     return _send_request(request, timeout, path, response_limit, proxy_url)
 
 
+def _sleep_within(deadline: float, interval: float) -> None:
+    """Sleep for *interval*, but never past *deadline*.
+
+    A plain ``time.sleep(interval)`` in the pending branch lets the total run
+    exceed max_poll_seconds by up to one interval.
+    """
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        return
+    time.sleep(min(interval, remaining))
+
+
+def _atlas_payload(response: dict) -> dict:
+    """Return the prediction object from an Atlas response.
+
+    Atlas wraps both submission and polling replies in a
+    ``{"code": ..., "message": ..., "data": {...}}`` envelope; the prediction
+    id, status and outputs all live under ``data``. Older shapes without the
+    envelope are passed through unchanged.
+    """
+    if isinstance(response, dict):
+        data = response.get("data")
+        if isinstance(data, dict):
+            return data
+    return response if isinstance(response, dict) else {}
+
+
 def request_atlas_image(
     *,
     base_url: str,
@@ -126,7 +153,10 @@ def request_atlas_image(
         response_limit,
         proxy_url,
     )
-    request_id = str(submitted.get("id") or submitted.get("request_id") or "").strip()
+    submitted_data = _atlas_payload(submitted)
+    request_id = str(
+        submitted_data.get("id") or submitted_data.get("request_id") or ""
+    ).strip()
     if not request_id:
         raise TransportError(
             "Atlas generation response missing id",
@@ -149,9 +179,10 @@ def request_atlas_image(
             headers=request_headers(api_key, user_agent, "application/json"),
         )
         try:
+            remaining = deadline - time.monotonic()
             result = _send_request(
                 result_request,
-                timeout,
+                min(timeout, max(remaining, 0.001)),
                 "atlas generation result",
                 response_limit,
                 proxy_url,
@@ -159,11 +190,12 @@ def request_atlas_image(
         except TransportError as exc:
             if not _is_retryable_atlas_result_error(exc) or attempt + 1 >= max_poll_attempts:
                 raise
-            time.sleep(poll_interval)
+            _sleep_within(deadline, poll_interval)
             continue
-        status = str(result.get("status") or "").strip().lower()
+        result_data = _atlas_payload(result)
+        status = str(result_data.get("status") or "").strip().lower()
         if status == "completed":
-            outputs = result.get("outputs")
+            outputs = result_data.get("outputs")
             if not isinstance(outputs, list) or not outputs:
                 raise TransportError(
                     "Atlas generation completed without outputs",
@@ -177,13 +209,18 @@ def request_atlas_image(
                 )
             return {"data": [{"url": value} for value in urls]}
         if status not in ATLAS_PENDING_STATUSES:
-            detail = str(result.get("error") or result.get("message") or status or "unknown status")
+            detail = str(
+                result_data.get("error")
+                or result.get("message")
+                or status
+                or "unknown status"
+            )
             raise TransportError(
                 f"Atlas generation failed: {detail}",
                 operation="atlas generation result",
             )
         if attempt + 1 < max_poll_attempts:
-            time.sleep(poll_interval)
+            _sleep_within(deadline, poll_interval)
 
     raise TransportError(
         "Atlas generation timed out while polling the result",

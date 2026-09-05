@@ -14,9 +14,9 @@ from scripts import image_transport
 class ImageTransportTests(unittest.TestCase):
     def test_atlas_generation_submits_once_and_polls_until_completed(self) -> None:
         responses = [
-            {"id": "req_123"},
-            {"status": "processing"},
-            {"status": "completed", "outputs": ["https://cdn.example.test/image.png"]},
+            {"code": 200, "data": {"id": "req_123"}},
+            {"code": 200, "data": {"status": "processing"}},
+            {"code": 200, "data": {"status": "completed", "outputs": ["https://cdn.example.test/image.png"]}},
         ]
 
         with (
@@ -41,8 +41,8 @@ class ImageTransportTests(unittest.TestCase):
             [request.full_url for request in requests],
             [
                 "https://api.atlascloud.ai/api/v1/model/generateImage",
-                "https://api.atlascloud.ai/api/v1/model/result/req_123",
-                "https://api.atlascloud.ai/api/v1/model/result/req_123",
+                "https://api.atlascloud.ai/api/v1/model/prediction/req_123",
+                "https://api.atlascloud.ai/api/v1/model/prediction/req_123",
             ],
         )
         sleep.assert_called_once_with(0.01)
@@ -54,9 +54,9 @@ class ImageTransportTests(unittest.TestCase):
             operation="atlas generation result",
         )
         responses = [
-            {"id": "req_456"},
+            {"code": 200, "data": {"id": "req_456"}},
             transient,
-            {"status": "completed", "outputs": ["https://cdn.example.test/image.png"]},
+            {"code": 200, "data": {"status": "completed", "outputs": ["https://cdn.example.test/image.png"]}},
         ]
 
         with (
@@ -85,7 +85,7 @@ class ImageTransportTests(unittest.TestCase):
             "API request failed: certificate verify failed",
             operation="atlas generation result",
         )
-        responses = [{"id": "req_permanent"}, permanent]
+        responses = [{"code": 200, "data": {"id": "req_permanent"}}, permanent]
 
         with (
             mock.patch.object(image_transport, "_send_request", side_effect=responses) as send_request,
@@ -113,9 +113,9 @@ class ImageTransportTests(unittest.TestCase):
             transient=True,
         )
         responses = [
-            {"id": "req_transient"},
+            {"code": 200, "data": {"id": "req_transient"}},
             transient,
-            {"status": "completed", "outputs": ["https://cdn.example.test/image.png"]},
+            {"code": 200, "data": {"status": "completed", "outputs": ["https://cdn.example.test/image.png"]}},
         ]
 
         with (
@@ -155,13 +155,16 @@ class ImageTransportTests(unittest.TestCase):
                 )
 
     def test_atlas_generation_stops_at_the_polling_deadline(self) -> None:
-        clock = iter([0.0, 0.0, 5.0, 5.0])
+        # Enough readings for the added budget checks: the per-GET timeout clamp
+        # and _sleep_within each read the clock. Values stay past the 1.0s
+        # deadline so the second iteration still trips it.
+        clock = iter([0.0, 0.0, 0.1, 0.2, 5.0, 5.0, 5.0, 5.0])
 
         with (
             mock.patch.object(
                 image_transport,
                 "_send_request",
-                side_effect=[{"id": "req_deadline"}, {"status": "processing"}],
+                side_effect=[{"code": 200, "data": {"id": "req_deadline"}}, {"code": 200, "data": {"status": "processing"}}],
             ) as send_request,
             mock.patch.object(image_transport.time, "sleep"),
             mock.patch.object(image_transport.time, "monotonic", side_effect=lambda: next(clock)),
@@ -180,6 +183,46 @@ class ImageTransportTests(unittest.TestCase):
 
         self.assertIn("polling deadline", str(caught.exception))
         self.assertEqual(send_request.call_count, 2)
+
+    def test_atlas_poll_get_timeout_is_clamped_to_remaining_budget(self) -> None:
+        """A slow GET must not overshoot max_poll_seconds by a whole timeout."""
+        # Advance slowly then jump near the deadline; unbounded so the test
+        # does not break when the implementation reads the clock more often.
+        ticks = [0.0, 0.0, 0.0, 9.5]
+        state = {"i": 0}
+
+        def fake_monotonic() -> float:
+            i = state["i"]
+            state["i"] += 1
+            return ticks[i] if i < len(ticks) else 9.5
+
+        seen_timeouts: list[float] = []
+
+        def record(request, timeout, operation, limit, proxy):  # noqa: ANN001
+            seen_timeouts.append(timeout)
+            if operation == "atlas generation submit":
+                return {"code": 200, "data": {"id": "req_clamp"}}
+            return {"code": 200, "data": {"status": "processing"}}
+
+        with (
+            mock.patch.object(image_transport, "_send_request", side_effect=record),
+            mock.patch.object(image_transport.time, "sleep"),
+            mock.patch.object(image_transport.time, "monotonic", side_effect=fake_monotonic),
+        ):
+            with self.assertRaises(image_transport.TransportError):
+                image_transport.request_atlas_image(
+                    base_url="https://api.atlascloud.ai",
+                    api_key="secret",
+                    user_agent="test-client",
+                    payload={"model": "openai/gpt-image-2/text-to-image", "prompt": "test"},
+                    timeout=600,
+                    poll_interval=0.01,
+                    max_poll_attempts=300,
+                    max_poll_seconds=10.0,
+                )
+
+        # The polling GET must not be handed the full 600s request timeout.
+        self.assertLess(seen_timeouts[1], 600)
 
     def test_atlas_generation_does_not_retry_submit_failures(self) -> None:
         failure = image_transport.TransportError("submit failed", operation="atlas generation submit")
