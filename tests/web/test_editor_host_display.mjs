@@ -40,3 +40,37 @@ test("host display context updates role and modes only when values change", () =
   }), false);
   assert.equal(state.availableModes, existingModes);
 });
+
+test("a confirmed host context releases the request and ignores a late reply", async () => {
+  for (const lateFailure of [false, true]) {
+    let resolveReply;
+    let rejectReply;
+    let displayMode = "inline";
+    let status = "";
+    const controller = createHostDisplayModeController({
+      app: { requestDisplayMode: () => new Promise((resolve, reject) => {
+        resolveReply = resolve;
+        rejectReply = reject;
+      }) },
+      getRole: () => "result",
+      setRole: () => {},
+      getDisplayMode: () => displayMode,
+      setDisplayMode: (value) => { displayMode = value; },
+      getHostReady: () => true,
+      getAvailableModes: () => ["inline", "fullscreen"],
+      setAvailableModes: () => {},
+      setStatus: (value) => { status = value; },
+      render: () => {},
+    });
+    const opening = controller.request("fullscreen");
+    assert.equal(controller.consumeRequestedContext("fullscreen"), true);
+    controller.applyContext({ displayMode: "fullscreen" });
+    assert.equal(await opening, true);
+    controller.applyContext({ displayMode: "inline" });
+    if (lateFailure) rejectReply(new Error("late transport failure"));
+    else resolveReply({ mode: "fullscreen" });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(displayMode, "inline");
+    assert.equal(status, "");
+  }
+});

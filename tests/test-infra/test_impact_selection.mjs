@@ -168,6 +168,9 @@ test("native platform consumers select their required runners", () => {
 test("platform-sensitive repositories select their native runners", () => {
   const cases = [
     ["scripts/artifact_repository.py", ["linux", "macos", "windows"]],
+    ["scripts/local_image_transfer.py", ["linux", "macos", "windows"]],
+    ["mcp/local-image-transfer.mjs", ["linux", "macos", "windows"]],
+    ["tests/plugin-runtime/test_local_image_transfer.py", ["linux", "macos", "windows"]],
     ["mcp/project-context.mjs", ["linux", "windows"]],
     ["mcp/project-binding-store.mjs", ["linux", "windows"]],
     ["mcp/file-lock-ownership.mjs", ["linux", "windows"]],

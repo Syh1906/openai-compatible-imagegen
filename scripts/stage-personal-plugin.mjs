@@ -45,16 +45,19 @@ async function main() {
   await mkdir(pluginParent, { recursive: true });
   const stageLock = await acquireStageLock(pluginParent);
   const candidateRoot = createOwnedSiblingPath(pluginParent, "stage");
+  const probeRoot = createOwnedSiblingPath(pluginParent, "probe");
   const transactionPath = path.join(pluginParent, transactionFileName);
   const transaction = {
     version: 1,
     token: randomUUID(),
     pluginRoot: marketplace.pluginRoot,
     candidateRoot,
+    probeRoot,
     backupRoot: null,
     phase: "copying",
   };
   let candidateExists = false;
+  let probeExists = false;
   let transactionStarted = false;
   let stagedFileCount;
   let probe;
@@ -66,14 +69,24 @@ async function main() {
     });
     await writeTransaction(transactionPath, transaction);
     transactionStarted = true;
+    await mkdir(probeRoot);
+    probeExists = true;
+    for (const relativePath of releaseEntries) {
+      await copyReleaseEntry(sourceRoot, probeRoot, relativePath);
+    }
+    await requireExactPackage(sourceRoot, probeRoot);
+    probe = await runProbe({ pluginRoot: probeRoot, sourceRoot });
+    requireValue(probe.ok === true && probe.sourceConsistent === true, "staged plugin probe failed");
+    // A recently executed directory can remain temporarily unrenameable on Windows.
+    // Install an exact copy that has never been used as a process working directory.
     await mkdir(candidateRoot);
     candidateExists = true;
     for (const relativePath of releaseEntries) {
-      await copyReleaseEntry(sourceRoot, candidateRoot, relativePath);
+      await copyReleaseEntry(probeRoot, candidateRoot, relativePath);
     }
     stagedFileCount = await requireExactPackage(sourceRoot, candidateRoot);
-    probe = await runProbe({ pluginRoot: candidateRoot, sourceRoot });
-    requireValue(probe.ok === true && probe.sourceConsistent === true, "staged plugin probe failed");
+    await removeOwnedDirectory(pluginParent, probeRoot);
+    probeExists = false;
     await updateTransaction(transactionPath, transaction, { phase: "validated" });
     await replacePluginDirectory({
       candidateRoot,
@@ -84,15 +97,18 @@ async function main() {
     });
     candidateExists = false;
   } catch (error) {
-    if (candidateExists) {
+    const cleanupErrors = [];
+    for (const [exists, directory] of [[candidateExists, candidateRoot], [probeExists, probeRoot]]) {
+      if (!exists) continue;
       try {
-        await removeOwnedDirectory(pluginParent, candidateRoot);
+        await removeOwnedDirectory(pluginParent, directory);
       } catch (cleanupError) {
-        throw new AggregateError(
-          [error, cleanupError],
-          `personal staging failed and candidate cleanup failed: ${candidateRoot}`,
-        );
+        cleanupErrors.push(cleanupError);
       }
+    }
+    if (cleanupErrors.length > 0) {
+      throw new AggregateError([error, ...cleanupErrors],
+        `personal staging failed and temporary directory cleanup failed: ${transactionPath}`);
     }
     if (transactionStarted) {
       await clearSettledTransaction(transactionPath, transaction);
@@ -224,6 +240,9 @@ async function recoverInterruptedStage({ pluginParent, pluginRoot }) {
   const transaction = await readTransactionOrNull(transactionPath);
   if (!transaction) return;
   validateTransaction(pluginParent, pluginRoot, transaction);
+  if (transaction.probeRoot !== undefined) {
+    await requireRecoverableDirectory(transaction.probeRoot, "probe");
+  }
 
   const active = await lstatOrNull(pluginRoot);
   const backup = transaction.backupRoot
@@ -241,6 +260,9 @@ async function recoverInterruptedStage({ pluginParent, pluginRoot }) {
   if (await lstatOrNull(transaction.candidateRoot)) {
     await removeOwnedDirectory(pluginParent, transaction.candidateRoot);
   }
+  if (transaction.probeRoot !== undefined) {
+    await removeOwnedDirectory(pluginParent, transaction.probeRoot);
+  }
   await clearTransaction(transactionPath, transaction);
 }
 
@@ -250,6 +272,9 @@ function validateTransaction(pluginParent, pluginRoot, transaction) {
   requireValue(typeof transaction.token === "string", "personal staging transaction token is missing");
   requireValue(path.resolve(transaction.pluginRoot) === pluginRoot, "personal staging transaction plugin root differs");
   requireOwnedSiblingPath(pluginParent, transaction.candidateRoot, "stage");
+  if (transaction.probeRoot !== undefined) {
+    requireOwnedSiblingPath(pluginParent, transaction.probeRoot, "probe");
+  }
   if (transaction.backupRoot) {
     requireOwnedSiblingPath(pluginParent, transaction.backupRoot, "backup");
   }

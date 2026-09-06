@@ -206,11 +206,34 @@ test("widget binds standard tool input when the host projects image results", as
         .some(({ path }) => path === "$.structuredContent.artifact"),
       true,
     );
+
+    // Exercise the real MCP session result without a second widget or a tool-result broadcast.
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      document.querySelector("[data-action=open-editor]").click();
+      await waitFor(() => document.querySelector(".editor-app") !== null);
+      await host.settle();
+      assert.equal(document.querySelector("[data-image]")?.hidden, false);
+      assert.equal(hostWindow.document.querySelectorAll("iframe").length, 1);
+      assert.equal(hostWindow.document.querySelector("iframe").contentWindow, widgetWindow);
+      document.querySelector("[data-action=back]").click();
+      await waitFor(() => document.querySelector(".inline-result") !== null);
+      await host.settle();
+    }
+    assert.ok(host.completedToolCalls.some(({ name }) => name === "open_image_editor"));
+    assert.equal(host.failedToolCalls.length, 0);
   } catch (error) {
     testFailure = error;
   }
 
   const cleanupErrors = await collectCleanupErrors([
+    async () => {
+      const widgetWindow = dom?.window.document.querySelector("iframe")?.contentWindow;
+      if (host && widgetWindow) {
+        sendToApp(dom.window, widgetWindow, {
+          jsonrpc: "2.0", id: "integration-teardown", method: "ui/resource-teardown", params: {},
+        });
+      }
+    },
     async () => {
       if (host) await withTimeout(host.settle(), 1000, "widget tool cleanup timed out");
     },
@@ -318,12 +341,23 @@ function installHost(hostWindow, widgetWindow, { tool, initialToolArguments, ini
       });
       return;
     }
+    if (message?.method === "ui/request-display-mode") {
+      sendToApp(hostWindow, widgetWindow, {
+        jsonrpc: "2.0", id: message.id, result: { mode: message.params.mode },
+      });
+      sendToApp(hostWindow, widgetWindow, {
+        jsonrpc: "2.0", method: "ui/notifications/host-context-changed",
+        params: { displayMode: message.params.mode },
+      });
+      return;
+    }
     if (message?.method !== "tools/call") return;
 
     attemptedToolCalls.push(message.params);
     const operation = Promise.resolve()
       .then(() => toolCaller(message.params))
       .then((result) => {
+        assert.equal(result._meta?.ui?.resourceUri, undefined, "UI data calls must not request another widget");
         completedToolCalls.push(message.params);
         sendToApp(hostWindow, widgetWindow, {
           jsonrpc: "2.0",

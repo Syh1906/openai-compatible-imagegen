@@ -141,13 +141,38 @@ class ArtifactRepository:
         parent_ids: list[str] | None = None,
         annotation_id: str | None = None,
     ) -> list[ArtifactRecord]:
+        if operation not in {"generate", "edit"}:
+            raise ValueError(f"unsupported artifact operation: {operation}")
+        return self._store_image_group(
+            images=images, mime_type=mime_type, provider=provider, model=model,
+            operation=operation, prompt=prompt, parameters=parameters,
+            parent_ids=parent_ids, annotation_id=annotation_id,
+        )
+
+    def store_local_image(self, image: bytes, mime_type: str) -> ArtifactRecord:
+        record = self._store_image_group(
+            images=[image], mime_type=mime_type, provider="local-file", model="unreported",
+            operation="import", prompt="", parameters={"acquisition": {"route": "local-file"}},
+        )[0]
+        return self.get_artifact(record.metadata["id"])
+
+    def _store_image_group(
+        self,
+        *,
+        images: list[bytes],
+        mime_type: str,
+        provider: str,
+        model: str,
+        operation: str,
+        prompt: str,
+        parameters: dict[str, Any],
+        parent_ids: list[str] | None = None,
+        annotation_id: str | None = None,
+    ) -> list[ArtifactRecord]:
         if not images:
             raise ValueError("at least one image is required")
         if mime_type not in MIME_EXTENSIONS:
             raise ValueError(f"unsupported image MIME type: {mime_type}")
-        if operation not in {"generate", "edit"}:
-            raise ValueError(f"unsupported artifact operation: {operation}")
-
         parent_ids = list(parent_ids or [])
         for parent_id in parent_ids:
             validate_artifact_id(parent_id)

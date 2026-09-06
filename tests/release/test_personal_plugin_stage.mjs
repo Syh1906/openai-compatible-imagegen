@@ -15,30 +15,24 @@ const stageScript = fileURLToPath(new URL("../../scripts/stage-personal-plugin.m
 const prepareScript = fileURLToPath(new URL("../../scripts/prepare-personal-plugin.mjs", import.meta.url));
 const pluginId = "openai-compatible-imagegen";
 const expectedRuntimeFiles = [
+  "local_image_transfer.py",
   "artifact_repository.py",
   "image_alpha.py",
-  "image_batch.py",
-  "image_cli.py",
   "image_delivery.py",
   "image_delivery_ops.py",
   "image_download.py",
   "image_emissive_alpha.py",
   "image_mask_alpha.py",
   "image_png.py",
-  "image_postprocess.py",
   "image_preview.py",
   "image_qa.py",
-  "image_reference.py",
   "image_resize.py",
   "image_response.py",
   "image_transaction.py",
   "image_transparency.py",
   "image_transparency_contract.py",
-  "image_transparency_runtime.py",
   "image_transport.py",
   "image_webp.py",
-  "imagegen.py",
-  "imagegen_cli.py",
   "mask_policy.py",
   "image_runtime.py",
   "migrate_image_config.py",
@@ -103,13 +97,62 @@ test("personal staging replaces a stale marketplace source and proves source con
     );
   }
   const { stdout: runtimeHelp } = await execFileAsync("python", [
-    path.join(pluginRoot, "dist", "scripts", "imagegen.py"),
+    path.join(pluginRoot, "dist", "scripts", "image_runtime.py"),
     "--help",
   ], {
     cwd: pluginRoot,
     env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" },
   });
-  assert.match(runtimeHelp, /usage: imagegen /);
+  assert.match(runtimeHelp, /usage: image_runtime\.py /);
+  assert.deepEqual(await readdir(path.dirname(pluginRoot)), [pluginId]);
+});
+
+
+test("personal staging rejects unsafe probe recovery paths without deleting data", async (t) => {
+  const catalogRoot = await mkdtemp(path.join(os.tmpdir(), "imagegen-stage-probe-boundary-"));
+  t.after(async () => rm(catalogRoot, { recursive: true, force: true }));
+  const marketplacePath = path.join(catalogRoot, ".agents", "plugins", "marketplace.json");
+  await writeMarketplace(marketplacePath);
+  const pluginParent = path.join(catalogRoot, "plugins");
+  const outsideRoot = path.join(catalogRoot, `.${pluginId}.probe-outside`);
+  await mkdir(pluginParent);
+  await mkdir(outsideRoot);
+  await writeFile(path.join(outsideRoot, "keep.txt"), "keep", "utf8");
+  const linkedRoot = path.join(pluginParent, `.${pluginId}.probe-linked`);
+  await symlink(outsideRoot, linkedRoot, process.platform === "win32" ? "junction" : "dir");
+  for (const probeRoot of [outsideRoot, linkedRoot, null]) {
+    const transactionPath = path.join(pluginParent, `.${pluginId}.stage.transaction.json`);
+    await writeFile(transactionPath, JSON.stringify({
+      version: 1, token: "probe-boundary", pluginRoot: path.join(pluginParent, pluginId),
+      candidateRoot: path.join(pluginParent, `.${pluginId}.stage-partial`),
+      probeRoot, backupRoot: null, phase: "copying",
+    }));
+    await assert.rejects(runStage({ sourceRoot: projectRoot, marketplacePath }),
+      /path escapes the expected root|symbolic link|probe path is missing/);
+    assert.equal(await readFile(path.join(outsideRoot, "keep.txt"), "utf8"), "keep");
+    assert.notEqual(await lstatOrNull(transactionPath), null);
+    assert.equal(await lstatOrNull(path.join(pluginParent, pluginId)), null);
+  }
+});
+
+
+test("personal staging installs without renaming the directory executed by its probe", async (t) => {
+  const catalogRoot = await mkdtemp(path.join(os.tmpdir(), "imagegen-stage-probe-lock-"));
+  t.after(async () => rm(catalogRoot, { recursive: true, force: true }));
+  const marketplacePath = path.join(catalogRoot, ".agents", "plugins", "marketplace.json");
+  await writeMarketplace(marketplacePath);
+  const preload = new URL("../support/stage-probe-rename-lock.mjs", import.meta.url).href;
+  const { stdout } = await runStage({
+    sourceRoot: projectRoot,
+    marketplacePath,
+    env: { ...process.env, NODE_OPTIONS: `${process.env.NODE_OPTIONS ?? ""} --import=${preload}` },
+  });
+  assert.equal(JSON.parse(stdout).probeOk, true);
+  const pluginRoot = path.join(catalogRoot, "plugins", pluginId);
+  for (const relativePath of consistencyPaths) {
+    assert.equal(await hashFile(path.join(pluginRoot, relativePath)),
+      await hashFile(path.join(projectRoot, relativePath)), relativePath);
+  }
   assert.deepEqual(await readdir(path.dirname(pluginRoot)), [pluginId]);
 });
 
@@ -233,6 +276,7 @@ test("personal staging recovers an interrupted transaction write before continui
   const pluginParent = path.join(catalogRoot, "plugins");
   const pluginRoot = path.join(pluginParent, pluginId);
   const candidateRoot = path.join(pluginParent, `.${pluginId}.stage-123-transaction-fixture`);
+  const probeRoot = path.join(pluginParent, `.${pluginId}.probe-123-transaction-fixture`);
   const transactionPath = path.join(pluginParent, `.${pluginId}.stage.transaction.json`);
   const transactionWritePath = `${transactionPath}.tmp`;
   t.after(async () => rm(catalogRoot, { recursive: true, force: true }));
@@ -240,12 +284,15 @@ test("personal staging recovers an interrupted transaction write before continui
   await writeMarketplace(marketplacePath);
   await runStage({ sourceRoot: projectRoot, marketplacePath });
   await mkdir(candidateRoot);
+  await mkdir(probeRoot);
+  await writeFile(path.join(probeRoot, "partial.txt"), "partial probe", "utf8");
   await writeFile(path.join(candidateRoot, "partial.txt"), "partial candidate", "utf8");
   await writeFile(transactionPath, `${JSON.stringify({
     version: 1,
     token: "fixture-token",
     pluginRoot,
     candidateRoot,
+    probeRoot,
     backupRoot: null,
     phase: "copying",
   })}\n`, "utf8");
@@ -410,7 +457,7 @@ async function copyReleaseSource(sourceRoot, destinationRoot) {
 }
 
 
-async function runStage({ sourceRoot, marketplacePath }) {
+async function runStage({ sourceRoot, marketplacePath, env = process.env }) {
   return await execFileAsync(process.execPath, [
     stageScript,
     "--source-root",
@@ -419,6 +466,7 @@ async function runStage({ sourceRoot, marketplacePath }) {
     marketplacePath,
   ], {
     cwd: projectRoot,
+    env,
     maxBuffer: 4 * 1024 * 1024,
   });
 }

@@ -75,6 +75,9 @@ class RepositoryFsContractTests(unittest.TestCase):
                     self.assertEqual(snapshot.read_bytes(), b"image")
                 with lease.open_file("index.json") as snapshot:
                     self.assertEqual(snapshot.read_bytes(), b"second")
+                    self.assertEqual(snapshot.read_bytes(max_bytes=6), b"second")
+                    with self.assertRaisesRegex(ValueError, "byte limit"):
+                        snapshot.read_bytes(max_bytes=5)
 
     def test_repository_and_submission_locks_reject_conflicting_owners(self) -> None:
         from scripts.repository_fs import RepositoryLock, SubmissionLock, ensure_directory_tree_safely

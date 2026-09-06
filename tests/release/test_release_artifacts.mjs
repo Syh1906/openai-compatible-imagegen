@@ -10,9 +10,11 @@ import { promisify } from "node:util";
 
 import {
   pluginAdapterFileNames,
+  pluginReleaseFiles,
   runtimeFileNames,
   sharedCoreFileNames,
   standaloneAdapterFileNames,
+  standaloneReleaseFiles,
   standaloneRuntimeFileNames,
 } from "../../scripts/plugin-file-set.mjs";
 import {
@@ -29,6 +31,17 @@ const releaseWorkflow = fileURLToPath(new URL("../../.github/workflows/release-a
 const releasePreflightWorkflow = fileURLToPath(new URL("../../.github/workflows/release-preflight.yml", import.meta.url));
 const pluginId = "openai-compatible-imagegen";
 const archiveRoot = `${pluginId}/`;
+
+test("Plugin excludes Standalone adapters while retaining the shared core", () => {
+  for (const name of standaloneAdapterFileNames) {
+    assert.equal(runtimeFileNames.includes(name), false, `Plugin contains Standalone adapter: ${name}`);
+    assert.equal(pluginReleaseFiles.includes(`dist/scripts/${name}`), false);
+    assert.equal(standaloneReleaseFiles.includes(`scripts/${name}`), true);
+  }
+  for (const name of sharedCoreFileNames) assert.ok(runtimeFileNames.includes(name));
+  assert.ok(runtimeFileNames.includes("image_runtime.py"));
+  assert.equal(runtimeFileNames.includes("imagegen_cli.py"), false);
+});
 const sharedCoreFiles = [
   "image_alpha.py",
   "image_emissive_alpha.py",
@@ -199,11 +212,11 @@ test("release file sets separate shared core from distribution adapters", () => 
     [...new Set([...sharedCoreFileNames, ...standaloneAdapterFileNames])].sort(),
   );
   assert.equal(
-    new Set([...sharedCoreFileNames, ...standaloneAdapterFileNames, ...pluginAdapterFileNames]).size,
+    new Set([...sharedCoreFileNames, ...pluginAdapterFileNames]).size,
     runtimeFileNames.length,
   );
   assert.deepEqual(
-    [...new Set([...sharedCoreFileNames, ...standaloneAdapterFileNames, ...pluginAdapterFileNames])].sort(),
+    [...new Set([...sharedCoreFileNames, ...pluginAdapterFileNames])].sort(),
     [...runtimeFileNames].sort(),
   );
 });
