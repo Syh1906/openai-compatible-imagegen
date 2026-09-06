@@ -4,28 +4,39 @@
 
 Language: [简体中文](./local-images.zh-CN.md)
 
-The Codex Plugin can use existing project images as edit references and export generated, edited, or delivered images for local tools. Complete [configuration](./configuration.md) first and start the task in the project containing your images.
+Use the Codex Plugin to edit local images and save results as files for other tools.
+
+Complete [Plugin configuration](./configuration.md) in the project containing your images. Your installation must provide `import_local_image` and `export_image_artifact`; ask Codex to check whether they are available. Git marketplace and Release ZIP installations may have different features. Check the target version's [changelog](../../CHANGELOG.md) before following the [update guide](./updating.md).
 
 ## Edit an existing image
 
-Place an image at `references/character.png` in your project and ask:
+1. Copy the image into your project, for example at `references/character.png`.
+2. In the conversation, give its path and describe the change:
 
-> Use references/character.png as the character reference. Create a running-right pose while preserving its appearance.
+> Edit references/character.png so the character is running to the right. Keep the character's appearance and clothing.
 
-The Agent calls `import_local_image` to obtain a stable image ID, then edits through the selected route. API Key edits pass that ID as `edit_image.parentImageId`; additional references are imported separately and passed as `referenceImageIds`. With the ChatGPT route, open the canvas from the imported image's result card and submit an edit.
+With API Key authentication, the selected model must support image editing. Using several references also requires multi-reference support. The Atlas protocol supports text-to-image generation only and cannot perform this edit.
 
-Import accepts PNG, JPEG, and WebP up to 64 MiB and 100 million pixels per image. It saves an exact snapshot without modifying the source; each import creates an independent artifact. Import itself makes no image-service request and does not change the authentication route.
+With the ChatGPT route, Codex first displays a result card for the imported image. Open its canvas, describe the change, and submit. This route requires image generation to be available in Codex App; see [configuration](./configuration.md).
+
+The edited image appears in the conversation as a new version linked to the original. The source file in your project remains unchanged.
+
+You can import PNG, JPEG, and WebP images up to 64 MiB and 100 million pixels each. Import saves a copy; importing the same file again creates a separate image. Import and export run locally. Editing sends a request to the selected image service.
 
 ## Send a result to a local tool
 
 Select a result and specify a new filename:
 
-> Export this image to decoded/running-right.png for spritesheet assembly.
+> Export this image to exports/running-right.png.
 
-The Agent calls `export_image_artifact`, which returns the relative destination, byte count, and SHA-256. Missing parent directories are created. Existing files are never overwritten; choose a new filename if the destination exists. Export does not transcode: the extension must match the actual image format. For resizing, transparency, or grid splitting, finish delivery first and export the selected derivative.
+The file will appear in your project's `exports/` directory, ready for other tools. Missing directories are created automatically. If the file already exists, choose another filename.
 
-## Paths and entry points
+Export preserves the image's original format and contents. It does not convert formats, so the filename extension must match the image format. For resizing, transparency, or grid splitting, ask Codex to process the image first, then export the processed result. These local Plugin operations currently accept PNG images only.
 
-On Windows, macOS, and Linux, tool arguments use project-relative paths with forward slashes. Source and destination paths must stay inside the bound project and outside its artifact repository. Absolute paths, `..`, symbolic links, junctions, and other reparse points are rejected. Move or copy external images into the project before importing them.
+## File locations and troubleshooting
 
-These operations use Plugin MCP tools. The Standalone Skill is a separate distribution with its own configuration; there is no need to find scripts in the Plugin installation or create `auth.json` there. If the installed version lacks the import/export tools, see the [update guide](./updating.md).
+On Windows, macOS, and Linux, use paths relative to the project root, such as `references/character.png`, with forward slashes `/`. Copy images from outside the project into it before importing them. Absolute paths, paths containing `..`, symbolic links, and Windows junctions are not supported.
+
+Keep import and export locations separate from the Plugin-managed image directory. Its default location is `output/imagegen/` and can be changed in [configuration](./configuration.md). Images already shown in result cards can be edited directly; you do not need to import them from that directory.
+
+For a blank canvas, configuration errors, or other problems, see [troubleshooting](./troubleshooting.md).

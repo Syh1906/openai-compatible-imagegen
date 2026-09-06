@@ -7,14 +7,17 @@
 ### 新增
 
 - Standalone Skill 和 Codex Plugin 新增可选 `atlas` provider 协议，通过单次异步提交和有界结果轮询调用 Atlas Cloud 文生图模型；默认 OpenAI-compatible 路线保持不变。
-- Codex Plugin 可将项目内已有 PNG、JPEG、WebP 导入为不可变图片产物，使用稳定 ID 继续编辑，并将选定产物原样导出给本地工具。导出不会覆盖已有文件。
+- Codex Plugin 支持导入项目中的 PNG、JPEG、WebP 继续编辑，也可将结果导出为本地文件。导入保留源文件，导出不覆盖已有文件。
 
 ### 修复
 
-- 本地 Plugin 更新时，将运行探针的副本与待安装目录分离，避免 Windows 对刚运行过的目录暂时拒绝重命名而中断更新。
-- 从结果卡打开画布时沿用当前界面，创建编辑会话不再额外关联新的界面资源。
-- 画布展开已收到宿主状态确认时，不再等待较晚返回的请求回执，避免延迟显示画布；晚到的回执不会覆盖后续窗口状态。
-- Plugin 发行包移除 Standalone CLI 及其专属适配器，避免误用不同配置入口；运行时 Skill 明确本地文件衔接与工具不可用时的处理方式。
+- 修复 Windows 本地 Plugin 更新可能因目录被占用而失败的问题。
+- 调整画布打开流程，减少等待 Codex 确认显示模式造成的延迟。
+- 修正 Plugin 误用 Standalone 命令行入口、进而报告缺少 `auth.json` 的问题。
+
+### 已知限制
+
+- 部分 Codex App 中，画布或图片预览首次展开仍可能白屏。临时恢复方法见[故障排查](docs/guides/troubleshooting.zh-CN.md)。
 
 ## [1.2.0] - 2026-08-25
 

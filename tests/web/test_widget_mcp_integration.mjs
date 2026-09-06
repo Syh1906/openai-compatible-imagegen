@@ -227,8 +227,9 @@ test("widget binds standard tool input when the host projects image results", as
 
   const cleanupErrors = await collectCleanupErrors([
     async () => {
-      if (host && dom) {
-        sendToApp(dom.window, dom.window.document.querySelector("iframe").contentWindow, {
+      const widgetWindow = dom?.window.document.querySelector("iframe")?.contentWindow;
+      if (host && widgetWindow) {
+        sendToApp(dom.window, widgetWindow, {
           jsonrpc: "2.0", id: "integration-teardown", method: "ui/resource-teardown", params: {},
         });
       }
