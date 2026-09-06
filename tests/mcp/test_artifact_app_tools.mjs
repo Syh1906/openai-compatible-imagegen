@@ -21,6 +21,32 @@ const TEST_RELEASE_IDENTITY = createReleaseBundle({
   widgetHtml: `<html><head>${RELEASE_IDENTITY_PLACEHOLDER}</head></html>`,
 }).releaseIdentity;
 
+test("opening a canvas returns its session without requesting another widget", async () => {
+  await withClient({}, async (client) => {
+    const { tools } = await client.listTools();
+    const tool = tools.find((item) => item.name === "open_image_editor");
+    assert.deepEqual(tool._meta.ui.visibility, ["app"]);
+    assert.equal(tool._meta.ui.resourceUri, undefined);
+
+    const opened = await client.callTool({
+      name: "open_image_editor",
+      arguments: { imageId: IMAGE_ID },
+    });
+    assert.equal(opened.isError, undefined);
+    assert.equal(opened._meta?.ui?.resourceUri, undefined);
+    assert.equal(opened.structuredContent.editorSession.imageId, IMAGE_ID);
+    assert.equal(opened.structuredContent.editorSession.status, "active");
+    assert.deepEqual(opened.structuredContent.artifact, artifact(IMAGE_ID));
+
+    const session = await client.callTool({
+      name: "get_image_editor_session",
+      arguments: { editorSessionId: opened.structuredContent.editorSession.id },
+    });
+    assert.equal(session.structuredContent.editorSession.id, opened.structuredContent.editorSession.id);
+    assert.equal(session.structuredContent.editorSession.status, "active");
+  });
+});
+
 test("app-only image data tool returns binary data by stable image ID", async () => {
   await withClient({}, async (client) => {
     const result = await client.callTool({
@@ -137,11 +163,13 @@ test("tool catalog exposes the model and app-only tool groups", async () => {
       "deliver_image",
       "destroy_image_editor",
       "edit_image",
+      "export_image_artifact",
       "finalize_host_image_import",
       "generate_image",
       "get_image_artifact",
       "get_image_batch_manifest",
       "get_image_delivery_receipt",
+      "import_local_image",
       "initialize_image_config",
       "inspect_image_config",
       "inspect_imagegen_runtime",
@@ -162,7 +190,7 @@ test("tool catalog exposes the model and app-only tool groups", async () => {
       "save_image_annotations",
       "save_image_editor_draft",
     ]);
-    assert.equal(tools.length, 27);
+    assert.equal(tools.length, 29);
   });
 });
 

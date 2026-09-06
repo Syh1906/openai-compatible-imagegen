@@ -26,6 +26,7 @@ Identify the failing layer before changing configuration. The project does not s
 | Symptom | Check | Action |
 | --- | --- | --- |
 | User configuration missing | Plugin user config path exists | Ask the Agent to call `initialize_image_config`, or create it from the bundled example |
+| Missing `dist/auth.json` during Plugin use | A Standalone CLI may have been invoked | Use Plugin MCP tools and inspect Plugin configuration with `inspect_image_config`; do not create `auth.json` in the installation |
 | Credential missing | Configured environment variable exists in the Codex process | Set the variable without pasting its value into chat |
 | Project override rejected | Project file changes only four allowed fields | Remove provider, model, endpoint, auth, timeout, concurrency, and route fields |
 | Output directory rejected | Value is a safe project-relative directory | Use a relative child such as `output/imagegen/` |
@@ -39,6 +40,7 @@ Identify the failing layer before changing configuration. The project does not s
 | Provider rejects the request | The configured service returned an API error | Review the safe error code and provider logs; do not switch route automatically |
 | Result card reports invalid data | Artifact metadata or bytes failed validation | Keep the original error and verify the installed Plugin version and build identity |
 | Canvas cannot open | The artifact, binding, or editor session is unavailable | Return to the conversation and reopen the canvas from the same result; start a new task only when the task predates the current Plugin installation or update |
+| Canvas or image preview opens blank, then appears immediately after resizing the panel | This pattern points to Codex App updating the expanded panel's layout or visibility; see the [similar upstream report](https://github.com/openai/codex/issues/42694) | As a temporary recovery, slightly drag the right panel divider to change its width. No message or image regeneration is needed. This is not a permanent fix; include the Codex App version and these reproduction steps when reporting it |
 | Side panel shows the result card after switching tasks | Codex restored the inline result instead of the open canvas | Select **Continue editing** on the same card; the Plugin restores the preserved unsent draft |
 | Transparency is unmet | The original succeeded but the selected delivery route did not meet its contract | Keep the original and choose a valid controlled plate or trusted mask |
 | Delivery is not ready | A transform or QA requirement failed | Inspect the delivery receipt; do not regenerate unless a new API request is intended |

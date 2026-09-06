@@ -13,6 +13,7 @@ export function createHostDisplayModeController({
 }) {
   const pendingRequests = new Map();
   const expectedContexts = new Map();
+  const contextWaiters = new Map();
   return Object.freeze({ applyContext, consumeRequestedContext, request });
 
   function applyContext(context, { initializeRole = false } = {}) {
@@ -32,6 +33,11 @@ export function createHostDisplayModeController({
       && !sameValues(context.availableDisplayModes, getAvailableModes())) {
       setAvailableModes(context.availableDisplayModes);
       changed = true;
+    }
+    if (context?.displayMode) {
+      for (const resolve of contextWaiters.get(context.displayMode) || []) {
+        resolve({ mode: context.displayMode });
+      }
     }
     return changed;
   }
@@ -57,9 +63,16 @@ export function createHostDisplayModeController({
     }
     setRequestPending(mode, 1);
     setExpectedContext(mode, 1);
+    let resolveContext;
+    const contextChanged = new Promise((resolve) => { resolveContext = resolve; });
+    const waiters = contextWaiters.get(mode) || new Set();
+    waiters.add(resolveContext);
+    contextWaiters.set(mode, waiters);
     let requestSucceeded = false;
     try {
-      const result = await app.requestDisplayMode({ mode });
+      // The host may publish its actual display mode before replying to the request.
+      // Either confirmation can release rendering; a late reply must not rewind it.
+      const result = await Promise.race([app.requestDisplayMode({ mode }), contextChanged]);
       if (!isActive()) return false;
       requestSucceeded = true;
       const matches = result.mode === mode;
@@ -73,6 +86,8 @@ export function createHostDisplayModeController({
       render();
       return false;
     } finally {
+      waiters.delete(resolveContext);
+      if (!waiters.size) contextWaiters.delete(mode);
       setRequestPending(mode, -1);
       if (requestSucceeded) {
         setTimeout(() => setExpectedContext(mode, -1), 0);

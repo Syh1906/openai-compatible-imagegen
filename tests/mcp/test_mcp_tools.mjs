@@ -57,7 +57,7 @@ test("configuration and project binding tool descriptions declare local ignore p
   );
 });
 
-test("only the result renderer and focused editor bind app resources", async () => {
+test("only the result renderer binds an app resource while legacy editor resources remain readable", async () => {
   await withClient(
     {
       runTask: async () => {
@@ -74,7 +74,7 @@ test("only the result renderer and focused editor bind app resources", async () 
       const artifactTool = tools.find((tool) => tool.name === "get_image_artifact");
       const renderTool = tools.find((tool) => tool.name === "render_image_results");
       const resultUri = renderTool._meta.ui.resourceUri;
-      const editorUri = tools.find((tool) => tool.name === "open_image_editor")._meta.ui.resourceUri;
+      const editorUri = EDITOR_WIDGET_URI;
       const sessionStateTool = tools.find((tool) => tool.name === "get_image_editor_session");
       const draftTool = tools.find((tool) => tool.name === "save_image_editor_draft");
       const finalizeSessionTool = tools.find((tool) => tool.name === "finalize_image_editor_session");
@@ -89,6 +89,7 @@ test("only the result renderer and focused editor bind app resources", async () 
       assert.equal(tools.find((tool) => tool.name === "deliver_image")._meta?.ui?.resourceUri, undefined);
       assert.equal(resultUri, RESULT_WIDGET_URI);
       assert.notEqual(resultUri, editorUri);
+      assert.deepEqual(tools.filter((tool) => tool._meta?.ui?.resourceUri).map((tool) => tool.name), ["render_image_results"]);
       assert.deepEqual(tools.find((tool) => tool.name === "open_image_editor")._meta.ui.visibility, ["app"]);
       assert.deepEqual(sessionStateTool._meta.ui.visibility, ["app"]);
       assert.deepEqual(draftTool._meta.ui.visibility, ["app"]);
@@ -1111,7 +1112,7 @@ test("editor sessions can be opened, inspected, and destroyed", async () => {
         name: "open_image_editor",
         arguments: { imageId: "img_01J00000000000000000000000" },
       });
-      assert.equal(result._meta.ui.resourceUri, EDITOR_WIDGET_URI);
+      assert.equal(result._meta?.ui?.resourceUri, undefined);
       assert.equal(result.structuredContent.editorSession.imageId, "img_01J00000000000000000000000");
       assert.equal(result.structuredContent.editorSession.status, "active");
       assert.equal(result.structuredContent.artifact.id, "img_01J00000000000000000000000");

@@ -1,4 +1,10 @@
 const STABLE_TOOL_ERROR_ENTRIES = [
+  ["local_image_request_invalid", "本地图片传输请求无效，请使用项目相对路径和稳定图片 ID。"],
+  ["local_image_source_invalid", "无法导入源图片：请确认它是项目内可安全读取的 PNG、JPEG 或 WebP，且不超过 64 MiB 和 1 亿像素。"],
+  ["local_image_import_failed", "无法发布本地图片，请检查 artifact 仓库后再继续。"],
+  ["local_image_destination_exists", "导出目标已存在，未覆盖文件；请指定新的目标文件名。"],
+  ["local_image_export_failed", "无法导出图片：请检查图片 ID、项目相对路径、格式扩展名及目录权限；目标不能位于 artifact 仓库内。"],
+  ["local_image_transfer_failed", "本地图片传输失败，请检查运行时状态；不要切换生成入口。"],
   ["annotation_image_mismatch", "标注与父图片不匹配。"],
   ["annotation_not_found", "未找到指定标注。"],
   ["annotation_save_failed", "保存图片标注失败。"],

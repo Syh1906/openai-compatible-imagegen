@@ -31,13 +31,13 @@ export const standaloneRuntimeFileNames = Object.freeze([
 ].sort());
 
 export const pluginAdapterFileNames = Object.freeze([
+  "local_image_transfer.py",
   "artifact_repository.py",
   "host_image_import.py",
   "image_delivery.py",
   "image_delivery_ops.py",
   "image_runtime.py",
   "image_transparency_contract.py",
-  "imagegen_cli.py",
   "mask_policy.py",
   "migrate_image_config.py",
   "posix_repository_fs.py",
@@ -48,42 +48,9 @@ export const pluginAdapterFileNames = Object.freeze([
 ]);
 
 export const runtimeFileNames = Object.freeze([
-  "artifact_repository.py",
-  "host_image_import.py",
-  "image_alpha.py",
-  "image_batch.py",
-  "image_cli.py",
-  "image_delivery.py",
-  "image_delivery_ops.py",
-  "image_download.py",
-  "image_emissive_alpha.py",
-  "image_mask_alpha.py",
-  "image_png.py",
-  "image_postprocess.py",
-  "image_preview.py",
-  "image_qa.py",
-  "image_reference.py",
-  "image_resize.py",
-  "image_response.py",
-  "image_transaction.py",
-  "image_transparency.py",
-  "image_transparency_contract.py",
-  "image_transparency_runtime.py",
-  "image_transport.py",
-  "image_webp.py",
-  "imagegen.py",
-  "imagegen_cli.py",
-  "mask_policy.py",
-  "image_runtime.py",
-  "migrate_image_config.py",
-  "network_proxy.py",
-  "posix_repository_fs.py",
-  "provider_config.py",
-  "repository_fs.py",
-  "repository_fs_helper.py",
-  "reveal_in_explorer.py",
-  "windows_repository_fs.py",
-]);
+  ...sharedCoreFileNames,
+  ...pluginAdapterFileNames,
+].sort());
 
 export const distributionFiles = Object.freeze([
   ...runtimeFileNames.map((name) => `scripts/${name}`),

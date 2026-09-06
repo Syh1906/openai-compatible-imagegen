@@ -25,7 +25,7 @@ const projectRoot = fileURLToPath(new URL("../..", import.meta.url));
 const manifestPath = fileURLToPath(new URL("../../.codex-plugin/plugin.json", import.meta.url));
 const widgetOutput = fileURLToPath(new URL("../../dist/widget/index.html", import.meta.url));
 const serverOutput = fileURLToPath(new URL("../../dist/server.mjs", import.meta.url));
-const runtimeOutput = fileURLToPath(new URL("../../dist/scripts/imagegen.py", import.meta.url));
+const runtimeOutput = fileURLToPath(new URL("../../dist/scripts/image_runtime.py", import.meta.url));
 const resultStateSource = fileURLToPath(new URL("../../web/result-state.mjs", import.meta.url));
 const pluginProbeSource = fileURLToPath(new URL("../../scripts/probe-plugin.mjs", import.meta.url));
 const IMAGE_ID = "img_01J00000000000000000000000";
@@ -43,31 +43,25 @@ const PNG_BYTES = Buffer.from(
   "base64",
 );
 const EXPECTED_RUNTIME_FILES = [
+  "local_image_transfer.py",
   "artifact_repository.py",
   "host_image_import.py",
   "image_alpha.py",
-  "image_batch.py",
-  "image_cli.py",
   "image_delivery.py",
   "image_delivery_ops.py",
   "image_download.py",
   "image_emissive_alpha.py",
   "image_mask_alpha.py",
   "image_png.py",
-  "image_postprocess.py",
   "image_preview.py",
   "image_qa.py",
-  "image_reference.py",
   "image_resize.py",
   "image_response.py",
   "image_transaction.py",
   "image_transparency.py",
   "image_transparency_contract.py",
-  "image_transparency_runtime.py",
   "image_transport.py",
   "image_webp.py",
-  "imagegen.py",
-  "imagegen_cli.py",
   "mask_policy.py",
   "image_runtime.py",
   "migrate_image_config.py",
@@ -78,7 +72,7 @@ const EXPECTED_RUNTIME_FILES = [
   "repository_fs_helper.py",
   "reveal_in_explorer.py",
   "windows_repository_fs.py",
-];
+].sort();
 
 
 test("plugin probe carries one explicit project binding ID without host session metadata", async () => {
@@ -233,7 +227,8 @@ test("the built plugin exposes one content-bound release identity", async () => 
     cwd: projectRoot,
     env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" },
   });
-  assert.match(runtimeHelp, /usage: imagegen /);
+  assert.match(runtimeHelp, /usage: image_runtime\.py /);
+  assert.match(runtimeHelp, /--project-root/);
 
   const widgetHtml = await readFile(widgetOutput, "utf8");
   assert.equal(count(widgetHtml, "<!doctype html>"), 1);
@@ -322,7 +317,7 @@ test("the built plugin exposes one content-bound release identity", async () => 
     const resultTool = tools.find((tool) => tool.name === "render_image_results");
     const editorTool = tools.find((tool) => tool.name === "open_image_editor");
     assert.equal(resultTool._meta.ui.resourceUri, releaseIdentity.resourceUris.result);
-    assert.equal(editorTool._meta.ui.resourceUri, releaseIdentity.resourceUris.editor);
+    assert.equal(editorTool._meta.ui.resourceUri, undefined);
     assert.deepEqual(resultTool._meta.releaseIdentity, releaseIdentity);
     assert.deepEqual(editorTool._meta.releaseIdentity, releaseIdentity);
 
@@ -366,7 +361,7 @@ test("the built plugin exposes one content-bound release identity", async () => 
       arguments: { projectBindingId, imageId: IMAGE_ID },
     });
     assert.equal(opened.isError, undefined);
-    assert.equal(opened._meta.ui.resourceUri, releaseIdentity.resourceUris.editor);
+    assert.equal(opened._meta?.ui?.resourceUri, undefined);
     assert.deepEqual(opened._meta.releaseIdentity, releaseIdentity);
 
     const { stdout: probeStdout } = await execFileAsync(process.execPath, [

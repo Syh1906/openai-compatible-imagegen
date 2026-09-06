@@ -1,5 +1,6 @@
 import { RESOURCE_MIME_TYPE, registerAppResource } from "@modelcontextprotocol/ext-apps/server";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { createLocalImageTransfer, registerLocalImageTransferTools } from "./local-image-transfer.mjs";
 import { z } from "zod";
 
 import { createEditSubmissionRegistry } from "./edit-submission-registry.mjs";
@@ -214,6 +215,7 @@ export function createImagegenServer({
   saveAnnotations,
   deleteAnnotation,
   hostImageImporter = createHostImageImporter(),
+  localImageTransfer = createLocalImageTransfer(),
   configManager = { initialize: initializeImageConfig, inspect: inspectImageConfig, update: updateImageConfig },
 }) {
   requireReleaseIdentity(releaseIdentity);
@@ -238,6 +240,7 @@ export function createImagegenServer({
   );
   const imageAuditHandlers = createImageAuditHandlers({ runTask, readArtifact });
   registerConfigTools(server, configManager, toolError);
+  registerLocalImageTransferTools(server, { projectContext, transfer: localImageTransfer, toolError });
   registerHostImageImportTools(server, {
     projectContext,
     importer: hostImageImporter,
@@ -1007,7 +1010,7 @@ export function createImagegenServer({
     "open_image_editor",
     {
       title: "Open image editor",
-      description: "Open the focused canvas for a stable image ID. A canvas explicitly destroyed in the current project binding cannot be reopened.",
+      description: "Create an editing session for the current widget to open its focused canvas. Returns session data without mounting another widget. A canvas explicitly destroyed in the current project binding cannot be reopened.",
       inputSchema: { ...projectBindingInputSchema, imageId: imageIdSchema },
       outputSchema: z.object({
         editorSession: openEditorSessionOutputSchema,
@@ -1025,7 +1028,7 @@ export function createImagegenServer({
         openWorldHint: false,
       },
       _meta: {
-        ui: { resourceUri: editorWidgetUri, visibility: ["app"] },
+        ui: { visibility: ["app"] },
         releaseIdentity,
       },
     },
@@ -1043,7 +1046,7 @@ export function createImagegenServer({
           imageId,
         });
         return {
-          content: [{ type: "text", text: `已打开图片 ${imageId} 的聚焦画布，画布会话 ID 为 ${editorSession.id}。` }],
+          content: [{ type: "text", text: `已为图片 ${imageId} 创建画布会话 ${editorSession.id}。` }],
           structuredContent: {
             editorSession: editorSessionOutput(editorSession),
             artifact: imageArtifactMetadata(artifact.metadata),
@@ -1056,7 +1059,6 @@ export function createImagegenServer({
             } : {}),
           },
           _meta: {
-            ui: { resourceUri: editorWidgetUri },
             releaseIdentity,
             imageId,
             editorSessionId: editorSession.id,

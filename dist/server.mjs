@@ -51,7 +51,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 var define_RELEASE_IDENTITY_default;
 var init_define_RELEASE_IDENTITY = __esm({
   "<define:__RELEASE_IDENTITY__>"() {
-    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "1.2.0", serverBuildDigest: "1e9972bc36b40522633b5ccfaba71afecae45b4f4425be0a4b5512a7bd0d0f3f", widgetAssetDigest: "bd048823372c3dd1fbe3c8f2c966ce4d9f5092d6d42b181d73e5afe2c2e4fdb6", fingerprint: "d15ea23d6f180132379c", resourceUris: { result: "ui://openai-compatible-imagegen/result-d15ea23d6f180132379c.html", editor: "ui://openai-compatible-imagegen/editor-d15ea23d6f180132379c.html" } };
+    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "1.2.0", serverBuildDigest: "3411c9616686d0c15f1c60b4eaad1efa929eea8d91bc946a581f3f18922aeeb3", widgetAssetDigest: "8ea2813262ff8975d6392386810ca6eac5a8c9cf9b8eee8fae4a60fdf97c3b67", fingerprint: "596b8c97fb1c6d598c2a", resourceUris: { result: "ui://openai-compatible-imagegen/result-596b8c97fb1c6d598c2a.html", editor: "ui://openai-compatible-imagegen/editor-596b8c97fb1c6d598c2a.html" } };
   }
 });
 
@@ -20273,7 +20273,7 @@ var require_proper_lockfile = __commonJS({
 // mcp/server.mjs
 init_define_RELEASE_IDENTITY();
 import { readFile as readFile3 } from "node:fs/promises";
-import { fileURLToPath as fileURLToPath6 } from "node:url";
+import { fileURLToPath as fileURLToPath7 } from "node:url";
 
 // node_modules/@modelcontextprotocol/sdk/dist/esm/server/stdio.js
 init_define_RELEASE_IDENTITY();
@@ -21999,7 +21999,7 @@ var DEFAULT_HELPER_TERMINATION_GRACE_MS = 1e3;
 async function runRepositoryFsOperation(request, options = {}) {
   const {
     pythonCommand: configuredPythonCommand,
-    runtimePath: runtimePath2 = defaultRuntimePath,
+    runtimePath: runtimePath3 = defaultRuntimePath,
     spawnProcess = spawn,
     helperTimeoutMs = DEFAULT_HELPER_TIMEOUT_MS,
     helperTerminationGraceMs = DEFAULT_HELPER_TERMINATION_GRACE_MS
@@ -22007,7 +22007,7 @@ async function runRepositoryFsOperation(request, options = {}) {
   if (!request || typeof request !== "object" || Array.isArray(request)) {
     throw new Error("repository operation is required");
   }
-  if (typeof runtimePath2 !== "string" || !path.isAbsolute(runtimePath2)) {
+  if (typeof runtimePath3 !== "string" || !path.isAbsolute(runtimePath3)) {
     throw new Error("repository runtime is unavailable");
   }
   if (!Number.isFinite(helperTimeoutMs) || helperTimeoutMs <= 0) {
@@ -22032,8 +22032,8 @@ async function runRepositoryFsOperation(request, options = {}) {
   return await new Promise((resolve, reject) => {
     let child;
     try {
-      child = spawnProcess(pythonCommand, [runtimePath2], {
-        cwd: path.dirname(runtimePath2),
+      child = spawnProcess(pythonCommand, [runtimePath3], {
+        cwd: path.dirname(runtimePath3),
         env: {
           ...process.env,
           PYTHONDONTWRITEBYTECODE: "1",
@@ -22228,6 +22228,8 @@ function safeRuntimeError(error40, stderr) {
   const value = String(error40 || stderr || "repository operation failed");
   const hostImportCode = /^(host_image_(?:request_invalid|output_invalid|handoff_not_found|handoff_state_invalid|import_failed))(?::|$)/.exec(value)?.[1];
   if (hostImportCode) return hostImportCode;
+  const localTransferCode = /^(local_image_(?:request_invalid|source_invalid|import_failed|destination_exists|export_failed|transfer_failed))(?::|$)/.exec(value)?.[1];
+  if (localTransferCode) return localTransferCode;
   if (/not found|cannot find|no such file/i.test(value) || /找不到/.test(value)) return "repository entry not found";
   if (/reparse point/i.test(value)) return "repository path contains a reparse point";
   if (/locked by another image task/i.test(value)) return "repository is locked by another image task";
@@ -22777,7 +22779,7 @@ async function revealImageArtifact(imageId, {
   artifactRoot,
   platform = process.platform,
   pythonCommand = "python",
-  runtimePath: runtimePath2 = defaultRuntimePath2,
+  runtimePath: runtimePath3 = defaultRuntimePath2,
   spawnProcess = spawn2,
   helperTimeoutMs = DEFAULT_HELPER_TIMEOUT_MS2,
   helperTerminationGraceMs = DEFAULT_HELPER_TERMINATION_GRACE_MS2
@@ -22790,7 +22792,7 @@ async function revealImageArtifact(imageId, {
   }
   await runShellHelper({
     pythonCommand,
-    runtimePath: runtimePath2,
+    runtimePath: runtimePath3,
     imageId,
     artifactRoot,
     spawnProcess,
@@ -22801,14 +22803,14 @@ async function revealImageArtifact(imageId, {
 }
 async function runShellHelper({
   pythonCommand,
-  runtimePath: runtimePath2,
+  runtimePath: runtimePath3,
   imageId,
   artifactRoot,
   spawnProcess,
   helperTimeoutMs,
   helperTerminationGraceMs
 }) {
-  if (typeof runtimePath2 !== "string" || !path4.isAbsolute(runtimePath2)) {
+  if (typeof runtimePath3 !== "string" || !path4.isAbsolute(runtimePath3)) {
     throw new Error("artifact reveal runtime is unavailable");
   }
   if (!Number.isFinite(helperTimeoutMs) || helperTimeoutMs <= 0) {
@@ -22818,13 +22820,13 @@ async function runShellHelper({
     throw new Error("artifact reveal termination grace is invalid");
   }
   const child = spawnProcess(pythonCommand, [
-    runtimePath2,
+    runtimePath3,
     "--artifact-root",
     artifactRoot,
     "--image-id",
     imageId
   ], {
-    cwd: path4.dirname(runtimePath2),
+    cwd: path4.dirname(runtimePath3),
     env: {
       ...process.env,
       PYTHONDONTWRITEBYTECODE: "1",
@@ -31234,6 +31236,373 @@ var EMPTY_COMPLETION_RESULT = {
   }
 };
 
+// mcp/local-image-transfer.mjs
+init_define_RELEASE_IDENTITY();
+import { fileURLToPath as fileURLToPath3 } from "node:url";
+
+// mcp/image-tool-schemas.mjs
+init_define_RELEASE_IDENTITY();
+var imageIdSchema = external_exports2.string().regex(/^img_[0-9A-HJKMNP-TV-Z]{26}$/).describe("Stable image ID in the project artifact repository");
+var projectBindingIdSchema = external_exports2.string().regex(/^pbind_[0-9a-f]{64}$/).describe("Image project binding ID");
+var batchIdSchema = external_exports2.string().regex(/^batch_[0-9A-HJKMNP-TV-Z]{26}$/).describe("Immutable batch manifest ID");
+var deliveryReceiptIdSchema = external_exports2.string().regex(/^delivery_[0-9a-f]{64}$/);
+var outputSchema = {
+  size: external_exports2.string().optional(),
+  quality: external_exports2.enum(["auto", "low", "medium", "high"]).optional(),
+  format: external_exports2.enum(["png", "jpeg", "webp"]).optional(),
+  count: external_exports2.number().int().min(1).max(10).optional(),
+  background: external_exports2.enum(["auto", "opaque"]).optional()
+};
+var transparencyInputSchema = external_exports2.object({
+  route: external_exports2.enum(["chroma-matting", "emissive-alpha", "mask-alpha", "prompt-alpha", "native-alpha"]).optional(),
+  options: external_exports2.record(external_exports2.union([external_exports2.string(), external_exports2.number(), external_exports2.boolean()])).optional(),
+  maskImageId: imageIdSchema.optional()
+}).strict();
+var batchRequestIdSchema = external_exports2.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/);
+var batchCountSchema = external_exports2.number().int().min(1).max(16).optional();
+var batchDeliverySchema = external_exports2.object({
+  deliverySize: external_exports2.string().regex(/^\d+[x*]\d+$/).optional(),
+  fit: external_exports2.enum(["stretch", "contain"]).optional(),
+  resample: external_exports2.enum(["nearest", "bilinear"]).optional(),
+  safeMargin: external_exports2.number().min(0).lt(0.5).optional(),
+  qa: external_exports2.boolean().optional(),
+  components: external_exports2.boolean().optional(),
+  grid: external_exports2.union([
+    external_exports2.string().regex(/^\d+[x*]\d+$/),
+    external_exports2.object({ rows: external_exports2.number().int().positive(), cols: external_exports2.number().int().positive() }).strict()
+  ]).optional(),
+  expectedCount: external_exports2.number().int().min(1).max(10).optional(),
+  preview: external_exports2.object({
+    sizes: external_exports2.array(external_exports2.string().regex(/^\d+[x*]\d+$/)).min(1).max(10),
+    backgrounds: external_exports2.array(external_exports2.enum(["transparent", "white", "black", "gray", "checker"])).min(1).max(5).optional(),
+    resample: external_exports2.enum(["nearest", "bilinear"]).optional()
+  }).strict().optional(),
+  transparency: transparencyInputSchema.optional()
+}).strict();
+var batchGenerateItemSchema = external_exports2.object({
+  requestId: batchRequestIdSchema,
+  operation: external_exports2.literal("generate"),
+  prompt: external_exports2.string().min(1),
+  modelProfileId: external_exports2.string().min(1).optional(),
+  transparency: transparencyInputSchema.optional(),
+  delivery: batchDeliverySchema.optional(),
+  ...outputSchema,
+  count: batchCountSchema
+}).strict();
+var batchEditItemSchema = external_exports2.object({
+  requestId: batchRequestIdSchema,
+  operation: external_exports2.literal("edit"),
+  parentImageId: imageIdSchema,
+  referenceImageIds: external_exports2.array(imageIdSchema).max(10).optional(),
+  prompt: external_exports2.string().min(1),
+  modelProfileId: external_exports2.string().min(1).optional(),
+  transparency: transparencyInputSchema.optional(),
+  delivery: batchDeliverySchema.optional(),
+  ...outputSchema,
+  count: batchCountSchema
+}).strict();
+var batchItemsSchema = external_exports2.array(external_exports2.discriminatedUnion("operation", [
+  batchGenerateItemSchema,
+  batchEditItemSchema
+])).min(1).max(64).superRefine((items, context) => {
+  const seen = /* @__PURE__ */ new Set();
+  let totalCount = 0;
+  for (const [index, item] of items.entries()) {
+    if (seen.has(item.requestId)) {
+      context.addIssue({
+        code: external_exports2.ZodIssueCode.custom,
+        message: "requestId must be unique within a batch",
+        path: [index, "requestId"]
+      });
+    }
+    seen.add(item.requestId);
+    totalCount += item.count ?? 1;
+  }
+  if (totalCount > 64) {
+    context.addIssue({
+      code: external_exports2.ZodIssueCode.custom,
+      message: "batch image count must not exceed 64",
+      path: []
+    });
+  }
+});
+var imageArtifactOutputSchema = external_exports2.object({
+  id: imageIdSchema,
+  parentIds: external_exports2.array(imageIdSchema),
+  childIds: external_exports2.array(imageIdSchema),
+  mimeType: external_exports2.enum(["image/png", "image/jpeg", "image/webp"]),
+  width: external_exports2.number().int().positive(),
+  height: external_exports2.number().int().positive(),
+  provider: external_exports2.string().min(1),
+  model: external_exports2.string().min(1),
+  operation: external_exports2.enum(["generate", "edit", "derive", "import"]),
+  prompt: external_exports2.string(),
+  parameters: external_exports2.record(external_exports2.unknown()),
+  annotationId: external_exports2.string().regex(/^ann_[0-9A-HJKMNP-TV-Z]{26}$/).nullable(),
+  createdAt: external_exports2.string().datetime(),
+  derivedFrom: imageIdSchema.optional(),
+  deliveryKind: external_exports2.string().regex(/^[a-z][a-z0-9-]{0,63}$/).optional()
+}).strict();
+var imageArtifactsOutputSchema = external_exports2.object({
+  artifacts: external_exports2.array(imageArtifactOutputSchema).min(1).max(10),
+  artifact: imageArtifactOutputSchema.optional()
+}).strict();
+var deliveryReceiptResultSchema = external_exports2.object({
+  sourceArtifactId: imageIdSchema,
+  deliveryReceiptId: deliveryReceiptIdSchema.optional(),
+  deliveryReady: external_exports2.boolean(),
+  artifacts: external_exports2.array(imageArtifactOutputSchema).max(10),
+  qa: external_exports2.record(external_exports2.unknown()).nullable().optional(),
+  warnings: external_exports2.array(external_exports2.string()).max(20).optional(),
+  summary: external_exports2.record(external_exports2.unknown()).optional(),
+  error: external_exports2.object({
+    code: external_exports2.string().regex(/^[a-z][a-z0-9_]{0,63}$/),
+    message: external_exports2.string().min(1)
+  }).strict().optional()
+}).strict();
+var batchDeliveryReceiptSchema = external_exports2.object({
+  deliveryReady: external_exports2.boolean(),
+  results: external_exports2.array(deliveryReceiptResultSchema).min(1).max(16),
+  artifactIds: external_exports2.array(imageIdSchema).max(160)
+}).strict();
+var apiDeliverySchema = external_exports2.object({
+  status: external_exports2.enum(["published", "published_with_warnings", "partial"]),
+  requestedCount: external_exports2.number().int().min(1).max(16),
+  returnedCount: external_exports2.number().int().nonnegative(),
+  publishedCount: external_exports2.number().int().min(1).max(16),
+  items: external_exports2.array(external_exports2.object({
+    responseIndex: external_exports2.number().int().min(1).max(16),
+    artifactId: imageIdSchema,
+    actualFormat: external_exports2.enum(["png", "jpeg", "webp"]),
+    width: external_exports2.number().int().positive(),
+    height: external_exports2.number().int().positive()
+  }).strict()).max(16),
+  issues: external_exports2.array(external_exports2.object({
+    code: external_exports2.enum([
+      "count_mismatch",
+      "format_mismatch",
+      "item_publish_failed",
+      "item_unusable",
+      "size_mismatch",
+      "total_bytes_exceeded"
+    ]),
+    responseIndex: external_exports2.number().int().min(1).max(16).optional()
+  }).strict()).max(64)
+}).strict();
+var batchManifestResultSchema = external_exports2.discriminatedUnion("ok", [
+  external_exports2.object({
+    requestId: batchRequestIdSchema,
+    operation: external_exports2.enum(["generate", "edit"]),
+    ok: external_exports2.literal(true),
+    artifactIds: external_exports2.array(imageIdSchema).max(16),
+    apiDelivery: apiDeliverySchema.optional(),
+    deliveryReceiptIds: external_exports2.array(deliveryReceiptIdSchema).max(16),
+    deliveryArtifactIds: external_exports2.array(imageIdSchema).max(160)
+  }).strict(),
+  external_exports2.object({
+    requestId: batchRequestIdSchema,
+    operation: external_exports2.enum(["generate", "edit"]),
+    ok: external_exports2.literal(false),
+    errorCode: external_exports2.string().regex(/^[a-z][a-z0-9_]{0,63}$/)
+  }).strict()
+]);
+var batchManifestOutputSchema = external_exports2.object({
+  schemaVersion: external_exports2.literal("batch-manifest.v1"),
+  summary: external_exports2.object({
+    total: external_exports2.number().int().min(1).max(64),
+    succeeded: external_exports2.number().int().min(0).max(64),
+    failed: external_exports2.number().int().min(0).max(64),
+    artifactCount: external_exports2.number().int().min(0).max(64)
+  }).strict(),
+  results: external_exports2.array(batchManifestResultSchema).min(1).max(64),
+  batchId: batchIdSchema,
+  createdAt: external_exports2.string().datetime()
+}).strict();
+var imageBatchResultOutputSchema = external_exports2.discriminatedUnion("ok", [
+  external_exports2.object({
+    requestId: batchRequestIdSchema,
+    operation: external_exports2.enum(["generate", "edit"]),
+    ok: external_exports2.literal(true),
+    artifacts: external_exports2.array(imageArtifactOutputSchema).min(1).max(16),
+    apiDelivery: apiDeliverySchema.optional(),
+    delivery: batchDeliveryReceiptSchema.optional()
+  }).strict(),
+  external_exports2.object({
+    requestId: batchRequestIdSchema,
+    operation: external_exports2.enum(["generate", "edit"]),
+    ok: external_exports2.literal(false),
+    error: external_exports2.object({
+      code: external_exports2.string().regex(/^[a-z][a-z0-9_]{0,63}$/),
+      message: external_exports2.string().min(1)
+    }).strict()
+  }).strict()
+]);
+var imageBatchOutputSchema = external_exports2.object({
+  results: external_exports2.array(imageBatchResultOutputSchema).min(1).max(64),
+  summary: external_exports2.object({
+    total: external_exports2.number().int().min(1).max(64),
+    succeeded: external_exports2.number().int().min(0).max(64),
+    failed: external_exports2.number().int().min(0).max(64),
+    artifactCount: external_exports2.number().int().min(0).max(64)
+  }).strict(),
+  artifactIds: external_exports2.array(imageIdSchema).max(64),
+  manifestReady: external_exports2.boolean(),
+  batchId: batchIdSchema.optional(),
+  manifestCreatedAt: external_exports2.string().datetime().optional(),
+  manifestError: external_exports2.object({
+    code: external_exports2.string().regex(/^[a-z][a-z0-9_]{0,63}$/),
+    message: external_exports2.string().min(1)
+  }).strict().optional()
+}).strict();
+var deliveryInputSchema = batchDeliverySchema;
+var imageDeliveryOutputSchema = external_exports2.object({
+  sourceArtifactId: imageIdSchema,
+  deliveryReceiptId: deliveryReceiptIdSchema.optional(),
+  deliveryReady: external_exports2.boolean(),
+  artifacts: external_exports2.array(imageArtifactOutputSchema).max(10),
+  qa: external_exports2.record(external_exports2.unknown()).nullable().optional(),
+  warnings: external_exports2.array(external_exports2.string()).max(20).optional(),
+  summary: external_exports2.record(external_exports2.unknown()).optional()
+}).strict();
+
+// mcp/tool-errors.mjs
+init_define_RELEASE_IDENTITY();
+var STABLE_TOOL_ERROR_ENTRIES = [
+  ["local_image_request_invalid", "\u672C\u5730\u56FE\u7247\u4F20\u8F93\u8BF7\u6C42\u65E0\u6548\uFF0C\u8BF7\u4F7F\u7528\u9879\u76EE\u76F8\u5BF9\u8DEF\u5F84\u548C\u7A33\u5B9A\u56FE\u7247 ID\u3002"],
+  ["local_image_source_invalid", "\u65E0\u6CD5\u5BFC\u5165\u6E90\u56FE\u7247\uFF1A\u8BF7\u786E\u8BA4\u5B83\u662F\u9879\u76EE\u5185\u53EF\u5B89\u5168\u8BFB\u53D6\u7684 PNG\u3001JPEG \u6216 WebP\uFF0C\u4E14\u4E0D\u8D85\u8FC7 64 MiB \u548C 1 \u4EBF\u50CF\u7D20\u3002"],
+  ["local_image_import_failed", "\u65E0\u6CD5\u53D1\u5E03\u672C\u5730\u56FE\u7247\uFF0C\u8BF7\u68C0\u67E5 artifact \u4ED3\u5E93\u540E\u518D\u7EE7\u7EED\u3002"],
+  ["local_image_destination_exists", "\u5BFC\u51FA\u76EE\u6807\u5DF2\u5B58\u5728\uFF0C\u672A\u8986\u76D6\u6587\u4EF6\uFF1B\u8BF7\u6307\u5B9A\u65B0\u7684\u76EE\u6807\u6587\u4EF6\u540D\u3002"],
+  ["local_image_export_failed", "\u65E0\u6CD5\u5BFC\u51FA\u56FE\u7247\uFF1A\u8BF7\u68C0\u67E5\u56FE\u7247 ID\u3001\u9879\u76EE\u76F8\u5BF9\u8DEF\u5F84\u3001\u683C\u5F0F\u6269\u5C55\u540D\u53CA\u76EE\u5F55\u6743\u9650\uFF1B\u76EE\u6807\u4E0D\u80FD\u4F4D\u4E8E artifact \u4ED3\u5E93\u5185\u3002"],
+  ["local_image_transfer_failed", "\u672C\u5730\u56FE\u7247\u4F20\u8F93\u5931\u8D25\uFF0C\u8BF7\u68C0\u67E5\u8FD0\u884C\u65F6\u72B6\u6001\uFF1B\u4E0D\u8981\u5207\u6362\u751F\u6210\u5165\u53E3\u3002"],
+  ["annotation_image_mismatch", "\u6807\u6CE8\u4E0E\u7236\u56FE\u7247\u4E0D\u5339\u914D\u3002"],
+  ["annotation_not_found", "\u672A\u627E\u5230\u6307\u5B9A\u6807\u6CE8\u3002"],
+  ["annotation_save_failed", "\u4FDD\u5B58\u56FE\u7247\u6807\u6CE8\u5931\u8D25\u3002"],
+  ["api_provider_not_configured", "API Key \u56FE\u7247 Provider \u5C1A\u672A\u914D\u7F6E\u3002"],
+  ["artifact_not_found", "\u672A\u627E\u5230\u6307\u5B9A\u56FE\u7247\u4EA7\u7269\u3002"],
+  ["artifact_ignore_write_failed", "\u65E0\u6CD5\u5B89\u5168\u4FDD\u62A4\u56FE\u7247\u4EA7\u7269\u76EE\u5F55\u3002"],
+  ["artifact_read_failed", "\u8BFB\u53D6\u56FE\u7247\u4EA7\u7269\u5931\u8D25\u3002"],
+  ["artifact_reveal_failed", "\u65E0\u6CD5\u5728\u6587\u4EF6\u5939\u4E2D\u663E\u793A\u56FE\u7247\u3002"],
+  ["editor_session_not_found", "\u753B\u5E03\u4F1A\u8BDD\u4E0D\u5B58\u5728\u6216\u5DF2\u7ECF\u91CA\u653E\u3002"],
+  ["editor_state_invalid", "\u753B\u5E03\u72B6\u6001\u65E0\u6548\u3002"],
+  ["editor_state_unavailable", "\u753B\u5E03\u72B6\u6001\u6682\u65F6\u4E0D\u53EF\u7528\u3002"],
+  ["edit_submission_in_flight", "\u5F53\u524D\u753B\u5E03\u63D0\u4EA4\u6B63\u5728\u6267\u884C\uFF0C\u6682\u65F6\u4E0D\u80FD\u7B7E\u53D1\u65B0\u4FEE\u8BA2\u3002"],
+  ["edit_submission_limit", "\u5F53\u524D\u56FE\u7247\u7684\u753B\u5E03\u63D0\u4EA4\u8BB0\u5F55\u5DF2\u8FBE\u5230\u4E0A\u9650\u3002"],
+  ["edit_submission_mismatch", "\u753B\u5E03\u63D0\u4EA4\u4E0E\u5F53\u524D\u7236\u56FE\u7247\u3001\u6807\u6CE8\u6216\u5B8C\u6574\u7F16\u8F91\u8BF7\u6C42\u4E0D\u5339\u914D\u3002"],
+  ["edit_submission_state_invalid", "\u753B\u5E03\u63D0\u4EA4\u72B6\u6001\u65E0\u6548\u3002"],
+  ["edit_submission_state_unavailable", "\u753B\u5E03\u63D0\u4EA4\u72B6\u6001\u6682\u65F6\u4E0D\u53EF\u7528\u3002"],
+  ["host_observation_state_invalid", "\u5BBF\u4E3B\u89C2\u5BDF\u72B6\u6001\u65E0\u6548\u3002"],
+  ["host_observation_unavailable", "\u5BBF\u4E3B\u89C2\u5BDF\u72B6\u6001\u6682\u65F6\u4E0D\u53EF\u7528\u3002"],
+  ["host_image_handoff_not_found", "\u672A\u627E\u5230\u5F53\u524D\u5BBF\u4E3B\u56FE\u7247\u4EA4\u63A5\u3002"],
+  ["host_image_handoff_state_invalid", "\u5F53\u524D\u5BBF\u4E3B\u56FE\u7247\u4EA4\u63A5\u72B6\u6001\u65E0\u6548\u3002"],
+  ["host_image_import_failed", "\u5BFC\u5165\u5BBF\u4E3B\u56FE\u7247\u5931\u8D25\u3002"],
+  ["host_image_output_invalid", "\u5BBF\u4E3B\u8FD4\u56DE\u7684\u56FE\u7247\u8F93\u51FA\u65E0\u6548\u3002"],
+  ["host_image_request_invalid", "\u5BBF\u4E3B\u56FE\u7247\u4EA4\u63A5\u53C2\u6570\u65E0\u6548\u3002"],
+  ["image_canvas_destroyed", "\u5F53\u524D\u56FE\u7247\u7684\u753B\u5E03\u5DF2\u7ECF\u9500\u6BC1\u3002"],
+  ["image_task_failed", "\u56FE\u7247\u4EFB\u52A1\u6267\u884C\u5931\u8D25\u3002"],
+  ["invalid_json", "\u56FE\u7247\u8FD0\u884C\u65F6\u8F93\u5165\u4E0D\u662F\u6709\u6548 JSON\u3002"],
+  ["invalid_task", "\u56FE\u7247\u4EFB\u52A1\u53C2\u6570\u65E0\u6548\u3002"],
+  ["mask_policy_missing", "\u5F53\u524D\u6807\u6CE8\u7F3A\u5C11\u53EF\u9A8C\u8BC1\u7684\u8499\u7248\u7B56\u7565\u3002"],
+  ["mask_policy_unsupported", "\u5F53\u524D\u6807\u6CE8\u4F7F\u7528\u65E7\u7248\u8499\u7248\u7B56\u7565\uFF0C\u8BF7\u91CD\u65B0\u6253\u5F00\u753B\u5E03\u5E76\u63D0\u4EA4\u3002"],
+  ["missing_edit_submission", "\u5F53\u524D\u56FE\u7247\u5B58\u5728\u5F85\u53D1\u9001\u753B\u5E03\u63D0\u4EA4\uFF0C\u4F46\u7F3A\u5C11\u63D0\u4EA4 ID\u3002"],
+  ["project_binding_conflict", "\u5F53\u524D\u56FE\u7247\u9879\u76EE\u7ED1\u5B9A\u5DF2\u7ECF\u5173\u8054\u5230\u53E6\u4E00\u4E2A\u9879\u76EE\u3002"],
+  ["project_binding_invalid", "\u56FE\u7247\u9879\u76EE\u7ED1\u5B9A ID \u65E0\u6548\u3002"],
+  ["project_binding_required", "\u7F3A\u5C11\u6709\u6548\u7684\u56FE\u7247\u9879\u76EE\u7ED1\u5B9A\u3002"],
+  ["project_binding_state_invalid", "\u56FE\u7247\u9879\u76EE\u7ED1\u5B9A\u72B6\u6001\u65E0\u6548\u3002"],
+  ["project_binding_unavailable", "\u56FE\u7247\u9879\u76EE\u7ED1\u5B9A\u72B6\u6001\u6682\u65F6\u4E0D\u53EF\u7528\u3002"],
+  ["project_root_invalid", "\u56FE\u7247\u9879\u76EE\u6839\u76EE\u5F55\u65E0\u6548\u3002"],
+  ["project_root_is_plugin_root", "\u63D2\u4EF6\u5B89\u88C5\u76EE\u5F55\u4E0D\u80FD\u4F5C\u4E3A\u56FE\u7247\u9879\u76EE\u6839\u76EE\u5F55\u3002"],
+  ["stale_edit_submission", "\u753B\u5E03\u63D0\u4EA4\u5DF2\u8FC7\u671F\u3001\u5DF2\u66F4\u65B0\u6216\u5DF2\u7ECF\u4F7F\u7528\u3002"],
+  ["unsupported_capability", "\u5F53\u524D\u56FE\u7247\u6A21\u578B\u4E0D\u652F\u6301\u8BF7\u6C42\u7684\u80FD\u529B\u3002"],
+  ["unsupported_model_profile", "\u5F53\u524D\u56FE\u7247\u6A21\u578B\u914D\u7F6E\u4E0D\u53D7\u652F\u6301\u3002"],
+  ["image_config_changed", "\u56FE\u7247\u914D\u7F6E\u5728\u9879\u76EE\u7ED1\u5B9A\u540E\u53D1\u751F\u53D8\u5316\uFF0C\u8BF7\u91CD\u65B0\u663E\u5F0F\u7ED1\u5B9A\u5F53\u524D\u56FE\u7247\u9879\u76EE\u3002"],
+  ["image_config_invalid", "\u7528\u6237\u56FE\u7247\u914D\u7F6E\u6587\u4EF6\u65E0\u6548\u6216\u4E0D\u53EF\u5B89\u5168\u8BFB\u53D6\u3002"],
+  ["image_config_missing", "\u7528\u6237\u56FE\u7247\u914D\u7F6E\u7F3A\u5931\u3002\u8BF7\u521B\u5EFA ~/.codex/openai-compatible-imagegen/config.json\u3002"],
+  ["image_config_exists", "\u7528\u6237\u56FE\u7247\u914D\u7F6E\u5DF2\u7ECF\u5B58\u5728\uFF0C\u521D\u59CB\u5316\u4E0D\u4F1A\u8986\u76D6\u73B0\u6709\u6587\u4EF6\u3002"],
+  ["image_config_write_failed", "\u65E0\u6CD5\u5B89\u5168\u5199\u5165\u56FE\u7247\u914D\u7F6E\u3002"],
+  ["image_config_update_invalid", "\u56FE\u7247\u914D\u7F6E\u4FEE\u6539\u5185\u5BB9\u65E0\u6548\u3002"],
+  ["image_config_update_forbidden", "\u56FE\u7247\u914D\u7F6E\u4FEE\u6539\u5305\u542B\u4E0D\u5141\u8BB8\u7684\u5B57\u6BB5\u3002"],
+  ["project_config_missing", "\u9879\u76EE\u56FE\u7247\u914D\u7F6E\u4E0D\u5B58\u5728\uFF0C\u8BF7\u5148\u521D\u59CB\u5316\u6216\u521B\u5EFA\u9879\u76EE\u8986\u76D6\u6587\u4EF6\u3002"],
+  ["output_directory_invalid", "\u8F93\u51FA\u76EE\u5F55\u5FC5\u987B\u662F\u56FE\u7247\u9879\u76EE\u5185\u7684\u5B89\u5168\u76EE\u5F55\u3002"],
+  ["project_config_forbidden", "\u9879\u76EE\u56FE\u7247\u914D\u7F6E\u5305\u542B\u4E0D\u5141\u8BB8\u8986\u76D6\u7684\u5B57\u6BB5\u3002"],
+  ["project_config_invalid", "\u9879\u76EE\u56FE\u7247\u914D\u7F6E\u6587\u4EF6\u65E0\u6548\u6216\u4E0D\u53EF\u5B89\u5168\u8BFB\u53D6\u3002"]
+];
+var stableToolErrorMessages = new Map(STABLE_TOOL_ERROR_ENTRIES);
+function isStableToolErrorCode(code) {
+  return typeof code === "string" && stableToolErrorMessages.has(code);
+}
+
+// mcp/local-image-transfer.mjs
+var runtimePath = fileURLToPath3(new URL(
+  import.meta.url.replaceAll("\\", "/").includes("/dist/server.mjs") ? "./scripts/local_image_transfer.py" : "../scripts/local_image_transfer.py",
+  import.meta.url
+));
+var errorCodes = /* @__PURE__ */ new Set([
+  "local_image_request_invalid",
+  "local_image_source_invalid",
+  "local_image_import_failed",
+  "local_image_destination_exists",
+  "local_image_export_failed",
+  "local_image_transfer_failed"
+]);
+var relativePathSchema = external_exports2.string().min(1).max(4096).describe("Project-relative file path using forward slashes");
+var localWriteAnnotations = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
+function createLocalImageTransfer({
+  runOperation = (request) => runRepositoryFsOperation(request, { runtimePath })
+} = {}) {
+  async function execute(operation, input, context) {
+    try {
+      return await runOperation({
+        operation,
+        ...input,
+        projectRoot: context.projectRoot,
+        artifactRoot: context.artifactRoot
+      });
+    } catch (error40) {
+      const code = errorCodes.has(error40?.message) ? error40.message : "local_image_transfer_failed";
+      throw Object.assign(new Error(code), { code });
+    }
+  }
+  return Object.freeze({
+    importImage: (input, context) => execute("import", input, context),
+    exportImage: (input, context) => execute("export", input, context)
+  });
+}
+function registerLocalImageTransferTools(server2, { projectContext, transfer, toolError: toolError2 }) {
+  async function withProject2(projectBindingId, operation) {
+    try {
+      return await operation(await projectContext.require(projectBindingId));
+    } catch (error40) {
+      return toolError2(error40, isStableToolErrorCode(error40?.code) ? error40.code : "local_image_transfer_failed");
+    }
+  }
+  server2.registerTool("import_local_image", {
+    title: "Import local image",
+    description: "Import an existing PNG, JPEG, or WebP from a project-relative sourcePath as an immutable image artifact. Use the returned artifact.id as edit_image.parentImageId or referenceImageIds. Does not call an image service or change the authentication route. Never use host image handoff tools for existing local files.",
+    inputSchema: { projectBindingId: projectBindingIdSchema, sourcePath: relativePathSchema },
+    outputSchema: external_exports2.object({ artifact: imageArtifactOutputSchema }).strict(),
+    annotations: localWriteAnnotations
+  }, async ({ projectBindingId, sourcePath }) => await withProject2(projectBindingId, async (context) => {
+    const result = await transfer.importImage({ sourcePath }, context);
+    return { content: [{ type: "text", text: `\u5DF2\u5BFC\u5165\u56FE\u7247 ${result.artifact.id}\uFF0C\u53EF\u4F7F\u7528\u6B64 ID \u7EE7\u7EED\u7F16\u8F91\u3002` }], structuredContent: result };
+  }));
+  server2.registerTool("export_image_artifact", {
+    title: "Export image artifact",
+    description: "Copy an image artifact's exact original bytes to a new project-relative destinationPath for downstream tools. Creates missing directories, never overwrites an existing file, and requires a matching PNG, JPEG, or WebP extension. Returns the relative destination, byte count, and SHA-256; the artifact remains immutable.",
+    inputSchema: { projectBindingId: projectBindingIdSchema, imageId: imageIdSchema, destinationPath: relativePathSchema },
+    outputSchema: external_exports2.object({
+      imageId: imageIdSchema,
+      destinationPath: relativePathSchema,
+      mimeType: external_exports2.enum(["image/png", "image/jpeg", "image/webp"]),
+      byteLength: external_exports2.number().int().positive(),
+      sha256: external_exports2.string().regex(/^[0-9a-f]{64}$/)
+    }).strict(),
+    annotations: localWriteAnnotations
+  }, async ({ projectBindingId, imageId, destinationPath }) => await withProject2(projectBindingId, async (context) => {
+    const result = await transfer.exportImage({ imageId, destinationPath }, context);
+    return { content: [{ type: "text", text: "\u5DF2\u5BFC\u51FA\u56FE\u7247\u6587\u4EF6\uFF0C\u539F\u59CB artifact \u4FDD\u6301\u4E0D\u53D8\u3002" }], structuredContent: result };
+  }));
+}
+
 // mcp/edit-submission-registry.mjs
 init_define_RELEASE_IDENTITY();
 import { createHash as createHash2, randomBytes as randomBytes2 } from "node:crypto";
@@ -31653,66 +32022,6 @@ function invalidState() {
 
 // mcp/batch-images.mjs
 init_define_RELEASE_IDENTITY();
-
-// mcp/tool-errors.mjs
-init_define_RELEASE_IDENTITY();
-var STABLE_TOOL_ERROR_ENTRIES = [
-  ["annotation_image_mismatch", "\u6807\u6CE8\u4E0E\u7236\u56FE\u7247\u4E0D\u5339\u914D\u3002"],
-  ["annotation_not_found", "\u672A\u627E\u5230\u6307\u5B9A\u6807\u6CE8\u3002"],
-  ["annotation_save_failed", "\u4FDD\u5B58\u56FE\u7247\u6807\u6CE8\u5931\u8D25\u3002"],
-  ["api_provider_not_configured", "API Key \u56FE\u7247 Provider \u5C1A\u672A\u914D\u7F6E\u3002"],
-  ["artifact_not_found", "\u672A\u627E\u5230\u6307\u5B9A\u56FE\u7247\u4EA7\u7269\u3002"],
-  ["artifact_ignore_write_failed", "\u65E0\u6CD5\u5B89\u5168\u4FDD\u62A4\u56FE\u7247\u4EA7\u7269\u76EE\u5F55\u3002"],
-  ["artifact_read_failed", "\u8BFB\u53D6\u56FE\u7247\u4EA7\u7269\u5931\u8D25\u3002"],
-  ["artifact_reveal_failed", "\u65E0\u6CD5\u5728\u6587\u4EF6\u5939\u4E2D\u663E\u793A\u56FE\u7247\u3002"],
-  ["editor_session_not_found", "\u753B\u5E03\u4F1A\u8BDD\u4E0D\u5B58\u5728\u6216\u5DF2\u7ECF\u91CA\u653E\u3002"],
-  ["editor_state_invalid", "\u753B\u5E03\u72B6\u6001\u65E0\u6548\u3002"],
-  ["editor_state_unavailable", "\u753B\u5E03\u72B6\u6001\u6682\u65F6\u4E0D\u53EF\u7528\u3002"],
-  ["edit_submission_in_flight", "\u5F53\u524D\u753B\u5E03\u63D0\u4EA4\u6B63\u5728\u6267\u884C\uFF0C\u6682\u65F6\u4E0D\u80FD\u7B7E\u53D1\u65B0\u4FEE\u8BA2\u3002"],
-  ["edit_submission_limit", "\u5F53\u524D\u56FE\u7247\u7684\u753B\u5E03\u63D0\u4EA4\u8BB0\u5F55\u5DF2\u8FBE\u5230\u4E0A\u9650\u3002"],
-  ["edit_submission_mismatch", "\u753B\u5E03\u63D0\u4EA4\u4E0E\u5F53\u524D\u7236\u56FE\u7247\u3001\u6807\u6CE8\u6216\u5B8C\u6574\u7F16\u8F91\u8BF7\u6C42\u4E0D\u5339\u914D\u3002"],
-  ["edit_submission_state_invalid", "\u753B\u5E03\u63D0\u4EA4\u72B6\u6001\u65E0\u6548\u3002"],
-  ["edit_submission_state_unavailable", "\u753B\u5E03\u63D0\u4EA4\u72B6\u6001\u6682\u65F6\u4E0D\u53EF\u7528\u3002"],
-  ["host_observation_state_invalid", "\u5BBF\u4E3B\u89C2\u5BDF\u72B6\u6001\u65E0\u6548\u3002"],
-  ["host_observation_unavailable", "\u5BBF\u4E3B\u89C2\u5BDF\u72B6\u6001\u6682\u65F6\u4E0D\u53EF\u7528\u3002"],
-  ["host_image_handoff_not_found", "\u672A\u627E\u5230\u5F53\u524D\u5BBF\u4E3B\u56FE\u7247\u4EA4\u63A5\u3002"],
-  ["host_image_handoff_state_invalid", "\u5F53\u524D\u5BBF\u4E3B\u56FE\u7247\u4EA4\u63A5\u72B6\u6001\u65E0\u6548\u3002"],
-  ["host_image_import_failed", "\u5BFC\u5165\u5BBF\u4E3B\u56FE\u7247\u5931\u8D25\u3002"],
-  ["host_image_output_invalid", "\u5BBF\u4E3B\u8FD4\u56DE\u7684\u56FE\u7247\u8F93\u51FA\u65E0\u6548\u3002"],
-  ["host_image_request_invalid", "\u5BBF\u4E3B\u56FE\u7247\u4EA4\u63A5\u53C2\u6570\u65E0\u6548\u3002"],
-  ["image_canvas_destroyed", "\u5F53\u524D\u56FE\u7247\u7684\u753B\u5E03\u5DF2\u7ECF\u9500\u6BC1\u3002"],
-  ["image_task_failed", "\u56FE\u7247\u4EFB\u52A1\u6267\u884C\u5931\u8D25\u3002"],
-  ["invalid_json", "\u56FE\u7247\u8FD0\u884C\u65F6\u8F93\u5165\u4E0D\u662F\u6709\u6548 JSON\u3002"],
-  ["invalid_task", "\u56FE\u7247\u4EFB\u52A1\u53C2\u6570\u65E0\u6548\u3002"],
-  ["mask_policy_missing", "\u5F53\u524D\u6807\u6CE8\u7F3A\u5C11\u53EF\u9A8C\u8BC1\u7684\u8499\u7248\u7B56\u7565\u3002"],
-  ["mask_policy_unsupported", "\u5F53\u524D\u6807\u6CE8\u4F7F\u7528\u65E7\u7248\u8499\u7248\u7B56\u7565\uFF0C\u8BF7\u91CD\u65B0\u6253\u5F00\u753B\u5E03\u5E76\u63D0\u4EA4\u3002"],
-  ["missing_edit_submission", "\u5F53\u524D\u56FE\u7247\u5B58\u5728\u5F85\u53D1\u9001\u753B\u5E03\u63D0\u4EA4\uFF0C\u4F46\u7F3A\u5C11\u63D0\u4EA4 ID\u3002"],
-  ["project_binding_conflict", "\u5F53\u524D\u56FE\u7247\u9879\u76EE\u7ED1\u5B9A\u5DF2\u7ECF\u5173\u8054\u5230\u53E6\u4E00\u4E2A\u9879\u76EE\u3002"],
-  ["project_binding_invalid", "\u56FE\u7247\u9879\u76EE\u7ED1\u5B9A ID \u65E0\u6548\u3002"],
-  ["project_binding_required", "\u7F3A\u5C11\u6709\u6548\u7684\u56FE\u7247\u9879\u76EE\u7ED1\u5B9A\u3002"],
-  ["project_binding_state_invalid", "\u56FE\u7247\u9879\u76EE\u7ED1\u5B9A\u72B6\u6001\u65E0\u6548\u3002"],
-  ["project_binding_unavailable", "\u56FE\u7247\u9879\u76EE\u7ED1\u5B9A\u72B6\u6001\u6682\u65F6\u4E0D\u53EF\u7528\u3002"],
-  ["project_root_invalid", "\u56FE\u7247\u9879\u76EE\u6839\u76EE\u5F55\u65E0\u6548\u3002"],
-  ["project_root_is_plugin_root", "\u63D2\u4EF6\u5B89\u88C5\u76EE\u5F55\u4E0D\u80FD\u4F5C\u4E3A\u56FE\u7247\u9879\u76EE\u6839\u76EE\u5F55\u3002"],
-  ["stale_edit_submission", "\u753B\u5E03\u63D0\u4EA4\u5DF2\u8FC7\u671F\u3001\u5DF2\u66F4\u65B0\u6216\u5DF2\u7ECF\u4F7F\u7528\u3002"],
-  ["unsupported_capability", "\u5F53\u524D\u56FE\u7247\u6A21\u578B\u4E0D\u652F\u6301\u8BF7\u6C42\u7684\u80FD\u529B\u3002"],
-  ["unsupported_model_profile", "\u5F53\u524D\u56FE\u7247\u6A21\u578B\u914D\u7F6E\u4E0D\u53D7\u652F\u6301\u3002"],
-  ["image_config_changed", "\u56FE\u7247\u914D\u7F6E\u5728\u9879\u76EE\u7ED1\u5B9A\u540E\u53D1\u751F\u53D8\u5316\uFF0C\u8BF7\u91CD\u65B0\u663E\u5F0F\u7ED1\u5B9A\u5F53\u524D\u56FE\u7247\u9879\u76EE\u3002"],
-  ["image_config_invalid", "\u7528\u6237\u56FE\u7247\u914D\u7F6E\u6587\u4EF6\u65E0\u6548\u6216\u4E0D\u53EF\u5B89\u5168\u8BFB\u53D6\u3002"],
-  ["image_config_missing", "\u7528\u6237\u56FE\u7247\u914D\u7F6E\u7F3A\u5931\u3002\u8BF7\u521B\u5EFA ~/.codex/openai-compatible-imagegen/config.json\u3002"],
-  ["image_config_exists", "\u7528\u6237\u56FE\u7247\u914D\u7F6E\u5DF2\u7ECF\u5B58\u5728\uFF0C\u521D\u59CB\u5316\u4E0D\u4F1A\u8986\u76D6\u73B0\u6709\u6587\u4EF6\u3002"],
-  ["image_config_write_failed", "\u65E0\u6CD5\u5B89\u5168\u5199\u5165\u56FE\u7247\u914D\u7F6E\u3002"],
-  ["image_config_update_invalid", "\u56FE\u7247\u914D\u7F6E\u4FEE\u6539\u5185\u5BB9\u65E0\u6548\u3002"],
-  ["image_config_update_forbidden", "\u56FE\u7247\u914D\u7F6E\u4FEE\u6539\u5305\u542B\u4E0D\u5141\u8BB8\u7684\u5B57\u6BB5\u3002"],
-  ["project_config_missing", "\u9879\u76EE\u56FE\u7247\u914D\u7F6E\u4E0D\u5B58\u5728\uFF0C\u8BF7\u5148\u521D\u59CB\u5316\u6216\u521B\u5EFA\u9879\u76EE\u8986\u76D6\u6587\u4EF6\u3002"],
-  ["output_directory_invalid", "\u8F93\u51FA\u76EE\u5F55\u5FC5\u987B\u662F\u56FE\u7247\u9879\u76EE\u5185\u7684\u5B89\u5168\u76EE\u5F55\u3002"],
-  ["project_config_forbidden", "\u9879\u76EE\u56FE\u7247\u914D\u7F6E\u5305\u542B\u4E0D\u5141\u8BB8\u8986\u76D6\u7684\u5B57\u6BB5\u3002"],
-  ["project_config_invalid", "\u9879\u76EE\u56FE\u7247\u914D\u7F6E\u6587\u4EF6\u65E0\u6548\u6216\u4E0D\u53EF\u5B89\u5168\u8BFB\u53D6\u3002"]
-];
-var stableToolErrorMessages = new Map(STABLE_TOOL_ERROR_ENTRIES);
-function isStableToolErrorCode(code) {
-  return typeof code === "string" && stableToolErrorMessages.has(code);
-}
 
 // mcp/delivery-result.mjs
 init_define_RELEASE_IDENTITY();
@@ -32549,233 +32858,6 @@ function requireBatchDependencies({
 
 // mcp/image-audit-handlers.mjs
 init_define_RELEASE_IDENTITY();
-
-// mcp/image-tool-schemas.mjs
-init_define_RELEASE_IDENTITY();
-var imageIdSchema = external_exports2.string().regex(/^img_[0-9A-HJKMNP-TV-Z]{26}$/).describe("Stable image ID in the project artifact repository");
-var projectBindingIdSchema = external_exports2.string().regex(/^pbind_[0-9a-f]{64}$/).describe("Image project binding ID");
-var batchIdSchema = external_exports2.string().regex(/^batch_[0-9A-HJKMNP-TV-Z]{26}$/).describe("Immutable batch manifest ID");
-var deliveryReceiptIdSchema = external_exports2.string().regex(/^delivery_[0-9a-f]{64}$/);
-var outputSchema = {
-  size: external_exports2.string().optional(),
-  quality: external_exports2.enum(["auto", "low", "medium", "high"]).optional(),
-  format: external_exports2.enum(["png", "jpeg", "webp"]).optional(),
-  count: external_exports2.number().int().min(1).max(10).optional(),
-  background: external_exports2.enum(["auto", "opaque"]).optional()
-};
-var transparencyInputSchema = external_exports2.object({
-  route: external_exports2.enum(["chroma-matting", "emissive-alpha", "mask-alpha", "prompt-alpha", "native-alpha"]).optional(),
-  options: external_exports2.record(external_exports2.union([external_exports2.string(), external_exports2.number(), external_exports2.boolean()])).optional(),
-  maskImageId: imageIdSchema.optional()
-}).strict();
-var batchRequestIdSchema = external_exports2.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/);
-var batchCountSchema = external_exports2.number().int().min(1).max(16).optional();
-var batchDeliverySchema = external_exports2.object({
-  deliverySize: external_exports2.string().regex(/^\d+[x*]\d+$/).optional(),
-  fit: external_exports2.enum(["stretch", "contain"]).optional(),
-  resample: external_exports2.enum(["nearest", "bilinear"]).optional(),
-  safeMargin: external_exports2.number().min(0).lt(0.5).optional(),
-  qa: external_exports2.boolean().optional(),
-  components: external_exports2.boolean().optional(),
-  grid: external_exports2.union([
-    external_exports2.string().regex(/^\d+[x*]\d+$/),
-    external_exports2.object({ rows: external_exports2.number().int().positive(), cols: external_exports2.number().int().positive() }).strict()
-  ]).optional(),
-  expectedCount: external_exports2.number().int().min(1).max(10).optional(),
-  preview: external_exports2.object({
-    sizes: external_exports2.array(external_exports2.string().regex(/^\d+[x*]\d+$/)).min(1).max(10),
-    backgrounds: external_exports2.array(external_exports2.enum(["transparent", "white", "black", "gray", "checker"])).min(1).max(5).optional(),
-    resample: external_exports2.enum(["nearest", "bilinear"]).optional()
-  }).strict().optional(),
-  transparency: transparencyInputSchema.optional()
-}).strict();
-var batchGenerateItemSchema = external_exports2.object({
-  requestId: batchRequestIdSchema,
-  operation: external_exports2.literal("generate"),
-  prompt: external_exports2.string().min(1),
-  modelProfileId: external_exports2.string().min(1).optional(),
-  transparency: transparencyInputSchema.optional(),
-  delivery: batchDeliverySchema.optional(),
-  ...outputSchema,
-  count: batchCountSchema
-}).strict();
-var batchEditItemSchema = external_exports2.object({
-  requestId: batchRequestIdSchema,
-  operation: external_exports2.literal("edit"),
-  parentImageId: imageIdSchema,
-  referenceImageIds: external_exports2.array(imageIdSchema).max(10).optional(),
-  prompt: external_exports2.string().min(1),
-  modelProfileId: external_exports2.string().min(1).optional(),
-  transparency: transparencyInputSchema.optional(),
-  delivery: batchDeliverySchema.optional(),
-  ...outputSchema,
-  count: batchCountSchema
-}).strict();
-var batchItemsSchema = external_exports2.array(external_exports2.discriminatedUnion("operation", [
-  batchGenerateItemSchema,
-  batchEditItemSchema
-])).min(1).max(64).superRefine((items, context) => {
-  const seen = /* @__PURE__ */ new Set();
-  let totalCount = 0;
-  for (const [index, item] of items.entries()) {
-    if (seen.has(item.requestId)) {
-      context.addIssue({
-        code: external_exports2.ZodIssueCode.custom,
-        message: "requestId must be unique within a batch",
-        path: [index, "requestId"]
-      });
-    }
-    seen.add(item.requestId);
-    totalCount += item.count ?? 1;
-  }
-  if (totalCount > 64) {
-    context.addIssue({
-      code: external_exports2.ZodIssueCode.custom,
-      message: "batch image count must not exceed 64",
-      path: []
-    });
-  }
-});
-var imageArtifactOutputSchema = external_exports2.object({
-  id: imageIdSchema,
-  parentIds: external_exports2.array(imageIdSchema),
-  childIds: external_exports2.array(imageIdSchema),
-  mimeType: external_exports2.enum(["image/png", "image/jpeg", "image/webp"]),
-  width: external_exports2.number().int().positive(),
-  height: external_exports2.number().int().positive(),
-  provider: external_exports2.string().min(1),
-  model: external_exports2.string().min(1),
-  operation: external_exports2.enum(["generate", "edit", "derive", "import"]),
-  prompt: external_exports2.string(),
-  parameters: external_exports2.record(external_exports2.unknown()),
-  annotationId: external_exports2.string().regex(/^ann_[0-9A-HJKMNP-TV-Z]{26}$/).nullable(),
-  createdAt: external_exports2.string().datetime(),
-  derivedFrom: imageIdSchema.optional(),
-  deliveryKind: external_exports2.string().regex(/^[a-z][a-z0-9-]{0,63}$/).optional()
-}).strict();
-var imageArtifactsOutputSchema = external_exports2.object({
-  artifacts: external_exports2.array(imageArtifactOutputSchema).min(1).max(10),
-  artifact: imageArtifactOutputSchema.optional()
-}).strict();
-var deliveryReceiptResultSchema = external_exports2.object({
-  sourceArtifactId: imageIdSchema,
-  deliveryReceiptId: deliveryReceiptIdSchema.optional(),
-  deliveryReady: external_exports2.boolean(),
-  artifacts: external_exports2.array(imageArtifactOutputSchema).max(10),
-  qa: external_exports2.record(external_exports2.unknown()).nullable().optional(),
-  warnings: external_exports2.array(external_exports2.string()).max(20).optional(),
-  summary: external_exports2.record(external_exports2.unknown()).optional(),
-  error: external_exports2.object({
-    code: external_exports2.string().regex(/^[a-z][a-z0-9_]{0,63}$/),
-    message: external_exports2.string().min(1)
-  }).strict().optional()
-}).strict();
-var batchDeliveryReceiptSchema = external_exports2.object({
-  deliveryReady: external_exports2.boolean(),
-  results: external_exports2.array(deliveryReceiptResultSchema).min(1).max(16),
-  artifactIds: external_exports2.array(imageIdSchema).max(160)
-}).strict();
-var apiDeliverySchema = external_exports2.object({
-  status: external_exports2.enum(["published", "published_with_warnings", "partial"]),
-  requestedCount: external_exports2.number().int().min(1).max(16),
-  returnedCount: external_exports2.number().int().nonnegative(),
-  publishedCount: external_exports2.number().int().min(1).max(16),
-  items: external_exports2.array(external_exports2.object({
-    responseIndex: external_exports2.number().int().min(1).max(16),
-    artifactId: imageIdSchema,
-    actualFormat: external_exports2.enum(["png", "jpeg", "webp"]),
-    width: external_exports2.number().int().positive(),
-    height: external_exports2.number().int().positive()
-  }).strict()).max(16),
-  issues: external_exports2.array(external_exports2.object({
-    code: external_exports2.enum([
-      "count_mismatch",
-      "format_mismatch",
-      "item_publish_failed",
-      "item_unusable",
-      "size_mismatch",
-      "total_bytes_exceeded"
-    ]),
-    responseIndex: external_exports2.number().int().min(1).max(16).optional()
-  }).strict()).max(64)
-}).strict();
-var batchManifestResultSchema = external_exports2.discriminatedUnion("ok", [
-  external_exports2.object({
-    requestId: batchRequestIdSchema,
-    operation: external_exports2.enum(["generate", "edit"]),
-    ok: external_exports2.literal(true),
-    artifactIds: external_exports2.array(imageIdSchema).max(16),
-    apiDelivery: apiDeliverySchema.optional(),
-    deliveryReceiptIds: external_exports2.array(deliveryReceiptIdSchema).max(16),
-    deliveryArtifactIds: external_exports2.array(imageIdSchema).max(160)
-  }).strict(),
-  external_exports2.object({
-    requestId: batchRequestIdSchema,
-    operation: external_exports2.enum(["generate", "edit"]),
-    ok: external_exports2.literal(false),
-    errorCode: external_exports2.string().regex(/^[a-z][a-z0-9_]{0,63}$/)
-  }).strict()
-]);
-var batchManifestOutputSchema = external_exports2.object({
-  schemaVersion: external_exports2.literal("batch-manifest.v1"),
-  summary: external_exports2.object({
-    total: external_exports2.number().int().min(1).max(64),
-    succeeded: external_exports2.number().int().min(0).max(64),
-    failed: external_exports2.number().int().min(0).max(64),
-    artifactCount: external_exports2.number().int().min(0).max(64)
-  }).strict(),
-  results: external_exports2.array(batchManifestResultSchema).min(1).max(64),
-  batchId: batchIdSchema,
-  createdAt: external_exports2.string().datetime()
-}).strict();
-var imageBatchResultOutputSchema = external_exports2.discriminatedUnion("ok", [
-  external_exports2.object({
-    requestId: batchRequestIdSchema,
-    operation: external_exports2.enum(["generate", "edit"]),
-    ok: external_exports2.literal(true),
-    artifacts: external_exports2.array(imageArtifactOutputSchema).min(1).max(16),
-    apiDelivery: apiDeliverySchema.optional(),
-    delivery: batchDeliveryReceiptSchema.optional()
-  }).strict(),
-  external_exports2.object({
-    requestId: batchRequestIdSchema,
-    operation: external_exports2.enum(["generate", "edit"]),
-    ok: external_exports2.literal(false),
-    error: external_exports2.object({
-      code: external_exports2.string().regex(/^[a-z][a-z0-9_]{0,63}$/),
-      message: external_exports2.string().min(1)
-    }).strict()
-  }).strict()
-]);
-var imageBatchOutputSchema = external_exports2.object({
-  results: external_exports2.array(imageBatchResultOutputSchema).min(1).max(64),
-  summary: external_exports2.object({
-    total: external_exports2.number().int().min(1).max(64),
-    succeeded: external_exports2.number().int().min(0).max(64),
-    failed: external_exports2.number().int().min(0).max(64),
-    artifactCount: external_exports2.number().int().min(0).max(64)
-  }).strict(),
-  artifactIds: external_exports2.array(imageIdSchema).max(64),
-  manifestReady: external_exports2.boolean(),
-  batchId: batchIdSchema.optional(),
-  manifestCreatedAt: external_exports2.string().datetime().optional(),
-  manifestError: external_exports2.object({
-    code: external_exports2.string().regex(/^[a-z][a-z0-9_]{0,63}$/),
-    message: external_exports2.string().min(1)
-  }).strict().optional()
-}).strict();
-var deliveryInputSchema = batchDeliverySchema;
-var imageDeliveryOutputSchema = external_exports2.object({
-  sourceArtifactId: imageIdSchema,
-  deliveryReceiptId: deliveryReceiptIdSchema.optional(),
-  deliveryReady: external_exports2.boolean(),
-  artifacts: external_exports2.array(imageArtifactOutputSchema).max(10),
-  qa: external_exports2.record(external_exports2.unknown()).nullable().optional(),
-  warnings: external_exports2.array(external_exports2.string()).max(20).optional(),
-  summary: external_exports2.record(external_exports2.unknown()).optional()
-}).strict();
-
-// mcp/image-audit-handlers.mjs
 function createImageAuditHandlers({ runTask, readArtifact }) {
   return {
     getBatchManifest: async ({ batchId, context }) => {
@@ -32867,7 +32949,7 @@ function stableFailure(code, message, cause) {
 init_define_RELEASE_IDENTITY();
 import { createHash as createHash3 } from "node:crypto";
 import path5 from "node:path";
-import { fileURLToPath as fileURLToPath3 } from "node:url";
+import { fileURLToPath as fileURLToPath4 } from "node:url";
 var MAX_RUNTIME_ROOT_ENTRIES = 32;
 var MAX_RUNTIME_ROOT_SCHEME_LENGTH = 32;
 function createRuntimeObservation({
@@ -32933,7 +33015,7 @@ function summarizeRoot(root, paths) {
   };
   if (scheme !== "file") return summary;
   try {
-    const rootPath = fileURLToPath3(uri);
+    const rootPath = fileURLToPath4(uri);
     return {
       ...summary,
       fingerprint: fingerprintPath(rootPath),
@@ -35247,9 +35329,9 @@ function registerConfigTools(server2, configManager, toolError2) {
 
 // mcp/host-image-import.mjs
 init_define_RELEASE_IDENTITY();
-import { fileURLToPath as fileURLToPath4 } from "node:url";
+import { fileURLToPath as fileURLToPath5 } from "node:url";
 var runtimeRelativePath3 = import.meta.url.replaceAll("\\", "/").includes("/dist/server.mjs") ? "./scripts/host_image_import.py" : "../scripts/host_image_import.py";
-var defaultRuntimePath3 = fileURLToPath4(new URL(runtimeRelativePath3, import.meta.url));
+var defaultRuntimePath3 = fileURLToPath5(new URL(runtimeRelativePath3, import.meta.url));
 var HOST_IMPORT_ERROR_CODES = /* @__PURE__ */ new Set([
   "host_image_request_invalid",
   "host_image_output_invalid",
@@ -35687,6 +35769,7 @@ function createImagegenServer({
   saveAnnotations,
   deleteAnnotation,
   hostImageImporter = createHostImageImporter(),
+  localImageTransfer = createLocalImageTransfer(),
   configManager = { initialize: initializeImageConfig, inspect: inspectImageConfig, update: updateImageConfig }
 }) {
   requireReleaseIdentity(releaseIdentity);
@@ -35711,6 +35794,7 @@ function createImagegenServer({
   );
   const imageAuditHandlers = createImageAuditHandlers({ runTask, readArtifact });
   registerConfigTools(server2, configManager, toolError);
+  registerLocalImageTransferTools(server2, { projectContext, transfer: localImageTransfer, toolError });
   registerHostImageImportTools(server2, {
     projectContext,
     importer: hostImageImporter,
@@ -36433,7 +36517,7 @@ function createImagegenServer({
     "open_image_editor",
     {
       title: "Open image editor",
-      description: "Open the focused canvas for a stable image ID. A canvas explicitly destroyed in the current project binding cannot be reopened.",
+      description: "Create an editing session for the current widget to open its focused canvas. Returns session data without mounting another widget. A canvas explicitly destroyed in the current project binding cannot be reopened.",
       inputSchema: { ...projectBindingInputSchema, imageId: imageIdSchema },
       outputSchema: external_exports2.object({
         editorSession: openEditorSessionOutputSchema,
@@ -36451,7 +36535,7 @@ function createImagegenServer({
         openWorldHint: false
       },
       _meta: {
-        ui: { resourceUri: editorWidgetUri, visibility: ["app"] },
+        ui: { visibility: ["app"] },
         releaseIdentity
       }
     },
@@ -36469,7 +36553,7 @@ function createImagegenServer({
           imageId
         });
         return {
-          content: [{ type: "text", text: `\u5DF2\u6253\u5F00\u56FE\u7247 ${imageId} \u7684\u805A\u7126\u753B\u5E03\uFF0C\u753B\u5E03\u4F1A\u8BDD ID \u4E3A ${editorSession.id}\u3002` }],
+          content: [{ type: "text", text: `\u5DF2\u4E3A\u56FE\u7247 ${imageId} \u521B\u5EFA\u753B\u5E03\u4F1A\u8BDD ${editorSession.id}\u3002` }],
           structuredContent: {
             editorSession: editorSessionOutput(editorSession),
             artifact: imageArtifactMetadata(artifact.metadata),
@@ -36482,7 +36566,6 @@ function createImagegenServer({
             } : {}
           },
           _meta: {
-            ui: { resourceUri: editorWidgetUri },
             releaseIdentity,
             imageId,
             editorSessionId: editorSession.id
@@ -37563,9 +37646,9 @@ function invalidStateError2() {
 init_define_RELEASE_IDENTITY();
 import { spawn as spawn3 } from "node:child_process";
 import path15 from "node:path";
-import { fileURLToPath as fileURLToPath5 } from "node:url";
+import { fileURLToPath as fileURLToPath6 } from "node:url";
 var runtimeRelativePath4 = import.meta.url.replaceAll("\\", "/").includes("/dist/server.mjs") ? "./scripts/image_runtime.py" : "../scripts/image_runtime.py";
-var runtimePath = fileURLToPath5(new URL(runtimeRelativePath4, import.meta.url));
+var runtimePath2 = fileURLToPath6(new URL(runtimeRelativePath4, import.meta.url));
 async function runImageTask(task, options = {}) {
   const {
     projectRoot,
@@ -37593,7 +37676,7 @@ async function runImageTask(task, options = {}) {
   }
   return await new Promise((resolve, reject) => {
     const args = [
-      runtimePath,
+      runtimePath2,
       "machine",
       "--project-root",
       projectRoot,
@@ -37645,8 +37728,8 @@ async function runImageTask(task, options = {}) {
 }
 
 // mcp/server.mjs
-var widgetPath = fileURLToPath6(new URL("../dist/widget/index.html", import.meta.url));
-var pluginRoot = fileURLToPath6(new URL("..", import.meta.url));
+var widgetPath = fileURLToPath7(new URL("../dist/widget/index.html", import.meta.url));
+var pluginRoot = fileURLToPath7(new URL("..", import.meta.url));
 var server = createImagegenServer({
   releaseIdentity: define_RELEASE_IDENTITY_default,
   launchContext: {

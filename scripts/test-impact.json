@@ -11,6 +11,13 @@
   },
   "rules": [
     {
+      "name": "local-image-transfer",
+      "files": ["scripts/local_image_transfer.py", "mcp/local-image-transfer.mjs", "tests/plugin-runtime/test_local_image_transfer.py", "tests/mcp/test_local_image_transfer.mjs"],
+      "suites": ["plugin-runtime", "mcp", "release"],
+      "checks": ["build", "diff", "plugin"],
+      "platforms": ["macos", "windows"]
+    },
+    {
       "name": "release-build",
       "files": ["scripts/build.mjs", "scripts/build-release-artifacts.mjs", "scripts/compare-release-artifacts.mjs", "scripts/validate-release-notes.mjs"],
       "suites": ["release"],
@@ -267,6 +274,11 @@
       "name": "test-support-mcp",
       "files": ["tests/support/fenced-record-fixture.mjs", "tests/support/file-lock-owner-worker.mjs", "tests/support/mcp-tool-client.mjs", "tests/support/project-binding-read-race-worker.mjs"],
       "suites": ["mcp"]
+    },
+    {
+      "name": "test-support-release",
+      "files": ["tests/support/stage-probe-rename-lock.mjs"],
+      "suites": ["release"]
     },
     {
       "name": "test-support-mcp-web",

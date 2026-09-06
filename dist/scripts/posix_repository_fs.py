@@ -187,15 +187,22 @@ class VerifiedFile(AbstractContextManager["VerifiedFile"]):
         self._descriptor = descriptor
         self._directory_descriptors = directory_descriptors
 
-    def read_bytes(self) -> bytes:
+    def read_bytes(self, *, max_bytes: int | None = None) -> bytes:
         if self._descriptor is None:
             raise ValueError("verified file is closed")
+        if max_bytes is not None and (max_bytes < 1 or os.fstat(self._descriptor).st_size > max_bytes):
+            raise ValueError("verified file exceeds the byte limit")
         os.lseek(self._descriptor, 0, os.SEEK_SET)
         chunks: list[bytes] = []
+        total = 0
         while True:
-            chunk = os.read(self._descriptor, 1024 * 1024)
+            limit = min(1024 * 1024, max_bytes - total + 1) if max_bytes is not None else 1024 * 1024
+            chunk = os.read(self._descriptor, limit)
             if not chunk:
                 return b"".join(chunks)
+            total += len(chunk)
+            if max_bytes is not None and total > max_bytes:
+                raise ValueError("verified file exceeds the byte limit")
             chunks.append(chunk)
 
     def close(self) -> None:

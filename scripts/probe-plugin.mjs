@@ -352,6 +352,8 @@ async function main() {
     requireValue(tools.includes("open_image_editor"), "MCP server does not expose open_image_editor");
     requireValue(tools.includes("generate_image"), "MCP server does not expose generate_image");
     requireValue(tools.includes("edit_image"), "MCP server does not expose edit_image");
+    requireValue(tools.includes("import_local_image"), "MCP server does not expose import_local_image");
+    requireValue(tools.includes("export_image_artifact"), "MCP server does not expose export_image_artifact");
     requireValue(tools.includes("batch_images"), "MCP server does not expose batch_images");
     requireValue(tools.includes("deliver_image"), "MCP server does not expose deliver_image");
     requireValue(tools.includes("get_image_artifact"), "MCP server does not expose get_image_artifact");
@@ -380,8 +382,8 @@ async function main() {
     );
     requireValue(
       resultTool?._meta?.ui?.resourceUri === releaseIdentity.resourceUris.result
-        && editorTool?._meta?.ui?.resourceUri === releaseIdentity.resourceUris.editor,
-      "tool resource URIs differ from release identity",
+        && editorTool?._meta?.ui?.resourceUri === undefined,
+      "result tool must own its resource and editor session tool must not mount another widget",
     );
     requireValue(
       Object.values(releaseIdentity.resourceUris).every((uri) => resources.includes(uri)),
@@ -529,6 +531,7 @@ async function main() {
       const openResult = await callProjectTool("open_image_editor", { imageId });
       const session = openResult.structuredContent?.editorSession;
       requireValue(openResult.isError !== true && session?.id, `open_image_editor failed for ${imageId}`);
+      requireValue(openResult._meta?.ui?.resourceUri === undefined, "editor session result must not mount another widget");
       requireValue(session.imageId === imageId && session.status === "active", "open_image_editor returned an invalid session");
       const activeResult = await callProjectTool("get_image_editor_session", { editorSessionId: session.id });
       requireValue(activeResult.structuredContent?.editorSession?.status === "active", "editor session was not active after open");

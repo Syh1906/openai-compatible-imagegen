@@ -43,3 +43,32 @@ test("result widget starts fullscreen handoff while the editor session is still 
     dom.window.close();
   }
 });
+
+test("canvas renders after fullscreen context arrives without waiting for the display reply", async () => {
+  const dom = new JSDOM('<!doctype html><html><body><main></main></body></html>', {
+    pretendToBeVisual: true, url: "https://widget.local/",
+  });
+  const previous = installDomGlobals(dom.window);
+  const host = installHost(dom.window, {
+    toolName: "render_image_results",
+    deferDisplayModeRequests: true,
+    initialArtifacts: [{ id: IMAGE_ID, mimeType: "image/png", width: 1, height: 1, operation: "generate", parentIds: [], childIds: [] }],
+  });
+  try {
+    await import(`../../web/editor-runtime.mjs?opening-context=${Date.now()}`);
+    await waitFor(() => document.querySelector("[data-action=open-editor]")?.disabled === false);
+    document.querySelector("[data-action=open-editor]").click();
+    await waitFor(() => host.pendingDisplayModeRequestCount === 1);
+    host.notifyHostContext("fullscreen");
+    await waitFor(() => document.querySelector(".editor-app") !== null);
+    assert.equal(host.pendingDisplayModeRequestCount, 1);
+    assert.equal(document.querySelector("[data-image]")?.hidden, false);
+    host.resolveDisplayModeRequest("fullscreen", { notifyAfter: false });
+  } finally {
+    host.rejectPendingDisplayModeRequests();
+    await new Promise((resolve) => setImmediate(resolve));
+    host.dispose();
+    restoreDomGlobals(previous);
+    dom.window.close();
+  }
+});

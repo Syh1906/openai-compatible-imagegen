@@ -37,6 +37,8 @@ const HOST_OBSERVATIONS = [
 ];
 
 const PROJECT_BOUND_TOOL_NAMES = [
+  "import_local_image",
+  "export_image_artifact",
   "prepare_host_image_import",
   "stage_host_image_import",
   "finalize_host_image_import",
@@ -141,7 +143,7 @@ test("all project-bound tools require an explicit project binding ID", async () 
   await withProjectRoots(async ({ pluginRoot }) => {
     const server = createTestServer({ pluginRoot });
     try {
-      assert.equal(Object.keys(server._registeredTools).length, 27);
+      assert.equal(Object.keys(server._registeredTools).length, 29);
       for (const name of PROJECT_BOUND_TOOL_NAMES) {
         const schema = server._registeredTools[name]?.inputSchema;
         assert.notEqual(schema, undefined, `${name} input schema missing`);

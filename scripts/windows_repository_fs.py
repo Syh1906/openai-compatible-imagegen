@@ -429,12 +429,14 @@ class VerifiedFile(AbstractContextManager["VerifiedFile"]):
         self._handle = handle
         self._directory_handles = directory_handles
 
-    def read_bytes(self) -> bytes:
+    def read_bytes(self, *, max_bytes: int | None = None) -> bytes:
         if self._handle is None:
             raise ValueError("verified file is closed")
         size = ctypes.c_longlong()
         if not _get_file_size(self._handle, ctypes.byref(size)):
             _raise_last_error(Path("<verified file>"))
+        if max_bytes is not None and (max_bytes < 1 or size.value > max_bytes):
+            raise ValueError("verified file exceeds the byte limit")
         if not _set_file_pointer(self._handle, 0, None, 0):
             _raise_last_error(Path("<verified file>"))
         remaining = size.value
