@@ -130,6 +130,67 @@ API Key 用户基线声明活动 profile、provider、provider 自定义的 mode
 
 `storage.output_directory` 必须是项目内的相对目录，默认值为 `output/imagegen/`。项目绑定会在解析后的输出目录中创建或验证内容仅为 `*` 的 `.gitignore`，让图片、提示词、标注和 metadata 保持本地。已有规则不兼容时会停止绑定，不会覆盖该规则。绝对路径、项目根目录、项目外路径、文件、符号链接、junction 和其他 reparse point 都会被拒绝。
 
+## 配置 MuAPI
+
+MuAPI 提供 OpenAI 兼容的图片生成接口。请使用 `openai-compatible` 协议，并将 `base_url` 设置到 `/v1` 这一层；运行时会自动追加 `/images/generations`。下面的示例使用 `flux-schnell` 模型，并将路线声明为仅生成，因为这一路线不提供图片编辑、mask 或多参考图输入。
+
+Standalone `auth.json` 可以配置为：
+
+```json
+{
+  "protocol": "openai-compatible",
+  "base_url": "https://api.muapi.ai/v1",
+  "api_key_env": "MUAPI_API_KEY",
+  "model": "flux-schnell",
+  "capabilities": {
+    "generate": true,
+    "edit": false,
+    "mask": false,
+    "multi_reference": false
+  },
+  "defaults": {
+    "size": "1024x1024",
+    "quality": "medium",
+    "output_format": "png"
+  }
+}
+```
+
+Codex Plugin 在用户基线中配置同一个 endpoint：
+
+```json
+{
+  "config_version": 1,
+  "auth_mode": "apikey",
+  "active_profile": "primary/flux-schnell",
+  "providers": {
+    "primary": {
+      "protocol": "openai-compatible",
+      "base_url": "https://api.muapi.ai/v1",
+      "api_key_env": "MUAPI_API_KEY"
+    }
+  },
+  "models": {
+    "primary/flux-schnell": {
+      "provider": "primary",
+      "model": "flux-schnell",
+      "capabilities": {
+        "generate": true,
+        "edit": false,
+        "mask": false,
+        "multi_reference": false
+      }
+    }
+  },
+  "defaults": { "size": "1024x1024", "quality": "medium", "output_format": "png" },
+  "postprocess": { "enabled": true },
+  "transparency": { "default_route": "chroma-matting" },
+  "storage": { "output_directory": "output/imagegen" }
+}
+```
+
+生成前在环境变量中设置 `MUAPI_API_KEY`。MuAPI 图片接口会在任务处理完成后返回图片 URL；运行时下载这些 URL 时不会转发 API key。需要透明输出时，请使用本地透明处理路线。当前接口和模型详情请参阅 [MuAPI 图片 API](https://muapi.ai/ai-image-api) 和 [API 参考](https://muapi.ai/docs/api-reference)。
+
 ## 配置 Atlas Cloud
 
 Atlas Cloud 是可选的 API Key 文生图 provider。Standalone `auth.json` 可以配置为：

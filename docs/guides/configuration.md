@@ -130,6 +130,67 @@ Configuration tools never return keys. Writes protect user and project configura
 
 `storage.output_directory` is a relative directory inside the project. The default is `output/imagegen/`. Project binding creates or verifies a `.gitignore` containing only `*` in the resolved output directory, so images, prompts, annotations, and metadata remain local. An incompatible ignore rule stops binding without being overwritten. Absolute paths, project-root output, outside paths, files, symbolic links, junctions, and other reparse points are rejected.
 
+## Configure MuAPI
+
+MuAPI provides an OpenAI-compatible image-generation endpoint. Configure it with the `openai-compatible` protocol and stop `base_url` at `/v1`; the runtime appends `/images/generations`. The example below uses the `flux-schnell` model and declares the route as generation-only because this integration does not provide image edits, masks, or multi-reference inputs.
+
+A Standalone `auth.json` can use:
+
+```json
+{
+  "protocol": "openai-compatible",
+  "base_url": "https://api.muapi.ai/v1",
+  "api_key_env": "MUAPI_API_KEY",
+  "model": "flux-schnell",
+  "capabilities": {
+    "generate": true,
+    "edit": false,
+    "mask": false,
+    "multi_reference": false
+  },
+  "defaults": {
+    "size": "1024x1024",
+    "quality": "medium",
+    "output_format": "png"
+  }
+}
+```
+
+For the Codex Plugin, configure the same endpoint in the user baseline:
+
+```json
+{
+  "config_version": 1,
+  "auth_mode": "apikey",
+  "active_profile": "primary/flux-schnell",
+  "providers": {
+    "primary": {
+      "protocol": "openai-compatible",
+      "base_url": "https://api.muapi.ai/v1",
+      "api_key_env": "MUAPI_API_KEY"
+    }
+  },
+  "models": {
+    "primary/flux-schnell": {
+      "provider": "primary",
+      "model": "flux-schnell",
+      "capabilities": {
+        "generate": true,
+        "edit": false,
+        "mask": false,
+        "multi_reference": false
+      }
+    }
+  },
+  "defaults": { "size": "1024x1024", "quality": "medium", "output_format": "png" },
+  "postprocess": { "enabled": true },
+  "transparency": { "default_route": "chroma-matting" },
+  "storage": { "output_directory": "output/imagegen" }
+}
+```
+
+Set `MUAPI_API_KEY` in the environment before generation. The MuAPI image route returns provider-generated image URLs after task processing; the runtime downloads those URLs without forwarding the API key. Use the local transparency route when transparent output is needed. See the [MuAPI image API](https://muapi.ai/ai-image-api) and [API reference](https://muapi.ai/docs/api-reference) for current endpoint and model details.
+
 ## Configure Atlas Cloud
 
 Atlas Cloud is an optional API Key provider for text-to-image generation. A Standalone `auth.json` can use:

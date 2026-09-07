@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Document MuAPI as a generation-only OpenAI-compatible image provider for Standalone and Plugin configuration.
+
 ## [1.3.0] - 2026-09-07
 
 ### 新增
