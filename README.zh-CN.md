@@ -12,7 +12,7 @@
 
 </div>
 
-OpenAI 兼容图片把同一套图片核心发布为两种安装形态。Standalone Skill 适合 Agent 客户端和命令行工作流；Codex Plugin 在此基础上增加结果卡、聚焦画布、标注、不可变产物和版本历史。API Key 路线支持默认的 OpenAI-compatible 协议和可选的 Atlas Cloud 图片生成。
+OpenAI 兼容图片（OpenAI-Compatible Images）把同一套图片核心发布为两种安装形态。Standalone Skill 适合 Agent 客户端和命令行工作流；Codex Plugin 在此基础上增加结果卡、聚焦画布、标注、不可变产物和版本历史。API Key 路线支持默认的 OpenAI-compatible 协议和可选的 Atlas Cloud 图片生成。
 
 ## 选择安装形态
 
@@ -27,6 +27,8 @@ OpenAI 兼容图片把同一套图片核心发布为两种安装形态。Standal
 
 在会话中生成图片，再打开聚焦画布标记区域，并为每处修改添加说明。
 
+API Key 生成和编辑支持持久化异步任务：长批次可持续查询进度，等待超时后可找回已确认结果，交付失败可保留原图继续处理。参见[长时间生成与批量任务](docs/guides/image-jobs.zh-CN.md)。
+
 **会话图片结果**
 
 ![Codex App 中的 OpenAI 兼容图片结果卡](docs/images/codex-result-card.png)
@@ -37,7 +39,7 @@ OpenAI 兼容图片把同一套图片核心发布为两种安装形态。Standal
 
 ## 安装 Codex Plugin
 
-需要：支持 Plugin 的 Codex、Git、Node.js 20+、Python 3.12 或更高版本。Plugin ZIP 与平台无关，支持 Windows、macOS 和 Linux。你可以选择配置自己的 OpenAI 兼容图片服务使用 API Key 路线，也可以在 Codex App 提供图片生成能力时选择 ChatGPT 路线。
+需要：支持 Plugin 的 Codex、Git、Node.js 20+、Python 3.12 或更高版本。Plugin ZIP 与平台无关，支持 Windows、macOS 和 Linux。你可以选择配置自己的图片 API 服务使用 API Key 路线，也可以在 Codex App 提供图片生成能力时选择 ChatGPT 路线。
 
 ```text
 codex plugin marketplace add Syh1906/openai-compatible-imagegen
@@ -46,70 +48,26 @@ codex plugin add openai-compatible-imagegen@openai-compatible-imagegen
 
 如果 `openai-compatible-imagegen` marketplace 已注册，跳过第一条命令。安装后完全退出并重新启动 Codex 一次，让 Plugin 的 Skill、MCP 工具和包内依赖完整加载。
 
-你也可以在 Codex App 打开 **Plugins**，选择 `openai-compatible-imagegen` marketplace，安装 **OpenAI-Compatible Images**。交互式 Codex CLI 会话可输入 `/plugins` 打开同一浏览器。
-
-Git-backed 安装已经包含 MCP server 和 widget，不需要构建仓库或启动本地 Web 服务。
-
-Plugin 在 Windows 默认调用 `python`，在 macOS/Linux 默认调用 `python3`，并要求 Python 3.12 或更高版本。默认命令不可用时，可通过 `OPENAI_COMPATIBLE_IMAGEGEN_PYTHON` 指定一个明确的 Python 可执行文件；覆盖值无效或预检失败时会停止，不会静默尝试其他命令。macOS/Linux 不提供 Windows 的“在文件夹中显示”，但不影响生成、编辑、产物、标注和画布流程。
-
-需要从 GitHub Releases 安装指定版本的 Plugin ZIP 时，请按[本地 Plugin ZIP 安装流程](docs/guides/installation.zh-CN.md#从-plugin-zip-安装)操作。
-
-[Plugin 安装与配置](docs/guides/installation.zh-CN.md#安装-codex-plugin)
-
-### 图片路线
-
-Codex Plugin 将 API Key 和 ChatGPT 订阅生图作为可分别选择的路线。两条路线都支持用画布 mask 标注表达改图区域和保护内容。所选 API 模型声明专用 mask 能力时，API Key 编辑会传递对应参数；未声明时，标记区域仍会作为语义编辑提示发送。结果对区域提示的遵循程度由所选生图模型决定。API Key 项目还支持批处理和多候选。
+Plugin 已包含所需程序，无需构建仓库。继续完成[配置](docs/guides/configuration.zh-CN.md#配置-codex-plugin)；其他安装方式和平台要求见[安装指南](docs/guides/installation.zh-CN.md#安装-codex-plugin)。
 
 ## 安装 Standalone Skill
 
 从 [GitHub Releases](https://github.com/Syh1906/openai-compatible-imagegen/releases) 下载 `openai-compatible-imagegen-skill-<version>.zip`。解压到客户端的 skills 目录，确保包根存在 `SKILL.md`，再启动新会话。
 
-如果使用第三方 [`skills`](https://www.npmjs.com/package/skills) CLI，请先解压 Standalone ZIP，再把解压后的 `openai-compatible-imagegen` 目录作为包源。默认安装到当前项目。
-
-Windows PowerShell：
-
-```powershell
-npx --yes skills@latest add "C:/path/to/openai-compatible-imagegen" --agent codex --skill openai-compatible-imagegen --copy --yes
-```
-
-macOS 或 Linux shell：
-
-```text
-npx --yes skills@latest add /path/to/openai-compatible-imagegen --agent codex --skill openai-compatible-imagegen --copy --yes
-```
-
-增加 `--global` 可安装到当前用户，在多个项目中使用。
-
-Windows PowerShell：
-
-```powershell
-npx --yes skills@latest add "C:/path/to/openai-compatible-imagegen" --global --agent codex --skill openai-compatible-imagegen --copy --yes
-```
-
-macOS 或 Linux shell：
-
-```text
-npx --yes skills@latest add /path/to/openai-compatible-imagegen --global --agent codex --skill openai-compatible-imagegen --copy --yes
-```
-
-不要把本仓库根目录直接交给 CLI。Skills CLI 只用于首次安装已解压的 Standalone 压缩包。作用域、更新、回滚和卸载行为见 [Standalone 安装指南](docs/guides/installation.zh-CN.md#使用第三方-skills-cli-安装)。
-
-[Standalone 安装路径与设置](docs/guides/installation.zh-CN.md#安装-standalone-skill)
-
-更新命令、发行包替换和保留 Skill 凭据的切换方式见[更新 Plugin 或 Skill](docs/guides/updating.zh-CN.md)。
+需要 Python 3.12 或更高版本和图片服务凭据。[安装指南](docs/guides/installation.zh-CN.md#安装-standalone-skill)提供客户端路径和第三方 Skills CLI 步骤；安装后完成[Standalone 配置](docs/guides/configuration.zh-CN.md#配置-standalone-skill)。更新已有安装时，按[更新指南](docs/guides/updating.zh-CN.md)保留配置并切换版本。
 
 ## 能做什么
 
 - 生成图片，并使用一张或多张参考图编辑。
-- 执行有边界的多图任务和异构批处理。
-- 在交付变换前保留每张完整 API 原图。
+- 一次生成多张图片，或批量处理不同需求。
+- 本地交付失败时，保留已保存的 API 原图。
 - 缩放、适配、安全边距、网格拆分和预览板。
-- 使用明确的色键、发光、mask 或已验证 prompt-alpha 路线准备透明结果。
+- 按配置使用原生透明、色键、发光、mask 或已验证的 prompt-alpha 路线生成透明图片。
 - 对尺寸、alpha、边缘接触、边距和组件执行确定性检查。
 - 凭据留在本地，只返回安全错误摘要。
 - 在 Codex App 会话中查看结果，并进入聚焦标注画布继续编辑。
 
-默认后端契约使用 `POST /v1/images/generations` 和 `POST /v1/images/edits`。可选 Atlas 协议使用其异步图片生成端点，仅支持文生图。详见[配置指南](docs/guides/configuration.zh-CN.md#配置-atlas-cloud)。
+具体能力取决于所选路线和模型。Atlas Cloud 目前只支持文生图，详见[配置指南](docs/guides/configuration.zh-CN.md#配置-atlas-cloud)。
 
 ## 怎么使用
 
@@ -119,9 +77,9 @@ npx --yes skills@latest add /path/to/openai-compatible-imagegen --global --agent
 
 > 保护笔记本，把马克杯改色，然后在聚焦画布中检查结果。
 
-> 生成四张编辑插图，并保留可审计的 batch manifest。
+> 生成四张编辑插图，并保留记录各项结果的批次清单。
 
-Codex Plugin 在 App 中显示结果与画布操作。Standalone Skill 调用包内 CLI，并报告输出文件和 manifest 路径。Standalone 包保持独立，不包含 Plugin 的 MCP 或平台文件系统适配器。
+Codex Plugin 在 App 中显示结果与画布操作。Standalone Skill 调用包内 CLI，并报告输出文件和 manifest 路径。
 
 ## 文档
 

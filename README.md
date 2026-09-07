@@ -25,6 +25,8 @@ Choose one installation shape for each environment. The packages share code and 
 
 ## Codex App workflow
 
+API Key generation and edits use durable asynchronous jobs. Track long batches, recover confirmed results after a wait times out, and resume local processing with saved originals. See [long-running generation and batches](docs/guides/image-jobs.md).
+
 Generate an image in the conversation, then open its focused canvas to mark regions and add instructions for each change.
 
 **Conversation result**
@@ -37,7 +39,7 @@ Generate an image in the conversation, then open its focused canvas to mark regi
 
 ## Install the Codex Plugin
 
-Requirements: a Codex version with Plugin support, Git, Node.js 20+, and Python 3.12 or newer. The Plugin ZIP is platform-neutral and supports Windows, macOS, and Linux. Choose the API Key route with your own OpenAI-compatible image service, or choose the ChatGPT route when the Codex App host provides its image generation capability.
+Requirements: a Codex version with Plugin support, Git, Node.js 20+, and Python 3.12 or newer. The Plugin ZIP is platform-neutral and supports Windows, macOS, and Linux. Choose the API Key route with your own image API service, or choose the ChatGPT route when the Codex App host provides its image generation capability.
 
 ```text
 codex plugin marketplace add Syh1906/openai-compatible-imagegen
@@ -46,70 +48,26 @@ codex plugin add openai-compatible-imagegen@openai-compatible-imagegen
 
 If the `openai-compatible-imagegen` marketplace is already registered, skip the first command. After installation, completely quit and restart Codex once so it loads the Plugin's Skill, MCP tools, and bundled dependencies.
 
-You can also open **Plugins** in Codex App, select the `openai-compatible-imagegen` marketplace, and install **OpenAI-Compatible Images**. In an interactive Codex CLI session, enter `/plugins` to use the same browser.
-
-The Git-backed package already contains the MCP server and widget. You do not build the repository or run a local web server.
-
-The Plugin selects `python` on Windows and `python3` on macOS/Linux, then requires Python 3.12 or newer. Set `OPENAI_COMPATIBLE_IMAGEGEN_PYTHON` to one explicit executable when the default command is not available; an invalid override or failed preflight stops the operation instead of trying another command. The Windows-only **Show in folder** action is unavailable on macOS/Linux, but generation, editing, artifacts, annotations, and canvas workflows remain supported.
-
-To install a versioned Plugin ZIP from GitHub Releases, follow the [local Plugin ZIP installation](docs/guides/installation.md#install-from-the-plugin-zip) steps.
-
-[Plugin installation and configuration](docs/guides/installation.md#install-the-codex-plugin)
-
-### Image routes
-
-The Codex Plugin keeps API Key and ChatGPT subscription generation as separate selectable routes. Both routes accept canvas mask annotations for edit and protect guidance. When the selected API model declares a dedicated mask capability, API Key edits send that parameter; otherwise the marked regions remain part of the semantic edit request. How closely the result follows those regions depends on the selected image model. API Key projects also support batches and multiple candidates.
+The Plugin is prebuilt. Continue with [configuration](docs/guides/configuration.md#configure-the-codex-plugin); see the [installation guide](docs/guides/installation.md#install-the-codex-plugin) for other installation methods and platform requirements.
 
 ## Install the Standalone Skill
 
 Download `openai-compatible-imagegen-skill-<version>.zip` from [GitHub Releases](https://github.com/Syh1906/openai-compatible-imagegen/releases). Extract it into your client's skills directory so `SKILL.md` is at the package root, then start a new session.
 
-For the third-party [`skills`](https://www.npmjs.com/package/skills) CLI, extract the Standalone ZIP first and pass the extracted `openai-compatible-imagegen` directory as the package source. Install it for the current project by default.
-
-Windows PowerShell:
-
-```powershell
-npx --yes skills@latest add "C:/path/to/openai-compatible-imagegen" --agent codex --skill openai-compatible-imagegen --copy --yes
-```
-
-macOS or Linux shell:
-
-```text
-npx --yes skills@latest add /path/to/openai-compatible-imagegen --agent codex --skill openai-compatible-imagegen --copy --yes
-```
-
-Add `--global` to make the Skill available to the current user across projects.
-
-Windows PowerShell:
-
-```powershell
-npx --yes skills@latest add "C:/path/to/openai-compatible-imagegen" --global --agent codex --skill openai-compatible-imagegen --copy --yes
-```
-
-macOS or Linux shell:
-
-```text
-npx --yes skills@latest add /path/to/openai-compatible-imagegen --global --agent codex --skill openai-compatible-imagegen --copy --yes
-```
-
-Do not pass this repository root to the CLI. Use the Skills CLI only for the first installation of an extracted Standalone archive. For scope, updates, rollback, and removal behavior, follow the [Standalone installation guide](docs/guides/installation.md#install-with-the-third-party-skills-cli).
-
-[Standalone installation paths and setup](docs/guides/installation.md#install-the-standalone-skill)
-
-For update commands, package replacement, and credential-preserving Skill switching, see [Update the Plugin or Skill](docs/guides/updating.md).
+Requires Python 3.12 or newer and an image-service credential. The [installation guide](docs/guides/installation.md#install-the-standalone-skill) covers client paths and the third-party Skills CLI; then complete [Standalone configuration](docs/guides/configuration.md#configure-the-standalone-skill). Follow the [update guide](docs/guides/updating.md) to preserve configuration when switching an existing installation.
 
 ## What it does
 
 - Generate images and edit one or more references.
-- Run bounded multi-image and heterogeneous batch jobs.
-- Preserve every complete API original before delivery transforms.
+- Generate multiple images or batch different image requests.
+- Preserve published API originals when local delivery fails.
 - Resize, fit, add safe margins, split grids, and build preview boards.
-- Prepare transparency through declared chroma, emissive, mask, or verified prompt-alpha routes.
+- Prepare transparency through configured native-alpha, chroma, emissive, mask, or verified prompt-alpha routes.
 - Run deterministic checks for dimensions, alpha, edge contact, margins, and components.
 - Keep credentials local and return only safe error summaries.
 - In Codex App, review results in conversation and continue through a focused annotation canvas.
 
-The default backend contract uses `POST /v1/images/generations` and `POST /v1/images/edits`. The optional Atlas protocol uses its asynchronous image generation endpoints and supports text-to-image generation only. See [configuration](docs/guides/configuration.md#configure-atlas-cloud).
+Available operations depend on the selected route and model. Atlas Cloud currently supports text-to-image generation only. See [configuration](docs/guides/configuration.md#configure-atlas-cloud).
 
 ## Use it
 
@@ -119,9 +77,9 @@ Describe the subject, composition, size, quantity, transparency, checks, and out
 
 > Protect the notebook, recolor the mug, and open the result in the focused canvas for review.
 
-> Generate four editorial illustrations and keep an auditable batch manifest.
+> Generate four editorial illustrations and keep a manifest of each batch result.
 
-The Plugin presents results and canvas actions in Codex App. The Standalone Skill runs its bundled CLI and reports output and manifest paths. The Standalone package remains independent: it does not include the Plugin's MCP or platform filesystem adapters.
+The Plugin presents results and canvas actions in Codex App. The Standalone Skill runs its bundled CLI and reports output and manifest paths.
 
 ## Documentation
 

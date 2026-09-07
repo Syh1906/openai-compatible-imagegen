@@ -47,6 +47,9 @@ const PROJECT_BOUND_TOOL_NAMES = [
   "generate_image",
   "edit_image",
   "batch_images",
+  "get_image_job",
+  "cancel_image_job",
+  "resume_image_job",
   "get_image_batch_manifest",
   "get_image_delivery_receipt",
   "deliver_image",
@@ -143,7 +146,7 @@ test("all project-bound tools require an explicit project binding ID", async () 
   await withProjectRoots(async ({ pluginRoot }) => {
     const server = createTestServer({ pluginRoot });
     try {
-      assert.equal(Object.keys(server._registeredTools).length, 29);
+      assert.equal(Object.keys(server._registeredTools).length, 32);
       for (const name of PROJECT_BOUND_TOOL_NAMES) {
         const schema = server._registeredTools[name]?.inputSchema;
         assert.notEqual(schema, undefined, `${name} input schema missing`);

@@ -26,6 +26,8 @@ This is the runtime order after the agent has interpreted the request and constr
 | Preview | `preview-board` | Local target-size and background previews |
 | Transparency | `apply-transparency` | Local declared transparency processing for an existing PNG |
 
+The generation and edit endpoints above apply to `protocol=openai-compatible`. With `protocol=atlas`, generation submits to `POST /api/v1/model/generateImage` and polls `GET /api/v1/model/prediction/{request_id}`. Atlas supports PNG or JPEG text-to-image output; edits and `native-alpha` are rejected before submission. Polling does not resubmit the generation request. For `n>1`, Atlas submits one request per candidate and collects the complete group before publication; a candidate request failure prevents group publication.
+
 ## Size Guidance
 
 Use `--size` for exact API output pixels. Use `--aspect` plus `--resolution` when the request describes shape and clarity without exact pixels.
@@ -118,7 +120,9 @@ Example configuration:
 }
 ```
 
-`models.<profile>.model` accepts any non-empty model ID required by the provider; the runtime does not reject nonstandard names. `native.model_ids` is only a capability declaration. An empty array applies no ID prefilter, and an explicit `native-alpha` request is still sent when the configured model is absent from the list. The provider decides whether that model supports the parameter. Native requests use `background="transparent"` and PNG output. When a provider returns a transparency-related HTTP 400/422, the default policy retries the same model once without the parameter and applies `native.fallback_route` locally. Set `retry_without_parameter=false` to disable the retry. The result reports parameter rejection, retry use, final route, and QA status.
+Standalone `auth.json.model` accepts any non-empty model ID required by the provider; the runtime does not reject nonstandard names. `native.model_ids` is only a capability declaration. An empty array applies no ID prefilter, and an explicit `native-alpha` request is still sent when the configured model is absent from the list, provided native transparency is enabled and the protocol supports it. The provider decides whether that model supports the parameter. Native requests use `background="transparent"` and PNG output. A transparency-related HTTP 400/422 allows one retry without the parameter when `retry_without_parameter=true`; a successful retry uses `native.fallback_route`. Set `retry_without_parameter=false` to disable the retry. The result reports parameter rejection, retry use, final route, and QA status.
+
+In Standalone, native retry currently enables local fallback even with `--no-postprocess`. Follow the [native-retry limitation](../SKILL.md#transparency-workflow) when local pixel changes are forbidden. If the initial native request succeeds but returns an opaque image, Standalone preserves it with unmet transparency; Plugin generation additionally selects local fallback in that case.
 
 `llm_assisted.max_attempts` is the total number of transparency attempts, including the first run, and must be from 1 to 3. `allow_parameter_tuning` permits documented parameter changes, `allow_route_change` permits compatible route changes, and `allow_api_retry` permits another image API request. API retry remains disabled by default.
 
@@ -136,7 +140,7 @@ Real alpha pixels depend on the returned image. Use `inspect-image --expect-tran
 | `--safe-margin` | Fractional edge margin used with `contain` |
 | `--grid` | Explicit rows and columns such as `3x3` |
 | `--expected-count` | Per-source grid count, or QA output count when no grid is used |
-| `--postprocess` / `--no-postprocess` | Allow or disable local transparency pixel processing; disabled requests still call the API and inspect returned source alpha |
+| `--postprocess` / `--no-postprocess` | Allow or disable local transparency pixel processing for non-native routes; see the native-retry limitation above |
 | `--transparency-route` | Explicit `native-alpha`, `chroma-matting`, `emissive-alpha`, `mask-alpha`, or `prompt-alpha`; an unverified prompt route becomes source-alpha inspection |
 | `--transparency-mask` | Mask file required by `mask-alpha` |
 | `--transparency-param NAME=VALUE` | Repeatable route-specific option for commands |
@@ -150,9 +154,9 @@ Real alpha pixels depend on the returned image. Use `inspect-image --expect-tran
 
 | Route | Options |
 | --- | --- |
-| `chroma-matting` | `background_scope=edge-connected|global`, `inner_tolerance` 1-200, `outer_tolerance` 2-300, `despill_strength` 0-1, `border_hard_coverage` 0-1, `border_soft_coverage` 0-1, `expand` -16 to 16, `feather` 0-16, `min_component_area` 0-65536, `defringe_radius` 0-16 |
+| `chroma-matting` | `background_scope=edge-connected\|global`, `inner_tolerance` 1-200, `outer_tolerance` 2-300, `despill_strength` 0-1, `border_hard_coverage` 0-1, `border_soft_coverage` 0-1, `expand` -16 to 16, `feather` 0-16, `min_component_area` 0-65536, `defringe_radius` 0-16 |
 | `emissive-alpha` | `black_point` 0-254, `white_point` 1-255, `gamma` 0.25-4, `border_dark_tolerance` 0-128, `min_border_dark_coverage` 0.5-1 |
-| `mask-alpha` | `source=auto|alpha|luminance|red|green|blue`, `invert=true|false`, `gamma` 0.25-4, `threshold` 0-255, `feather` 0-16, `expand` -16 to 16, `min_component_area` 0-65536, `matte=none|black|white`, `defringe_radius` 0-16 |
+| `mask-alpha` | `source=auto\|alpha\|luminance\|red\|green\|blue`, `invert=true\|false`, `gamma` 0.25-4, `threshold` 0-255, `feather` 0-16, `expand` -16 to 16, `min_component_area` 0-65536, `matte=none\|black\|white`, `defringe_radius` 0-16 |
 
 For chroma matting, `outer_tolerance` must be greater than `inner_tolerance`. The default `background_scope=edge-connected` protects matching colors enclosed by the subject. Select `global` only when enclosed key-color background areas must also become transparent. Extraction values never change the independent residual-contamination threshold. For emissive alpha, `white_point` must be greater than `black_point`. For masks, `matte=black|white` enables source-matte removal and defringing only when that matte color is known. Mask matte cleanup modifies partial-alpha edge colors and preserves foreground pixels whose trusted mask value remains fully opaque. Batch rows can provide the same values in a `transparency_options` object.
 

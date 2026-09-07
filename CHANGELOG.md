@@ -6,11 +6,14 @@
 
 ### 新增
 
+- Codex Plugin 的 API Key 生成、编辑和批量任务改为提交后立即返回任务 ID，支持分页查询进度、重复提交去重、取消排队项和恢复本地交付。长批次不再依赖一次工具调用持续等待全部图片。
+- 直接调用 MCP 工具的客户端需要为生成、编辑和批量提交增加 `submissionKey`，并通过 `get_image_job` 读取最终结果；原同步结果结构不再作为提交响应返回。
 - Standalone Skill 和 Codex Plugin 新增可选 `atlas` provider 协议，通过单次异步提交和有界结果轮询调用 Atlas Cloud 文生图模型；默认 OpenAI-compatible 路线保持不变。
 - Codex Plugin 支持导入项目中的 PNG、JPEG、WebP 继续编辑，也可将结果导出为本地文件。导入保留源文件，导出不覆盖已有文件。
 
 ### 修复
 
+- 批量任务逐项保存原图结果后再执行本地交付；查询超时不会重新发送生成请求，重启后结果不明的项也不会自动重试。同一执行器中的任务共享最多 8 个执行槽，并正确使用配置的默认并发数。
 - 修复 Windows 本地 Plugin 更新可能因目录被占用而失败的问题。
 - 调整画布打开流程，减少等待 Codex 确认显示模式造成的延迟。
 - 修正 Plugin 误用 Standalone 命令行入口、进而报告缺少 `auth.json` 的问题。
@@ -25,7 +28,6 @@
 
 - Codex Plugin 支持 API Key 与 ChatGPT 订阅两条可选图片路线，并通过 `auth_mode` 保存默认选择。
 - ChatGPT 路线支持在 Codex App 中生成图片、提交语义画布编辑，结果进入现有产物、交付、结果卡和版本流程。
-- ChatGPT 路线的宿主生成结果进入不可变图片产物，并可继续交付、展示和建立版本关系。
 - 纯 ChatGPT 配置可以省略 Provider、模型和 API Key；API Key 路线继续支持批处理和多候选。
 
 ### 变更
@@ -53,7 +55,7 @@
 
 - Add one platform-neutral Codex Plugin runtime for Windows, macOS, and Linux with platform-specific secure repository filesystem adapters.
 - Add explicit Python command mapping (`python` on Windows, `python3` on macOS/Linux) and the `OPENAI_COMPATIBLE_IMAGEGEN_PYTHON` override with a Python 3.12-or-newer preflight.
-- Expand CI and release candidates to Windows, Linux, and macOS, requiring identical candidate file sets and SHA-256 bytes before publication.
+- Distribute the same Plugin files on Windows, Linux, and macOS, with matching SHA-256 checksums across independently built packages.
 
 ### Changed
 
@@ -89,14 +91,14 @@
 
 ### Known limitations
 
-- The third-party `skills@latest` CLI supports first-time project and user installation from the extracted Standalone archive, but it does not update local copied sources and repeating `add` removes the installed `auth.json`. Project-level `remove` can leave the installation registered; the verified user-level `remove --global` completed cleanly. Use versioned ZIP directories for updates and rollback.
+- The third-party `skills@latest` CLI supports first-time project and user installation from the extracted Standalone archive, but it does not update local copied sources and repeating `add` removes the installed `auth.json`. Project-level `remove` can leave the installation registered. Use versioned ZIP directories for updates and rollback.
 
 ## [1.0.1] - 2026-08-18
 
 ### Added
 
 - Include a ready-to-use local marketplace in the Codex Plugin ZIP and document the supported download, checksum, extraction, and local installation flow.
-- Publish verified release artifacts from an existing annotated version tag with a GitHub Release title equal to that tag.
+- Provide versioned release archives with matching release notes and checksums.
 
 ### Fixed
 
@@ -120,7 +122,6 @@
 
 - Present the repository as the `OpenAI-Compatible Images` product family. Users choose either the portable `OpenAI-Compatible Images Skill` or the complete Codex Plugin; the Plugin includes the Standalone generation and delivery capabilities.
 - Use `openai-compatible-imagegen` as the stable technical identity across the Plugin, configuration directory, bundled Skill, and release artifacts.
-- Keep the root README focused on package choice and first installation, with detailed operations routed to audience-specific guides.
 - Use the documented `codex plugin` and `codex plugin marketplace` lifecycle commands for installation, inspection, removal, marketplace refresh, and version pinning.
 
 ### Fixed

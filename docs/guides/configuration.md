@@ -1,4 +1,3 @@
-<!-- updated: 2026-08-25 -->
 # Configuration
 
 > Parent: [User guides](./README.md)
@@ -30,7 +29,7 @@ python3 "/absolute/path/to/openai-compatible-imagegen/scripts/quick-init.py"
 | Field | Purpose |
 | --- | --- |
 | `protocol` | `openai-compatible` (default) or `atlas` |
-| `base_url` | Base URL for the OpenAI-compatible service |
+| `base_url` | Base URL for the selected image service |
 | `model` | Provider-specific image model ID; any non-empty ID accepted |
 | `api_key_env` | Preferred environment variable containing the credential |
 | `api_key` | Optional local plaintext credential when explicitly chosen |
@@ -51,7 +50,87 @@ python3 "/absolute/path/to/openai-compatible-imagegen/scripts/imagegen.py" info
 
 Command flags override `auth.json` defaults. Per-row JSONL fields override shared batch flags.
 
-### Configure Atlas Cloud
+### Configure a provider proxy
+
+Leave `proxy` absent to keep the environment proxy behavior. To route this provider through a specific HTTP proxy and port, add this object to `auth.json`:
+
+```json
+{
+  "proxy": {
+    "url": "http://127.0.0.1:7890"
+  }
+}
+```
+
+The configured proxy handles generation requests, edit requests, and provider-returned image URL downloads. `proxy.url` must be a complete `http://` or `https://` URL with a host; an explicit port must be valid. SOCKS URLs, credentials, paths, queries, fragments, and control characters are rejected.
+
+`url_download.proxy_mode` defaults to `environment`. In that mode, downloads use `proxy.url` when configured and otherwise use the environment proxy. If provider-returned image URLs repeatedly fail with TLS EOF, approve one direct download with `--allow-direct-url-download`. Set the persistent mode to `direct` only after approving that provider's URL route. Direct mode overrides the configured proxy only for returned image downloads; generation and edit requests continue through `proxy.url`.
+
+A failed configured proxy request stops with its original network error. The runtime does not retry through the environment proxy or a direct connection, and it does not expose the proxy URL in the redacted configuration summary or public error details.
+
+## Configure the Codex Plugin
+
+The Plugin reads these fixed paths:
+
+| Scope | Path | Required |
+| --- | --- | --- |
+| User baseline | `~/.codex/openai-compatible-imagegen/config.json` | Yes |
+| Project overrides | `<project>/.codex/openai-compatible-imagegen/config.json` | No |
+
+Start in the conversation, for example: “Configure OpenAI-Compatible Images for this project using the ChatGPT route.” For API Key, provide the service URL, model ID, and credential environment variable name, without sending the key value in chat. Codex creates missing configuration, preserves existing settings, and returns a redacted summary.
+
+For manual setup, use `skills/openai-compatible-imagegen/references/config.example.json` in the installed Plugin. Its proxy is an example; remove `proxy` to retain environment proxy behavior.
+
+An API Key user baseline declares the active profile, provider, provider-specific model ID, authentication, defaults, transparency policy, resource limits, and storage. A ChatGPT-only baseline may omit the active profile, providers, and models. Prefer an environment variable for API credentials.
+
+Set `auth_mode` to choose the default image route:
+
+```json
+{
+  "config_version": 1,
+  "auth_mode": "chatgpt",
+  "defaults": { "size": "1536x1024", "quality": "auto", "output_format": "png" },
+  "postprocess": { "enabled": true },
+  "storage": { "output_directory": "output/imagegen" }
+}
+```
+
+Use `"apikey"` for the configured image API provider, or `"chatgpt"` for host generation and semantic canvas edits through the Codex App. ChatGPT projects may omit provider and model fields. Both routes accept canvas mask annotations as edit guidance. API Key editing requires a model that supports edits; Atlas supports generation only. A dedicated mask parameter is used when the selected API model declares that capability; otherwise marked regions remain semantic guidance. The selected image model determines how closely the result follows the guidance. API Key projects can also request batches and multiple candidates. The route is selected explicitly and is not changed automatically when another route is unavailable.
+
+To route one Plugin provider through a specific proxy, add `proxy` to that provider in the user baseline:
+
+```json
+{
+  "providers": {
+    "primary": {
+      "proxy": {
+        "url": "http://127.0.0.1:7890"
+      }
+    }
+  }
+}
+```
+
+The same proxy validation and request routing apply to both packages. Plugin project configuration cannot declare or override `proxy`. After changing a user-level proxy, bind the project again so the runtime uses the new configuration digest. Configuration inspection reports only whether a proxy is configured, not its URL.
+
+The project file may override only:
+
+- `defaults.size`
+- `defaults.quality`
+- `defaults.output_format`
+- `storage.output_directory`
+
+The project file cannot replace the active profile, provider, model, endpoint, proxy, authentication source, credential environment variable, timeout, concurrency, or route permissions. A rejected override stops before a network request.
+
+### Check and change configuration
+
+After initialization, API Key users set the variable named by `api_key_env` in the environment used to launch Codex; ChatGPT needs no API credential. Ask Codex to check the configuration with `inspect_image_config` and bind this project. To change settings, describe the new values; Codex applies them with `update_image_config` and refreshes the project binding. A new task is not required.
+
+Configuration tools never return keys. Writes protect user and project configuration directories with a `.gitignore` containing only `*`, without changing the project root ignore file. Local plaintext credentials can be stored only in user configuration when explicitly chosen.
+
+`storage.output_directory` is a relative directory inside the project. The default is `output/imagegen/`. Project binding creates or verifies a `.gitignore` containing only `*` in the resolved output directory, so images, prompts, annotations, and metadata remain local. An incompatible ignore rule stops binding without being overwritten. Absolute paths, project-root output, outside paths, files, symbolic links, junctions, and other reparse points are rejected.
+
+## Configure Atlas Cloud
 
 Atlas Cloud is an optional API Key provider for text-to-image generation. A Standalone `auth.json` can use:
 
@@ -108,103 +187,43 @@ For the Codex Plugin, configure the same provider and model in the user baseline
 }
 ```
 
-Set `ATLASCLOUD_API_KEY` in the environment before generation. The credential is not written into these examples.
+Set `ATLASCLOUD_API_KEY` in the environment before generation.
 
-### Configure a provider proxy
+## Image service requirements
 
-Leave `proxy` absent to keep the environment proxy behavior. To route this provider through a specific HTTP proxy and port, add this object to `auth.json`:
+The default `openai-compatible` protocol uses these endpoints. The service and selected model must support the operations you need:
 
-```json
-{
-  "proxy": {
-    "url": "http://127.0.0.1:7890"
-  }
-}
-```
+- `POST /v1/images/generations` — generation
+- `POST /v1/images/edits` — editing, when needed
 
-The configured proxy handles generation requests, edit requests, and provider-returned image URL downloads. `proxy.url` must be a complete `http://` or `https://` URL with a host; an explicit port must be valid. SOCKS URLs, credentials, paths, queries, fragments, and control characters are rejected.
+Responses may return `data[].b64_json` or `data[].url`. The runtime does not forward the image API credential when it downloads a returned URL.
 
-`url_download.proxy_mode` defaults to `environment`. In that mode, downloads use `proxy.url` when configured and otherwise use the environment proxy. If provider-returned image URLs repeatedly fail with TLS EOF, approve one direct download with `--allow-direct-url-download`. Set the persistent mode to `direct` only after approving that provider's URL route. Direct mode overrides the configured proxy only for returned image downloads; generation and edit requests continue through `proxy.url`.
+The Atlas protocol supports text-to-image generation with JPEG or PNG output. It does not support edits or native transparency; choose local transparency processing when needed.
 
-A failed configured proxy request stops with its original network error. The runtime does not retry through the environment proxy or a direct connection, and it does not expose the proxy URL in the redacted configuration summary or public error details.
+## Transparency settings
 
-## Configure the Codex Plugin
-
-The Plugin reads these fixed paths:
-
-| Scope | Path | Required |
-| --- | --- | --- |
-| User baseline | `~/.codex/openai-compatible-imagegen/config.json` | Yes |
-| Project overrides | `<project>/.codex/openai-compatible-imagegen/config.json` | No |
-
-Start from `skills/openai-compatible-imagegen/references/config.example.json` in the installed Plugin. Its `proxy` object demonstrates the optional provider proxy; remove that object to retain environment proxy behavior.
-
-An API Key user baseline declares the active profile, provider, provider-specific model ID, authentication, defaults, transparency policy, resource limits, and storage. A ChatGPT-only baseline may omit the active profile, providers, and models. The active profile and model are user configuration, not code constants. Prefer an environment variable for API credentials.
-
-Set `auth_mode` to choose the default image route:
+New OpenAI-compatible API Key templates enable native transparency. Installation and updates preserve existing configuration. To enable it in an older configuration, ask Codex to merge these settings. ChatGPT does not use these provider parameters; Atlas requires a local transparency route.
 
 ```json
 {
-  "config_version": 1,
-  "auth_mode": "chatgpt",
-  "defaults": { "size": "1536x1024", "quality": "auto", "output_format": "png" },
-  "postprocess": { "enabled": true },
-  "storage": { "output_directory": "output/imagegen" }
-}
-```
-
-Use `"apikey"` for the configured OpenAI-compatible provider route, or `"chatgpt"` for host generation and semantic canvas edits through the Codex App. ChatGPT projects may omit provider and model fields. Both routes accept canvas mask annotations as edit guidance. API Key edits use a dedicated mask parameter when the selected model declares that capability; otherwise the marked regions remain semantic guidance. The selected image model determines how closely the result follows the guidance. API Key projects can also request batches and multiple candidates. The route is selected explicitly and is not changed automatically when another route is unavailable.
-
-To route one Plugin provider through a specific proxy, add `proxy` to that provider in the user baseline:
-
-```json
-{
-  "providers": {
-    "primary": {
-      "proxy": {
-        "url": "http://127.0.0.1:7890"
-      }
+  "transparency": {
+    "default_route": "native-alpha",
+    "native": {
+      "enabled": true,
+      "retry_without_parameter": true,
+      "fallback_route": "chroma-matting"
     }
   }
 }
 ```
 
-The same proxy validation and request routing apply to both packages. Plugin project configuration cannot declare or override `proxy`. After changing a user-level proxy, bind the project again so the runtime uses the new configuration digest. Configuration inspection reports only whether a proxy is configured, not its URL.
-
-The project file may override only:
-
-- `defaults.size`
-- `defaults.quality`
-- `defaults.output_format`
-- `storage.output_directory`
-
-The project file cannot replace the active profile, provider, model, endpoint, proxy, authentication source, credential environment variable, timeout, concurrency, or route permissions. A rejected override stops before a network request.
-
-### Configure through MCP
-
-The Codex Plugin exposes three configuration tools so an Agent can complete the setup without locating the Plugin installation directory:
-
-- `initialize_image_config` creates the user template at `~/.codex/openai-compatible-imagegen/config.json` only when the file does not exist. Set `authMode` to `"apikey"` or `"chatgpt"`; the default is `"apikey"`. It always creates or verifies a `.gitignore` containing only `*` in the user configuration directory. When called with `projectRoot`, it protects the project configuration directory the same way; the project root `.gitignore` is not changed.
-- `inspect_image_config` reads the user file and an optional project override as redacted data. It never returns `api_key` values.
-- `update_image_config` updates a user or project file through the same schema and scope rules as runtime binding. Before writing, it creates or verifies the target configuration directory's local `*` ignore rule. Prefer `api_key_env`; when a user explicitly chooses local plaintext storage, the tool may write user-level `api_key` but never returns it. Project credentials and forbidden project fields are rejected.
-
-After initialization, API Key users set the environment variable named by the configured provider's `api_key_env`; ChatGPT-only users can bind the project without a provider or API key. Then ask the Agent to query the configuration and bind the project. Both configuration directories are protected at every write. After any update, bind the project again so the new configuration digest is used. Query and update results never print API keys. API Key configuration results include the active profile, model ID, transparency declaration, retry switch, and local delivery settings; ChatGPT-only results report the selected host route and local delivery settings.
-
-`storage.output_directory` is a relative directory inside the project. The default is `output/imagegen/`. Project binding creates or verifies a `.gitignore` containing only `*` in the resolved output directory, so images, prompts, annotations, and metadata remain local. An incompatible ignore rule stops binding without being overwritten. Absolute paths, project-root output, outside paths, files, symbolic links, junctions, and other reparse points are rejected.
-
-## Backend contract
-
-The default `openai-compatible` protocol requires:
-
-- `POST /v1/images/generations`
-- `POST /v1/images/edits`
-
-Responses may return `data[].b64_json` or `data[].url`. The runtime does not forward the image API credential when it downloads a returned URL.
-
-The `atlas` protocol submits each candidate once with `POST /api/v1/model/generateImage`, then polls `GET /api/v1/model/prediction/{request_id}` with bounded backoff until completion. Submit failures are never retried automatically; only transient result GET failures can be retried. Atlas output URLs are normalized into the existing response pipeline. The current Atlas adapter supports text-to-image generation with JPEG or PNG output; edits and native-alpha requests stop before any network request.
-
 Transparency is delivery intent. For `native-alpha`, the runtime sends `background=transparent` and PNG output only when transparency is requested, with a real-alpha prompt contract. The optional `transparency.native.model_ids` list is a capability declaration, not a code whitelist; an explicit native route is sent to the configured model even when the list is empty or does not contain that ID. A transparency-related provider HTTP 400/422 is retried once without the parameter by default, using the same model and endpoint, then the configured local fallback route is applied. Set `retry_without_parameter` to `false` to disable this retry. Results explain rejection, retry, final route, and QA. Legacy `transparent_background` configuration is rejected during migration.
+
+Standalone has two native-transparency limitations: a successful native request that returns an opaque image is reported as unmet, while the Plugin can attempt local fallback; and after native-parameter rejection, Standalone's enabled retry selects local fallback even with `--no-postprocess`. If local pixel changes are forbidden, disable `transparency.native.retry_without_parameter` before making a native request.
 
 ## Configuration result
 
-After configuration, start a new task and ask the Agent to list configured image models or inspect the redacted runtime summary. Do not paste credentials into the conversation.
+- Plugin: ask Codex to inspect the redacted summary and refresh the project binding in the current task. Confirm the route, API model when applicable, delivery settings, and output directory.
+- Standalone: the `info` command above reports the configured model and settings from the installed Skill directory.
+
+Use [troubleshooting](./troubleshooting.md) if a check fails.

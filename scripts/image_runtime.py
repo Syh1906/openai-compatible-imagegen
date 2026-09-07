@@ -492,6 +492,10 @@ def run_machine_task(
         if not isinstance(task, dict):
             raise MachineTaskError("invalid_task", "machine task must be a JSON object")
         operation = str(task.get("operation") or "").strip().lower()
+        if "deferDelivery" in task and (
+            not isinstance(task["deferDelivery"], bool) or operation not in {"generate", "edit"}
+        ):
+            raise MachineTaskError("invalid_task", "deferDelivery must be a boolean on an image request")
         if operation not in {
             "generate",
             "edit",
@@ -679,7 +683,7 @@ def run_machine_task(
                 raise MachineTaskError("edit_submission_mismatch", str(exc)) from exc
             if committed:
                 replay_result: dict[str, Any] = {"ok": True, "artifacts": committed}
-                if task.get("delivery") is not None:
+                if task.get("delivery") is not None and not task.get("deferDelivery", False):
                     replay_result["deliveries"] = run_inline_deliveries(
                         task=task,
                         artifacts=committed,
@@ -988,7 +992,7 @@ def run_machine_task(
         }
         if api_delivery is not None:
             result["apiDelivery"] = api_delivery
-        if task.get("delivery") is not None:
+        if task.get("delivery") is not None and not task.get("deferDelivery", False):
             result["deliveries"] = run_inline_deliveries(
                 task=task,
                 artifacts=[record.metadata for record in records],

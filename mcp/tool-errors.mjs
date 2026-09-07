@@ -56,6 +56,14 @@ const STABLE_TOOL_ERROR_ENTRIES = [
   ["output_directory_invalid", "输出目录必须是图片项目内的安全目录。"],
   ["project_config_forbidden", "项目图片配置包含不允许覆盖的字段。"],
   ["project_config_invalid", "项目图片配置文件无效或不可安全读取。"],
+  ["image_job_not_found", "未找到当前图片任务，请核对项目和任务 ID。"],
+  ["image_job_conflict", "提交键已用于其他图片请求。查询原任务；新生成意图请使用新的提交键。"],
+  ["image_job_config_changed", "任务创建后的图片配置已变化，不能恢复执行。请先恢复原配置并重新绑定项目。"],
+  ["image_job_state_invalid", "图片任务状态无效，未重新发送图片请求。"],
+  ["image_job_state_unavailable", "图片任务状态暂时不可用，请使用原提交键或任务 ID 查询，勿创建重复请求。"],
+  ["image_job_ownership_lost", "图片任务执行权已失效，请查询原任务状态。"],
+  ["image_job_cancelled", "图片任务尚未发出的请求已取消；已发出的请求可能仍在处理。"],
+  ["image_job_outcome_unknown", "图片请求的结果尚未确认，未自动重新生成。"],
 ];
 
 export const stableToolErrorMessages = new Map(STABLE_TOOL_ERROR_ENTRIES);

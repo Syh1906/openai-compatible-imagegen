@@ -1,4 +1,3 @@
-<!-- updated: 2026-08-21 -->
 # 更新 Plugin 或 Skill
 
 > 上级：[用户指南](./README.zh-CN.md)
@@ -14,13 +13,7 @@
 - 在新版本通过冒烟检查前保留当前安装和本地配置。
 - 需要固定版本的本地发行包时，从同一个 GitHub Release 下载 ZIP 和 `SHA256SUMS`。
 
-## 迁移透明配置
-
-新配置默认启用原生透明。升级时会保留已有 `config.json`，避免静默改变图片路线。升级后调用 `inspect_image_config`；如果提示缺少 `transparency.native`，使用 `update_image_config` 把 `transparency.default_route` 设为 `native-alpha`，并把 `transparency.native.enabled` 设为 `true`。
-
-`transparency.native.retry_without_parameter` 默认值为 `true`。只有希望供应商拒绝透明参数时直接失败、不发起第二次请求，才把它设为 `false`。无论是否重试，最终图片结果都会说明是否发送原生透明参数、是否发生重试，以及最终采用的路线。
-
-修改配置后重新绑定项目，再次调用 `inspect_image_config`。在检查通过前保留旧安装和旧配置。
+升级会保留已有透明设置。如需启用原生透明，参见[透明设置](./configuration.zh-CN.md#透明设置)。
 
 ## 更新 Git marketplace Plugin
 
@@ -40,7 +33,7 @@ Plugin 系统启动时，Codex 会检查已经配置的 Git marketplace。如果
    codex plugin list --json
    ```
 
-3. 完全退出并重新启动 Codex 一次，再开始新任务或 CLI 会话。重启后会加载更新后的 Skill、MCP 工具和包内依赖。
+3. 完全退出并重新启动 Codex 一次。重启后会加载更新后的 Skill、MCP 工具和包内依赖。
 
 日常 Git marketplace 更新不需要删除并重新添加 Plugin。需要固定 Release、归档版本、其他来源、tag 或分支时，改用 Plugin ZIP 或[回滚](./rollback.zh-CN.md)路线。
 
@@ -98,7 +91,7 @@ Plugin 系统启动时，Codex 会检查已经配置的 Git marketplace。如果
    codex plugin list --json
    ```
 
-7. 开始新任务。只要本地 marketplace 仍指向该目录，就不要删除解压目录。
+7. 完全退出并重新启动 Codex。只要本地 marketplace 仍指向该目录，就不要删除解压目录。
 
 本地 marketplace 路线独立于 Git marketplace 路线。Git marketplace 的升级不会替换来源为本地解压目录的 marketplace。
 
@@ -150,7 +143,7 @@ Standalone 包会复制到客户端管理的 Skill 目录。第三方 `skills` C
 
 ## 验证与恢复
 
-- Plugin：`codex plugin list --json` 报告预期版本，且新任务可以使用 Plugin 工具。
+- Plugin：`codex plugin list --json` 报告预期版本，且当前任务可以使用 Plugin 工具。
 - Standalone：`imagegen.py info` 返回的 `script_path` 和 `auth_json` 都位于新的 Skill 目录内。
 - 冒烟检查失败时，恢复旧目录并参照[回滚](./rollback.zh-CN.md)。
 

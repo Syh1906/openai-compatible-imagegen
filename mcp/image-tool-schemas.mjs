@@ -127,7 +127,7 @@ const batchDeliveryReceiptSchema = z.object({
   results: z.array(deliveryReceiptResultSchema).min(1).max(16),
   artifactIds: z.array(imageIdSchema).max(160),
 }).strict();
-const apiDeliverySchema = z.object({
+export const apiDeliverySchema = z.object({
   status: z.enum(["published", "published_with_warnings", "partial"]),
   requestedCount: z.number().int().min(1).max(16),
   returnedCount: z.number().int().nonnegative(),
@@ -151,7 +151,7 @@ const apiDeliverySchema = z.object({
     responseIndex: z.number().int().min(1).max(16).optional(),
   }).strict()).max(64),
 }).strict();
-const batchManifestResultSchema = z.discriminatedUnion("ok", [
+export const batchManifestResultSchema = z.discriminatedUnion("ok", [
   z.object({
     requestId: batchRequestIdSchema,
     operation: z.enum(["generate", "edit"]),
@@ -180,7 +180,7 @@ export const batchManifestOutputSchema = z.object({
   batchId: batchIdSchema,
   createdAt: z.string().datetime(),
 }).strict();
-const imageBatchResultOutputSchema = z.discriminatedUnion("ok", [
+export const imageBatchResultOutputSchema = z.discriminatedUnion("ok", [
   z.object({
     requestId: batchRequestIdSchema,
     operation: z.enum(["generate", "edit"]),

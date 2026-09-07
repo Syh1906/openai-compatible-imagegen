@@ -51,7 +51,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 var define_RELEASE_IDENTITY_default;
 var init_define_RELEASE_IDENTITY = __esm({
   "<define:__RELEASE_IDENTITY__>"() {
-    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "1.2.0", serverBuildDigest: "3411c9616686d0c15f1c60b4eaad1efa929eea8d91bc946a581f3f18922aeeb3", widgetAssetDigest: "8ea2813262ff8975d6392386810ca6eac5a8c9cf9b8eee8fae4a60fdf97c3b67", fingerprint: "596b8c97fb1c6d598c2a", resourceUris: { result: "ui://openai-compatible-imagegen/result-596b8c97fb1c6d598c2a.html", editor: "ui://openai-compatible-imagegen/editor-596b8c97fb1c6d598c2a.html" } };
+    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "1.2.0", serverBuildDigest: "44ee4b75af705205fa4223fd2994dc208dcd6e453dfbf3fd42939e2b16cf9d6d", widgetAssetDigest: "e0962b3706f2ebc276ccf01db6425e6881d8c278830b2b356cbc2ff632871f73", fingerprint: "50634f369436e4a2defb", resourceUris: { result: "ui://openai-compatible-imagegen/result-50634f369436e4a2defb.html", editor: "ui://openai-compatible-imagegen/editor-50634f369436e4a2defb.html" } };
   }
 });
 
@@ -257,10 +257,10 @@ function assignProp(target, prop, value) {
     configurable: true
   });
 }
-function getElementAtPath(obj, path16) {
-  if (!path16)
+function getElementAtPath(obj, path18) {
+  if (!path18)
     return obj;
-  return path16.reduce((acc, key) => acc?.[key], obj);
+  return path18.reduce((acc, key) => acc?.[key], obj);
 }
 function promiseAllObject(promisesObj) {
   const keys = Object.keys(promisesObj);
@@ -509,11 +509,11 @@ function aborted(x, startIndex = 0) {
   }
   return false;
 }
-function prefixIssues(path16, issues) {
+function prefixIssues(path18, issues) {
   return issues.map((iss) => {
     var _a;
     (_a = iss).path ?? (_a.path = []);
-    iss.path.unshift(path16);
+    iss.path.unshift(path18);
     return iss;
   });
 }
@@ -703,7 +703,7 @@ function treeifyError(error40, _mapper) {
     return issue2.message;
   };
   const result = { errors: [] };
-  const processError = (error41, path16 = []) => {
+  const processError = (error41, path18 = []) => {
     var _a, _b;
     for (const issue2 of error41.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
@@ -713,7 +713,7 @@ function treeifyError(error40, _mapper) {
       } else if (issue2.code === "invalid_element") {
         processError({ issues: issue2.issues }, issue2.path);
       } else {
-        const fullpath = [...path16, ...issue2.path];
+        const fullpath = [...path18, ...issue2.path];
         if (fullpath.length === 0) {
           result.errors.push(mapper(issue2));
           continue;
@@ -743,9 +743,9 @@ function treeifyError(error40, _mapper) {
   processError(error40);
   return result;
 }
-function toDotPath(path16) {
+function toDotPath(path18) {
   const segs = [];
-  for (const seg of path16) {
+  for (const seg of path18) {
     if (typeof seg === "number")
       segs.push(`[${seg}]`);
     else if (typeof seg === "symbol")
@@ -13579,8 +13579,8 @@ var require_keyword = __commonJS({
       var _a;
       const { gen, keyword, schema, parentSchema, $data, it } = cxt;
       checkAsyncKeyword(it, def);
-      const validate = !$data && def.compile ? def.compile.call(it.self, schema, parentSchema, it) : def.validate;
-      const validateRef = useKeyword(gen, keyword, validate);
+      const validate2 = !$data && def.compile ? def.compile.call(it.self, schema, parentSchema, it) : def.validate;
+      const validateRef = useKeyword(gen, keyword, validate2);
       const valid = gen.let("valid");
       cxt.block$data(valid, validateKeyword);
       cxt.ok((_a = def.valid) !== null && _a !== void 0 ? _a : valid);
@@ -14661,28 +14661,28 @@ var require_compile = __commonJS({
         if (this.opts.code.process)
           sourceCode = this.opts.code.process(sourceCode, sch);
         const makeValidate = new Function(`${names_1.default.self}`, `${names_1.default.scope}`, sourceCode);
-        const validate = makeValidate(this, this.scope.get());
-        this.scope.value(validateName, { ref: validate });
-        validate.errors = null;
-        validate.schema = sch.schema;
-        validate.schemaEnv = sch;
+        const validate2 = makeValidate(this, this.scope.get());
+        this.scope.value(validateName, { ref: validate2 });
+        validate2.errors = null;
+        validate2.schema = sch.schema;
+        validate2.schemaEnv = sch;
         if (sch.$async)
-          validate.$async = true;
+          validate2.$async = true;
         if (this.opts.code.source === true) {
-          validate.source = { validateName, validateCode, scopeValues: gen._values };
+          validate2.source = { validateName, validateCode, scopeValues: gen._values };
         }
         if (this.opts.unevaluated) {
           const { props, items } = schemaCxt;
-          validate.evaluated = {
+          validate2.evaluated = {
             props: props instanceof codegen_1.Name ? void 0 : props,
             items: items instanceof codegen_1.Name ? void 0 : items,
             dynamicProps: props instanceof codegen_1.Name,
             dynamicItems: items instanceof codegen_1.Name
           };
-          if (validate.source)
-            validate.source.evaluated = (0, codegen_1.stringify)(validate.evaluated);
+          if (validate2.source)
+            validate2.source.evaluated = (0, codegen_1.stringify)(validate2.evaluated);
         }
-        sch.validate = validate;
+        sch.validate = validate2;
         return sch;
       } catch (e) {
         delete sch.validate;
@@ -14947,8 +14947,8 @@ var require_utils = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path16) {
-      let input = path16;
+    function removeDotSegments(path18) {
+      let input = path18;
       const output = [];
       let nextSlash = -1;
       let len = 0;
@@ -15201,8 +15201,8 @@ var require_schemes = __commonJS({
         wsComponent.secure = void 0;
       }
       if (wsComponent.resourceName) {
-        const [path16, query] = wsComponent.resourceName.split("?");
-        wsComponent.path = path16 && path16 !== "/" ? path16 : void 0;
+        const [path18, query] = wsComponent.resourceName.split("?");
+        wsComponent.path = path18 && path18 !== "/" ? path18 : void 0;
         wsComponent.query = query;
         wsComponent.resourceName = void 0;
       }
@@ -18367,8 +18367,8 @@ var require_formats = __commonJS({
     init_define_RELEASE_IDENTITY();
     Object.defineProperty(exports, "__esModule", { value: true });
     exports.formatNames = exports.fastFormats = exports.fullFormats = void 0;
-    function fmtDef(validate, compare) {
-      return { validate, compare };
+    function fmtDef(validate2, compare) {
+      return { validate: validate2, compare };
     }
     exports.fullFormats = {
       // date: http://tools.ietf.org/html/rfc3339#section-5.6
@@ -18733,14 +18733,14 @@ var require_polyfills = __commonJS({
       fs2.fstatSync = statFixSync(fs2.fstatSync);
       fs2.lstatSync = statFixSync(fs2.lstatSync);
       if (fs2.chmod && !fs2.lchmod) {
-        fs2.lchmod = function(path16, mode, cb) {
+        fs2.lchmod = function(path18, mode, cb) {
           if (cb) process.nextTick(cb);
         };
         fs2.lchmodSync = function() {
         };
       }
       if (fs2.chown && !fs2.lchown) {
-        fs2.lchown = function(path16, uid, gid, cb) {
+        fs2.lchown = function(path18, uid, gid, cb) {
           if (cb) process.nextTick(cb);
         };
         fs2.lchownSync = function() {
@@ -18807,9 +18807,9 @@ var require_polyfills = __commonJS({
         };
       })(fs2.readSync);
       function patchLchmod(fs3) {
-        fs3.lchmod = function(path16, mode, callback) {
+        fs3.lchmod = function(path18, mode, callback) {
           fs3.open(
-            path16,
+            path18,
             constants2.O_WRONLY | constants2.O_SYMLINK,
             mode,
             function(err, fd) {
@@ -18825,8 +18825,8 @@ var require_polyfills = __commonJS({
             }
           );
         };
-        fs3.lchmodSync = function(path16, mode) {
-          var fd = fs3.openSync(path16, constants2.O_WRONLY | constants2.O_SYMLINK, mode);
+        fs3.lchmodSync = function(path18, mode) {
+          var fd = fs3.openSync(path18, constants2.O_WRONLY | constants2.O_SYMLINK, mode);
           var threw = true;
           var ret;
           try {
@@ -18847,8 +18847,8 @@ var require_polyfills = __commonJS({
       }
       function patchLutimes(fs3) {
         if (constants2.hasOwnProperty("O_SYMLINK") && fs3.futimes) {
-          fs3.lutimes = function(path16, at, mt, cb) {
-            fs3.open(path16, constants2.O_SYMLINK, function(er, fd) {
+          fs3.lutimes = function(path18, at, mt, cb) {
+            fs3.open(path18, constants2.O_SYMLINK, function(er, fd) {
               if (er) {
                 if (cb) cb(er);
                 return;
@@ -18860,8 +18860,8 @@ var require_polyfills = __commonJS({
               });
             });
           };
-          fs3.lutimesSync = function(path16, at, mt) {
-            var fd = fs3.openSync(path16, constants2.O_SYMLINK);
+          fs3.lutimesSync = function(path18, at, mt) {
+            var fd = fs3.openSync(path18, constants2.O_SYMLINK);
             var ret;
             var threw = true;
             try {
@@ -18980,11 +18980,11 @@ var require_legacy_streams = __commonJS({
         ReadStream,
         WriteStream
       };
-      function ReadStream(path16, options) {
-        if (!(this instanceof ReadStream)) return new ReadStream(path16, options);
+      function ReadStream(path18, options) {
+        if (!(this instanceof ReadStream)) return new ReadStream(path18, options);
         Stream.call(this);
         var self = this;
-        this.path = path16;
+        this.path = path18;
         this.fd = null;
         this.readable = true;
         this.paused = false;
@@ -19029,10 +19029,10 @@ var require_legacy_streams = __commonJS({
           self._read();
         });
       }
-      function WriteStream(path16, options) {
-        if (!(this instanceof WriteStream)) return new WriteStream(path16, options);
+      function WriteStream(path18, options) {
+        if (!(this instanceof WriteStream)) return new WriteStream(path18, options);
         Stream.call(this);
-        this.path = path16;
+        this.path = path18;
         this.fd = null;
         this.writable = true;
         this.flags = "w";
@@ -19177,14 +19177,14 @@ var require_graceful_fs = __commonJS({
       fs3.createWriteStream = createWriteStream;
       var fs$readFile = fs3.readFile;
       fs3.readFile = readFile4;
-      function readFile4(path16, options, cb) {
+      function readFile4(path18, options, cb) {
         if (typeof options === "function")
           cb = options, options = null;
-        return go$readFile(path16, options, cb);
-        function go$readFile(path17, options2, cb2, startTime) {
-          return fs$readFile(path17, options2, function(err) {
+        return go$readFile(path18, options, cb);
+        function go$readFile(path19, options2, cb2, startTime) {
+          return fs$readFile(path19, options2, function(err) {
             if (err && (err.code === "EMFILE" || err.code === "ENFILE"))
-              enqueue([go$readFile, [path17, options2, cb2], err, startTime || Date.now(), Date.now()]);
+              enqueue([go$readFile, [path19, options2, cb2], err, startTime || Date.now(), Date.now()]);
             else {
               if (typeof cb2 === "function")
                 cb2.apply(this, arguments);
@@ -19194,14 +19194,14 @@ var require_graceful_fs = __commonJS({
       }
       var fs$writeFile = fs3.writeFile;
       fs3.writeFile = writeFile3;
-      function writeFile3(path16, data, options, cb) {
+      function writeFile3(path18, data, options, cb) {
         if (typeof options === "function")
           cb = options, options = null;
-        return go$writeFile(path16, data, options, cb);
-        function go$writeFile(path17, data2, options2, cb2, startTime) {
-          return fs$writeFile(path17, data2, options2, function(err) {
+        return go$writeFile(path18, data, options, cb);
+        function go$writeFile(path19, data2, options2, cb2, startTime) {
+          return fs$writeFile(path19, data2, options2, function(err) {
             if (err && (err.code === "EMFILE" || err.code === "ENFILE"))
-              enqueue([go$writeFile, [path17, data2, options2, cb2], err, startTime || Date.now(), Date.now()]);
+              enqueue([go$writeFile, [path19, data2, options2, cb2], err, startTime || Date.now(), Date.now()]);
             else {
               if (typeof cb2 === "function")
                 cb2.apply(this, arguments);
@@ -19212,14 +19212,14 @@ var require_graceful_fs = __commonJS({
       var fs$appendFile = fs3.appendFile;
       if (fs$appendFile)
         fs3.appendFile = appendFile;
-      function appendFile(path16, data, options, cb) {
+      function appendFile(path18, data, options, cb) {
         if (typeof options === "function")
           cb = options, options = null;
-        return go$appendFile(path16, data, options, cb);
-        function go$appendFile(path17, data2, options2, cb2, startTime) {
-          return fs$appendFile(path17, data2, options2, function(err) {
+        return go$appendFile(path18, data, options, cb);
+        function go$appendFile(path19, data2, options2, cb2, startTime) {
+          return fs$appendFile(path19, data2, options2, function(err) {
             if (err && (err.code === "EMFILE" || err.code === "ENFILE"))
-              enqueue([go$appendFile, [path17, data2, options2, cb2], err, startTime || Date.now(), Date.now()]);
+              enqueue([go$appendFile, [path19, data2, options2, cb2], err, startTime || Date.now(), Date.now()]);
             else {
               if (typeof cb2 === "function")
                 cb2.apply(this, arguments);
@@ -19250,31 +19250,31 @@ var require_graceful_fs = __commonJS({
       var fs$readdir = fs3.readdir;
       fs3.readdir = readdir2;
       var noReaddirOptionVersions = /^v[0-5]\./;
-      function readdir2(path16, options, cb) {
+      function readdir2(path18, options, cb) {
         if (typeof options === "function")
           cb = options, options = null;
-        var go$readdir = noReaddirOptionVersions.test(process.version) ? function go$readdir2(path17, options2, cb2, startTime) {
-          return fs$readdir(path17, fs$readdirCallback(
-            path17,
+        var go$readdir = noReaddirOptionVersions.test(process.version) ? function go$readdir2(path19, options2, cb2, startTime) {
+          return fs$readdir(path19, fs$readdirCallback(
+            path19,
             options2,
             cb2,
             startTime
           ));
-        } : function go$readdir2(path17, options2, cb2, startTime) {
-          return fs$readdir(path17, options2, fs$readdirCallback(
-            path17,
+        } : function go$readdir2(path19, options2, cb2, startTime) {
+          return fs$readdir(path19, options2, fs$readdirCallback(
+            path19,
             options2,
             cb2,
             startTime
           ));
         };
-        return go$readdir(path16, options, cb);
-        function fs$readdirCallback(path17, options2, cb2, startTime) {
+        return go$readdir(path18, options, cb);
+        function fs$readdirCallback(path19, options2, cb2, startTime) {
           return function(err, files) {
             if (err && (err.code === "EMFILE" || err.code === "ENFILE"))
               enqueue([
                 go$readdir,
-                [path17, options2, cb2],
+                [path19, options2, cb2],
                 err,
                 startTime || Date.now(),
                 Date.now()
@@ -19345,7 +19345,7 @@ var require_graceful_fs = __commonJS({
         enumerable: true,
         configurable: true
       });
-      function ReadStream(path16, options) {
+      function ReadStream(path18, options) {
         if (this instanceof ReadStream)
           return fs$ReadStream.apply(this, arguments), this;
         else
@@ -19365,7 +19365,7 @@ var require_graceful_fs = __commonJS({
           }
         });
       }
-      function WriteStream(path16, options) {
+      function WriteStream(path18, options) {
         if (this instanceof WriteStream)
           return fs$WriteStream.apply(this, arguments), this;
         else
@@ -19383,22 +19383,22 @@ var require_graceful_fs = __commonJS({
           }
         });
       }
-      function createReadStream(path16, options) {
-        return new fs3.ReadStream(path16, options);
+      function createReadStream(path18, options) {
+        return new fs3.ReadStream(path18, options);
       }
-      function createWriteStream(path16, options) {
-        return new fs3.WriteStream(path16, options);
+      function createWriteStream(path18, options) {
+        return new fs3.WriteStream(path18, options);
       }
       var fs$open = fs3.open;
       fs3.open = open4;
-      function open4(path16, flags, mode, cb) {
+      function open4(path18, flags, mode, cb) {
         if (typeof mode === "function")
           cb = mode, mode = null;
-        return go$open(path16, flags, mode, cb);
-        function go$open(path17, flags2, mode2, cb2, startTime) {
-          return fs$open(path17, flags2, mode2, function(err, fd) {
+        return go$open(path18, flags, mode, cb);
+        function go$open(path19, flags2, mode2, cb2, startTime) {
+          return fs$open(path19, flags2, mode2, function(err, fd) {
             if (err && (err.code === "EMFILE" || err.code === "ENFILE"))
-              enqueue([go$open, [path17, flags2, mode2, cb2], err, startTime || Date.now(), Date.now()]);
+              enqueue([go$open, [path19, flags2, mode2, cb2], err, startTime || Date.now(), Date.now()]);
             else {
               if (typeof cb2 === "function")
                 cb2.apply(this, arguments);
@@ -19934,7 +19934,7 @@ var require_lockfile = __commonJS({
   "node_modules/proper-lockfile/lib/lockfile.js"(exports, module) {
     "use strict";
     init_define_RELEASE_IDENTITY();
-    var path16 = __require("path");
+    var path18 = __require("path");
     var fs2 = require_graceful_fs();
     var retry = require_retry2();
     var onExit = require_signal_exit();
@@ -19945,7 +19945,7 @@ var require_lockfile = __commonJS({
     }
     function resolveCanonicalPath(file2, options, callback) {
       if (!options.realpath) {
-        return callback(null, path16.resolve(file2));
+        return callback(null, path18.resolve(file2));
       }
       options.fs.realpath(file2, callback);
     }
@@ -23434,8 +23434,8 @@ function getErrorMap2() {
 // node_modules/zod/v3/helpers/parseUtil.js
 init_define_RELEASE_IDENTITY();
 var makeIssue = (params) => {
-  const { data, path: path16, errorMaps, issueData } = params;
-  const fullPath = [...path16, ...issueData.path || []];
+  const { data, path: path18, errorMaps, issueData } = params;
+  const fullPath = [...path18, ...issueData.path || []];
   const fullIssue = {
     ...issueData,
     path: fullPath
@@ -23555,11 +23555,11 @@ var errorUtil;
 
 // node_modules/zod/v3/types.js
 var ParseInputLazyPath = class {
-  constructor(parent, value, path16, key) {
+  constructor(parent, value, path18, key) {
     this._cachedPath = [];
     this.parent = parent;
     this.data = value;
-    this._path = path16;
+    this._path = path18;
     this._key = key;
   }
   get path() {
@@ -27146,11 +27146,11 @@ function normalizeObjectSchema(schema) {
   }
   return void 0;
 }
-function getDotPath(path16) {
-  if (path16.length === 0) {
+function getDotPath(path18) {
+  if (path18.length === 0) {
     return "object root";
   }
-  return path16.reduce((acc, seg, index) => {
+  return path18.reduce((acc, seg, index) => {
     if (index === 0) {
       return String(seg);
     }
@@ -31524,11 +31524,25 @@ var STABLE_TOOL_ERROR_ENTRIES = [
   ["project_config_missing", "\u9879\u76EE\u56FE\u7247\u914D\u7F6E\u4E0D\u5B58\u5728\uFF0C\u8BF7\u5148\u521D\u59CB\u5316\u6216\u521B\u5EFA\u9879\u76EE\u8986\u76D6\u6587\u4EF6\u3002"],
   ["output_directory_invalid", "\u8F93\u51FA\u76EE\u5F55\u5FC5\u987B\u662F\u56FE\u7247\u9879\u76EE\u5185\u7684\u5B89\u5168\u76EE\u5F55\u3002"],
   ["project_config_forbidden", "\u9879\u76EE\u56FE\u7247\u914D\u7F6E\u5305\u542B\u4E0D\u5141\u8BB8\u8986\u76D6\u7684\u5B57\u6BB5\u3002"],
-  ["project_config_invalid", "\u9879\u76EE\u56FE\u7247\u914D\u7F6E\u6587\u4EF6\u65E0\u6548\u6216\u4E0D\u53EF\u5B89\u5168\u8BFB\u53D6\u3002"]
+  ["project_config_invalid", "\u9879\u76EE\u56FE\u7247\u914D\u7F6E\u6587\u4EF6\u65E0\u6548\u6216\u4E0D\u53EF\u5B89\u5168\u8BFB\u53D6\u3002"],
+  ["image_job_not_found", "\u672A\u627E\u5230\u5F53\u524D\u56FE\u7247\u4EFB\u52A1\uFF0C\u8BF7\u6838\u5BF9\u9879\u76EE\u548C\u4EFB\u52A1 ID\u3002"],
+  ["image_job_conflict", "\u63D0\u4EA4\u952E\u5DF2\u7528\u4E8E\u5176\u4ED6\u56FE\u7247\u8BF7\u6C42\u3002\u67E5\u8BE2\u539F\u4EFB\u52A1\uFF1B\u65B0\u751F\u6210\u610F\u56FE\u8BF7\u4F7F\u7528\u65B0\u7684\u63D0\u4EA4\u952E\u3002"],
+  ["image_job_config_changed", "\u4EFB\u52A1\u521B\u5EFA\u540E\u7684\u56FE\u7247\u914D\u7F6E\u5DF2\u53D8\u5316\uFF0C\u4E0D\u80FD\u6062\u590D\u6267\u884C\u3002\u8BF7\u5148\u6062\u590D\u539F\u914D\u7F6E\u5E76\u91CD\u65B0\u7ED1\u5B9A\u9879\u76EE\u3002"],
+  ["image_job_state_invalid", "\u56FE\u7247\u4EFB\u52A1\u72B6\u6001\u65E0\u6548\uFF0C\u672A\u91CD\u65B0\u53D1\u9001\u56FE\u7247\u8BF7\u6C42\u3002"],
+  ["image_job_state_unavailable", "\u56FE\u7247\u4EFB\u52A1\u72B6\u6001\u6682\u65F6\u4E0D\u53EF\u7528\uFF0C\u8BF7\u4F7F\u7528\u539F\u63D0\u4EA4\u952E\u6216\u4EFB\u52A1 ID \u67E5\u8BE2\uFF0C\u52FF\u521B\u5EFA\u91CD\u590D\u8BF7\u6C42\u3002"],
+  ["image_job_ownership_lost", "\u56FE\u7247\u4EFB\u52A1\u6267\u884C\u6743\u5DF2\u5931\u6548\uFF0C\u8BF7\u67E5\u8BE2\u539F\u4EFB\u52A1\u72B6\u6001\u3002"],
+  ["image_job_cancelled", "\u56FE\u7247\u4EFB\u52A1\u5C1A\u672A\u53D1\u51FA\u7684\u8BF7\u6C42\u5DF2\u53D6\u6D88\uFF1B\u5DF2\u53D1\u51FA\u7684\u8BF7\u6C42\u53EF\u80FD\u4ECD\u5728\u5904\u7406\u3002"],
+  ["image_job_outcome_unknown", "\u56FE\u7247\u8BF7\u6C42\u7684\u7ED3\u679C\u5C1A\u672A\u786E\u8BA4\uFF0C\u672A\u81EA\u52A8\u91CD\u65B0\u751F\u6210\u3002"]
 ];
 var stableToolErrorMessages = new Map(STABLE_TOOL_ERROR_ENTRIES);
 function isStableToolErrorCode(code) {
   return typeof code === "string" && stableToolErrorMessages.has(code);
+}
+function stableToolErrorCodeFromText(text) {
+  if (typeof text !== "string") return null;
+  const match = /^([a-z][a-z0-9_]{0,63}):(?:\s|$)/.exec(text);
+  const code = match?.[1] || null;
+  return isStableToolErrorCode(code) ? code : null;
 }
 
 // mcp/local-image-transfer.mjs
@@ -32020,6 +32034,1417 @@ function invalidState() {
   throw editorStateError("editor_state_invalid", "\u753B\u5E03\u72B6\u6001\u65E0\u6548\u3002");
 }
 
+// mcp/image-job-manager.mjs
+init_define_RELEASE_IDENTITY();
+import { randomBytes as randomBytes5 } from "node:crypto";
+
+// mcp/image-job-store.mjs
+init_define_RELEASE_IDENTITY();
+import { lstat as lstat4, mkdir as mkdir2 } from "node:fs/promises";
+import path8 from "node:path";
+
+// mcp/file-lock-ownership.mjs
+init_define_RELEASE_IDENTITY();
+var import_proper_lockfile = __toESM(require_proper_lockfile(), 1);
+import fs from "node:fs";
+import { randomBytes as randomBytes4 } from "node:crypto";
+import {
+  lstat as lstat3,
+  mkdir,
+  open as open2,
+  readdir,
+  rename as rename2,
+  rmdir,
+  unlink
+} from "node:fs/promises";
+import path6 from "node:path";
+
+// mcp/atomic-file-replace.mjs
+init_define_RELEASE_IDENTITY();
+import { rename } from "node:fs/promises";
+import { setTimeout as delay } from "node:timers/promises";
+var WINDOWS_SHARING_ERRORS = /* @__PURE__ */ new Set(["EACCES", "EBUSY", "EPERM"]);
+async function replaceFileAtomically(sourcePath, destinationPath) {
+  const attempts = process.platform === "win32" ? 80 : 1;
+  let lastError;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      await rename(sourcePath, destinationPath);
+      return;
+    } catch (error40) {
+      lastError = error40;
+      if (!WINDOWS_SHARING_ERRORS.has(error40?.code) || attempt === attempts - 1) throw error40;
+      await delay(1);
+    }
+  }
+  throw lastError;
+}
+
+// mcp/filesystem-path-safety.mjs
+init_define_RELEASE_IDENTITY();
+import { lstat, realpath } from "node:fs/promises";
+import path5 from "node:path";
+async function pathContainsSymbolicLink(targetPath) {
+  const absolutePath = path5.resolve(targetPath);
+  const root = path5.parse(absolutePath).root;
+  let currentPath = root;
+  const relativePath = path5.relative(root, absolutePath);
+  for (const component of relativePath.split(path5.sep).filter(Boolean)) {
+    currentPath = path5.join(currentPath, component);
+    if (!(await lstat(currentPath)).isSymbolicLink()) continue;
+    if (await isAllowedMacOSSystemAlias(currentPath)) continue;
+    return true;
+  }
+  return false;
+}
+async function isAllowedMacOSSystemAlias(candidate) {
+  return process.platform === "darwin" && candidate === "/var" && await realpath(candidate) === "/private/var";
+}
+
+// mcp/stable-file-snapshot.mjs
+init_define_RELEASE_IDENTITY();
+import { lstat as lstat2, open } from "node:fs/promises";
+var RETRY = /* @__PURE__ */ Symbol("retry");
+var MISSING = /* @__PURE__ */ Symbol("missing");
+var StableFileSnapshotError = class extends Error {
+  constructor(kind) {
+    super(`stable file snapshot ${kind}`);
+    this.name = "StableFileSnapshotError";
+    this.kind = kind;
+  }
+};
+async function readStableFileSnapshot(filePath, { maxBytes, attempts = 32 }) {
+  if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) {
+    throw new TypeError("maxBytes must be a positive safe integer");
+  }
+  let sawReplacement = false;
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    const result = await readSnapshotOnce(filePath, maxBytes);
+    if (result === MISSING) {
+      if (!sawReplacement) return null;
+      continue;
+    }
+    if (result === RETRY) {
+      sawReplacement = true;
+      continue;
+    }
+    return result;
+  }
+  throw new StableFileSnapshotError("unavailable");
+}
+async function readSnapshotOnce(filePath, maxBytes) {
+  let handle;
+  try {
+    handle = await open(filePath, "r");
+  } catch (error40) {
+    if (error40?.code === "ENOENT") {
+      try {
+        const metadata = await lstat2(filePath);
+        if (metadata.isSymbolicLink() || !metadata.isFile()) {
+          throw new StableFileSnapshotError("invalid");
+        }
+        return RETRY;
+      } catch (metadataError) {
+        if (metadataError instanceof StableFileSnapshotError) throw metadataError;
+        if (metadataError?.code === "ENOENT") return MISSING;
+        throw new StableFileSnapshotError("unavailable");
+      }
+    }
+    throw new StableFileSnapshotError("unavailable");
+  }
+  try {
+    const [pathMetadata, handleMetadata] = await Promise.all([
+      lstat2(filePath),
+      handle.stat()
+    ]);
+    if (!pathMetadata.isFile() || pathMetadata.isSymbolicLink() || !handleMetadata.isFile() || handleMetadata.size <= 0 || handleMetadata.size > maxBytes) {
+      throw new StableFileSnapshotError("invalid");
+    }
+    if (pathMetadata.dev !== handleMetadata.dev || pathMetadata.ino !== handleMetadata.ino) {
+      return RETRY;
+    }
+    if (await pathContainsSymbolicLink(filePath)) {
+      throw new StableFileSnapshotError("invalid");
+    }
+    const bytes = await handle.readFile();
+    if (bytes.length !== handleMetadata.size || bytes.length > maxBytes) {
+      throw new StableFileSnapshotError("invalid");
+    }
+    return bytes;
+  } catch (error40) {
+    if (error40 instanceof StableFileSnapshotError) throw error40;
+    if (error40?.code === "ENOENT") return RETRY;
+    throw new StableFileSnapshotError("unavailable");
+  } finally {
+    try {
+      await handle.close();
+    } catch {
+      throw new StableFileSnapshotError("unavailable");
+    }
+  }
+}
+
+// mcp/file-lock-ownership.mjs
+var EPOCH_SCHEMA_VERSION = "fenced-file-record.v1";
+var TOKEN_PATTERN = /^[0-9a-f]{32}$/;
+var GENERATION_PATTERN = /^[0-9a-f]{16}$/;
+var COMMITTED_PATTERN = /^e-([0-9a-f]{16})-([0-9a-f]{32})$/;
+var RESERVATION_PATTERN = /^r-([0-9a-f]{16})$/;
+var CLOSING_PATTERN = /^c-([0-9a-f]{32})$/;
+var RECORD_TEMP_PATTERN = /^\.record-[0-9]+-[0-9a-f]{16}\.tmp$/;
+var MAX_GENERATION = BigInt(Number.MAX_SAFE_INTEGER);
+var MAX_DIRECTORY_ENTRIES = 4096;
+var MAX_EPOCH_METADATA_BYTES = 1024;
+async function acquireFileLockOwnership({
+  recordPath,
+  lockPath,
+  maxRecordBytes,
+  retries,
+  unavailableError,
+  invalidError = unavailableError
+}) {
+  requireOptions({ recordPath, lockPath, maxRecordBytes, unavailableError, invalidError });
+  const context = {
+    recordPath: path6.resolve(recordPath),
+    lockPath: path6.resolve(lockPath),
+    maxRecordBytes,
+    unavailableError,
+    invalidError,
+    installed: null,
+    ownershipReady: false,
+    compromised: false,
+    ownershipLost: false
+  };
+  let rawRelease;
+  const guardedFs = createGuardedLockFs(context);
+  try {
+    rawRelease = await import_proper_lockfile.default.lock(context.recordPath, {
+      fs: guardedFs,
+      lockfilePath: context.lockPath,
+      onCompromised: () => {
+        context.compromised = true;
+        context.ownershipLost = true;
+      },
+      realpath: false,
+      stale: 3e4,
+      update: 1e4,
+      retries
+    });
+    context.ownershipReady = true;
+    await assertOwned(context);
+    const ownerRecordPath = path6.join(context.installed.ownerPath, "record.json");
+    return Object.freeze({
+      assertOwned: async () => await assertOwned(context),
+      readSnapshot: async () => await readStableFileSnapshot(ownerRecordPath, {
+        maxBytes: context.maxRecordBytes
+      }),
+      replaceSnapshot: async (bytes) => await replaceOwnedSnapshot(context, bytes),
+      release: async () => await releaseOwnership(context, rawRelease, unavailableError)
+    });
+  } catch (error40) {
+    context.ownershipLost = true;
+    if (rawRelease) {
+      try {
+        await rawRelease();
+      } catch {
+      }
+    }
+    throw mapStateError(error40, { invalidError, unavailableError });
+  }
+}
+async function readLatestFencedFileSnapshot(recordPath, { maxBytes }) {
+  if (typeof recordPath !== "string" || !path6.isAbsolute(recordPath)) {
+    throw new TypeError("recordPath must be an absolute path");
+  }
+  if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) {
+    throw new TypeError("maxBytes must be a positive safe integer");
+  }
+  const resolvedRecordPath = path6.resolve(recordPath);
+  const storage = storagePaths(resolvedRecordPath);
+  const storageExists = await requireCanonicalDirectory(storage.root, {
+    allowMissing: true,
+    create: false
+  });
+  if (!storageExists) {
+    return await readStableFileSnapshot(resolvedRecordPath, { maxBytes });
+  }
+  await requireCanonicalDirectory(storage.committed, { create: false });
+  await requireCanonicalDirectory(storage.reservations, { create: false });
+  await requireCanonicalDirectory(storage.closing, { create: false });
+  for (let attempt = 0; attempt < 32; attempt += 1) {
+    const epochs = await listCommittedEpochs(storage.committed);
+    const initialized = await requireInitializationMarker(storage.initialized, { allowMissing: true });
+    const latest = requireUniqueLatestEpoch(epochs);
+    if (!latest && !initialized) {
+      return await readStableFileSnapshot(resolvedRecordPath, { maxBytes });
+    }
+    if (latest && initialized) {
+      try {
+        const snapshot = await readEpochRecord(latest.path, latest, maxBytes);
+        if (snapshot !== null || !await hasNewerCommittedEpoch(storage.committed, latest)) {
+          return snapshot;
+        }
+      } catch (error40) {
+        if (!(error40 instanceof StableFileSnapshotError) || !await hasNewerCommittedEpoch(storage.committed, latest)) {
+          throw error40;
+        }
+      }
+    }
+    await delay2(1);
+  }
+  throw new StableFileSnapshotError("invalid");
+}
+async function releaseOwnership(context, rawRelease, unavailableError) {
+  let failure = null;
+  try {
+    await assertOwned(context);
+  } catch (error40) {
+    failure = error40;
+  }
+  try {
+    await rawRelease();
+  } catch {
+    failure ??= unavailableError();
+  }
+  if (failure) throw failure;
+}
+async function replaceOwnedSnapshot(context, bytes) {
+  if (!Buffer.isBuffer(bytes) || bytes.length <= 0 || bytes.length > context.maxRecordBytes) {
+    throw new TypeError("bytes must be a non-empty Buffer within maxRecordBytes");
+  }
+  await assertOwned(context);
+  const temporaryPath = path6.join(
+    context.installed.ownerPath,
+    `.record-${process.pid}-${randomBytes4(8).toString("hex")}.tmp`
+  );
+  const destinationPath = path6.join(context.installed.ownerPath, "record.json");
+  try {
+    const handle = await open2(temporaryPath, "wx", 384);
+    try {
+      await handle.writeFile(bytes);
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+    await assertOwned(context);
+    await replaceFileAtomically(temporaryPath, destinationPath);
+    await assertOwned(context);
+  } catch (error40) {
+    if (error40 instanceof TypeError) throw error40;
+    context.ownershipLost = true;
+    throw context.unavailableError();
+  } finally {
+    try {
+      await unlink(temporaryPath);
+    } catch (error40) {
+      if (error40?.code !== "ENOENT") {
+        context.ownershipLost = true;
+        throw context.unavailableError();
+      }
+    }
+  }
+}
+function createGuardedLockFs(context) {
+  const guardedFs = Object.create(fs);
+  guardedFs.mkdir = (targetPath, callback) => {
+    if (!samePath(targetPath, context.lockPath)) {
+      fs.mkdir(targetPath, callback);
+      return;
+    }
+    installOwnedLock(context).then(() => callback(null), callback);
+  };
+  guardedFs.rmdir = (targetPath, callback) => {
+    if (!samePath(targetPath, context.lockPath)) {
+      fs.rmdir(targetPath, callback);
+      return;
+    }
+    if (context.ownershipLost) {
+      queueMicrotask(() => callback(releasedError()));
+      return;
+    }
+    const close = context.installed ? closeInstalledLock(context) : closeStaleLock(context);
+    close.then(() => callback(null), callback);
+  };
+  guardedFs.rmdirSync = (targetPath) => {
+    if (samePath(targetPath, context.lockPath)) throw releasedError();
+    return fs.rmdirSync(targetPath);
+  };
+  return guardedFs;
+}
+async function installOwnedLock(context) {
+  if (await isExistingCanonicalLock(context.lockPath)) {
+    throw Object.assign(new Error("Lock file is already being held"), { code: "EEXIST" });
+  }
+  const storage = storagePaths(context.recordPath);
+  await prepareStorage(storage);
+  await withAllocatorLock(storage, async () => {
+    if (await isExistingCanonicalLock(context.lockPath)) {
+      throw Object.assign(new Error("Lock file is already being held"), { code: "EEXIST" });
+    }
+    await recoverClosingEpochs(storage);
+    await pruneCommittedEpochs(storage.committed);
+    const generation = await reserveGeneration(storage);
+    const token = randomBytes4(16).toString("hex");
+    const candidatePath = path6.join(path6.dirname(context.lockPath), `.candidate-${token}`);
+    const ownerPath = path6.join(candidatePath, token);
+    let installed = false;
+    try {
+      await mkdir(candidatePath, { mode: 448 });
+      await mkdir(ownerPath, { mode: 448 });
+      await writeExclusiveFile(
+        path6.join(ownerPath, "epoch.json"),
+        Buffer.from(`${JSON.stringify(epochMetadata(generation, token))}
+`, "utf8")
+      );
+      const current = await readLatestFencedFileSnapshot(context.recordPath, {
+        maxBytes: context.maxRecordBytes
+      });
+      if (current !== null) {
+        await writeExclusiveFile(path6.join(ownerPath, "record.json"), current);
+      }
+      await requireCurrentGeneration(storage, generation);
+      await rename2(candidatePath, context.lockPath);
+      installed = true;
+      context.installed = Object.freeze({
+        generation,
+        token,
+        ownerPath: path6.join(context.lockPath, token)
+      });
+    } catch (error40) {
+      if (await isExistingCanonicalLock(context.lockPath)) {
+        throw Object.assign(new Error("Lock file is already being held"), { code: "EEXIST" });
+      }
+      throw error40;
+    } finally {
+      if (!installed) await removeCandidateDirectory(candidatePath);
+    }
+  });
+}
+async function withAllocatorLock(storage, callback) {
+  let compromised = false;
+  const release = await import_proper_lockfile.default.lock(storage.root, {
+    lockfilePath: storage.allocator,
+    onCompromised: () => {
+      compromised = true;
+    },
+    realpath: false,
+    stale: 3e4,
+    update: 1e4,
+    retries: { retries: 160, factor: 1, minTimeout: 5, maxTimeout: 25 }
+  });
+  let result;
+  let failure;
+  try {
+    if (compromised) throw new StableFileSnapshotError("unavailable");
+    result = await callback();
+    if (compromised) throw new StableFileSnapshotError("unavailable");
+  } catch (error40) {
+    failure = error40;
+  }
+  try {
+    await release();
+  } catch (error40) {
+    failure ??= error40;
+  }
+  if (failure) throw failure;
+  return result;
+}
+async function closeInstalledLock(context) {
+  if (!context.ownershipReady) {
+    await removeCandidateOwner(context.lockPath, context.installed.token, { removeRoot: true });
+    context.installed = null;
+    return;
+  }
+  await assertOwned(context);
+  const storage = storagePaths(context.recordPath);
+  await commitOwnerDirectory(context.installed.ownerPath, storage.committed);
+  try {
+    await rmdir(context.lockPath);
+  } catch (error40) {
+    if (error40?.code !== "ENOENT") throw error40;
+  }
+}
+async function closeStaleLock(context) {
+  const storage = storagePaths(context.recordPath);
+  await prepareStorage(storage);
+  const closingPath = path6.join(storage.closing, `c-${randomBytes4(16).toString("hex")}`);
+  try {
+    await rename2(context.lockPath, closingPath);
+  } catch (error40) {
+    if (error40?.code !== "ENOENT") throw error40;
+  }
+  await recoverClosingEpochs(storage);
+}
+async function recoverClosingEpochs(storage) {
+  const entries = await safeReadDirectory(storage.closing);
+  for (const entry of entries) {
+    if (!entry.isDirectory() || entry.isSymbolicLink() || !CLOSING_PATTERN.test(entry.name)) {
+      throw new StableFileSnapshotError("invalid");
+    }
+    await recoverClosingEpoch(path6.join(storage.closing, entry.name), storage.committed);
+  }
+}
+async function recoverClosingEpoch(closingPath, committedRoot) {
+  let entries;
+  try {
+    entries = await safeReadDirectory(closingPath);
+  } catch (error40) {
+    if (error40?.code === "ENOENT") return;
+    throw error40;
+  }
+  if (entries.length > 1) throw new StableFileSnapshotError("invalid");
+  if (entries.length === 1) {
+    const [entry] = entries;
+    if (!entry.isDirectory() || entry.isSymbolicLink() || !TOKEN_PATTERN.test(entry.name)) {
+      throw new StableFileSnapshotError("invalid");
+    }
+    await commitOwnerDirectory(path6.join(closingPath, entry.name), committedRoot);
+  }
+  try {
+    await rmdir(closingPath);
+  } catch (error40) {
+    if (error40?.code !== "ENOENT") throw error40;
+  }
+}
+async function commitOwnerDirectory(ownerPath, committedRoot) {
+  let metadata;
+  try {
+    metadata = await readOwnerMetadata(ownerPath);
+  } catch (error40) {
+    if (error40?.code === "ENOENT") return;
+    throw error40;
+  }
+  await removeOwnedTemporaryFiles(ownerPath);
+  const destinationPath = path6.join(
+    committedRoot,
+    committedName(metadata.generation, metadata.token)
+  );
+  await createInitializationMarker(path6.join(path6.dirname(committedRoot), "initialized"));
+  try {
+    await rename2(ownerPath, destinationPath);
+  } catch (error40) {
+    if (error40?.code !== "ENOENT" || !await epochMatches(destinationPath, metadata)) throw error40;
+  }
+}
+async function assertOwned(context) {
+  if (context.compromised || context.ownershipLost || !context.installed) {
+    context.ownershipLost = true;
+    throw context.unavailableError();
+  }
+  try {
+    const metadata = await readOwnerMetadata(context.installed.ownerPath);
+    if (metadata.generation !== context.installed.generation || metadata.token !== context.installed.token) {
+      throw new Error("lock owner changed");
+    }
+  } catch {
+    context.ownershipLost = true;
+    throw context.unavailableError();
+  }
+  if (context.compromised) {
+    context.ownershipLost = true;
+    throw context.unavailableError();
+  }
+}
+async function readOwnerMetadata(ownerPath) {
+  await requireCanonicalDirectory(ownerPath, { create: false });
+  const bytes = await readStableFileSnapshot(path6.join(ownerPath, "epoch.json"), {
+    maxBytes: MAX_EPOCH_METADATA_BYTES
+  });
+  if (bytes === null) throw new StableFileSnapshotError("invalid");
+  let value;
+  try {
+    value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+  } catch {
+    throw new StableFileSnapshotError("invalid");
+  }
+  if (!plainObject(value) || JSON.stringify(Object.keys(value).sort()) !== JSON.stringify(["generation", "schemaVersion", "token"]) || value.schemaVersion !== EPOCH_SCHEMA_VERSION || typeof value.generation !== "string" || !GENERATION_PATTERN.test(value.generation) || typeof value.token !== "string" || !TOKEN_PATTERN.test(value.token)) {
+    throw new StableFileSnapshotError("invalid");
+  }
+  const generation = BigInt(`0x${value.generation}`);
+  if (generation <= 0n || generation > MAX_GENERATION) {
+    throw new StableFileSnapshotError("invalid");
+  }
+  return Object.freeze({ generation, token: value.token });
+}
+async function readEpochRecord(epochPath, expected, maxBytes) {
+  const metadata = await readOwnerMetadata(epochPath);
+  if (metadata.generation !== expected.generation || metadata.token !== expected.token) {
+    throw new StableFileSnapshotError("invalid");
+  }
+  let entries;
+  try {
+    entries = await safeReadDirectory(epochPath);
+  } catch (error40) {
+    if (error40?.code === "ENOENT") throw new StableFileSnapshotError("invalid");
+    throw error40;
+  }
+  for (const entry of entries) {
+    if (entry.isSymbolicLink() || !entry.isFile() || !["epoch.json", "record.json"].includes(entry.name)) {
+      throw new StableFileSnapshotError("invalid");
+    }
+  }
+  return await readStableFileSnapshot(path6.join(epochPath, "record.json"), { maxBytes });
+}
+async function listCommittedEpochs(committedRoot) {
+  const entries = await safeReadDirectory(committedRoot);
+  const epochs = [];
+  for (const entry of entries) {
+    const match = COMMITTED_PATTERN.exec(entry.name);
+    if (!match || !entry.isDirectory() || entry.isSymbolicLink()) {
+      throw new StableFileSnapshotError("invalid");
+    }
+    const generation = BigInt(`0x${match[1]}`);
+    if (generation <= 0n || generation > MAX_GENERATION) {
+      throw new StableFileSnapshotError("invalid");
+    }
+    epochs.push({
+      generation,
+      token: match[2],
+      path: path6.join(committedRoot, entry.name)
+    });
+  }
+  return epochs;
+}
+function requireUniqueLatestEpoch(epochs) {
+  if (epochs.length === 0) return null;
+  const sorted = [...epochs].sort((left, right) => left.generation < right.generation ? -1 : left.generation > right.generation ? 1 : 0);
+  const latest = sorted.at(-1);
+  if (sorted.length > 1 && sorted.at(-2).generation === latest.generation) {
+    throw new StableFileSnapshotError("invalid");
+  }
+  return latest;
+}
+async function hasNewerCommittedEpoch(committedRoot, previous) {
+  const latest = requireUniqueLatestEpoch(await listCommittedEpochs(committedRoot));
+  return latest !== null && latest.generation > previous.generation;
+}
+async function pruneCommittedEpochs(committedRoot) {
+  const epochs = await listCommittedEpochs(committedRoot);
+  const latest = requireUniqueLatestEpoch(epochs);
+  for (const epoch of epochs) {
+    if (epoch !== latest) await removeCommittedEpoch(epoch.path, epoch);
+  }
+}
+async function removeCommittedEpoch(epochPath, expected) {
+  await readEpochRecord(epochPath, expected, Number.MAX_SAFE_INTEGER);
+  const entries = await safeReadDirectory(epochPath);
+  for (const entry of entries) await unlink(path6.join(epochPath, entry.name));
+  await rmdir(epochPath);
+}
+async function reserveGeneration(storage) {
+  for (; ; ) {
+    const reservations = await listReservations(storage.reservations);
+    const committed = await listCommittedEpochs(storage.committed);
+    let maximum = 0n;
+    for (const generation2 of reservations) if (generation2 > maximum) maximum = generation2;
+    for (const epoch of committed) if (epoch.generation > maximum) maximum = epoch.generation;
+    if (maximum >= MAX_GENERATION) throw new StableFileSnapshotError("invalid");
+    const generation = maximum + 1n;
+    const reservationPath = path6.join(storage.reservations, reservationName(generation));
+    try {
+      const handle = await open2(reservationPath, "wx", 384);
+      try {
+        await handle.sync();
+      } finally {
+        await handle.close();
+      }
+      await pruneReservations(storage.reservations, generation);
+      return generation;
+    } catch (error40) {
+      if (error40?.code !== "EEXIST") throw error40;
+    }
+  }
+}
+async function requireCurrentGeneration(storage, generation) {
+  const reservations = await listReservations(storage.reservations);
+  const committed = await listCommittedEpochs(storage.committed);
+  for (const candidate of reservations) {
+    if (candidate > generation) throw Object.assign(new Error("newer lock generation exists"), { code: "EEXIST" });
+  }
+  for (const epoch of committed) {
+    if (epoch.generation > generation) throw Object.assign(new Error("newer record generation exists"), { code: "EEXIST" });
+  }
+}
+async function listReservations(reservationsRoot) {
+  const entries = await safeReadDirectory(reservationsRoot);
+  const values = [];
+  for (const entry of entries) {
+    const match = RESERVATION_PATTERN.exec(entry.name);
+    if (!match || !entry.isFile() || entry.isSymbolicLink()) {
+      throw new StableFileSnapshotError("invalid");
+    }
+    const generation = BigInt(`0x${match[1]}`);
+    if (generation <= 0n || generation > MAX_GENERATION) {
+      throw new StableFileSnapshotError("invalid");
+    }
+    values.push(generation);
+  }
+  return values;
+}
+async function pruneReservations(reservationsRoot, keepFrom) {
+  const entries = await safeReadDirectory(reservationsRoot);
+  for (const entry of entries) {
+    const match = RESERVATION_PATTERN.exec(entry.name);
+    if (!match || !entry.isFile() || entry.isSymbolicLink()) {
+      throw new StableFileSnapshotError("invalid");
+    }
+    if (BigInt(`0x${match[1]}`) < keepFrom) {
+      await unlink(path6.join(reservationsRoot, entry.name));
+    }
+  }
+}
+async function removeOwnedTemporaryFiles(ownerPath) {
+  const entries = await safeReadDirectory(ownerPath);
+  for (const entry of entries) {
+    if (entry.isSymbolicLink() || !entry.isFile()) {
+      throw new StableFileSnapshotError("invalid");
+    }
+    if (["epoch.json", "record.json"].includes(entry.name)) continue;
+    if (!RECORD_TEMP_PATTERN.test(entry.name)) throw new StableFileSnapshotError("invalid");
+    await unlink(path6.join(ownerPath, entry.name));
+  }
+}
+async function removeCandidateDirectory(candidatePath) {
+  let entries;
+  try {
+    entries = await safeReadDirectory(candidatePath);
+  } catch (error40) {
+    if (error40?.code === "ENOENT") return;
+    throw error40;
+  }
+  if (entries.length > 1) throw new StableFileSnapshotError("invalid");
+  if (entries.length === 1) {
+    const [entry] = entries;
+    if (!entry.isDirectory() || entry.isSymbolicLink() || !TOKEN_PATTERN.test(entry.name)) {
+      throw new StableFileSnapshotError("invalid");
+    }
+    await removeCandidateOwner(candidatePath, entry.name, { removeRoot: false });
+  }
+  try {
+    await rmdir(candidatePath);
+  } catch (error40) {
+    if (error40?.code !== "ENOENT") throw error40;
+  }
+}
+async function removeCandidateOwner(rootPath, token, { removeRoot }) {
+  const ownerPath = path6.join(rootPath, token);
+  let entries;
+  try {
+    entries = await safeReadDirectory(ownerPath);
+  } catch (error40) {
+    if (error40?.code === "ENOENT") return;
+    throw error40;
+  }
+  for (const entry of entries) {
+    if (entry.isSymbolicLink() || !entry.isFile() || !["epoch.json", "record.json"].includes(entry.name) && !RECORD_TEMP_PATTERN.test(entry.name)) {
+      throw new StableFileSnapshotError("invalid");
+    }
+    await unlink(path6.join(ownerPath, entry.name));
+  }
+  await rmdir(ownerPath);
+  if (removeRoot) {
+    try {
+      await rmdir(rootPath);
+    } catch (error40) {
+      if (error40?.code !== "ENOENT") throw error40;
+    }
+  }
+}
+async function prepareStorage(storage) {
+  await requireCanonicalDirectory(path6.dirname(storage.root), { create: false });
+  await requireCanonicalDirectory(storage.root, { create: true });
+  await requireCanonicalDirectory(storage.committed, { create: true });
+  await requireCanonicalDirectory(storage.reservations, { create: true });
+  await requireCanonicalDirectory(storage.closing, { create: true });
+}
+async function createInitializationMarker(markerPath) {
+  try {
+    const handle = await open2(markerPath, "wx", 384);
+    try {
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+  } catch (error40) {
+    if (error40?.code !== "EEXIST") throw error40;
+  }
+  await requireInitializationMarker(markerPath);
+}
+async function requireInitializationMarker(markerPath, { allowMissing = false } = {}) {
+  try {
+    const metadata = await lstat3(markerPath);
+    if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.size !== 0) {
+      throw new StableFileSnapshotError("invalid");
+    }
+    if (await pathContainsSymbolicLink(markerPath)) {
+      throw new StableFileSnapshotError("invalid");
+    }
+    return true;
+  } catch (error40) {
+    if (error40 instanceof StableFileSnapshotError) throw error40;
+    if (error40?.code === "ENOENT" && allowMissing) return false;
+    if (error40?.code === "ENOENT") throw new StableFileSnapshotError("invalid");
+    throw new StableFileSnapshotError("unavailable");
+  }
+}
+async function requireCanonicalDirectory(directory, { create, allowMissing = false }) {
+  try {
+    if (create) {
+      await mkdir(directory, { mode: 448 }).catch((error40) => {
+        if (error40?.code !== "EEXIST") throw error40;
+      });
+    }
+    const metadata = await lstat3(directory);
+    if (!metadata.isDirectory() || metadata.isSymbolicLink() || await pathContainsSymbolicLink(directory)) {
+      throw new StableFileSnapshotError("invalid");
+    }
+    return true;
+  } catch (error40) {
+    if (error40 instanceof StableFileSnapshotError) throw error40;
+    if (error40?.code === "ENOENT" && allowMissing) return false;
+    if (error40?.code === "ENOENT") throw new StableFileSnapshotError("invalid");
+    throw new StableFileSnapshotError("unavailable");
+  }
+}
+async function safeReadDirectory(directory) {
+  try {
+    const entries = await readdir(directory, { withFileTypes: true });
+    if (entries.length > MAX_DIRECTORY_ENTRIES) throw new StableFileSnapshotError("invalid");
+    return entries;
+  } catch (error40) {
+    if (error40 instanceof StableFileSnapshotError) throw error40;
+    throw error40;
+  }
+}
+async function writeExclusiveFile(filePath, bytes) {
+  const handle = await open2(filePath, "wx", 384);
+  try {
+    await handle.writeFile(bytes);
+    await handle.sync();
+  } finally {
+    await handle.close();
+  }
+}
+async function epochMatches(epochPath, expected) {
+  try {
+    const actual = await readOwnerMetadata(epochPath);
+    return actual.generation === expected.generation && actual.token === expected.token;
+  } catch {
+    return false;
+  }
+}
+async function isExistingCanonicalLock(lockPath) {
+  try {
+    const metadata = await lstat3(lockPath);
+    return metadata.isDirectory() && !metadata.isSymbolicLink() && !await pathContainsSymbolicLink(lockPath);
+  } catch {
+    return false;
+  }
+}
+function storagePaths(recordPath) {
+  const root = `${recordPath}.epochs`;
+  return {
+    root,
+    committed: path6.join(root, "committed"),
+    reservations: path6.join(root, "reservations"),
+    closing: path6.join(root, "closing"),
+    allocator: path6.join(root, "allocator.lock"),
+    initialized: path6.join(root, "initialized")
+  };
+}
+function epochMetadata(generation, token) {
+  return {
+    schemaVersion: EPOCH_SCHEMA_VERSION,
+    generation: generationHex(generation),
+    token
+  };
+}
+function committedName(generation, token) {
+  return `e-${generationHex(generation)}-${token}`;
+}
+function reservationName(generation) {
+  return `r-${generationHex(generation)}`;
+}
+function generationHex(generation) {
+  return generation.toString(16).padStart(16, "0");
+}
+function requireOptions({ recordPath, lockPath, maxRecordBytes, unavailableError, invalidError }) {
+  if (typeof recordPath !== "string" || !path6.isAbsolute(recordPath)) {
+    throw new TypeError("recordPath must be an absolute path");
+  }
+  if (typeof lockPath !== "string" || !path6.isAbsolute(lockPath)) {
+    throw new TypeError("lockPath must be an absolute path");
+  }
+  if (!Number.isSafeInteger(maxRecordBytes) || maxRecordBytes <= 0) {
+    throw new TypeError("maxRecordBytes must be a positive safe integer");
+  }
+  if (typeof unavailableError !== "function" || typeof invalidError !== "function") {
+    throw new TypeError("state error factories must be functions");
+  }
+}
+function mapStateError(error40, { invalidError, unavailableError }) {
+  if (error40 instanceof StableFileSnapshotError && error40.kind === "invalid") return invalidError();
+  return unavailableError();
+}
+function releasedError() {
+  return Object.assign(new Error("lock ownership changed before release"), { code: "ERELEASED" });
+}
+function plainObject(value) {
+  return Boolean(value) && Object.getPrototypeOf(value) === Object.prototype;
+}
+function samePath(left, right) {
+  const normalizedLeft = path6.resolve(left).replaceAll("\\", "/");
+  const normalizedRight = path6.resolve(right).replaceAll("\\", "/");
+  return process.platform === "win32" ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase() : normalizedLeft === normalizedRight;
+}
+function delay2(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+// mcp/image-job-contract.mjs
+init_define_RELEASE_IDENTITY();
+import { createHash as createHash3 } from "node:crypto";
+import path7 from "node:path";
+var jobIdSchema = external_exports2.string().regex(/^job_[a-f0-9]{64}$/);
+var submissionKeySchema = external_exports2.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/).describe("Stable key for this intended submission. Reuse exactly after a lost reply; use a new key only for a new generation intent.");
+var digestSchema = external_exports2.string().regex(/^[a-f0-9]{64}$/);
+var generationRequestSchema = external_exports2.object({
+  prompt: external_exports2.string().min(1),
+  modelProfileId: external_exports2.string().min(1).optional(),
+  transparency: transparencyInputSchema.optional(),
+  ...outputSchema
+}).strict();
+var editRequestSchema = generationRequestSchema.extend({
+  parentImageId: imageIdSchema,
+  referenceImageIds: external_exports2.array(imageIdSchema).optional(),
+  annotationId: external_exports2.string().regex(/^ann_[0-9A-HJKMNP-TV-Z]{26}$/).optional(),
+  submissionId: external_exports2.string().regex(/^sub_[0-9a-f]{32}$/).optional()
+});
+var jobSpecSchema = external_exports2.discriminatedUnion("kind", [
+  external_exports2.object({ kind: external_exports2.literal("batch"), items: batchItemsSchema, concurrency: external_exports2.number().int().min(1).max(8).optional() }).strict(),
+  external_exports2.object({ kind: external_exports2.literal("generate"), request: generationRequestSchema }).strict(),
+  external_exports2.object({ kind: external_exports2.literal("edit"), request: editRequestSchema }).strict()
+]);
+var generatedCheckpointSchema = external_exports2.object({
+  ok: external_exports2.literal(true),
+  artifacts: external_exports2.array(external_exports2.object({ id: imageIdSchema }).strict()).min(1).max(16),
+  apiDelivery: apiDeliverySchema.optional()
+}).strict();
+var jobOutcomeSchema = external_exports2.object({
+  result: imageBatchResultOutputSchema,
+  manifestResult: batchManifestResultSchema.nullable(),
+  publishedArtifactIds: external_exports2.array(imageIdSchema).max(16)
+}).strict();
+var itemStateSchema = external_exports2.enum(["queued", "running", "succeeded", "failed", "unknown", "cancelled", "local_failed"]);
+var itemRecordSchema = external_exports2.object({
+  state: itemStateSchema,
+  checkpoint: generatedCheckpointSchema.nullable(),
+  outcome: jobOutcomeSchema.nullable(),
+  localAttempt: external_exports2.number().int().nonnegative()
+}).strict();
+var manifestSchema = external_exports2.object({
+  manifestReady: external_exports2.boolean(),
+  batchId: batchIdSchema.optional(),
+  manifestCreatedAt: external_exports2.string().datetime().optional(),
+  manifestError: external_exports2.object({ code: external_exports2.string(), message: external_exports2.string() }).strict().optional()
+}).strict();
+var jobRecordSchema = external_exports2.object({
+  schemaVersion: external_exports2.literal("image-job.v1"),
+  jobId: jobIdSchema,
+  scopeHash: digestSchema,
+  requestHash: digestSchema,
+  configHash: digestSchema,
+  spec: jobSpecSchema,
+  concurrency: external_exports2.number().int().min(1).max(8),
+  createdAt: external_exports2.string().datetime(),
+  updatedAt: external_exports2.string().datetime(),
+  revision: external_exports2.number().int().nonnegative(),
+  cancelRequested: external_exports2.boolean(),
+  owner: external_exports2.string().regex(/^[a-f0-9]{32}$/).nullable(),
+  leaseUntil: external_exports2.number().nonnegative(),
+  items: external_exports2.array(itemRecordSchema).min(1).max(64),
+  manifest: manifestSchema.nullable(),
+  previousBatchIds: external_exports2.array(batchIdSchema).max(128)
+}).strict().superRefine((record2, context) => {
+  if (record2.items.length !== (record2.spec.kind === "batch" ? record2.spec.items.length : 1) || record2.requestHash !== digestCanonical(record2.spec)) {
+    context.addIssue({ code: external_exports2.ZodIssueCode.custom, message: "image job request does not match its record" });
+  }
+});
+var countSchema = external_exports2.number().int().min(0).max(64);
+var imageJobOutputSchema = external_exports2.object({
+  jobId: jobIdSchema,
+  kind: external_exports2.enum(["batch", "generate", "edit"]),
+  status: external_exports2.enum(["queued", "running", "completed", "partial", "failed", "cancelled", "interrupted"]),
+  done: external_exports2.boolean(),
+  resumable: external_exports2.boolean(),
+  cancelRequested: external_exports2.boolean(),
+  revision: external_exports2.number().int().nonnegative(),
+  createdAt: external_exports2.string().datetime(),
+  updatedAt: external_exports2.string().datetime(),
+  summary: external_exports2.object({
+    total: countSchema,
+    queued: countSchema,
+    running: countSchema,
+    succeeded: countSchema,
+    failed: countSchema,
+    unknown: countSchema,
+    cancelled: countSchema,
+    localFailed: countSchema
+  }).strict(),
+  items: external_exports2.array(external_exports2.object({
+    index: external_exports2.number().int().min(0).max(63),
+    requestId: external_exports2.string(),
+    state: itemStateSchema,
+    artifactIds: external_exports2.array(imageIdSchema).max(16),
+    result: imageBatchResultOutputSchema.optional()
+  }).strict()).max(10),
+  nextOffset: external_exports2.number().int().min(1).max(63).nullable(),
+  manifest: manifestSchema.nullable()
+}).strict();
+function jobError(code) {
+  return Object.assign(new Error(code), { code });
+}
+function scopeHash(context) {
+  if (typeof context?.projectRoot !== "string" || !path7.isAbsolute(context.projectRoot)) throw jobError("image_job_state_invalid");
+  const root = path7.resolve(context.projectRoot);
+  return digestCanonical(process.platform === "win32" ? root.toLowerCase() : root);
+}
+function jobIdentity(context, submissionKey) {
+  submissionKeySchema.parse(submissionKey);
+  return `job_${digestCanonical(["image-job.v1", scopeHash(context), submissionKey])}`;
+}
+function digestCanonical(value) {
+  return createHash3("sha256").update(JSON.stringify(canonical(value))).digest("hex");
+}
+function canonical(value) {
+  if (Array.isArray(value)) return value.map(canonical);
+  if (value && typeof value === "object") return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])]));
+  return value;
+}
+function jobSnapshot(record2, { now = Date.now(), offset = 0, limit = 10 } = {}) {
+  const expired = record2.owner !== null && record2.leaseUntil <= now;
+  const summary = { total: record2.items.length, queued: 0, running: 0, succeeded: 0, failed: 0, unknown: 0, cancelled: 0, localFailed: 0 };
+  const states = record2.items.map((item) => expired && item.state === "running" ? item.checkpoint ? "local_failed" : "unknown" : item.state);
+  for (const state of states) summary[state === "local_failed" ? "localFailed" : state] += 1;
+  const pending = summary.queued + summary.running;
+  const interrupted = expired || record2.owner === null && pending > 0;
+  const status = interrupted ? "interrupted" : summary.running ? "running" : summary.queued ? "queued" : summary.succeeded === summary.total ? "completed" : summary.cancelled === summary.total ? "cancelled" : summary.succeeded || summary.localFailed ? "partial" : "failed";
+  return imageJobOutputSchema.parse({
+    jobId: record2.jobId,
+    kind: record2.spec.kind,
+    status,
+    done: !pending && !interrupted && record2.owner === null,
+    resumable: Boolean(summary.localFailed || interrupted),
+    cancelRequested: record2.cancelRequested,
+    revision: record2.revision,
+    createdAt: record2.createdAt,
+    updatedAt: record2.updatedAt,
+    summary,
+    items: record2.items.slice(offset, offset + limit).map((item, i) => ({
+      index: offset + i,
+      requestId: record2.spec.kind === "batch" ? record2.spec.items[offset + i].requestId : "image",
+      state: states[offset + i],
+      artifactIds: item.checkpoint?.artifacts.map(({ id }) => id) ?? item.outcome?.publishedArtifactIds ?? [],
+      ...item.outcome ? { result: item.outcome.result } : {}
+    })),
+    nextOffset: offset + limit < record2.items.length ? offset + limit : null,
+    manifest: record2.manifest
+  });
+}
+
+// mcp/image-job-store.mjs
+var MAX_RECORD_BYTES = 8 * 1024 * 1024;
+function createImageJobStore() {
+  const pendingUpdates = /* @__PURE__ */ new Map();
+  return Object.freeze({ read, update });
+  async function read({ context, jobId }) {
+    const scope = await prepareScope(context, jobId, false);
+    if (!scope) throw jobError("image_job_not_found");
+    try {
+      const bytes = await readLatestFencedFileSnapshot(scope.recordPath, { maxBytes: MAX_RECORD_BYTES });
+      if (bytes === null) throw jobError("image_job_not_found");
+      return decode(bytes, context, jobId);
+    } catch (error40) {
+      if (error40?.code?.startsWith("image_job_")) throw error40;
+      throw jobError("image_job_state_unavailable");
+    }
+  }
+  async function update({ context, jobId }, callback) {
+    const key = `${context.artifactRoot}\0${jobId}`;
+    const previous = pendingUpdates.get(key) ?? Promise.resolve();
+    const current = previous.catch(() => {
+    }).then(() => mutate({ context, jobId }, callback));
+    pendingUpdates.set(key, current);
+    try {
+      return await current;
+    } finally {
+      if (pendingUpdates.get(key) === current) pendingUpdates.delete(key);
+    }
+  }
+  async function mutate({ context, jobId }, callback) {
+    const scope = await prepareScope(context, jobId, true);
+    let ownership;
+    try {
+      ownership = await acquireFileLockOwnership({
+        ...scope,
+        maxRecordBytes: MAX_RECORD_BYTES,
+        retries: { retries: 80, factor: 1, minTimeout: 10, maxTimeout: 25 },
+        unavailableError: () => jobError("image_job_state_unavailable"),
+        invalidError: () => jobError("image_job_state_invalid")
+      });
+      const bytes = await ownership.readSnapshot();
+      const record2 = bytes === null ? null : decode(bytes, context, jobId);
+      const next = await callback(record2);
+      if (next === null) return record2;
+      const validated = validate(next, context, jobId);
+      const serialized = Buffer.from(`${JSON.stringify(validated)}
+`);
+      if (serialized.length > MAX_RECORD_BYTES) throw jobError("image_job_state_invalid");
+      await ownership.replaceSnapshot(serialized);
+      return validated;
+    } catch (error40) {
+      if (error40?.code?.startsWith("image_job_")) throw error40;
+      throw jobError("image_job_state_unavailable");
+    } finally {
+      if (ownership) await ownership.release();
+    }
+  }
+}
+function decode(bytes, context, jobId) {
+  try {
+    return validate(JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)), context, jobId);
+  } catch {
+    throw jobError("image_job_state_invalid");
+  }
+}
+function validate(record2, context, jobId) {
+  const parsed = jobRecordSchema.safeParse(record2);
+  if (!parsed.success || parsed.data.jobId !== jobId || parsed.data.scopeHash !== scopeHash(context)) throw jobError("image_job_state_invalid");
+  return parsed.data;
+}
+async function prepareScope(context, jobId, create) {
+  if (!jobIdSchema.safeParse(jobId).success || typeof context?.artifactRoot !== "string" || !path8.isAbsolute(context.artifactRoot)) {
+    throw jobError("image_job_state_invalid");
+  }
+  const artifactRoot = path8.resolve(context.artifactRoot);
+  const stateRoot = path8.join(artifactRoot, ".runtime", "image-jobs");
+  for (const directory of [artifactRoot, path8.join(artifactRoot, ".runtime"), stateRoot]) {
+    try {
+      if (await pathContainsSymbolicLink(directory)) throw jobError("image_job_state_invalid");
+      const metadata = await lstat4(directory);
+      if (!metadata.isDirectory() || metadata.isSymbolicLink()) throw jobError("image_job_state_invalid");
+    } catch (error40) {
+      if (error40?.code !== "ENOENT") throw error40;
+      if (!create) return null;
+      if (directory === artifactRoot) throw jobError("image_job_state_unavailable");
+      await mkdir2(directory).catch((failure) => {
+        if (failure.code !== "EEXIST") throw failure;
+      });
+      if (await pathContainsSymbolicLink(directory) || !(await lstat4(directory)).isDirectory()) throw jobError("image_job_state_invalid");
+    }
+  }
+  const recordPath = path8.join(stateRoot, `${jobId}.json`);
+  const lockPath = path8.join(stateRoot, `${jobId}.lock`);
+  for (const target of [recordPath, lockPath]) {
+    try {
+      if (await pathContainsSymbolicLink(target)) throw jobError("image_job_state_invalid");
+    } catch (error40) {
+      if (error40?.code !== "ENOENT") throw error40;
+    }
+  }
+  return { recordPath, lockPath };
+}
+
+// mcp/image-job-manager.mjs
+var LEASE_MS = 6e4;
+var HEARTBEAT_MS = 1e4;
+var MAX_ACTIVE = 8;
+function createImageJobManager({ executeItem, finalizeBatch, store = createImageJobStore(), now = Date.now } = {}) {
+  if (typeof executeItem !== "function") throw new TypeError("executeItem is required");
+  const owner = randomBytes5(16).toString("hex");
+  const jobs = /* @__PURE__ */ new Map();
+  const pending = /* @__PURE__ */ new Set();
+  let active = 0;
+  let pumping = null;
+  let closing = false;
+  let nextJob = 0;
+  return Object.freeze({ submit, get, cancel, resume, drain, close });
+  async function submit({ context, submissionKey, spec: input }) {
+    if (closing) throw jobError("image_job_state_unavailable");
+    const spec = jobSpecSchema.parse(input);
+    const jobId = jobIdentity(context, submissionKey);
+    const requestHash = digestCanonical(spec);
+    let created = false;
+    const record2 = await store.update({ context, jobId }, (existing) => {
+      if (existing) {
+        if (existing.requestHash !== requestHash) throw jobError("image_job_conflict");
+        return null;
+      }
+      created = true;
+      const timestamp = new Date(now()).toISOString();
+      return {
+        schemaVersion: "image-job.v1",
+        jobId,
+        scopeHash: scopeHash(context),
+        requestHash,
+        configHash: context.effectiveConfigSha256,
+        spec,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+        concurrency: spec.kind === "batch" ? spec.concurrency ?? context.runtimeDefaults?.concurrency ?? 3 : 1,
+        revision: 0,
+        cancelRequested: false,
+        owner,
+        leaseUntil: now() + LEASE_MS,
+        items: Array.from({ length: spec.kind === "batch" ? spec.items.length : 1 }, () => ({
+          state: "queued",
+          checkpoint: null,
+          outcome: null,
+          localAttempt: 0
+        })),
+        manifest: null,
+        previousBatchIds: []
+      };
+    });
+    if (created) activate(context, record2);
+    return jobSnapshot(record2, { now: now() });
+  }
+  async function get({ context, jobId, offset = 0, limit = 10 }) {
+    if (!Number.isInteger(offset) || offset < 0 || offset > 63 || !Number.isInteger(limit) || limit < 1 || limit > 10) {
+      throw jobError("image_job_state_invalid");
+    }
+    return jobSnapshot(await store.read({ context, jobId }), { now: now(), offset, limit });
+  }
+  async function cancel({ context, jobId }) {
+    const record2 = await store.update({ context, jobId }, (record3) => {
+      if (!record3) throw jobError("image_job_not_found");
+      record3.cancelRequested = true;
+      for (const item of record3.items) if (item.state === "queued") item.state = "cancelled";
+      return touch(record3);
+    });
+    const job = jobs.get(jobId);
+    if (job) {
+      job.record = record2;
+      kick();
+    }
+    return jobSnapshot(record2, { now: now() });
+  }
+  async function resume({ context, jobId, expectedRevision }) {
+    if (closing) throw jobError("image_job_state_unavailable");
+    let claimed = false;
+    const record2 = await store.update({ context, jobId }, (record3) => {
+      if (!record3) throw jobError("image_job_not_found");
+      if (record3.configHash !== context.effectiveConfigSha256) throw jobError("image_job_config_changed");
+      if (expectedRevision !== void 0 && record3.revision !== expectedRevision) return null;
+      if (record3.owner && record3.leaseUntil > now()) return null;
+      for (const item of record3.items) {
+        if (item.state === "running") item.state = item.checkpoint ? "local_failed" : "unknown";
+        if (item.state === "local_failed" && item.checkpoint) {
+          item.state = "queued";
+          item.localAttempt += 1;
+          item.outcome = null;
+        }
+      }
+      if (!record3.items.some((item) => item.state === "queued") && record3.owner === null && (record3.spec.kind !== "batch" || record3.manifest !== null)) return null;
+      if (record3.previousBatchIds.length >= 128) throw jobError("image_job_state_invalid");
+      if (record3.manifest?.batchId) record3.previousBatchIds.push(record3.manifest.batchId);
+      record3.manifest = null;
+      record3.cancelRequested = false;
+      record3.owner = owner;
+      record3.leaseUntil = now() + LEASE_MS;
+      claimed = true;
+      return touch(record3);
+    });
+    if (claimed) activate(context, record2);
+    return jobSnapshot(record2, { now: now() });
+  }
+  function activate(context, record2) {
+    const job = { context, record: record2, active: 0, finalizing: false, timer: null };
+    jobs.set(record2.jobId, job);
+    job.timer = setInterval(() => {
+      track(ownedUpdate(job, (record3) => record3).catch(() => halt(job)));
+    }, HEARTBEAT_MS);
+    job.timer.unref?.();
+    kick();
+  }
+  function kick() {
+    if (pumping || closing) return;
+    pumping = new Promise((resolve) => setImmediate(resolve)).then(pump).finally(() => {
+      pumping = null;
+    });
+  }
+  async function pump() {
+    while (!closing) {
+      const candidates = [...jobs.values()];
+      let selected = null;
+      for (let offset = 0; offset < candidates.length; offset += 1) {
+        const job2 = candidates[(nextJob + offset) % candidates.length];
+        if (job2.finalizing) continue;
+        if (job2.active === 0 && !job2.record.items.some((item) => item.state === "queued" || item.state === "running")) {
+          job2.finalizing = true;
+          track(finalize(job2));
+          continue;
+        }
+        const limit = job2.record.concurrency;
+        if (active < MAX_ACTIVE && job2.active < limit && job2.record.items.some((item) => item.state === "queued")) {
+          selected = job2;
+          nextJob = (nextJob + offset + 1) % candidates.length;
+          break;
+        }
+      }
+      if (!selected) return;
+      const job = selected;
+      let index = -1;
+      try {
+        await ownedUpdate(job, (record2) => {
+          if (record2.cancelRequested) return record2;
+          index = record2.items.findIndex((item) => item.state === "queued");
+          if (index >= 0) record2.items[index].state = "running";
+          return touch(record2);
+        });
+      } catch {
+        halt(job);
+        continue;
+      }
+      if (index < 0) continue;
+      active += 1;
+      job.active += 1;
+      track(runItem(job, index));
+    }
+  }
+  async function runItem(job, index) {
+    try {
+      const saved = job.record.items[index].checkpoint;
+      const outcome = jobOutcomeSchema.parse(await executeItem({
+        jobId: job.record.jobId,
+        spec: job.record.spec,
+        index,
+        context: job.context,
+        saved,
+        localAttempt: job.record.items[index].localAttempt,
+        checkpoint: async (value) => {
+          const checkpoint = generatedCheckpointSchema.parse(value);
+          await ownedUpdate(job, (record2) => {
+            record2.items[index].checkpoint = checkpoint;
+            return touch(record2);
+          });
+        },
+        isCancelled: async () => {
+          const record2 = await store.read({ context: job.context, jobId: job.record.jobId });
+          assertOwned2(record2);
+          return record2.cancelRequested || closing;
+        }
+      }));
+      await ownedUpdate(job, (record2) => {
+        const item = record2.items[index];
+        item.outcome = outcome;
+        item.state = outcome.result.ok ? outcome.result.delivery && !outcome.result.delivery.deliveryReady ? "local_failed" : "succeeded" : item.checkpoint ? "local_failed" : outcome.result.error.code === "image_task_failed" ? "unknown" : "failed";
+        return touch(record2);
+      });
+    } catch (error40) {
+      try {
+        await ownedUpdate(job, (record2) => {
+          const item = record2.items[index];
+          item.state = item.checkpoint ? "local_failed" : "unknown";
+          item.outcome = failedOutcome(record2, index, error40?.code);
+          return touch(record2);
+        });
+      } catch {
+        halt(job);
+      }
+    } finally {
+      active -= 1;
+      job.active -= 1;
+      kick();
+    }
+  }
+  async function finalize(job) {
+    try {
+      let manifest = null;
+      if (job.record.spec.kind === "batch" && finalizeBatch) {
+        const outcomes = job.record.items.map((item, index) => item.outcome ?? failedOutcome(
+          job.record,
+          index,
+          item.state === "cancelled" ? "image_job_cancelled" : "image_job_outcome_unknown"
+        ));
+        manifest = await finalizeBatch(outcomes, job.context);
+      }
+      await ownedUpdate(job, (record2) => {
+        record2.manifest = manifest;
+        record2.owner = null;
+        record2.leaseUntil = 0;
+        return touch(record2);
+      }, { release: true });
+    } catch {
+    } finally {
+      halt(job);
+    }
+  }
+  async function ownedUpdate(job, change, { release = false } = {}) {
+    const record2 = await store.update({ context: job.context, jobId: job.record.jobId }, (record3) => {
+      assertOwned2(record3);
+      const changed = change(record3);
+      if (!release) changed.leaseUntil = now() + LEASE_MS;
+      return changed;
+    });
+    if (record2.revision >= job.record.revision) job.record = record2;
+    return record2;
+  }
+  function assertOwned2(record2) {
+    if (!record2 || record2.owner !== owner || record2.leaseUntil <= now()) throw jobError("image_job_ownership_lost");
+  }
+  function touch(record2) {
+    record2.revision += 1;
+    record2.updatedAt = new Date(now()).toISOString();
+    return record2;
+  }
+  function halt(job) {
+    clearInterval(job.timer);
+    if (jobs.get(job.record.jobId) === job) jobs.delete(job.record.jobId);
+  }
+  function track(promise2) {
+    pending.add(promise2);
+    promise2.finally(() => pending.delete(promise2)).catch(() => {
+    });
+  }
+  async function drain() {
+    for (; ; ) {
+      if (pumping) await pumping;
+      if (pending.size) await Promise.allSettled([...pending]);
+      if (!pumping && !pending.size) return;
+    }
+  }
+  async function close() {
+    closing = true;
+    await drain();
+    for (const job of jobs.values()) {
+      try {
+        await ownedUpdate(job, (record2) => {
+          record2.owner = null;
+          record2.leaseUntil = 0;
+          return touch(record2);
+        }, { release: true });
+      } catch {
+      }
+      halt(job);
+    }
+  }
+}
+function failedOutcome(record2, index, candidateCode) {
+  const code = isStableToolErrorCode(candidateCode) ? candidateCode : "image_task_failed";
+  const operation = record2.spec.kind === "batch" ? record2.spec.items[index].operation : record2.spec.kind;
+  const requestId = record2.spec.kind === "batch" ? record2.spec.items[index].requestId : "image";
+  return {
+    result: { requestId, operation, ok: false, error: { code, message: stableToolErrorMessages.get(code) } },
+    manifestResult: { requestId, operation, ok: false, errorCode: code },
+    publishedArtifactIds: record2.items[index].checkpoint?.artifacts.map(({ id }) => id) ?? []
+  };
+}
+
+// mcp/image-job-execution.mjs
+init_define_RELEASE_IDENTITY();
+import { createHash as createHash4 } from "node:crypto";
+
 // mcp/batch-images.mjs
 init_define_RELEASE_IDENTITY();
 
@@ -32438,40 +33863,7 @@ var API_DELIVERY_ISSUE_CODES = /* @__PURE__ */ new Set([
   "total_bytes_exceeded"
 ]);
 var API_IMAGE_FORMATS = /* @__PURE__ */ new Set(["jpeg", "png", "webp"]);
-async function executeImageBatch({
-  items,
-  concurrency,
-  context,
-  runTask,
-  readArtifact,
-  validateEdit,
-  recordManifest
-}) {
-  requireBatchDependencies({
-    items,
-    concurrency,
-    runTask,
-    readArtifact,
-    validateEdit,
-    recordManifest
-  });
-  const outcomes = new Array(items.length);
-  let nextIndex = 0;
-  async function runWorker() {
-    while (nextIndex < items.length) {
-      const index = nextIndex;
-      nextIndex += 1;
-      outcomes[index] = await executeBatchItem({
-        item: items[index],
-        context,
-        runTask,
-        readArtifact,
-        validateEdit
-      });
-    }
-  }
-  const workerCount = Math.min(concurrency, items.length);
-  await Promise.all(Array.from({ length: workerCount }, () => runWorker()));
+async function finalizeImageBatch({ outcomes, context, recordManifest }) {
   const results = outcomes.map((outcome) => outcome.result);
   const succeeded = results.filter((item) => item.ok).length;
   const artifactIds = outcomes.flatMap((outcome) => outcome.publishedArtifactIds);
@@ -32819,41 +34211,156 @@ function unmanifestableBatchOutcome(item, artifactIds) {
     publishedArtifactIds: artifactIds
   };
 }
-function requireBatchDependencies({
-  items,
-  concurrency,
-  runTask,
-  readArtifact,
-  validateEdit,
-  recordManifest
-}) {
-  if (!Array.isArray(items) || items.length < 1 || items.length > 64) {
-    throw new TypeError("items must contain between 1 and 64 batch tasks");
-  }
-  if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 8) {
-    throw new TypeError("concurrency must be an integer between 1 and 8");
-  }
-  let totalCount = 0;
-  for (const item of items) {
-    const count = item?.count ?? 1;
-    if (!Number.isInteger(count) || count < 1 || count > 16) {
-      throw new TypeError("each batch task count must be an integer between 1 and 16");
+
+// mcp/image-job-execution.mjs
+function createImageJobExecutor({ runTask, readArtifact, validateEdit, executeSingle }) {
+  return Object.freeze({ executeItem, finalizeBatch });
+  async function executeItem({ jobId, spec, index, context, checkpoint, saved, localAttempt, isCancelled }) {
+    const runJobTask = async (task) => {
+      let generated = saved;
+      if (!generated) {
+        const result2 = await runTask({ ...task, ...task.delivery ? { deferDelivery: true } : {} }, context);
+        if (!result2?.ok) return result2;
+        const apiDelivery = safeApiDelivery(result2.apiDelivery, result2.artifacts.map(({ id }) => id), task.output?.count ?? 1);
+        generated = generatedCheckpointSchema.parse({
+          ok: true,
+          artifacts: result2.artifacts.map(({ id }) => ({ id })),
+          ...apiDelivery ? { apiDelivery } : {}
+        });
+        await checkpoint(generated);
+      }
+      if (!task.delivery) return generated;
+      const deliveries = [];
+      const delivery = { ...task.delivery };
+      if (!task.transparency) delete delivery.transparency;
+      for (const { id: sourceId } of generated.artifacts) {
+        if (await isCancelled()) {
+          deliveries.push({ ok: false, sourceArtifactId: sourceId, error: { code: "image_job_cancelled" } });
+          continue;
+        }
+        const deliveryReceiptId = `delivery_${createHash4("sha256").update(`${jobId}\0${index}\0${localAttempt}\0${sourceId}`).digest("hex")}`;
+        try {
+          deliveries.push(await runTask({
+            operation: "deliver",
+            modelProfileId: task.modelProfileId,
+            inputArtifactIds: [sourceId],
+            delivery,
+            deliveryReceiptId
+          }, context));
+        } catch {
+          deliveries.push({ ok: false, sourceArtifactId: sourceId, error: { code: "image_task_failed" } });
+        }
+      }
+      return { ...generated, deliveries };
+    };
+    if (spec.kind === "batch") {
+      return await executeBatchItem({ item: spec.items[index], context, runTask: runJobTask, readArtifact, validateEdit });
     }
-    totalCount += count;
-  }
-  if (totalCount > 64) {
-    throw new TypeError("batch image count must not exceed 64");
-  }
-  for (const [name, value] of Object.entries({
-    runTask,
-    readArtifact,
-    validateEdit,
-    recordManifest
-  })) {
-    if (typeof value !== "function") {
-      throw new TypeError(`${name} must be a function`);
+    const result = await executeSingle({ kind: spec.kind, request: spec.request, context, runTask: runJobTask });
+    const artifacts = result?.structuredContent?.artifacts;
+    if (!result?.isError && artifacts?.length) {
+      return {
+        result: { requestId: "image", operation: spec.kind, ok: true, artifacts },
+        manifestResult: null,
+        publishedArtifactIds: artifacts.map(({ id }) => id)
+      };
     }
+    const code = stableToolErrorCodeFromText(result?.content?.[0]?.text) ?? "image_task_failed";
+    return {
+      result: { requestId: "image", operation: spec.kind, ok: false, error: { code, message: stableToolErrorMessages.get(code) } },
+      manifestResult: null,
+      publishedArtifactIds: []
+    };
   }
+  async function finalizeBatch(outcomes, context) {
+    const result = await finalizeImageBatch({ outcomes, context, recordManifest: async (manifest) => await runTask({
+      operation: "record_batch",
+      modelProfileId: context.activeProfile || "primary/gpt-image-2",
+      manifest
+    }, context) });
+    const { manifestReady, batchId, manifestCreatedAt, manifestError } = result;
+    return { manifestReady, ...batchId ? { batchId, manifestCreatedAt } : {}, ...manifestError ? { manifestError } : {} };
+  }
+}
+
+// mcp/image-job-tools.mjs
+init_define_RELEASE_IDENTITY();
+function imageJobResult(job) {
+  const presentationIds = job.items.flatMap((item) => {
+    const result = item.result;
+    if (!result?.ok) return [];
+    return result.artifacts.flatMap(({ id }) => {
+      const delivery = result.delivery?.results.find((receipt) => receipt.sourceArtifactId === id);
+      return delivery?.deliveryReady && delivery.artifacts.length ? delivery.artifacts.map((artifact) => artifact.id) : [id];
+    });
+  }).slice(0, 10);
+  const action = job.done ? "\u8BFB\u53D6\u6240\u6709\u7ED3\u679C\u5206\u9875\uFF0C\u5E76\u7528 render_image_results \u5C55\u793A\u5C1A\u672A\u5C55\u793A\u7684\u6210\u529F\u56FE\u7247\u3002\u7ED3\u679C\u672A\u77E5\u7684\u9879\u4E0D\u5F97\u81EA\u52A8\u91CD\u65B0\u751F\u6210\u3002" : job.status === "interrupted" ? "\u4EFB\u52A1\u6267\u884C\u5DF2\u4E2D\u65AD\u3002resume_image_job \u53EA\u6062\u590D\u672A\u53D1\u51FA\u7684\u8BF7\u6C42\u548C\u5DF2\u4FDD\u5B58\u539F\u56FE\u7684\u672C\u5730\u5904\u7406\uFF0C\u4E0D\u91CD\u65B0\u751F\u6210\u7ED3\u679C\u672A\u77E5\u7684\u9879\u3002" : "\u7EE7\u7EED\u8C03\u7528 get_image_job \u67E5\u8BE2\u6B64\u4EFB\u52A1\uFF1B\u67E5\u8BE2\u8D85\u65F6\u4E0D\u4F1A\u53D6\u6D88\u751F\u6210\uFF0C\u8BF7\u52FF\u91CD\u65B0\u521B\u5EFA\u8BF7\u6C42\u3002";
+  return {
+    content: [{ type: "text", text: `\u56FE\u7247\u4EFB\u52A1 ${job.jobId}\uFF1A${job.summary.succeeded}/${job.summary.total} \u9879\u6210\u529F\uFF0C${job.summary.localFailed} \u9879\u672C\u5730\u5904\u7406\u672A\u5B8C\u6210\uFF0C${job.summary.unknown} \u9879\u7ED3\u679C\u672A\u77E5\uFF0C${job.summary.running} \u9879\u6267\u884C\u4E2D\uFF0C${job.summary.queued} \u9879\u6392\u961F\u4E2D\u3002${action}${presentationIds.length ? ` \u672C\u9875\u53EF\u5C55\u793A\u7684\u56FE\u7247 ID\uFF1A${presentationIds.join(", ")}\u3002` : ""}` }],
+    structuredContent: job
+  };
+}
+function registerImageJobTools(server2, { jobs, projectContext, toolError: toolError2 }) {
+  const input = { projectBindingId: projectBindingIdSchema, jobId: jobIdSchema };
+  server2.registerTool("get_image_job", {
+    title: "Get image job",
+    description: "Read a durable image job and an ordered page of up to 10 item results. Poll the same job until done; a query timeout never resubmits or cancels generation. Render successful images once, then read nextOffset pages. Unknown outcomes must not be regenerated automatically.",
+    inputSchema: {
+      ...input,
+      offset: external_exports2.number().int().min(0).max(63).optional(),
+      limit: external_exports2.number().int().min(1).max(10).optional(),
+      afterRevision: external_exports2.number().int().nonnegative().optional(),
+      waitMs: external_exports2.number().int().min(0).max(2e4).optional()
+    },
+    outputSchema: imageJobOutputSchema,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
+  }, async ({ projectBindingId, afterRevision, waitMs = 0, ...request }, extra) => {
+    try {
+      const context = await projectContext.require(projectBindingId);
+      const deadline = Date.now() + waitMs;
+      let job;
+      do {
+        job = await jobs.get({ ...request, context });
+        if (job.done || job.status === "interrupted" || afterRevision === void 0 || job.revision > afterRevision || extra.signal.aborted) break;
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) break;
+        await pause(Math.min(500, remaining), extra.signal);
+      } while (Date.now() < deadline);
+      return imageJobResult(job);
+    } catch (error40) {
+      return toolError2(error40);
+    }
+  });
+  for (const [name, method, title, description] of [
+    ["cancel_image_job", "cancel", "Cancel image job", "Cancel queued items in this job. Running items, including atomic candidate groups, may still finish and incur charges; their successful originals remain recoverable. Does not delete images."],
+    ["resume_image_job", "resume", "Resume image job", "Resume only never-dispatched items and local processing with saved originals. Never resubmit failed or unknown image requests. Requires the original configuration; does not change provider, model, authentication, or route."]
+  ]) {
+    server2.registerTool(name, {
+      title,
+      description,
+      inputSchema: method === "resume" ? { ...input, expectedRevision: external_exports2.number().int().nonnegative().describe("Revision from get_image_job. Reuse it after a lost resume reply to avoid repeating local processing.") } : input,
+      outputSchema: imageJobOutputSchema,
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: method === "resume" }
+    }, async ({ projectBindingId, jobId, expectedRevision }) => {
+      try {
+        return imageJobResult(await jobs[method]({ jobId, expectedRevision, context: await projectContext.require(projectBindingId) }));
+      } catch (error40) {
+        return toolError2(error40);
+      }
+    });
+  }
+}
+function pause(ms, signal) {
+  return new Promise((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", done);
+      resolve();
+    };
+    const timer = setTimeout(done, ms);
+    signal.addEventListener("abort", done, { once: true });
+    if (signal.aborted) done();
+  });
 }
 
 // mcp/image-audit-handlers.mjs
@@ -32947,8 +34454,8 @@ function stableFailure(code, message, cause) {
 
 // mcp/runtime-diagnostics.mjs
 init_define_RELEASE_IDENTITY();
-import { createHash as createHash3 } from "node:crypto";
-import path5 from "node:path";
+import { createHash as createHash5 } from "node:crypto";
+import path9 from "node:path";
 import { fileURLToPath as fileURLToPath4 } from "node:url";
 var MAX_RUNTIME_ROOT_ENTRIES = 32;
 var MAX_RUNTIME_ROOT_SCHEME_LENGTH = 32;
@@ -32988,13 +34495,13 @@ function createRuntimeObservation({
   };
 }
 function fingerprintPath(value) {
-  return createHash3("sha256").update(normalizePath(value), "utf8").digest("hex").slice(0, 20);
+  return createHash5("sha256").update(normalizePath(value), "utf8").digest("hex").slice(0, 20);
 }
 function pathRelation(child, parent) {
-  const relative = path5.relative(path5.resolve(parent), path5.resolve(child));
+  const relative = path9.relative(path9.resolve(parent), path9.resolve(child));
   if (!relative) return "same";
-  const firstSegment = relative.split(path5.sep, 1)[0];
-  if (firstSegment === ".." || path5.isAbsolute(relative)) return "outside";
+  const firstSegment = relative.split(path9.sep, 1)[0];
+  if (firstSegment === ".." || path9.isAbsolute(relative)) return "outside";
   return "descendant";
 }
 function containsAbsolutePath(value) {
@@ -33042,7 +34549,7 @@ function summarizeClient(clientVersion, clientCapabilities, rootsSupported) {
   };
 }
 function normalizePath(value) {
-  const pathApi = process.platform === "win32" ? path5.win32 : path5.posix;
+  const pathApi = process.platform === "win32" ? path9.win32 : path9.posix;
   const normalized = pathApi.resolve(String(value)).replaceAll("\\", "/");
   if (process.platform === "win32") return normalized.toLowerCase();
   if (process.platform === "darwin" && (normalized === "/private/var" || normalized.startsWith("/private/var/"))) {
@@ -33051,7 +34558,7 @@ function normalizePath(value) {
   return normalized;
 }
 function fingerprintValue(value) {
-  return createHash3("sha256").update(String(value), "utf8").digest("hex").slice(0, 20);
+  return createHash5("sha256").update(String(value), "utf8").digest("hex").slice(0, 20);
 }
 function opaqueStringSummary(value) {
   if (typeof value !== "string") return { fingerprint: null, length: 0 };
@@ -33067,64 +34574,22 @@ function uriScheme(uri) {
 
 // mcp/project-context.mjs
 init_define_RELEASE_IDENTITY();
-import { createHash as createHash5, randomBytes as randomBytes5 } from "node:crypto";
+import { createHash as createHash7, randomBytes as randomBytes6 } from "node:crypto";
 import { constants } from "node:fs";
-import { access, lstat as lstat7 } from "node:fs/promises";
-import path11 from "node:path";
-
-// mcp/filesystem-path-safety.mjs
-init_define_RELEASE_IDENTITY();
-import { lstat, realpath } from "node:fs/promises";
-import path6 from "node:path";
-async function pathContainsSymbolicLink(targetPath) {
-  const absolutePath = path6.resolve(targetPath);
-  const root = path6.parse(absolutePath).root;
-  let currentPath = root;
-  const relativePath = path6.relative(root, absolutePath);
-  for (const component of relativePath.split(path6.sep).filter(Boolean)) {
-    currentPath = path6.join(currentPath, component);
-    if (!(await lstat(currentPath)).isSymbolicLink()) continue;
-    if (await isAllowedMacOSSystemAlias(currentPath)) continue;
-    return true;
-  }
-  return false;
-}
-async function isAllowedMacOSSystemAlias(candidate) {
-  return process.platform === "darwin" && candidate === "/var" && await realpath(candidate) === "/private/var";
-}
+import { access, lstat as lstat8 } from "node:fs/promises";
+import path13 from "node:path";
 
 // mcp/config-resolution.mjs
 init_define_RELEASE_IDENTITY();
-import { createHash as createHash4, randomUUID } from "node:crypto";
-import { lstat as lstat3, readFile as readFile2, writeFile as writeFile2 } from "node:fs/promises";
+import { createHash as createHash6, randomUUID } from "node:crypto";
+import { lstat as lstat6, readFile as readFile2, writeFile as writeFile2 } from "node:fs/promises";
 import os from "node:os";
-import path8 from "node:path";
-
-// mcp/atomic-file-replace.mjs
-init_define_RELEASE_IDENTITY();
-import { rename } from "node:fs/promises";
-import { setTimeout as delay } from "node:timers/promises";
-var WINDOWS_SHARING_ERRORS = /* @__PURE__ */ new Set(["EACCES", "EBUSY", "EPERM"]);
-async function replaceFileAtomically(sourcePath, destinationPath) {
-  const attempts = process.platform === "win32" ? 80 : 1;
-  let lastError;
-  for (let attempt = 0; attempt < attempts; attempt += 1) {
-    try {
-      await rename(sourcePath, destinationPath);
-      return;
-    } catch (error40) {
-      lastError = error40;
-      if (!WINDOWS_SHARING_ERRORS.has(error40?.code) || attempt === attempts - 1) throw error40;
-      await delay(1);
-    }
-  }
-  throw lastError;
-}
+import path11 from "node:path";
 
 // mcp/local-ignore-guard.mjs
 init_define_RELEASE_IDENTITY();
-import { lstat as lstat2, mkdir, readFile, writeFile } from "node:fs/promises";
-import path7 from "node:path";
+import { lstat as lstat5, mkdir as mkdir3, readFile, writeFile } from "node:fs/promises";
+import path10 from "node:path";
 var LOCAL_IGNORE_CONTENT = "*\n";
 var LocalIgnoreGuardError = class extends Error {
   constructor() {
@@ -33134,12 +34599,12 @@ var LocalIgnoreGuardError = class extends Error {
   }
 };
 async function ensureLocalIgnore(directory) {
-  const resolvedDirectory = path7.resolve(directory);
+  const resolvedDirectory = path10.resolve(directory);
   try {
-    await mkdir(resolvedDirectory, { recursive: true });
+    await mkdir3(resolvedDirectory, { recursive: true });
     if (await pathContainsSymbolicLink(resolvedDirectory)) throw new LocalIgnoreGuardError();
-    const ignorePath = path7.join(resolvedDirectory, ".gitignore");
-    const existing = await lstat2(ignorePath).catch((error40) => {
+    const ignorePath = path10.join(resolvedDirectory, ".gitignore");
+    const existing = await lstat5(ignorePath).catch((error40) => {
       if (error40?.code === "ENOENT") return null;
       throw error40;
     });
@@ -33153,7 +34618,7 @@ async function ensureLocalIgnore(directory) {
       return { path: ignorePath, created: true };
     } catch (error40) {
       if (error40?.code !== "EEXIST") throw error40;
-      const metadata = await lstat2(ignorePath);
+      const metadata = await lstat5(ignorePath);
       if (!metadata.isFile() || metadata.isSymbolicLink()) throw new LocalIgnoreGuardError();
       if (await readFile(ignorePath, "utf8") !== LOCAL_IGNORE_CONTENT) throw new LocalIgnoreGuardError();
       return { path: ignorePath, created: false };
@@ -33166,7 +34631,7 @@ async function ensureLocalIgnore(directory) {
 
 // mcp/config-resolution.mjs
 var CONFIG_DIRECTORY = "openai-compatible-imagegen";
-var DEFAULT_OUTPUT_DIRECTORY = path8.join("output", "imagegen");
+var DEFAULT_OUTPUT_DIRECTORY = path11.join("output", "imagegen");
 var ACTIVE_PROFILE = "primary/gpt-image-2";
 var USER_TOP_LEVEL_KEYS = /* @__PURE__ */ new Set([
   "config_version",
@@ -33254,10 +34719,10 @@ var ImageConfigResolutionError = class extends Error {
   }
 };
 function userConfigPath(userHome = os.homedir()) {
-  return path8.resolve(userHome, ".codex", CONFIG_DIRECTORY, "config.json");
+  return path11.resolve(userHome, ".codex", CONFIG_DIRECTORY, "config.json");
 }
 function projectConfigPath(projectRoot) {
-  return path8.resolve(projectRoot, ".codex", CONFIG_DIRECTORY, "config.json");
+  return path11.resolve(projectRoot, ".codex", CONFIG_DIRECTORY, "config.json");
 }
 async function initializeImageConfig({ userHome = os.homedir(), projectRoot, authMode = "apikey" } = {}) {
   if (!(/* @__PURE__ */ new Set(["apikey", "chatgpt"])).has(authMode)) {
@@ -33269,7 +34734,7 @@ async function initializeImageConfig({ userHome = os.homedir(), projectRoot, aut
   await ensureConfigIgnored(target);
   if (resolvedProjectRoot) await ensureConfigIgnored(projectConfigPath(resolvedProjectRoot));
   try {
-    const metadata = await lstat3(target);
+    const metadata = await lstat6(target);
     if (metadata.isSymbolicLink() || !metadata.isFile()) throw new ImageConfigManagementError("image_config_exists");
     throw new ImageConfigManagementError("image_config_exists");
   } catch (error40) {
@@ -33437,7 +34902,7 @@ async function assertImageConfigBindingCurrent({
 }) {
   try {
     const resolvedProjectRoot = requireAbsoluteProjectRoot(projectRoot);
-    if (!samePath(boundProjectConfigPath, projectConfigPath(resolvedProjectRoot))) {
+    if (!samePath2(boundProjectConfigPath, projectConfigPath(resolvedProjectRoot))) {
       throw configChangedError();
     }
     const projectBytes = await readConfigFile(boundProjectConfigPath, {
@@ -33465,7 +34930,7 @@ async function readConfigSnapshot(configPath, {
   invalidCode = "image_config_invalid"
 }) {
   try {
-    const metadata = await lstat3(configPath);
+    const metadata = await lstat6(configPath);
     if (!metadata.isFile() || metadata.isSymbolicLink()) throw new Error("unsafe config file");
     if (await pathContainsSymbolicLink(configPath)) throw new Error("unsafe config file");
     return await readFile2(configPath);
@@ -33521,8 +34986,8 @@ function mergeRecords(current, changes) {
   return result;
 }
 async function writeManagedConfig(target, config2) {
-  if (await pathContainsSymbolicLink(path8.dirname(target))) throw new ImageConfigManagementError("image_config_write_failed");
-  const metadata = await lstat3(target).catch((error40) => {
+  if (await pathContainsSymbolicLink(path11.dirname(target))) throw new ImageConfigManagementError("image_config_write_failed");
+  const metadata = await lstat6(target).catch((error40) => {
     if (error40?.code === "ENOENT") return null;
     throw error40;
   });
@@ -33538,7 +35003,7 @@ async function writeManagedConfig(target, config2) {
 }
 async function ensureConfigIgnored(configPath) {
   try {
-    await ensureLocalIgnore(path8.dirname(configPath));
+    await ensureLocalIgnore(path11.dirname(configPath));
   } catch (error40) {
     if (error40 instanceof LocalIgnoreGuardError) {
       throw new ImageConfigManagementError("image_config_write_failed");
@@ -33756,21 +35221,21 @@ function normalizeAuthMode(value) {
 }
 function resolveArtifactRoot(config2, projectRoot) {
   const configured = config2.storage?.output_directory ?? DEFAULT_OUTPUT_DIRECTORY;
-  if (typeof configured !== "string" || path8.isAbsolute(configured)) throw outputDirectoryError();
+  if (typeof configured !== "string" || path11.isAbsolute(configured)) throw outputDirectoryError();
   try {
-    return path8.resolve(projectRoot, configured);
+    return path11.resolve(projectRoot, configured);
   } catch {
     throw outputDirectoryError();
   }
 }
 async function validateArtifactRoot(artifactRoot, projectRoot) {
-  const relative = path8.relative(projectRoot, artifactRoot);
-  if (!relative || relative.startsWith("..") || path8.isAbsolute(relative)) throw outputDirectoryError();
+  const relative = path11.relative(projectRoot, artifactRoot);
+  if (!relative || relative.startsWith("..") || path11.isAbsolute(relative)) throw outputDirectoryError();
   let current = projectRoot;
-  for (const segment of relative.split(path8.sep).filter(Boolean)) {
-    current = path8.join(current, segment);
+  for (const segment of relative.split(path11.sep).filter(Boolean)) {
+    current = path11.join(current, segment);
     try {
-      const metadata = await lstat3(current);
+      const metadata = await lstat6(current);
       if (metadata.isSymbolicLink() || !metadata.isDirectory()) throw outputDirectoryError();
       if (await pathContainsSymbolicLink(current)) throw outputDirectoryError();
     } catch (error40) {
@@ -33781,8 +35246,8 @@ async function validateArtifactRoot(artifactRoot, projectRoot) {
   }
 }
 function requireAbsoluteProjectRoot(projectRoot) {
-  if (typeof projectRoot !== "string" || !path8.isAbsolute(projectRoot)) throw outputDirectoryError();
-  return path8.resolve(projectRoot);
+  if (typeof projectRoot !== "string" || !path11.isAbsolute(projectRoot)) throw outputDirectoryError();
+  return path11.resolve(projectRoot);
 }
 function requireExactKeys(value, allowed, errorCode) {
   if (unknownKeys(value, allowed).length) throw configError(errorCode);
@@ -33837,7 +35302,7 @@ function stripPythonWhitespace(value) {
   return String(value).replace(/^[\u0009-\u000d\u001c-\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+/u, "").replace(/[\u0009-\u000d\u001c-\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+$/u, "");
 }
 function sha256(value) {
-  return createHash4("sha256").update(value).digest("hex");
+  return createHash6("sha256").update(value).digest("hex");
 }
 function integerInRange(value, minimum, maximum) {
   return Number.isInteger(value) && value >= minimum && value <= maximum;
@@ -33845,9 +35310,9 @@ function integerInRange(value, minimum, maximum) {
 function isRecord2(value) {
   return value !== null && typeof value === "object" && !Array.isArray(value);
 }
-function samePath(left, right) {
+function samePath2(left, right) {
   if (typeof left !== "string" || typeof right !== "string") return false;
-  const normalize = (value) => path8.resolve(value).replaceAll("\\", "/");
+  const normalize = (value) => path11.resolve(value).replaceAll("\\", "/");
   const normalizedLeft = normalize(left);
   const normalizedRight = normalize(right);
   return process.platform === "win32" ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase() : normalizedLeft === normalizedRight;
@@ -33855,830 +35320,12 @@ function samePath(left, right) {
 
 // mcp/project-binding-store.mjs
 init_define_RELEASE_IDENTITY();
-import { lstat as lstat6, mkdir as mkdir3 } from "node:fs/promises";
-import path10 from "node:path";
-
-// mcp/file-lock-ownership.mjs
-init_define_RELEASE_IDENTITY();
-var import_proper_lockfile = __toESM(require_proper_lockfile(), 1);
-import fs from "node:fs";
-import { randomBytes as randomBytes4 } from "node:crypto";
-import {
-  lstat as lstat5,
-  mkdir as mkdir2,
-  open as open2,
-  readdir,
-  rename as rename2,
-  rmdir,
-  unlink
-} from "node:fs/promises";
-import path9 from "node:path";
-
-// mcp/stable-file-snapshot.mjs
-init_define_RELEASE_IDENTITY();
-import { lstat as lstat4, open } from "node:fs/promises";
-var RETRY = /* @__PURE__ */ Symbol("retry");
-var MISSING = /* @__PURE__ */ Symbol("missing");
-var StableFileSnapshotError = class extends Error {
-  constructor(kind) {
-    super(`stable file snapshot ${kind}`);
-    this.name = "StableFileSnapshotError";
-    this.kind = kind;
-  }
-};
-async function readStableFileSnapshot(filePath, { maxBytes, attempts = 32 }) {
-  if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) {
-    throw new TypeError("maxBytes must be a positive safe integer");
-  }
-  let sawReplacement = false;
-  for (let attempt = 0; attempt < attempts; attempt += 1) {
-    const result = await readSnapshotOnce(filePath, maxBytes);
-    if (result === MISSING) {
-      if (!sawReplacement) return null;
-      continue;
-    }
-    if (result === RETRY) {
-      sawReplacement = true;
-      continue;
-    }
-    return result;
-  }
-  throw new StableFileSnapshotError("unavailable");
-}
-async function readSnapshotOnce(filePath, maxBytes) {
-  let handle;
-  try {
-    handle = await open(filePath, "r");
-  } catch (error40) {
-    if (error40?.code === "ENOENT") {
-      try {
-        const metadata = await lstat4(filePath);
-        if (metadata.isSymbolicLink() || !metadata.isFile()) {
-          throw new StableFileSnapshotError("invalid");
-        }
-        return RETRY;
-      } catch (metadataError) {
-        if (metadataError instanceof StableFileSnapshotError) throw metadataError;
-        if (metadataError?.code === "ENOENT") return MISSING;
-        throw new StableFileSnapshotError("unavailable");
-      }
-    }
-    throw new StableFileSnapshotError("unavailable");
-  }
-  try {
-    const [pathMetadata, handleMetadata] = await Promise.all([
-      lstat4(filePath),
-      handle.stat()
-    ]);
-    if (!pathMetadata.isFile() || pathMetadata.isSymbolicLink() || !handleMetadata.isFile() || handleMetadata.size <= 0 || handleMetadata.size > maxBytes) {
-      throw new StableFileSnapshotError("invalid");
-    }
-    if (pathMetadata.dev !== handleMetadata.dev || pathMetadata.ino !== handleMetadata.ino) {
-      return RETRY;
-    }
-    if (await pathContainsSymbolicLink(filePath)) {
-      throw new StableFileSnapshotError("invalid");
-    }
-    const bytes = await handle.readFile();
-    if (bytes.length !== handleMetadata.size || bytes.length > maxBytes) {
-      throw new StableFileSnapshotError("invalid");
-    }
-    return bytes;
-  } catch (error40) {
-    if (error40 instanceof StableFileSnapshotError) throw error40;
-    if (error40?.code === "ENOENT") return RETRY;
-    throw new StableFileSnapshotError("unavailable");
-  } finally {
-    try {
-      await handle.close();
-    } catch {
-      throw new StableFileSnapshotError("unavailable");
-    }
-  }
-}
-
-// mcp/file-lock-ownership.mjs
-var EPOCH_SCHEMA_VERSION = "fenced-file-record.v1";
-var TOKEN_PATTERN = /^[0-9a-f]{32}$/;
-var GENERATION_PATTERN = /^[0-9a-f]{16}$/;
-var COMMITTED_PATTERN = /^e-([0-9a-f]{16})-([0-9a-f]{32})$/;
-var RESERVATION_PATTERN = /^r-([0-9a-f]{16})$/;
-var CLOSING_PATTERN = /^c-([0-9a-f]{32})$/;
-var RECORD_TEMP_PATTERN = /^\.record-[0-9]+-[0-9a-f]{16}\.tmp$/;
-var MAX_GENERATION = BigInt(Number.MAX_SAFE_INTEGER);
-var MAX_DIRECTORY_ENTRIES = 4096;
-var MAX_EPOCH_METADATA_BYTES = 1024;
-async function acquireFileLockOwnership({
-  recordPath,
-  lockPath,
-  maxRecordBytes,
-  retries,
-  unavailableError,
-  invalidError = unavailableError
-}) {
-  requireOptions({ recordPath, lockPath, maxRecordBytes, unavailableError, invalidError });
-  const context = {
-    recordPath: path9.resolve(recordPath),
-    lockPath: path9.resolve(lockPath),
-    maxRecordBytes,
-    unavailableError,
-    invalidError,
-    installed: null,
-    ownershipReady: false,
-    compromised: false,
-    ownershipLost: false
-  };
-  let rawRelease;
-  const guardedFs = createGuardedLockFs(context);
-  try {
-    rawRelease = await import_proper_lockfile.default.lock(context.recordPath, {
-      fs: guardedFs,
-      lockfilePath: context.lockPath,
-      onCompromised: () => {
-        context.compromised = true;
-        context.ownershipLost = true;
-      },
-      realpath: false,
-      stale: 3e4,
-      update: 1e4,
-      retries
-    });
-    context.ownershipReady = true;
-    await assertOwned(context);
-    const ownerRecordPath = path9.join(context.installed.ownerPath, "record.json");
-    return Object.freeze({
-      assertOwned: async () => await assertOwned(context),
-      readSnapshot: async () => await readStableFileSnapshot(ownerRecordPath, {
-        maxBytes: context.maxRecordBytes
-      }),
-      replaceSnapshot: async (bytes) => await replaceOwnedSnapshot(context, bytes),
-      release: async () => await releaseOwnership(context, rawRelease, unavailableError)
-    });
-  } catch (error40) {
-    context.ownershipLost = true;
-    if (rawRelease) {
-      try {
-        await rawRelease();
-      } catch {
-      }
-    }
-    throw mapStateError(error40, { invalidError, unavailableError });
-  }
-}
-async function readLatestFencedFileSnapshot(recordPath, { maxBytes }) {
-  if (typeof recordPath !== "string" || !path9.isAbsolute(recordPath)) {
-    throw new TypeError("recordPath must be an absolute path");
-  }
-  if (!Number.isSafeInteger(maxBytes) || maxBytes <= 0) {
-    throw new TypeError("maxBytes must be a positive safe integer");
-  }
-  const resolvedRecordPath = path9.resolve(recordPath);
-  const storage = storagePaths(resolvedRecordPath);
-  const storageExists = await requireCanonicalDirectory(storage.root, {
-    allowMissing: true,
-    create: false
-  });
-  if (!storageExists) {
-    return await readStableFileSnapshot(resolvedRecordPath, { maxBytes });
-  }
-  await requireCanonicalDirectory(storage.committed, { create: false });
-  await requireCanonicalDirectory(storage.reservations, { create: false });
-  await requireCanonicalDirectory(storage.closing, { create: false });
-  for (let attempt = 0; attempt < 32; attempt += 1) {
-    const epochs = await listCommittedEpochs(storage.committed);
-    const initialized = await requireInitializationMarker(storage.initialized, { allowMissing: true });
-    const latest = requireUniqueLatestEpoch(epochs);
-    if (!latest && !initialized) {
-      return await readStableFileSnapshot(resolvedRecordPath, { maxBytes });
-    }
-    if (latest && initialized) {
-      try {
-        const snapshot = await readEpochRecord(latest.path, latest, maxBytes);
-        if (snapshot !== null || !await hasNewerCommittedEpoch(storage.committed, latest)) {
-          return snapshot;
-        }
-      } catch (error40) {
-        if (!(error40 instanceof StableFileSnapshotError) || !await hasNewerCommittedEpoch(storage.committed, latest)) {
-          throw error40;
-        }
-      }
-    }
-    await delay2(1);
-  }
-  throw new StableFileSnapshotError("invalid");
-}
-async function releaseOwnership(context, rawRelease, unavailableError) {
-  let failure = null;
-  try {
-    await assertOwned(context);
-  } catch (error40) {
-    failure = error40;
-  }
-  try {
-    await rawRelease();
-  } catch {
-    failure ??= unavailableError();
-  }
-  if (failure) throw failure;
-}
-async function replaceOwnedSnapshot(context, bytes) {
-  if (!Buffer.isBuffer(bytes) || bytes.length <= 0 || bytes.length > context.maxRecordBytes) {
-    throw new TypeError("bytes must be a non-empty Buffer within maxRecordBytes");
-  }
-  await assertOwned(context);
-  const temporaryPath = path9.join(
-    context.installed.ownerPath,
-    `.record-${process.pid}-${randomBytes4(8).toString("hex")}.tmp`
-  );
-  const destinationPath = path9.join(context.installed.ownerPath, "record.json");
-  try {
-    const handle = await open2(temporaryPath, "wx", 384);
-    try {
-      await handle.writeFile(bytes);
-      await handle.sync();
-    } finally {
-      await handle.close();
-    }
-    await assertOwned(context);
-    await replaceFileAtomically(temporaryPath, destinationPath);
-    await assertOwned(context);
-  } catch (error40) {
-    if (error40 instanceof TypeError) throw error40;
-    context.ownershipLost = true;
-    throw context.unavailableError();
-  } finally {
-    try {
-      await unlink(temporaryPath);
-    } catch (error40) {
-      if (error40?.code !== "ENOENT") {
-        context.ownershipLost = true;
-        throw context.unavailableError();
-      }
-    }
-  }
-}
-function createGuardedLockFs(context) {
-  const guardedFs = Object.create(fs);
-  guardedFs.mkdir = (targetPath, callback) => {
-    if (!samePath2(targetPath, context.lockPath)) {
-      fs.mkdir(targetPath, callback);
-      return;
-    }
-    installOwnedLock(context).then(() => callback(null), callback);
-  };
-  guardedFs.rmdir = (targetPath, callback) => {
-    if (!samePath2(targetPath, context.lockPath)) {
-      fs.rmdir(targetPath, callback);
-      return;
-    }
-    if (context.ownershipLost) {
-      queueMicrotask(() => callback(releasedError()));
-      return;
-    }
-    const close = context.installed ? closeInstalledLock(context) : closeStaleLock(context);
-    close.then(() => callback(null), callback);
-  };
-  guardedFs.rmdirSync = (targetPath) => {
-    if (samePath2(targetPath, context.lockPath)) throw releasedError();
-    return fs.rmdirSync(targetPath);
-  };
-  return guardedFs;
-}
-async function installOwnedLock(context) {
-  if (await isExistingCanonicalLock(context.lockPath)) {
-    throw Object.assign(new Error("Lock file is already being held"), { code: "EEXIST" });
-  }
-  const storage = storagePaths(context.recordPath);
-  await prepareStorage(storage);
-  await withAllocatorLock(storage, async () => {
-    if (await isExistingCanonicalLock(context.lockPath)) {
-      throw Object.assign(new Error("Lock file is already being held"), { code: "EEXIST" });
-    }
-    await recoverClosingEpochs(storage);
-    await pruneCommittedEpochs(storage.committed);
-    const generation = await reserveGeneration(storage);
-    const token = randomBytes4(16).toString("hex");
-    const candidatePath = path9.join(path9.dirname(context.lockPath), `.candidate-${token}`);
-    const ownerPath = path9.join(candidatePath, token);
-    let installed = false;
-    try {
-      await mkdir2(candidatePath, { mode: 448 });
-      await mkdir2(ownerPath, { mode: 448 });
-      await writeExclusiveFile(
-        path9.join(ownerPath, "epoch.json"),
-        Buffer.from(`${JSON.stringify(epochMetadata(generation, token))}
-`, "utf8")
-      );
-      const current = await readLatestFencedFileSnapshot(context.recordPath, {
-        maxBytes: context.maxRecordBytes
-      });
-      if (current !== null) {
-        await writeExclusiveFile(path9.join(ownerPath, "record.json"), current);
-      }
-      await requireCurrentGeneration(storage, generation);
-      await rename2(candidatePath, context.lockPath);
-      installed = true;
-      context.installed = Object.freeze({
-        generation,
-        token,
-        ownerPath: path9.join(context.lockPath, token)
-      });
-    } catch (error40) {
-      if (await isExistingCanonicalLock(context.lockPath)) {
-        throw Object.assign(new Error("Lock file is already being held"), { code: "EEXIST" });
-      }
-      throw error40;
-    } finally {
-      if (!installed) await removeCandidateDirectory(candidatePath);
-    }
-  });
-}
-async function withAllocatorLock(storage, callback) {
-  let compromised = false;
-  const release = await import_proper_lockfile.default.lock(storage.root, {
-    lockfilePath: storage.allocator,
-    onCompromised: () => {
-      compromised = true;
-    },
-    realpath: false,
-    stale: 3e4,
-    update: 1e4,
-    retries: { retries: 160, factor: 1, minTimeout: 5, maxTimeout: 25 }
-  });
-  let result;
-  let failure;
-  try {
-    if (compromised) throw new StableFileSnapshotError("unavailable");
-    result = await callback();
-    if (compromised) throw new StableFileSnapshotError("unavailable");
-  } catch (error40) {
-    failure = error40;
-  }
-  try {
-    await release();
-  } catch (error40) {
-    failure ??= error40;
-  }
-  if (failure) throw failure;
-  return result;
-}
-async function closeInstalledLock(context) {
-  if (!context.ownershipReady) {
-    await removeCandidateOwner(context.lockPath, context.installed.token, { removeRoot: true });
-    context.installed = null;
-    return;
-  }
-  await assertOwned(context);
-  const storage = storagePaths(context.recordPath);
-  await commitOwnerDirectory(context.installed.ownerPath, storage.committed);
-  try {
-    await rmdir(context.lockPath);
-  } catch (error40) {
-    if (error40?.code !== "ENOENT") throw error40;
-  }
-}
-async function closeStaleLock(context) {
-  const storage = storagePaths(context.recordPath);
-  await prepareStorage(storage);
-  const closingPath = path9.join(storage.closing, `c-${randomBytes4(16).toString("hex")}`);
-  try {
-    await rename2(context.lockPath, closingPath);
-  } catch (error40) {
-    if (error40?.code !== "ENOENT") throw error40;
-  }
-  await recoverClosingEpochs(storage);
-}
-async function recoverClosingEpochs(storage) {
-  const entries = await safeReadDirectory(storage.closing);
-  for (const entry of entries) {
-    if (!entry.isDirectory() || entry.isSymbolicLink() || !CLOSING_PATTERN.test(entry.name)) {
-      throw new StableFileSnapshotError("invalid");
-    }
-    await recoverClosingEpoch(path9.join(storage.closing, entry.name), storage.committed);
-  }
-}
-async function recoverClosingEpoch(closingPath, committedRoot) {
-  let entries;
-  try {
-    entries = await safeReadDirectory(closingPath);
-  } catch (error40) {
-    if (error40?.code === "ENOENT") return;
-    throw error40;
-  }
-  if (entries.length > 1) throw new StableFileSnapshotError("invalid");
-  if (entries.length === 1) {
-    const [entry] = entries;
-    if (!entry.isDirectory() || entry.isSymbolicLink() || !TOKEN_PATTERN.test(entry.name)) {
-      throw new StableFileSnapshotError("invalid");
-    }
-    await commitOwnerDirectory(path9.join(closingPath, entry.name), committedRoot);
-  }
-  try {
-    await rmdir(closingPath);
-  } catch (error40) {
-    if (error40?.code !== "ENOENT") throw error40;
-  }
-}
-async function commitOwnerDirectory(ownerPath, committedRoot) {
-  let metadata;
-  try {
-    metadata = await readOwnerMetadata(ownerPath);
-  } catch (error40) {
-    if (error40?.code === "ENOENT") return;
-    throw error40;
-  }
-  await removeOwnedTemporaryFiles(ownerPath);
-  const destinationPath = path9.join(
-    committedRoot,
-    committedName(metadata.generation, metadata.token)
-  );
-  await createInitializationMarker(path9.join(path9.dirname(committedRoot), "initialized"));
-  try {
-    await rename2(ownerPath, destinationPath);
-  } catch (error40) {
-    if (error40?.code !== "ENOENT" || !await epochMatches(destinationPath, metadata)) throw error40;
-  }
-}
-async function assertOwned(context) {
-  if (context.compromised || context.ownershipLost || !context.installed) {
-    context.ownershipLost = true;
-    throw context.unavailableError();
-  }
-  try {
-    const metadata = await readOwnerMetadata(context.installed.ownerPath);
-    if (metadata.generation !== context.installed.generation || metadata.token !== context.installed.token) {
-      throw new Error("lock owner changed");
-    }
-  } catch {
-    context.ownershipLost = true;
-    throw context.unavailableError();
-  }
-  if (context.compromised) {
-    context.ownershipLost = true;
-    throw context.unavailableError();
-  }
-}
-async function readOwnerMetadata(ownerPath) {
-  await requireCanonicalDirectory(ownerPath, { create: false });
-  const bytes = await readStableFileSnapshot(path9.join(ownerPath, "epoch.json"), {
-    maxBytes: MAX_EPOCH_METADATA_BYTES
-  });
-  if (bytes === null) throw new StableFileSnapshotError("invalid");
-  let value;
-  try {
-    value = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
-  } catch {
-    throw new StableFileSnapshotError("invalid");
-  }
-  if (!plainObject(value) || JSON.stringify(Object.keys(value).sort()) !== JSON.stringify(["generation", "schemaVersion", "token"]) || value.schemaVersion !== EPOCH_SCHEMA_VERSION || typeof value.generation !== "string" || !GENERATION_PATTERN.test(value.generation) || typeof value.token !== "string" || !TOKEN_PATTERN.test(value.token)) {
-    throw new StableFileSnapshotError("invalid");
-  }
-  const generation = BigInt(`0x${value.generation}`);
-  if (generation <= 0n || generation > MAX_GENERATION) {
-    throw new StableFileSnapshotError("invalid");
-  }
-  return Object.freeze({ generation, token: value.token });
-}
-async function readEpochRecord(epochPath, expected, maxBytes) {
-  const metadata = await readOwnerMetadata(epochPath);
-  if (metadata.generation !== expected.generation || metadata.token !== expected.token) {
-    throw new StableFileSnapshotError("invalid");
-  }
-  let entries;
-  try {
-    entries = await safeReadDirectory(epochPath);
-  } catch (error40) {
-    if (error40?.code === "ENOENT") throw new StableFileSnapshotError("invalid");
-    throw error40;
-  }
-  for (const entry of entries) {
-    if (entry.isSymbolicLink() || !entry.isFile() || !["epoch.json", "record.json"].includes(entry.name)) {
-      throw new StableFileSnapshotError("invalid");
-    }
-  }
-  return await readStableFileSnapshot(path9.join(epochPath, "record.json"), { maxBytes });
-}
-async function listCommittedEpochs(committedRoot) {
-  const entries = await safeReadDirectory(committedRoot);
-  const epochs = [];
-  for (const entry of entries) {
-    const match = COMMITTED_PATTERN.exec(entry.name);
-    if (!match || !entry.isDirectory() || entry.isSymbolicLink()) {
-      throw new StableFileSnapshotError("invalid");
-    }
-    const generation = BigInt(`0x${match[1]}`);
-    if (generation <= 0n || generation > MAX_GENERATION) {
-      throw new StableFileSnapshotError("invalid");
-    }
-    epochs.push({
-      generation,
-      token: match[2],
-      path: path9.join(committedRoot, entry.name)
-    });
-  }
-  return epochs;
-}
-function requireUniqueLatestEpoch(epochs) {
-  if (epochs.length === 0) return null;
-  const sorted = [...epochs].sort((left, right) => left.generation < right.generation ? -1 : left.generation > right.generation ? 1 : 0);
-  const latest = sorted.at(-1);
-  if (sorted.length > 1 && sorted.at(-2).generation === latest.generation) {
-    throw new StableFileSnapshotError("invalid");
-  }
-  return latest;
-}
-async function hasNewerCommittedEpoch(committedRoot, previous) {
-  const latest = requireUniqueLatestEpoch(await listCommittedEpochs(committedRoot));
-  return latest !== null && latest.generation > previous.generation;
-}
-async function pruneCommittedEpochs(committedRoot) {
-  const epochs = await listCommittedEpochs(committedRoot);
-  const latest = requireUniqueLatestEpoch(epochs);
-  for (const epoch of epochs) {
-    if (epoch !== latest) await removeCommittedEpoch(epoch.path, epoch);
-  }
-}
-async function removeCommittedEpoch(epochPath, expected) {
-  await readEpochRecord(epochPath, expected, Number.MAX_SAFE_INTEGER);
-  const entries = await safeReadDirectory(epochPath);
-  for (const entry of entries) await unlink(path9.join(epochPath, entry.name));
-  await rmdir(epochPath);
-}
-async function reserveGeneration(storage) {
-  for (; ; ) {
-    const reservations = await listReservations(storage.reservations);
-    const committed = await listCommittedEpochs(storage.committed);
-    let maximum = 0n;
-    for (const generation2 of reservations) if (generation2 > maximum) maximum = generation2;
-    for (const epoch of committed) if (epoch.generation > maximum) maximum = epoch.generation;
-    if (maximum >= MAX_GENERATION) throw new StableFileSnapshotError("invalid");
-    const generation = maximum + 1n;
-    const reservationPath = path9.join(storage.reservations, reservationName(generation));
-    try {
-      const handle = await open2(reservationPath, "wx", 384);
-      try {
-        await handle.sync();
-      } finally {
-        await handle.close();
-      }
-      await pruneReservations(storage.reservations, generation);
-      return generation;
-    } catch (error40) {
-      if (error40?.code !== "EEXIST") throw error40;
-    }
-  }
-}
-async function requireCurrentGeneration(storage, generation) {
-  const reservations = await listReservations(storage.reservations);
-  const committed = await listCommittedEpochs(storage.committed);
-  for (const candidate of reservations) {
-    if (candidate > generation) throw Object.assign(new Error("newer lock generation exists"), { code: "EEXIST" });
-  }
-  for (const epoch of committed) {
-    if (epoch.generation > generation) throw Object.assign(new Error("newer record generation exists"), { code: "EEXIST" });
-  }
-}
-async function listReservations(reservationsRoot) {
-  const entries = await safeReadDirectory(reservationsRoot);
-  const values = [];
-  for (const entry of entries) {
-    const match = RESERVATION_PATTERN.exec(entry.name);
-    if (!match || !entry.isFile() || entry.isSymbolicLink()) {
-      throw new StableFileSnapshotError("invalid");
-    }
-    const generation = BigInt(`0x${match[1]}`);
-    if (generation <= 0n || generation > MAX_GENERATION) {
-      throw new StableFileSnapshotError("invalid");
-    }
-    values.push(generation);
-  }
-  return values;
-}
-async function pruneReservations(reservationsRoot, keepFrom) {
-  const entries = await safeReadDirectory(reservationsRoot);
-  for (const entry of entries) {
-    const match = RESERVATION_PATTERN.exec(entry.name);
-    if (!match || !entry.isFile() || entry.isSymbolicLink()) {
-      throw new StableFileSnapshotError("invalid");
-    }
-    if (BigInt(`0x${match[1]}`) < keepFrom) {
-      await unlink(path9.join(reservationsRoot, entry.name));
-    }
-  }
-}
-async function removeOwnedTemporaryFiles(ownerPath) {
-  const entries = await safeReadDirectory(ownerPath);
-  for (const entry of entries) {
-    if (entry.isSymbolicLink() || !entry.isFile()) {
-      throw new StableFileSnapshotError("invalid");
-    }
-    if (["epoch.json", "record.json"].includes(entry.name)) continue;
-    if (!RECORD_TEMP_PATTERN.test(entry.name)) throw new StableFileSnapshotError("invalid");
-    await unlink(path9.join(ownerPath, entry.name));
-  }
-}
-async function removeCandidateDirectory(candidatePath) {
-  let entries;
-  try {
-    entries = await safeReadDirectory(candidatePath);
-  } catch (error40) {
-    if (error40?.code === "ENOENT") return;
-    throw error40;
-  }
-  if (entries.length > 1) throw new StableFileSnapshotError("invalid");
-  if (entries.length === 1) {
-    const [entry] = entries;
-    if (!entry.isDirectory() || entry.isSymbolicLink() || !TOKEN_PATTERN.test(entry.name)) {
-      throw new StableFileSnapshotError("invalid");
-    }
-    await removeCandidateOwner(candidatePath, entry.name, { removeRoot: false });
-  }
-  try {
-    await rmdir(candidatePath);
-  } catch (error40) {
-    if (error40?.code !== "ENOENT") throw error40;
-  }
-}
-async function removeCandidateOwner(rootPath, token, { removeRoot }) {
-  const ownerPath = path9.join(rootPath, token);
-  let entries;
-  try {
-    entries = await safeReadDirectory(ownerPath);
-  } catch (error40) {
-    if (error40?.code === "ENOENT") return;
-    throw error40;
-  }
-  for (const entry of entries) {
-    if (entry.isSymbolicLink() || !entry.isFile() || !["epoch.json", "record.json"].includes(entry.name) && !RECORD_TEMP_PATTERN.test(entry.name)) {
-      throw new StableFileSnapshotError("invalid");
-    }
-    await unlink(path9.join(ownerPath, entry.name));
-  }
-  await rmdir(ownerPath);
-  if (removeRoot) {
-    try {
-      await rmdir(rootPath);
-    } catch (error40) {
-      if (error40?.code !== "ENOENT") throw error40;
-    }
-  }
-}
-async function prepareStorage(storage) {
-  await requireCanonicalDirectory(path9.dirname(storage.root), { create: false });
-  await requireCanonicalDirectory(storage.root, { create: true });
-  await requireCanonicalDirectory(storage.committed, { create: true });
-  await requireCanonicalDirectory(storage.reservations, { create: true });
-  await requireCanonicalDirectory(storage.closing, { create: true });
-}
-async function createInitializationMarker(markerPath) {
-  try {
-    const handle = await open2(markerPath, "wx", 384);
-    try {
-      await handle.sync();
-    } finally {
-      await handle.close();
-    }
-  } catch (error40) {
-    if (error40?.code !== "EEXIST") throw error40;
-  }
-  await requireInitializationMarker(markerPath);
-}
-async function requireInitializationMarker(markerPath, { allowMissing = false } = {}) {
-  try {
-    const metadata = await lstat5(markerPath);
-    if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.size !== 0) {
-      throw new StableFileSnapshotError("invalid");
-    }
-    if (await pathContainsSymbolicLink(markerPath)) {
-      throw new StableFileSnapshotError("invalid");
-    }
-    return true;
-  } catch (error40) {
-    if (error40 instanceof StableFileSnapshotError) throw error40;
-    if (error40?.code === "ENOENT" && allowMissing) return false;
-    if (error40?.code === "ENOENT") throw new StableFileSnapshotError("invalid");
-    throw new StableFileSnapshotError("unavailable");
-  }
-}
-async function requireCanonicalDirectory(directory, { create, allowMissing = false }) {
-  try {
-    if (create) {
-      await mkdir2(directory, { mode: 448 }).catch((error40) => {
-        if (error40?.code !== "EEXIST") throw error40;
-      });
-    }
-    const metadata = await lstat5(directory);
-    if (!metadata.isDirectory() || metadata.isSymbolicLink() || await pathContainsSymbolicLink(directory)) {
-      throw new StableFileSnapshotError("invalid");
-    }
-    return true;
-  } catch (error40) {
-    if (error40 instanceof StableFileSnapshotError) throw error40;
-    if (error40?.code === "ENOENT" && allowMissing) return false;
-    if (error40?.code === "ENOENT") throw new StableFileSnapshotError("invalid");
-    throw new StableFileSnapshotError("unavailable");
-  }
-}
-async function safeReadDirectory(directory) {
-  try {
-    const entries = await readdir(directory, { withFileTypes: true });
-    if (entries.length > MAX_DIRECTORY_ENTRIES) throw new StableFileSnapshotError("invalid");
-    return entries;
-  } catch (error40) {
-    if (error40 instanceof StableFileSnapshotError) throw error40;
-    throw error40;
-  }
-}
-async function writeExclusiveFile(filePath, bytes) {
-  const handle = await open2(filePath, "wx", 384);
-  try {
-    await handle.writeFile(bytes);
-    await handle.sync();
-  } finally {
-    await handle.close();
-  }
-}
-async function epochMatches(epochPath, expected) {
-  try {
-    const actual = await readOwnerMetadata(epochPath);
-    return actual.generation === expected.generation && actual.token === expected.token;
-  } catch {
-    return false;
-  }
-}
-async function isExistingCanonicalLock(lockPath) {
-  try {
-    const metadata = await lstat5(lockPath);
-    return metadata.isDirectory() && !metadata.isSymbolicLink() && !await pathContainsSymbolicLink(lockPath);
-  } catch {
-    return false;
-  }
-}
-function storagePaths(recordPath) {
-  const root = `${recordPath}.epochs`;
-  return {
-    root,
-    committed: path9.join(root, "committed"),
-    reservations: path9.join(root, "reservations"),
-    closing: path9.join(root, "closing"),
-    allocator: path9.join(root, "allocator.lock"),
-    initialized: path9.join(root, "initialized")
-  };
-}
-function epochMetadata(generation, token) {
-  return {
-    schemaVersion: EPOCH_SCHEMA_VERSION,
-    generation: generationHex(generation),
-    token
-  };
-}
-function committedName(generation, token) {
-  return `e-${generationHex(generation)}-${token}`;
-}
-function reservationName(generation) {
-  return `r-${generationHex(generation)}`;
-}
-function generationHex(generation) {
-  return generation.toString(16).padStart(16, "0");
-}
-function requireOptions({ recordPath, lockPath, maxRecordBytes, unavailableError, invalidError }) {
-  if (typeof recordPath !== "string" || !path9.isAbsolute(recordPath)) {
-    throw new TypeError("recordPath must be an absolute path");
-  }
-  if (typeof lockPath !== "string" || !path9.isAbsolute(lockPath)) {
-    throw new TypeError("lockPath must be an absolute path");
-  }
-  if (!Number.isSafeInteger(maxRecordBytes) || maxRecordBytes <= 0) {
-    throw new TypeError("maxRecordBytes must be a positive safe integer");
-  }
-  if (typeof unavailableError !== "function" || typeof invalidError !== "function") {
-    throw new TypeError("state error factories must be functions");
-  }
-}
-function mapStateError(error40, { invalidError, unavailableError }) {
-  if (error40 instanceof StableFileSnapshotError && error40.kind === "invalid") return invalidError();
-  return unavailableError();
-}
-function releasedError() {
-  return Object.assign(new Error("lock ownership changed before release"), { code: "ERELEASED" });
-}
-function plainObject(value) {
-  return Boolean(value) && Object.getPrototypeOf(value) === Object.prototype;
-}
-function samePath2(left, right) {
-  const normalizedLeft = path9.resolve(left).replaceAll("\\", "/");
-  const normalizedRight = path9.resolve(right).replaceAll("\\", "/");
-  return process.platform === "win32" ? normalizedLeft.toLowerCase() === normalizedRight.toLowerCase() : normalizedLeft === normalizedRight;
-}
-function delay2(milliseconds) {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
-}
-
-// mcp/project-binding-store.mjs
+import { lstat as lstat7, mkdir as mkdir4 } from "node:fs/promises";
+import path12 from "node:path";
 var SCHEMA_VERSION = "project-binding.v1";
 var BINDING_HASH_PATTERN = /^[0-9a-f]{64}$/;
 var SHA256_PATTERN2 = /^[0-9a-f]{64}$/;
-var MAX_RECORD_BYTES = 4096;
+var MAX_RECORD_BYTES2 = 4096;
 var ProjectBindingStoreError = class extends Error {
   constructor(code) {
     super(code);
@@ -34687,11 +35334,11 @@ var ProjectBindingStoreError = class extends Error {
   }
 };
 function createProjectBindingStore({ stateRoot }) {
-  if (typeof stateRoot !== "string" || !path10.isAbsolute(stateRoot)) {
+  if (typeof stateRoot !== "string" || !path12.isAbsolute(stateRoot)) {
     throw new TypeError("stateRoot must be an absolute path");
   }
-  const resolvedStateRoot = path10.resolve(stateRoot);
-  const bindingsRoot = path10.join(resolvedStateRoot, "project-bindings");
+  const resolvedStateRoot = path12.resolve(stateRoot);
+  const bindingsRoot = path12.join(resolvedStateRoot, "project-bindings");
   return Object.freeze({ bind, require: requireBinding });
   async function bind(value) {
     const requested = normalizeRecord(value);
@@ -34733,7 +35380,7 @@ async function withRecordLock(scope, callback) {
     ownership = await acquireFileLockOwnership({
       recordPath: scope.recordPath,
       lockPath: scope.lockPath,
-      maxRecordBytes: MAX_RECORD_BYTES,
+      maxRecordBytes: MAX_RECORD_BYTES2,
       retries: { retries: 80, factor: 1, minTimeout: 10, maxTimeout: 50 },
       unavailableError: unavailableState,
       invalidError: invalidState2
@@ -34756,7 +35403,7 @@ async function withRecordLock(scope, callback) {
 }
 async function requireSafeLockPath(lockPath) {
   try {
-    const metadata = await lstat6(lockPath);
+    const metadata = await lstat7(lockPath);
     if (!metadata.isDirectory() || metadata.isSymbolicLink() || await pathContainsSymbolicLink(lockPath)) {
       throw stateError("project_binding_state_invalid");
     }
@@ -34774,25 +35421,25 @@ function invalidState2() {
 }
 async function prepareRecordScope(bindingsRoot, bindingHash) {
   requireBindingHash(bindingHash);
-  await ensureCanonicalDirectory(path10.dirname(bindingsRoot));
+  await ensureCanonicalDirectory(path12.dirname(bindingsRoot));
   await ensureCanonicalDirectory(bindingsRoot);
-  const bindingDirectory = path10.join(bindingsRoot, bindingHash);
+  const bindingDirectory = path12.join(bindingsRoot, bindingHash);
   await ensureCanonicalDirectory(bindingDirectory);
   return recordScope(bindingsRoot, bindingHash);
 }
 function recordScope(bindingsRoot, bindingHash) {
-  const bindingDirectory = path10.join(bindingsRoot, bindingHash);
+  const bindingDirectory = path12.join(bindingsRoot, bindingHash);
   return {
-    recordPath: path10.join(bindingDirectory, "binding.json"),
-    lockPath: path10.join(bindingDirectory, "binding.lock")
+    recordPath: path12.join(bindingDirectory, "binding.json"),
+    lockPath: path12.join(bindingDirectory, "binding.lock")
   };
 }
 async function ensureCanonicalDirectory(directory) {
   try {
-    await mkdir3(directory, { recursive: false, mode: 448 }).catch((error40) => {
+    await mkdir4(directory, { recursive: false, mode: 448 }).catch((error40) => {
       if (error40?.code !== "EEXIST") throw error40;
     });
-    const metadata = await lstat6(directory);
+    const metadata = await lstat7(directory);
     if (!metadata.isDirectory() || metadata.isSymbolicLink()) {
       throw stateError("project_binding_state_invalid");
     }
@@ -34807,7 +35454,7 @@ async function ensureCanonicalDirectory(directory) {
 async function readRecord(recordPath, { required: required2, expectedBindingHash }, ownership = null) {
   let bytes;
   try {
-    bytes = ownership ? await ownership.readSnapshot() : await readLatestFencedFileSnapshot(recordPath, { maxBytes: MAX_RECORD_BYTES });
+    bytes = ownership ? await ownership.readSnapshot() : await readLatestFencedFileSnapshot(recordPath, { maxBytes: MAX_RECORD_BYTES2 });
   } catch (error40) {
     if (error40 instanceof StableFileSnapshotError && error40.kind === "invalid") {
       throw stateError("project_binding_state_invalid");
@@ -34868,13 +35515,13 @@ function normalizeRecord(value) {
   if (JSON.stringify(keys) !== JSON.stringify(expectedKeys)) {
     throw stateError("project_binding_state_invalid");
   }
-  if (value.schemaVersion !== SCHEMA_VERSION || !BINDING_HASH_PATTERN.test(value.bindingHash) || typeof value.projectRoot !== "string" || !path10.isAbsolute(value.projectRoot) || !SHA256_PATTERN2.test(value.userConfigSha256) || value.projectConfigSha256 !== null && !SHA256_PATTERN2.test(value.projectConfigSha256)) {
+  if (value.schemaVersion !== SCHEMA_VERSION || !BINDING_HASH_PATTERN.test(value.bindingHash) || typeof value.projectRoot !== "string" || !path12.isAbsolute(value.projectRoot) || !SHA256_PATTERN2.test(value.userConfigSha256) || value.projectConfigSha256 !== null && !SHA256_PATTERN2.test(value.projectConfigSha256)) {
     throw stateError("project_binding_state_invalid");
   }
   return Object.freeze({
     schemaVersion: SCHEMA_VERSION,
     bindingHash: value.bindingHash,
-    projectRoot: path10.resolve(value.projectRoot),
+    projectRoot: path12.resolve(value.projectRoot),
     userConfigSha256: value.userConfigSha256,
     projectConfigSha256: value.projectConfigSha256
   });
@@ -34900,7 +35547,7 @@ function samePath3(left, right) {
   return normalizedLeft === normalizedRight;
 }
 function normalizePath2(value) {
-  const normalized = path10.resolve(value).replaceAll("\\", "/");
+  const normalized = path12.resolve(value).replaceAll("\\", "/");
   return process.platform === "win32" ? normalized.toLowerCase() : normalized;
 }
 
@@ -34916,15 +35563,15 @@ var ProjectContextError = class extends Error {
 };
 function createProjectContext({
   pluginRoot: pluginRoot2,
-  stateRoot = path11.join(path11.dirname(userConfigPath()), "state"),
+  stateRoot = path13.join(path13.dirname(userConfigPath()), "state"),
   resolveConfigBinding = resolveImageConfigBinding,
   verifyConfigBinding = assertImageConfigBindingCurrent,
   prepareArtifactRoot = ensureLocalIgnore
 }) {
-  if (typeof pluginRoot2 !== "string" || !path11.isAbsolute(pluginRoot2)) {
+  if (typeof pluginRoot2 !== "string" || !path13.isAbsolute(pluginRoot2)) {
     throw new Error("pluginRoot must be an absolute path");
   }
-  const resolvedPluginRoot = path11.resolve(pluginRoot2);
+  const resolvedPluginRoot = path13.resolve(pluginRoot2);
   const bindingStore = createProjectBindingStore({ stateRoot });
   const pendingBindingOperations = /* @__PURE__ */ new Map();
   async function serializeBinding(bindingKey, operation) {
@@ -34955,7 +35602,7 @@ function createProjectContext({
             throw new ProjectContextError("project_binding_required");
           }
         }
-        if (existing && (typeof projectRoot !== "string" || !path11.isAbsolute(projectRoot) || !samePath4(existing.projectRoot, projectRoot))) {
+        if (existing && (typeof projectRoot !== "string" || !path13.isAbsolute(projectRoot) || !samePath4(existing.projectRoot, projectRoot))) {
           throw new ProjectContextError("project_binding_conflict");
         }
         const resolvedProjectRoot = await validateProjectRoot(projectRoot, resolvedPluginRoot);
@@ -35019,10 +35666,10 @@ function createProjectContext({
   });
 }
 function projectBindingKey(projectBindingId) {
-  return createHash5("sha256").update(`${PROJECT_BINDING_KEY_SEED}\0${projectBindingId}`, "utf8").digest("hex");
+  return createHash7("sha256").update(`${PROJECT_BINDING_KEY_SEED}\0${projectBindingId}`, "utf8").digest("hex");
 }
 function newProjectBindingId() {
-  return `pbind_${randomBytes5(32).toString("hex")}`;
+  return `pbind_${randomBytes6(32).toString("hex")}`;
 }
 function requireProjectBindingId(value) {
   if (typeof value !== "string" || !PROJECT_BINDING_ID_PATTERN.test(value)) {
@@ -35044,10 +35691,10 @@ function mapBindingStoreError(error40) {
   return new ProjectContextError("project_binding_unavailable");
 }
 async function validateProjectRoot(projectRoot, pluginRoot2) {
-  if (typeof projectRoot !== "string" || !path11.isAbsolute(projectRoot)) {
+  if (typeof projectRoot !== "string" || !path13.isAbsolute(projectRoot)) {
     throw new ProjectContextError("project_root_invalid");
   }
-  const resolvedProjectRoot = path11.resolve(projectRoot);
+  const resolvedProjectRoot = path13.resolve(projectRoot);
   if (isSameOrDescendant(resolvedProjectRoot, pluginRoot2)) {
     throw new ProjectContextError("project_root_is_plugin_root");
   }
@@ -35055,7 +35702,7 @@ async function validateProjectRoot(projectRoot, pluginRoot2) {
     if (await pathContainsSymbolicLink(resolvedProjectRoot)) {
       throw new ProjectContextError("project_root_invalid");
     }
-    const metadata = await lstat7(resolvedProjectRoot);
+    const metadata = await lstat8(resolvedProjectRoot);
     if (!metadata.isDirectory() || metadata.isSymbolicLink()) {
       throw new ProjectContextError("project_root_invalid");
     }
@@ -35067,14 +35714,14 @@ async function validateProjectRoot(projectRoot, pluginRoot2) {
   return resolvedProjectRoot;
 }
 function isSameOrDescendant(candidate, parent) {
-  const relative = path11.relative(parent, candidate);
-  return relative === "" || !relative.startsWith("..") && !path11.isAbsolute(relative);
+  const relative = path13.relative(parent, candidate);
+  return relative === "" || !relative.startsWith("..") && !path13.isAbsolute(relative);
 }
 function samePath4(left, right) {
   return normalizePath3(left) === normalizePath3(right);
 }
 function normalizePath3(value) {
-  const normalized = path11.resolve(value).replaceAll("\\", "/");
+  const normalized = path13.resolve(value).replaceAll("\\", "/");
   return process.platform === "win32" ? normalized.toLowerCase() : normalized;
 }
 
@@ -35127,13 +35774,13 @@ function parseHostObservationReport(value) {
 
 // mcp/host-observation-store.mjs
 init_define_RELEASE_IDENTITY();
-import { randomBytes as randomBytes6 } from "node:crypto";
-import { lstat as lstat8, mkdir as mkdir4, open as open3, unlink as unlink2 } from "node:fs/promises";
-import path12 from "node:path";
+import { randomBytes as randomBytes7 } from "node:crypto";
+import { lstat as lstat9, mkdir as mkdir5, open as open3, unlink as unlink2 } from "node:fs/promises";
+import path14 from "node:path";
 var SCHEMA_VERSION2 = "host-observation.v1";
 var BINDING_KEY_PATTERN2 = /^[0-9a-f]{64}$/;
 var RELEASE_FINGERPRINT_PATTERN = /^[0-9a-f]{20}$/;
-var MAX_RECORD_BYTES2 = 320 * 1024;
+var MAX_RECORD_BYTES3 = 320 * 1024;
 function createFileHostObservationStore() {
   return Object.freeze({ read, write });
   async function read({ context, releaseFingerprint }) {
@@ -35141,7 +35788,7 @@ function createFileHostObservationStore() {
     if (recordPath === null) return null;
     let bytes;
     try {
-      bytes = await readStableFileSnapshot(recordPath, { maxBytes: MAX_RECORD_BYTES2 });
+      bytes = await readStableFileSnapshot(recordPath, { maxBytes: MAX_RECORD_BYTES3 });
     } catch (error40) {
       if (error40 instanceof StableFileSnapshotError && error40.kind === "invalid") {
         throw observationError("host_observation_state_invalid");
@@ -35182,12 +35829,12 @@ function createFileHostObservationStore() {
     };
     const bytes = Buffer.from(`${JSON.stringify(record2)}
 `, "utf8");
-    if (bytes.length > MAX_RECORD_BYTES2) {
+    if (bytes.length > MAX_RECORD_BYTES3) {
       throw observationError("host_observation_state_invalid");
     }
-    const temporaryPath = path12.join(
-      path12.dirname(recordPath),
-      `.observation-${process.pid}-${randomBytes6(8).toString("hex")}.tmp`
+    const temporaryPath = path14.join(
+      path14.dirname(recordPath),
+      `.observation-${process.pid}-${randomBytes7(8).toString("hex")}.tmp`
     );
     try {
       const handle = await open3(temporaryPath, "wx", 384);
@@ -35224,15 +35871,15 @@ function createInMemoryHostObservationStore() {
   });
 }
 async function resolveRecordPath(context, releaseFingerprint, { create }) {
-  if (typeof context?.artifactRoot !== "string" || !path12.isAbsolute(context.artifactRoot) || !BINDING_KEY_PATTERN2.test(context.bindingKey) || !RELEASE_FINGERPRINT_PATTERN.test(releaseFingerprint)) {
+  if (typeof context?.artifactRoot !== "string" || !path14.isAbsolute(context.artifactRoot) || !BINDING_KEY_PATTERN2.test(context.bindingKey) || !RELEASE_FINGERPRINT_PATTERN.test(releaseFingerprint)) {
     throw observationError("host_observation_state_invalid");
   }
-  const artifactRoot = path12.resolve(context.artifactRoot);
+  const artifactRoot = path14.resolve(context.artifactRoot);
   const directories = [
     artifactRoot,
-    path12.join(artifactRoot, ".runtime"),
-    path12.join(artifactRoot, ".runtime", "host-observations"),
-    path12.join(artifactRoot, ".runtime", "host-observations", context.bindingKey)
+    path14.join(artifactRoot, ".runtime"),
+    path14.join(artifactRoot, ".runtime", "host-observations"),
+    path14.join(artifactRoot, ".runtime", "host-observations", context.bindingKey)
   ];
   for (let index = 0; index < directories.length; index += 1) {
     const available = await requireCanonicalDirectory2(directories[index], {
@@ -35241,20 +35888,20 @@ async function resolveRecordPath(context, releaseFingerprint, { create }) {
     if (!available) return null;
   }
   const directory = directories.at(-1);
-  return path12.join(directory, `${releaseFingerprint}.json`);
+  return path14.join(directory, `${releaseFingerprint}.json`);
 }
 async function requireCanonicalDirectory2(directory, { create }) {
   try {
     if (create) {
       try {
-        await mkdir4(directory, { mode: 448 });
+        await mkdir5(directory, { mode: 448 });
       } catch (error40) {
         if (error40?.code !== "EEXIST") throw error40;
       }
     }
     let metadata;
     try {
-      metadata = await lstat8(directory);
+      metadata = await lstat9(directory);
     } catch (error40) {
       if (!create && error40?.code === "ENOENT") return false;
       throw error40;
@@ -35659,12 +36306,12 @@ var editSubmissionOutputSchema = external_exports2.object({
   revisionSha256: external_exports2.string().regex(/^[a-f0-9]{64}$/)
 }).strict();
 var fingerprintSchema = external_exports2.string().regex(/^[a-f0-9]{20}$/);
-var digestSchema = external_exports2.string().regex(/^[a-f0-9]{64}$/);
+var digestSchema2 = external_exports2.string().regex(/^[a-f0-9]{64}$/);
 var releaseIdentityOutputSchema = external_exports2.object({
   pluginId: external_exports2.string().min(1),
   pluginVersion: external_exports2.string().min(1),
-  serverBuildDigest: digestSchema,
-  widgetAssetDigest: digestSchema,
+  serverBuildDigest: digestSchema2,
+  widgetAssetDigest: digestSchema2,
   fingerprint: fingerprintSchema,
   resourceUris: external_exports2.object({ result: external_exports2.string().url(), editor: external_exports2.string().url() })
 });
@@ -35753,7 +36400,7 @@ var retainedHostErrorCodes = /* @__PURE__ */ new Set([
 var sensitiveHostFieldKeyPattern = /(api[_-]?key|authorization|credential|password|secret|token|cookie)/i;
 var hostObservationProvenance = "unverified_widget_report";
 var DEFAULT_MODEL_PROFILE_ID2 = "primary/gpt-image-2";
-var SERVER_INSTRUCTIONS = "After generate_image or edit_image succeeds, call render_image_results once with the returned artifact IDs in order before the final response. After deliver_image succeeds with deliveryReady=true, call render_image_results with the returned derivative artifact IDs. After batch_images succeeds, call render_image_results once with up to 10 final presentation IDs, preferring delivery-ready derivatives over API originals. Do not ask the user to request this display step, and do not render the same result twice.";
+var SERVER_INSTRUCTIONS = "generate_image, edit_image, and batch_images submit durable asynchronous jobs. Preserve submissionKey and jobId. Poll get_image_job until done and read every result page; a polling timeout does not cancel or resubmit generation. Before the final response, render successful images with render_image_results in groups of up to 10, preferring delivery-ready derivatives and never displaying the same result twice. After deliver_image succeeds with deliveryReady=true, call render_image_results with its derivatives. Unknown outcomes must not be regenerated automatically. Do not ask the user to request the display step.";
 function createImagegenServer({
   releaseIdentity,
   launchContext,
@@ -36024,23 +36671,54 @@ function createImagegenServer({
       }
     })
   );
+  const singleImageHandlers = /* @__PURE__ */ new Map();
+  const jobExecutor = createImageJobExecutor({
+    runTask,
+    readArtifact,
+    validateEdit: async (item, context) => await editSubmissions.resolveForEdit({
+      artifactRoot: context.artifactRoot,
+      bindingKey: context.bindingKey,
+      parentImageId: item.parentImageId
+    }),
+    executeSingle: async ({ kind, request, context, runTask: taskRunner }) => await singleImageHandlers.get(kind)(request, context, taskRunner)
+  });
+  const imageJobs = createImageJobManager(jobExecutor);
+  registerImageJobTools(server2, { jobs: imageJobs, projectContext, toolError });
+  const closeServer = server2.close.bind(server2);
+  server2.close = async () => {
+    await imageJobs.close();
+    await closeServer();
+  };
+  const onConnectionClosed = server2.server.onclose;
+  server2.server.onclose = () => {
+    onConnectionClosed?.();
+    void imageJobs.close().catch(() => {
+    });
+  };
+  function queueImageOperation(kind, handler) {
+    singleImageHandlers.set(kind, handler);
+    return async ({ projectBindingId, submissionKey, ...request }) => await withBoundProject(projectContext, projectBindingId, async (context) => {
+      if (context.apiKeyConfigured === false) return apiProviderNotConfigured();
+      return imageJobResult(await imageJobs.submit({ context, submissionKey, spec: { kind, request } }));
+    });
+  }
   server2.registerTool(
     "generate_image",
     {
       title: "Generate images",
-      description: "Generate one or more independent candidate images with the configured model. Multiple candidates run as ordered single-image requests and return only after the full group succeeds. After success, call render_image_results once with the returned artifact IDs before replying to the user.",
+      description: "Submit a durable image generation job and return its jobId without waiting for generation. Reuse submissionKey after a lost reply to recover the same job. Multiple candidates preserve ordered single-image requests and atomic group publication. Poll get_image_job and render successful results before replying.",
       inputSchema: {
         ...projectBindingInputSchema,
+        submissionKey: submissionKeySchema,
         prompt: external_exports2.string().min(1),
         modelProfileId: modelProfileIdSchema.optional(),
         transparency: transparencyInputSchema.optional(),
         ...outputSchema
       },
-      outputSchema: imageArtifactsOutputSchema,
+      outputSchema: imageJobOutputSchema,
       annotations: writeAnnotations2()
     },
-    async ({ projectBindingId, prompt, modelProfileId, transparency, ...output }) => await withBoundProject(projectContext, projectBindingId, async (context) => {
-      if (context.apiKeyConfigured === false) return apiProviderNotConfigured();
+    queueImageOperation("generate", async ({ prompt, modelProfileId, transparency, ...output }, context, taskRunner) => {
       return await executeImageTask(
         {
           operation: "generate",
@@ -36052,7 +36730,7 @@ function createImagegenServer({
           output
         },
         context,
-        runTask,
+        taskRunner,
         readArtifact
       );
     })
@@ -36061,9 +36739,10 @@ function createImagegenServer({
     "edit_image",
     {
       title: "Edit image",
-      description: "Create a new immutable image version from a parent image and prompt. After success, call render_image_results once with the returned child artifact ID before replying to the user.",
+      description: "Submit a durable edit job for a new immutable image version and immediately return jobId. Preserve submissionKey and any canvas submissionId. Poll get_image_job and render the successful child images; do not repeat uncertain edits with a new key.",
       inputSchema: {
         ...projectBindingInputSchema,
+        submissionKey: submissionKeySchema,
         parentImageId: imageIdSchema,
         prompt: external_exports2.string().min(1),
         referenceImageIds: external_exports2.array(imageIdSchema).optional(),
@@ -36073,10 +36752,10 @@ function createImagegenServer({
         transparency: transparencyInputSchema.optional(),
         ...outputSchema
       },
-      outputSchema: imageArtifactsOutputSchema,
+      outputSchema: imageJobOutputSchema,
       annotations: writeAnnotations2()
     },
-    async (arguments_) => await withBoundProject(projectContext, arguments_.projectBindingId, async (context) => {
+    queueImageOperation("edit", async (arguments_, context, taskRunner) => {
       if (context.apiKeyConfigured === false) return apiProviderNotConfigured();
       const {
         parentImageId,
@@ -36171,7 +36850,7 @@ function createImagegenServer({
             output: taskOutput
           },
           context,
-          runTask,
+          taskRunner,
           readArtifact,
           {
             onTaskCommitted: async (artifacts) => {
@@ -36205,54 +36884,23 @@ function createImagegenServer({
     "batch_images",
     {
       title: "Batch image tasks",
-      description: "Run independent generation and standard edit tasks with ordered partial results. After success, call render_image_results once with up to 10 final presentation IDs, preferring delivery-ready derivatives over API originals, before replying to the user.",
+      description: "Submit a durable batch of independent generation and standard edit tasks, returning jobId immediately. Reuse submissionKey after a lost reply. Poll get_image_job for ordered partial results and all pages, rendering successful images in groups of up to 10. Concurrency shares the executor's eight slots across jobs.",
       inputSchema: {
         ...projectBindingInputSchema,
+        submissionKey: submissionKeySchema,
         items: batchItemsSchema,
         concurrency: external_exports2.number().int().min(1).max(8).optional()
       },
-      outputSchema: imageBatchOutputSchema,
+      outputSchema: imageJobOutputSchema,
       annotations: writeAnnotations2()
     },
-    async ({ projectBindingId, items, concurrency = 3 }) => await withBoundProject(projectContext, projectBindingId, async (context) => {
+    async ({ projectBindingId, submissionKey, items, concurrency }) => await withBoundProject(projectContext, projectBindingId, async (context) => {
       if (context.apiKeyConfigured === false) return apiProviderNotConfigured();
-      const batch = await executeImageBatch({
+      return imageJobResult(await imageJobs.submit({ context, submissionKey, spec: {
+        kind: "batch",
         items,
-        concurrency,
-        context,
-        runTask,
-        readArtifact,
-        validateEdit: async (item) => {
-          await editSubmissions.resolveForEdit({
-            artifactRoot: context.artifactRoot,
-            bindingKey: context.bindingKey,
-            parentImageId: item.parentImageId
-          });
-        },
-        recordManifest: async (manifest) => await runTask({
-          operation: "record_batch",
-          modelProfileId: context.activeProfile || DEFAULT_MODEL_PROFILE_ID2,
-          manifest
-        }, context)
-      });
-      const artifacts = batch.results.flatMap((item) => item.ok ? item.artifacts : []);
-      const presentationIds = batch.results.flatMap((item) => {
-        if (!item.ok) return [];
-        if (item.delivery?.deliveryReady && item.delivery.artifactIds?.length) return item.delivery.artifactIds;
-        return item.artifacts.map((artifact) => artifact.id);
-      }).slice(0, 10);
-      return {
-        content: [{
-          type: "text",
-          text: `\u6279\u91CF\u56FE\u7247\u4EFB\u52A1\u5B8C\u6210\uFF1A\u6210\u529F ${batch.summary.succeeded} \u9879\uFF0C\u5931\u8D25 ${batch.summary.failed} \u9879\u3002${presentationIds.length ? ` \u5728\u56DE\u590D\u7528\u6237\u524D\u8C03\u7528 render_image_results \u663E\u793A\uFF1A${presentationIds.join(", ")}\u3002` : ""}`
-        }],
-        structuredContent: batch,
-        _meta: {
-          imageIds: batch.artifactIds,
-          artifacts,
-          ...batch.batchId ? { batchId: batch.batchId } : {}
-        }
-      };
+        ...concurrency === void 0 ? {} : { concurrency }
+      } }));
     })
   );
   server2.registerTool(
@@ -36953,8 +37601,8 @@ function copyHostObservation(observation) {
     truncated: observation.truncated
   };
 }
-function sanitizeHostFieldPath(path16) {
-  return path16.replace(/\.([A-Za-z_][A-Za-z0-9_-]{0,63})/g, (_match, key) => {
+function sanitizeHostFieldPath(path18) {
+  return path18.replace(/\.([A-Za-z_][A-Za-z0-9_-]{0,63})/g, (_match, key) => {
     if (sensitiveHostFieldKeyPattern.test(key)) return ".redacted";
     return retainedHostFieldKeys.has(key) ? `.${key}` : ".field";
   });
@@ -36983,15 +37631,15 @@ function writeAnnotations2() {
 
 // mcp/file-edit-submission-registry.mjs
 init_define_RELEASE_IDENTITY();
-import { createHash as createHash6 } from "node:crypto";
-import { lstat as lstat9, mkdir as mkdir5 } from "node:fs/promises";
-import path13 from "node:path";
+import { createHash as createHash8 } from "node:crypto";
+import { lstat as lstat10, mkdir as mkdir6 } from "node:fs/promises";
+import path15 from "node:path";
 var SCHEMA_VERSION3 = "edit-submissions.v1";
 var BINDING_KEY_PATTERN3 = /^[0-9a-f]{64}$/;
 var IMAGE_ID_PATTERN4 = /^img_[0-9A-HJKMNP-TV-Z]{26}$/;
 var SUBMISSION_ID_PATTERN2 = /^sub_[0-9a-f]{32}$/;
 var SHA256_PATTERN3 = /^[0-9a-f]{64}$/;
-var MAX_RECORD_BYTES3 = 128 * 1024;
+var MAX_RECORD_BYTES4 = 128 * 1024;
 var MAX_RECORDS = 256;
 var DEFAULT_LEASE_TIMEOUT_MS = 20 * 60 * 1e3;
 function createFileEditSubmissionRegistry({
@@ -37099,14 +37747,14 @@ function createFileEditSubmissionRegistry({
   }
 }
 async function withParentRecord(input, callback) {
-  const scope = await prepareScope(input);
+  const scope = await prepareScope2(input);
   let ownership;
   try {
     await requireSafeLockPath2(scope.lockPath);
     ownership = await acquireFileLockOwnership({
       recordPath: scope.recordPath,
       lockPath: scope.lockPath,
-      maxRecordBytes: MAX_RECORD_BYTES3,
+      maxRecordBytes: MAX_RECORD_BYTES4,
       retries: { retries: 40, factor: 1, minTimeout: 10, maxTimeout: 50 },
       unavailableError: unavailableState2,
       invalidError: invalidStateError
@@ -37137,36 +37785,36 @@ async function withParentRecord(input, callback) {
 function unavailableState2() {
   return registryError("edit_submission_state_unavailable", "\u753B\u5E03\u63D0\u4EA4\u72B6\u6001\u6682\u65F6\u4E0D\u53EF\u7528\u3002");
 }
-async function prepareScope(input) {
-  if (typeof input?.artifactRoot !== "string" || !path13.isAbsolute(input.artifactRoot) || typeof input.bindingKey !== "string" || !BINDING_KEY_PATTERN3.test(input.bindingKey) || typeof input.parentImageId !== "string" || !IMAGE_ID_PATTERN4.test(input.parentImageId)) {
+async function prepareScope2(input) {
+  if (typeof input?.artifactRoot !== "string" || !path15.isAbsolute(input.artifactRoot) || typeof input.bindingKey !== "string" || !BINDING_KEY_PATTERN3.test(input.bindingKey) || typeof input.parentImageId !== "string" || !IMAGE_ID_PATTERN4.test(input.parentImageId)) {
     throw registryError("edit_submission_state_invalid", "\u753B\u5E03\u63D0\u4EA4\u72B6\u6001\u65E0\u6548\u3002");
   }
-  const stateRoot = path13.join(path13.resolve(input.artifactRoot), ".runtime", "edit-submissions");
-  const parentsDirectory = path13.join(stateRoot, "parents");
-  const locksDirectory = path13.join(stateRoot, "locks");
-  const artifactRoot = path13.resolve(input.artifactRoot);
+  const stateRoot = path15.join(path15.resolve(input.artifactRoot), ".runtime", "edit-submissions");
+  const parentsDirectory = path15.join(stateRoot, "parents");
+  const locksDirectory = path15.join(stateRoot, "locks");
+  const artifactRoot = path15.resolve(input.artifactRoot);
   for (const directory of [
     artifactRoot,
-    path13.join(artifactRoot, ".runtime"),
+    path15.join(artifactRoot, ".runtime"),
     stateRoot,
     parentsDirectory,
     locksDirectory
   ]) {
     await ensureCanonicalDirectory2(directory, { create: directory !== artifactRoot });
   }
-  const parentKey = createHash6("sha256").update(`${input.bindingKey}\0${input.parentImageId}`, "utf8").digest("hex");
+  const parentKey = createHash8("sha256").update(`${input.bindingKey}\0${input.parentImageId}`, "utf8").digest("hex");
   return {
     bindingKey: input.bindingKey,
     parentImageId: input.parentImageId,
     parentsDirectory,
-    recordPath: path13.join(parentsDirectory, `${parentKey}.json`),
-    lockPath: path13.join(locksDirectory, `${parentKey}.lock`)
+    recordPath: path15.join(parentsDirectory, `${parentKey}.json`),
+    lockPath: path15.join(locksDirectory, `${parentKey}.lock`)
   };
 }
 async function readParentRecord(scope, ownership = null) {
   let bytes;
   try {
-    bytes = ownership ? await ownership.readSnapshot() : await readLatestFencedFileSnapshot(scope.recordPath, { maxBytes: MAX_RECORD_BYTES3 });
+    bytes = ownership ? await ownership.readSnapshot() : await readLatestFencedFileSnapshot(scope.recordPath, { maxBytes: MAX_RECORD_BYTES4 });
   } catch (error40) {
     if (error40 instanceof StableFileSnapshotError && error40.kind === "invalid") {
       throw registryError("edit_submission_state_invalid", "\u753B\u5E03\u63D0\u4EA4\u72B6\u6001\u65E0\u6548\u3002");
@@ -37188,7 +37836,7 @@ async function writeParentRecord(scope, record2, ownership) {
   const validated = validateRecord(record2, scope);
   const bytes = Buffer.from(`${JSON.stringify(validated)}
 `, "utf8");
-  if (bytes.length > MAX_RECORD_BYTES3) {
+  if (bytes.length > MAX_RECORD_BYTES4) {
     throw registryError("edit_submission_state_invalid", "\u753B\u5E03\u63D0\u4EA4\u72B6\u6001\u65E0\u6548\u3002");
   }
   try {
@@ -37314,11 +37962,11 @@ function validateSubmission(value) {
 async function ensureCanonicalDirectory2(directory, { create }) {
   try {
     if (create) {
-      await mkdir5(directory, { recursive: false, mode: 448 }).catch((error40) => {
+      await mkdir6(directory, { recursive: false, mode: 448 }).catch((error40) => {
         if (error40?.code !== "EEXIST") throw error40;
       });
     }
-    const metadata = await lstat9(directory);
+    const metadata = await lstat10(directory);
     if (!metadata.isDirectory() || metadata.isSymbolicLink()) invalidState3();
     if (await pathContainsSymbolicLink(directory)) invalidState3();
   } catch (error40) {
@@ -37328,7 +37976,7 @@ async function ensureCanonicalDirectory2(directory, { create }) {
 }
 async function requireSafeLockPath2(lockPath) {
   try {
-    const metadata = await lstat9(lockPath);
+    const metadata = await lstat10(lockPath);
     if (!metadata.isDirectory() || metadata.isSymbolicLink() || await pathContainsSymbolicLink(lockPath)) invalidState3();
   } catch (error40) {
     if (error40?.code === "ENOENT") return;
@@ -37345,13 +37993,13 @@ function invalidStateError() {
 
 // mcp/file-editor-state-registry.mjs
 init_define_RELEASE_IDENTITY();
-import { createHash as createHash7 } from "node:crypto";
-import { lstat as lstat10, mkdir as mkdir6 } from "node:fs/promises";
-import path14 from "node:path";
+import { createHash as createHash9 } from "node:crypto";
+import { lstat as lstat11, mkdir as mkdir7 } from "node:fs/promises";
+import path16 from "node:path";
 var SCHEMA_VERSION4 = "editor-state.v1";
 var SESSION_ID_PATTERN2 = /^eds_[0-9a-f]{32}$/;
 var IMAGE_ID_PATTERN5 = /^img_[0-9A-HJKMNP-TV-Z]{26}$/;
-var MAX_RECORD_BYTES4 = 256 * 1024;
+var MAX_RECORD_BYTES5 = 256 * 1024;
 var MAX_IMAGES = 1024;
 var MAX_SESSIONS = 4096;
 var mutationQueues = /* @__PURE__ */ new Map();
@@ -37454,12 +38102,12 @@ async function withFileLock(input, callback) {
   let result;
   let failure;
   try {
-    scope = await prepareScope2(input, { create: true });
+    scope = await prepareScope3(input, { create: true });
     await requireSafeLockPath3(scope.lockPath);
     ownership = await acquireFileLockOwnership({
       recordPath: scope.recordPath,
       lockPath: scope.lockPath,
-      maxRecordBytes: MAX_RECORD_BYTES4,
+      maxRecordBytes: MAX_RECORD_BYTES5,
       retries: { retries: 80, factor: 1, minTimeout: 10, maxTimeout: 50 },
       unavailableError: unavailableState3,
       invalidError: invalidStateError2
@@ -37488,24 +38136,24 @@ async function withFileLock(input, callback) {
 }
 function mutationQueueKey(input) {
   if (typeof input?.artifactRoot !== "string" || typeof input?.bindingKey !== "string") return null;
-  return `${path14.resolve(input.artifactRoot)}\0${input.bindingKey}`;
+  return `${path16.resolve(input.artifactRoot)}\0${input.bindingKey}`;
 }
 function unavailableState3() {
   return editorStateError("editor_state_unavailable", "\u753B\u5E03\u72B6\u6001\u6682\u65F6\u4E0D\u53EF\u7528\u3002");
 }
 async function readOnlyRecord(input) {
-  const scope = await prepareScope2(input, { create: false });
+  const scope = await prepareScope3(input, { create: false });
   return scope.stateMissing ? emptyRecord2(scope.bindingKey) : await readRecord2(scope);
 }
-async function prepareScope2(input, { create }) {
-  if (typeof input?.artifactRoot !== "string" || !path14.isAbsolute(input.artifactRoot)) invalidState4();
+async function prepareScope3(input, { create }) {
+  if (typeof input?.artifactRoot !== "string" || !path16.isAbsolute(input.artifactRoot)) invalidState4();
   const bindingKey = input.bindingKey;
-  const artifactRoot = path14.resolve(input.artifactRoot);
+  const artifactRoot = path16.resolve(input.artifactRoot);
   await requireCanonicalDirectory3(artifactRoot, { create: false });
-  const runtimeDirectory = path14.join(artifactRoot, ".runtime");
-  const stateDirectory = path14.join(runtimeDirectory, "editor-state");
-  const bindingsDirectory = path14.join(stateDirectory, "bindings");
-  const locksDirectory = path14.join(stateDirectory, "locks");
+  const runtimeDirectory = path16.join(artifactRoot, ".runtime");
+  const stateDirectory = path16.join(runtimeDirectory, "editor-state");
+  const bindingsDirectory = path16.join(stateDirectory, "bindings");
+  const locksDirectory = path16.join(stateDirectory, "locks");
   let stateMissing = false;
   for (const directory of [runtimeDirectory, stateDirectory, bindingsDirectory, locksDirectory]) {
     if (stateMissing) break;
@@ -37515,19 +38163,19 @@ async function prepareScope2(input, { create }) {
     });
     stateMissing = !exists;
   }
-  const recordKey2 = createHash7("sha256").update(bindingKey, "utf8").digest("hex");
+  const recordKey2 = createHash9("sha256").update(bindingKey, "utf8").digest("hex");
   return {
     bindingKey,
     bindingsDirectory,
     stateMissing,
-    recordPath: path14.join(bindingsDirectory, `${recordKey2}.json`),
-    lockPath: path14.join(locksDirectory, `${recordKey2}.lock`)
+    recordPath: path16.join(bindingsDirectory, `${recordKey2}.json`),
+    lockPath: path16.join(locksDirectory, `${recordKey2}.lock`)
   };
 }
 async function readRecord2(scope, ownership = null) {
   let bytes;
   try {
-    bytes = ownership ? await ownership.readSnapshot() : await readLatestFencedFileSnapshot(scope.recordPath, { maxBytes: MAX_RECORD_BYTES4 });
+    bytes = ownership ? await ownership.readSnapshot() : await readLatestFencedFileSnapshot(scope.recordPath, { maxBytes: MAX_RECORD_BYTES5 });
   } catch (error40) {
     if (error40 instanceof StableFileSnapshotError && error40.kind === "invalid") invalidState4();
     throw unavailableState3();
@@ -37544,7 +38192,7 @@ async function writeRecord(scope, record2, ownership) {
   const validated = validateRecord2(record2, scope.bindingKey);
   const bytes = Buffer.from(`${JSON.stringify(validated)}
 `, "utf8");
-  if (bytes.length > MAX_RECORD_BYTES4) invalidState4();
+  if (bytes.length > MAX_RECORD_BYTES5) invalidState4();
   try {
     await ownership.replaceSnapshot(bytes);
   } catch (error40) {
@@ -37573,10 +38221,10 @@ function validateRecord2(value, bindingKey) {
 }
 async function requireCanonicalDirectory3(directory, { create, allowMissing = false }) {
   try {
-    if (create) await mkdir6(directory, { recursive: false, mode: 448 }).catch((error40) => {
+    if (create) await mkdir7(directory, { recursive: false, mode: 448 }).catch((error40) => {
       if (error40?.code !== "EEXIST") throw error40;
     });
-    const metadata = await lstat10(directory);
+    const metadata = await lstat11(directory);
     if (!metadata.isDirectory() || metadata.isSymbolicLink() || await pathContainsSymbolicLink(directory)) invalidState4();
   } catch (error40) {
     if (error40?.code === "editor_state_invalid") throw error40;
@@ -37588,7 +38236,7 @@ async function requireCanonicalDirectory3(directory, { create, allowMissing = fa
 }
 async function requireSafeLockPath3(lockPath) {
   try {
-    const metadata = await lstat10(lockPath);
+    const metadata = await lstat11(lockPath);
     if (!metadata.isDirectory() || metadata.isSymbolicLink() || await pathContainsSymbolicLink(lockPath)) {
       invalidState4();
     }
@@ -37645,7 +38293,7 @@ function invalidStateError2() {
 // mcp/image-runtime.mjs
 init_define_RELEASE_IDENTITY();
 import { spawn as spawn3 } from "node:child_process";
-import path15 from "node:path";
+import path17 from "node:path";
 import { fileURLToPath as fileURLToPath6 } from "node:url";
 var runtimeRelativePath4 = import.meta.url.replaceAll("\\", "/").includes("/dist/server.mjs") ? "./scripts/image_runtime.py" : "../scripts/image_runtime.py";
 var runtimePath2 = fileURLToPath6(new URL(runtimeRelativePath4, import.meta.url));
@@ -37658,7 +38306,7 @@ async function runImageTask(task, options = {}) {
     pythonCommand: configuredPythonCommand,
     spawnProcess = spawn3
   } = options;
-  if (typeof projectRoot !== "string" || !path15.isAbsolute(projectRoot)) {
+  if (typeof projectRoot !== "string" || !path17.isAbsolute(projectRoot)) {
     throw new Error("project root is required");
   }
   if (typeof effectiveConfigJson !== "string" || !effectiveConfigJson) {
@@ -37667,7 +38315,7 @@ async function runImageTask(task, options = {}) {
   if (typeof effectiveConfigSha256 !== "string" || !/^[a-f0-9]{64}$/.test(effectiveConfigSha256)) {
     throw new Error("effective config SHA-256 is required");
   }
-  if (typeof artifactRoot !== "string" || !path15.isAbsolute(artifactRoot)) {
+  if (typeof artifactRoot !== "string" || !path17.isAbsolute(artifactRoot)) {
     throw new Error("artifact root is required");
   }
   const pythonCommand = Object.hasOwn(options, "pythonCommand") ? configuredPythonCommand : spawnProcess !== spawn3 ? selectPythonCommand() : await resolvePythonRuntime();

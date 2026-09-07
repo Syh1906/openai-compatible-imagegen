@@ -1,4 +1,3 @@
-<!-- updated: 2026-08-25 -->
 # Installation
 
 > Parent: [User guides](./README.md)
@@ -24,7 +23,7 @@ You do not need to install both. The Codex Plugin does not depend on the Standal
 - Git
 - Node.js 20 or later
 - Python 3.12 or newer
-- An OpenAI-compatible image service and your own credential for the API Key route, or a Codex App host with image generation for the ChatGPT route
+- A supported image API service and your own credential for the API Key route, or a Codex App host with image generation for the ChatGPT route
 
 The Plugin includes its prebuilt MCP server and widget. You do not run `npm install`, build the repository, or start a local web server. The same Plugin archive supports Windows, macOS, and Linux.
 
@@ -48,34 +47,11 @@ If the `openai-compatible-imagegen` marketplace is already registered, skip this
 codex plugin add openai-compatible-imagegen@openai-compatible-imagegen
 ```
 
-3. Alternatively, open **Plugins** in Codex App or enter `/plugins` in an interactive Codex CLI session, select the `openai-compatible-imagegen` marketplace, and install **OpenAI-Compatible Images**.
-4. Confirm the installed version with `codex plugin list --json`.
-5. Completely quit and restart Codex once after installation, then start a new task.
-6. Continue with [Plugin configuration](./configuration.md#configure-the-codex-plugin).
+Alternatively, open **Plugins** in Codex App or enter `/plugins` in an interactive Codex CLI session, select the `openai-compatible-imagegen` marketplace, and install **OpenAI-Compatible Images**.
 
-The first configuration can also be created from a new task by asking the Agent to call `initialize_image_config`. Use `inspect_image_config` to review the redacted result and `update_image_config` for supported changes; the Plugin installation directory and Skill directory do not contain the user configuration.
-
-### Transparency defaults
-
-For an API Key configuration, `initialize_image_config` creates a configuration with native transparency enabled. It selects `native-alpha`, sets `transparency.native.enabled` to `true`, and enables one retry without the transparency parameter when a provider rejects it. The model ID list is only a capability declaration; the active profile and model ID remain user-configurable. A ChatGPT-only configuration does not use provider transparency settings.
-
-Existing configurations are preserved for compatibility and are not rewritten during installation. If `inspect_image_config` reports that `transparency.native` is missing, update the configuration explicitly:
-
-```json
-{
-  "transparency": {
-    "default_route": "native-alpha",
-    "native": {
-      "enabled": true,
-      "model_ids": ["your-provider-model-id"],
-      "retry_without_parameter": true,
-      "fallback_route": "chroma-matting"
-    }
-  }
-}
-```
-
-Apply the change with `update_image_config`, then rebind the project and call `inspect_image_config` again. The tool reports the effective route, retry policy, warnings, and next steps without returning credentials.
+3. Confirm the installed version with `codex plugin list --json`.
+4. Completely quit and restart Codex once after installation.
+5. Continue with [Plugin configuration](./configuration.md#configure-the-codex-plugin).
 
 ### Install from the Plugin ZIP
 
@@ -125,7 +101,7 @@ Use this route when you want to install a specific GitHub Release from its downl
    codex plugin add openai-compatible-imagegen@openai-compatible-imagegen
    ```
 
-6. Confirm the installed version with `codex plugin list --json`. Completely quit and restart Codex once, then start a new task.
+6. Confirm the installed version with `codex plugin list --json`. Completely quit and restart Codex once.
 7. Continue with [Plugin configuration](./configuration.md#configure-the-codex-plugin).
 
 Codex installs plugins from marketplace directories, not directly from ZIP files. Keep the extracted directory while this local marketplace remains configured. The Git-backed marketplace remains the recommended route for normal updates.
@@ -146,26 +122,26 @@ Do not install global dependencies or build the repository. Stop before entering
 
 - Python 3.12 or newer
 - An Agent client that loads Agent Skills
-- An OpenAI-compatible image service and your own credential
+- A supported image API service and your own credential
 
 ### Steps
 
-1. Download `openai-compatible-imagegen-skill-<version>.zip` from the GitHub Release.
+1. Download `openai-compatible-imagegen-skill-<version>.zip` and `SHA256SUMS` from the same [GitHub Release](https://github.com/Syh1906/openai-compatible-imagegen/releases), then [verify the digest](./updating.md#update-a-standalone-skill).
 2. Extract it so the resulting `openai-compatible-imagegen` directory has `SKILL.md` at its root.
 3. Place that directory in a skills location supported by your client:
 
 | Client | User location | Project location |
 | --- | --- | --- |
 | Codex | `~/.codex/skills/openai-compatible-imagegen` | `.codex/skills/openai-compatible-imagegen` |
-| Claude Code | `~/.claude/skills/openai-compatible-imagegen` | `.claude/skills/openai-compatible-imagegen` |
-| OpenCode | `~/.config/opencode/skill/openai-compatible-imagegen` | `.opencode/skill/openai-compatible-imagegen` |
+| [Claude Code](https://code.claude.com/docs/en/skills) | `~/.claude/skills/openai-compatible-imagegen` | `.claude/skills/openai-compatible-imagegen` |
+| [OpenCode](https://opencode.ai/docs/skills/) | `~/.config/opencode/skills/openai-compatible-imagegen` | `.opencode/skills/openai-compatible-imagegen` |
 
 4. Start a new task or session so the client reloads skills.
 5. Continue with [Standalone configuration](./configuration.md#configure-the-standalone-skill).
 
 ### Install with the third-party Skills CLI
 
-The `skills` package is a third-party Agent Skills CLI, not an OpenAI or Codex command. Use it only with the extracted Standalone archive. Choose the installation scope before running it:
+The [Skills CLI](https://skills.sh/docs/cli) is a third-party tool and requires Node.js and npm. Use it with the extracted Standalone archive. Choose the installation scope before running it:
 
 | Scope | Availability | Installed copy |
 | --- | --- | --- |
@@ -202,7 +178,7 @@ npx --yes skills@latest add /path/to/openai-compatible-imagegen --global --agent
 
 The source directory must contain `SKILL.md` at its root together with `scripts/`, `references/`, `examples/`, and `agents/`. Do not pass the repository root. A repository-root install copies Plugin, MCP, Widget, test, and documentation files into the Skill target.
 
-Both commands use `skills@latest` so new installations receive the current CLI. A project installation creates `skills-lock.json` in the project; a user installation does not create that project lock file.
+These commands use `skills@latest` so new installations receive the current CLI. A project installation creates `skills-lock.json` in the project; a user installation does not create that project lock file.
 
 Use this CLI route only for the first installation. Local copied installs have these maintenance limits:
 
@@ -220,7 +196,3 @@ For an update, follow [Update the Plugin or Skill](./updating.md). For a rollbac
 | Runtime entry | `scripts/imagegen.py` | `dist/server.mjs` through `.mcp.json` |
 | UI | Host conversation only | Result cards and focused canvas in Codex App |
 | Configuration | Installed directory `auth.json` | User and optional project `config.json` |
-
-Public Plugins Directory availability is separate from this Git-backed release channel.
-
-Each GitHub Release also provides `openai-compatible-imagegen-codex-plugin-<version>.zip` for version-pinned local installation, offline inspection, archive, and rollback. Verify downloaded archives against the release's `SHA256SUMS`. The Git-backed marketplace remains the normal Plugin installation channel.

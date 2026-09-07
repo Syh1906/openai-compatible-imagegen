@@ -9,6 +9,7 @@ import { createFileEditSubmissionRegistry } from "../../mcp/file-edit-submission
 import { createFileHostObservationStore } from "../../mcp/host-observation-store.mjs";
 import { createProjectContext } from "../../mcp/project-context.mjs";
 import { createReleaseBundle, RELEASE_IDENTITY_PLACEHOLDER } from "../../mcp/release-identity.mjs";
+import { withCompletedImageJobs } from "../support/image-job-test-client.mjs";
 
 
 const PARENT_ID = "img_01J00000000000000000000000";
@@ -56,6 +57,8 @@ test("a widget submission is consumed once and replayed across MCP processes", a
   });
   const widgetServer = createServer();
   const modelServer = createServer();
+  const completed = (server) => withCompletedImageJobs(async (request) =>
+    server._registeredTools[request.name].handler(request.arguments, { signal: new AbortController().signal }));
   try {
     const bound = await widgetServer._registeredTools.bind_imagegen_project.handler({ projectRoot });
     const projectBindingId = bound.structuredContent.projectBindingId;
@@ -70,21 +73,23 @@ test("a widget submission is consumed once and replayed across MCP processes", a
     assert.equal(prepared.isError, undefined, prepared.content?.[0]?.text);
     const submissionId = prepared.structuredContent.submission.id;
 
-    const firstEdit = await modelServer._registeredTools.edit_image.handler({
+    const firstEdit = await completed(modelServer)({ name: "edit_image", arguments: {
+      submissionKey: "first-edit",
       projectBindingId,
       parentImageId: PARENT_ID,
       prompt: "move the highlight",
       submissionId,
-    });
+    } });
     assert.equal(firstEdit.isError, undefined, firstEdit.content?.[0]?.text);
     assert.equal(firstEdit.structuredContent.artifact.id, RESULT_ID);
 
-    const replay = await widgetServer._registeredTools.edit_image.handler({
+    const replay = await completed(widgetServer)({ name: "edit_image", arguments: {
+      submissionKey: "replay-edit",
       projectBindingId,
       parentImageId: PARENT_ID,
       prompt: "move the highlight",
       submissionId,
-    });
+    } });
     assert.equal(replay.isError, undefined, replay.content?.[0]?.text);
     assert.equal(replay.structuredContent.artifact.id, RESULT_ID);
     assert.equal(taskCalls.length, 1);

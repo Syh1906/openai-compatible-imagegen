@@ -3,21 +3,21 @@
 
 [English](./arch.md) | 简体中文
 
-本文面向贡献者和维护者，定义同一图片核心支持便携式 Standalone Skill 和 Codex App Plugin 时的稳定模块、依赖、配置、状态与发行边界。本文不提供安装或配置步骤；需要完成这些任务时，请使用[用户指南](./guides/README.zh-CN.md)。
+本文面向贡献者和维护者，说明模块、依赖、配置、状态与发行边界。安装和配置步骤见[用户指南](./guides/README.zh-CN.md)。
 
-## 真相源
+## 实现入口
 
 | 来源 | 职责 |
 | --- | --- |
 | `scripts/` | 共享图片协议、验证、转换、交付和 QA |
-| `mcp/` | Plugin 工具、项目绑定、产物、编辑器状态和运行时调用 |
+| `mcp/` | Plugin 工具、项目绑定、异步任务、产物、编辑器状态和运行时调用 |
 | `web/` | Codex 结果卡和聚焦图片画布 |
 | `web/widget-i18n.mjs` | Widget 英文和中文消息目录及 locale 解析 |
 | `scripts/plugin-file-set.mjs` | 发行文件归属和共享核心证据 |
 | `.codex-plugin/plugin.json`、`.mcp.json` | Plugin 身份和启动契约 |
 | `tests/` | 可执行的公开行为和发行边界 |
 
-Plugin 在包级别保持平台无关。`scripts/repository_fs.py` 是唯一的文件系统入口：Windows 选择 `windows_repository_fs.py`，macOS/Linux 选择 `posix_repository_fs.py`。两个适配器提供相同的仓库、提交锁、原子发布和安全路径契约；适配器只属于 Plugin，不进入 Standalone 压缩包。
+Plugin 在包级别保持平台无关。`scripts/repository_fs.py` 是 Python 产物仓库的文件系统入口：Windows 选择 `windows_repository_fs.py`，macOS/Linux 选择 `posix_repository_fs.py`。两个适配器提供相同的仓库、提交锁、原子发布和安全路径契约；适配器只属于 Plugin，不进入 Standalone 压缩包。
 
 ## 核心流程
 
@@ -26,10 +26,15 @@ flowchart LR
     Agent[Agent 或用户] --> Standalone[Standalone 适配器]
     Agent --> Plugin[Codex Plugin Skill]
     Plugin --> MCP[MCP server]
-    MCP --> Runtime[Plugin 适配器]
+    MCP --> Jobs[API Key 任务执行器]
+    Jobs --> Runtime[Plugin 适配器]
     Standalone --> Core[共享图片核心]
     Runtime --> Core
     Core --> Provider[OpenAI-compatible 图片 API]
+    Core --> Atlas[Atlas 生成 API]
+    Plugin --> Host[ChatGPT 宿主生图]
+    Host --> Handoff[已准备的图片交接]
+    Handoff --> Repository
     MCP --> Repository[不可变产物仓库]
     MCP --> Widget[结果卡和聚焦画布]
 ```
@@ -64,7 +69,7 @@ Standalone Skill -> Standalone adapter -> shared image core -> provider
 - 共享图片核心不依赖 Codex、MCP 或 Widget 代码。
 - Widget 不读取凭据，也不调用 provider。
 - MCP 工具不组装 provider 请求。
-- 故障停在所属层，不会改变 provider、model、endpoint、认证来源、协议或路线。
+- 故障不会改变 provider、model、endpoint、认证来源或协议。透明参数重试和本地回退按所选路线的配置策略执行。
 
 ## 配置边界
 
@@ -83,6 +88,12 @@ Standalone Skill -> Standalone adapter -> shared image core -> provider
 - `projectBindingId` 跨 MCP 进程把模型和 Widget 调用绑定到同一项目。
 - 配置写入和项目绑定使用内容仅为 `*` 的本地 `.gitignore` 保护目标目录；现有规则不兼容时停止操作，不覆盖原规则。
 - 跨进程注册表使用原子文件替换和归属锁，旧写入者不能覆盖新的归属者。
+
+API Key 任务的职责分为[工具注册](../mcp/image-job-tools.mjs)、[契约](../mcp/image-job-contract.mjs)、[持久化存储](../mcp/image-job-store.mjs)、[调度](../mcp/image-job-manager.mjs)和[执行](../mcp/image-job-execution.mjs)。提交键标识一次不可变的请求意图。任务在本地交付前保存原图检查点，按输入顺序分页返回结果，并保留部分成功。恢复只继续未发出的请求或已有原图的本地处理；供应商结果未经确认时不会自动重发。
+
+每个 MCP 执行器的多个任务共享 8 个执行槽，并遵守批次设置的更低并发上限。不同进程分别计数，持久化执行权防止同一任务被同时执行。状态在重启后保留，但执行依赖运行中的 MCP 进程。如果进程在发布图片后、保存检查点前退出，图片可能已保存但没有可确认的任务结果。
+
+ChatGPT 操作使用已准备的宿主图片交接，不经过 API 任务执行器。提交成功的宿主图片进入同一不可变产物仓库；编辑结果保留父图和画布提交关系。
 
 ## 发布模型
 

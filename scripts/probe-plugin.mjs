@@ -355,6 +355,9 @@ async function main() {
     requireValue(tools.includes("import_local_image"), "MCP server does not expose import_local_image");
     requireValue(tools.includes("export_image_artifact"), "MCP server does not expose export_image_artifact");
     requireValue(tools.includes("batch_images"), "MCP server does not expose batch_images");
+    for (const name of ["get_image_job", "cancel_image_job", "resume_image_job"]) {
+      requireValue(tools.includes(name), `MCP server does not expose ${name}`);
+    }
     requireValue(tools.includes("deliver_image"), "MCP server does not expose deliver_image");
     requireValue(tools.includes("get_image_artifact"), "MCP server does not expose get_image_artifact");
     requireValue(tools.includes("inspect_imagegen_runtime"), "MCP server does not expose inspect_imagegen_runtime");
@@ -547,14 +550,15 @@ async function main() {
     }
 
     if (remoteSmoke) {
-      const generateResult = await callProjectTool("generate_image", {
+      const generateResult = await waitForImageJob(callProjectTool, await callProjectTool("generate_image", {
+        submissionKey: `probe-generate-${randomBytes(16).toString("hex")}`,
         prompt: REMOTE_SMOKE_GENERATE_PROMPT,
         count: 1,
         quality: "low",
         size: "1024x1024",
         format: "png",
-      });
-      const generated = generateResult.structuredContent?.artifacts?.[0];
+      }));
+      const generated = generateResult.structuredContent?.items?.[0]?.result?.artifacts?.[0];
       requireValue(generateResult.isError !== true && generated?.id, "remote smoke generation failed");
 
       const generatedRender = await callProjectTool("render_image_results", { imageIds: [generated.id] });
@@ -569,14 +573,15 @@ async function main() {
         generatedRender.structuredContent?.artifacts ?? [],
       );
 
-      const editResult = await callProjectTool("edit_image", {
+      const editResult = await waitForImageJob(callProjectTool, await callProjectTool("edit_image", {
+        submissionKey: `probe-edit-${randomBytes(16).toString("hex")}`,
         parentImageId: generated.id,
         prompt: REMOTE_SMOKE_EDIT_PROMPT,
         quality: "low",
         size: "1024x1024",
         format: "png",
-      });
-      const edited = editResult.structuredContent?.artifacts?.[0];
+      }));
+      const edited = editResult.structuredContent?.items?.[0]?.result?.artifacts?.[0];
       requireValue(editResult.isError !== true && edited?.id, "remote smoke edit failed");
       requireValue(
         JSON.stringify(edited.parentIds) === JSON.stringify([generated.id]),
@@ -673,6 +678,22 @@ function requireRenderedImages(result, expectedImageIds) {
       )),
     "render_image_results returned invalid or mismatched model-visible images",
   );
+}
+
+async function waitForImageJob(callProjectTool, submitted) {
+  requireValue(submitted.isError !== true && submitted.structuredContent?.jobId, "image job submission failed");
+  let result = submitted;
+  const deadline = Date.now() + 12 * 60_000;
+  while (!result.structuredContent.done) {
+    requireValue(Date.now() < deadline && result.structuredContent.status !== "interrupted", "image job did not finish; preserve its jobId instead of resubmitting");
+    result = await callProjectTool("get_image_job", {
+      jobId: submitted.structuredContent.jobId,
+      afterRevision: result.structuredContent.revision,
+      waitMs: 20_000,
+    });
+    requireValue(result.isError !== true && result.structuredContent?.jobId, "image job query failed");
+  }
+  return result;
 }
 
 main().catch((error) => {

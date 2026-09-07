@@ -6,14 +6,7 @@ Use these guides to install, configure, migrate, restore, or troubleshoot OpenAI
 
 ## User guides
 
-| Task | Guide |
-| --- | --- |
-| Choose and install a package | [Installation](./guides/installation.md) |
-| Connect an image provider | [Configuration](./guides/configuration.md) |
-| Move an older configuration | [Migration](./guides/migration.md) |
-| Update an installed package | [Updating](./guides/updating.md) |
-| Restore a released version | [Rollback](./guides/rollback.md) |
-| Diagnose a failure | [Troubleshooting](./guides/troubleshooting.md) |
+The [user guide catalog](./guides/README.md) covers installation, configuration, image workflows, updates, and recovery. Read the [changelog](../CHANGELOG.md) before upgrading.
 
 ## Contributors
 
@@ -22,7 +15,6 @@ Use these guides to install, configure, migrate, restore, or troubleshoot OpenAI
 | Module boundaries and data flow | [Architecture](./arch.md) |
 | Development and pull requests | [Contributing](../CONTRIBUTING.md) |
 | Vulnerability reporting | [Security policy](../SECURITY.md) |
-| Released behavior changes | [Changelog](../CHANGELOG.md) |
 
 ## For agents
 

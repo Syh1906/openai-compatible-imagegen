@@ -58,6 +58,11 @@ export async function executeImageBatch({
 
   const workerCount = Math.min(concurrency, items.length);
   await Promise.all(Array.from({ length: workerCount }, () => runWorker()));
+  return await finalizeImageBatch({ outcomes, context, recordManifest });
+}
+
+
+export async function finalizeImageBatch({ outcomes, context, recordManifest }) {
   const results = outcomes.map((outcome) => outcome.result);
   const succeeded = results.filter((item) => item.ok).length;
   const artifactIds = outcomes.flatMap((outcome) => outcome.publishedArtifactIds);
@@ -85,7 +90,7 @@ export async function executeImageBatch({
 }
 
 
-async function executeBatchItem({ item, context, runTask, readArtifact, validateEdit }) {
+export async function executeBatchItem({ item, context, runTask, readArtifact, validateEdit }) {
   try {
     if (item.operation === "edit") {
       await validateEdit(item, context);
@@ -158,7 +163,7 @@ async function executeBatchItem({ item, context, runTask, readArtifact, validate
 }
 
 
-function safeApiDelivery(value, artifactIds, expectedCount) {
+export function safeApiDelivery(value, artifactIds, expectedCount) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   if (!API_DELIVERY_STATUSES.has(value.status)) return undefined;
   const requestedCount = safeInteger(value.requestedCount, 1, 16);

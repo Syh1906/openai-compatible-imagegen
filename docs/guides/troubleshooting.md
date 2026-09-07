@@ -1,4 +1,3 @@
-<!-- updated: 2026-08-19 -->
 # Troubleshooting
 
 > Parent: [User guides](./README.md)
@@ -38,11 +37,12 @@ Identify the failing layer before changing configuration. The project does not s
 | Symptom | Meaning | Action |
 | --- | --- | --- |
 | Provider rejects the request | The configured service returned an API error | Review the safe error code and provider logs; do not switch route automatically |
+| An image tool wait times out | The wait ended but generation may continue | Query the original `jobId`; recover a lost submission reply with the original key instead of creating a duplicate. See [job recovery](./image-jobs.md) |
 | Result card reports invalid data | Artifact metadata or bytes failed validation | Keep the original error and verify the installed Plugin version and build identity |
-| Canvas cannot open | The artifact, binding, or editor session is unavailable | Return to the conversation and reopen the canvas from the same result; start a new task only when the task predates the current Plugin installation or update |
+| Canvas cannot open | The artifact, binding, or editor session is unavailable | Return to the conversation and reopen the canvas from the same result. If it still fails, ask Codex to inspect the binding and error; after a Plugin update, completely quit and restart Codex |
 | Canvas or image preview opens blank, then appears after resizing the panel | The panel may not have refreshed in Codex App; see the [related issue report](https://github.com/openai/codex/issues/42694) | Drag the right panel divider slightly to change its width. This only restores the display temporarily; include your Codex App version and reproduction steps when reporting the problem |
 | Side panel shows the result card after switching tasks | Codex restored the inline result instead of the open canvas | Select **Continue editing** on the same card; the Plugin restores the preserved unsent draft |
-| Transparency is unmet | The original succeeded but the selected delivery route did not meet its contract | Keep the original and choose a valid controlled plate or trusted mask |
+| Transparency is unmet | The original succeeded but transparency checks failed | Keep the original and inspect the reported route. See [transparency settings](./configuration.md#transparency-settings) for native behavior and local-processing limits |
 | Delivery is not ready | A transform or QA requirement failed | Inspect the delivery receipt; do not regenerate unless a new API request is intended |
 
 Generation success and delivery readiness are separate. Standalone reports `delivery_ready`; the Plugin reports `deliveryReady`. A false delivery status preserves any complete API original and identifies the unmet transform, transparency, or QA condition.

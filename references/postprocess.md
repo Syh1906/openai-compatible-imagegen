@@ -6,6 +6,8 @@ The Standalone CLI and Codex Plugin use the same post-processing implementation.
 
 Read [qa.md](qa.md) when the request includes quality checks. Read [prompting.md](prompting.md) when the request needs structured prompt construction or controlled batch variation.
 
+The CLI examples below are for Standalone. Set `SkillDir` as shown in [Local Auth](../SKILL.md#local-auth). Plugin agents use their bundled MCP workflow.
+
 ## Natural-Language Requests
 
 - "Generate a 1536x1152 editorial source image, then deliver a 1200x900 PNG."
@@ -34,9 +36,9 @@ The default derived-output directory is next to the source file and ends with `-
 
 ## Transparency Processing
 
-Use `--transparent` for a transparent delivery request. The flag forces PNG and never becomes an API `background` parameter.
+Use `--transparent` for a transparent delivery request. The flag forces PNG. Only the resolved `native-alpha` route sends API `background=transparent`; local routes omit that parameter.
 
-An explicit route wins when it is compatible with the processing switch. Otherwise, local processing uses `transparency.default_route`; when local processing is disabled, an exact prompt-only allow rule may select `prompt-alpha`. Every other size, including 2K and 4K, still reaches the API with the user's prompt unchanged and receives source-alpha inspection without local pixel changes.
+An explicit route wins when permitted by configuration and the processing switch. A configured `native-alpha` default is selected even when local processing is disabled. For non-native defaults, local processing uses `transparency.default_route`; when local processing is disabled, an exact prompt-only allow rule may select `prompt-alpha`. Otherwise, requests at any size still reach the API with the user's prompt unchanged and receive source-alpha inspection. See [native transparency, retry policy, and the Standalone processing-switch limitation](parameters.md#visual-deliverables-and-transparency).
 
 | Route | Use when | Processing contract |
 | --- | --- | --- |
@@ -51,7 +53,7 @@ These routes cover different Photoshop-style techniques rather than forming a ch
 | Traditional technique | Deterministic route | Required evidence |
 | --- | --- | --- |
 | Color Range plus spill suppression | `chroma-matting` | A known uniform key plate |
-| Channels or Calculations-style grayscale matte | `mask-alpha` with `source=luminance|red|green|blue` | A supplied mask whose selected channel separates foreground |
+| Channels or Calculations-style grayscale matte | `mask-alpha` with `source=luminance\|red\|green\|blue` | A supplied mask whose selected channel separates foreground |
 | Layer mask refinement | `mask-alpha` | A trusted mask, optional threshold, expand, feather, gamma, and component controls |
 | Remove Black/White Matte and Defringe | `mask-alpha` or `chroma-matting` cleanup | The source matte color is known |
 | Screen/additive extraction from black | `emissive-alpha` | Emissive content on a dark, uniform border |
@@ -62,7 +64,7 @@ If the API image already has usable alpha, that original file remains the transp
 
 The quality gate checks edge key-color coverage, transparent-pixel ratio, visible-pixel ratio, visible border ratio, and direct or directional key-color contamination around partial-alpha or transparency-adjacent subject edges. Directional checks catch pale green, cyan, yellow, or magenta spill even when its absolute RGB distance exceeds the extraction range. Contamination limits are independent from `inner_tolerance` and `outer_tolerance`, so narrowing the processing range cannot weaken acceptance. A non-uniform edge or unrecoverable contamination is an `unmet` result; the processor does not publish a guessed cutout.
 
-When local processing is disabled, the request can use the `prompt-alpha` route only if `auth.json.transparency.prompt_only_allow` exactly matches the model, mode, and pixel size. The prompt requests a real alpha channel, but the model may still return an opaque image. A 2K/4K request without such a rule still runs with the original prompt; the returned image is preserved and checked for native alpha only.
+For a non-native route with local processing disabled, `prompt-alpha` requires an exact `auth.json.transparency.prompt_only_allow` match for model, mode, and pixel size. The prompt requests a real alpha channel, but the model may still return an opaque image. Without a match, the request still runs with the original prompt and the returned image is checked for existing alpha.
 
 Transparency processing is observational after the API response exists:
 
@@ -74,13 +76,15 @@ The API request remains successful when transparency is unmet. For a batch, each
 
 The same preservation rule applies to non-transparent transforms. A resize, grid split, or QA failure sets `delivery_ready=false` and returns the already-published API originals with a factual warning. One image's transform or final publication failure keeps successful peer derivatives. Multi-image QA retains passing derivatives and omits failed, unsupported, or not-evaluated per-image derivatives when the result can be assigned to one image. A global derivative count or global QA failure omits the complete derivative set. API originals publish independently, so one response item's target collision does not hide successful peers. None of these outcomes changes `ok=true` after at least one original is published.
 
-An HTTP 4xx response is different: it is an API rejection before an image exists (`error_kind=api_rejected`), so there is no original image to return and no transparency result to attach.
+An HTTP 4xx response that remains after any configured native-parameter retry is an API rejection (`error_kind=api_rejected`), not a transparency QA result. That failed request has no original image to return.
 
 Batch relative output paths are based at `--out`; JSONL `images`, `mask`, and `transparency_mask` inputs are based at the JSONL file directory. The manifest records the resolved `output_root` and file-existence `path_contract`.
 
 ## Apply Transparency to an Existing PNG
 
 Use `apply-transparency` to reprocess an original API image without another API request:
+
+Windows PowerShell:
 
 ```powershell
 python "$SkillDir/scripts/imagegen.py" apply-transparency "effect.png" `
@@ -90,15 +94,27 @@ python "$SkillDir/scripts/imagegen.py" apply-transparency "effect.png" `
   --transparency-param "gamma=1.2"
 ```
 
+macOS or Linux shell:
+
+```bash
+python3 "$SkillDir/scripts/imagegen.py" apply-transparency "effect.png" \
+  --out "effect-transparent.png" \
+  --route emissive-alpha \
+  --transparency-param "black_point=8" \
+  --transparency-param "gamma=1.2"
+```
+
 For `chroma-matting`, also pass `--key "#00FF00"`. For `mask-alpha`, pass `--transparency-mask "mask.png"`. The command always emits a JSON result after processing. A validated output returns `status=pass` and `delivery_ready=true`. An unmet route returns the source image path, does not create an `--out` duplicate, reports `status=unmet` and `delivery_ready=false`, and exits successfully so the source file remains available with its warning.
 
 ## LLM-Assisted Adjustment
 
-When `transparency.llm_assisted.enabled=true`, the agent can inspect the original image and route checks, then run bounded additional `apply-transparency` attempts. `max_attempts` includes the first local run. Parameter tuning and route changes obey their individual switches and the route input contracts. Each attempt must pass the unchanged deterministic checks and be reviewed on contrasting preview backgrounds; tuning a processing tolerance never relaxes the quality gate. Another image API call requires `allow_api_retry=true`.
+When `transparency.llm_assisted.enabled=true`, the Standalone agent can inspect the original image and route checks, then run bounded additional `apply-transparency` attempts. `max_attempts` includes the first local run. Parameter tuning and route changes obey their individual switches and the route input contracts. Each attempt must pass the unchanged deterministic checks and be reviewed on contrasting preview backgrounds; tuning a processing tolerance never relaxes the quality gate. An additional Standalone API call requires `allow_api_retry=true`; the Plugin permits only local redelivery through this policy. The configured native-parameter retry is separate.
 
 If every permitted attempt remains unmet, the original API image and warnings remain the result.
 
 Example:
+
+Windows PowerShell:
 
 ```powershell
 python "$SkillDir/scripts/imagegen.py" generate `
@@ -109,18 +125,48 @@ python "$SkillDir/scripts/imagegen.py" generate `
   --qa
 ```
 
+macOS or Linux shell:
+
+```bash
+python3 "$SkillDir/scripts/imagegen.py" generate \
+  -p "Isolated ceramic vase, front three-quarter view, no floor, no lettering" \
+  -f "outputs/vase.png" \
+  --transparent \
+  --postprocess \
+  --qa
+```
+
 ## Inspect
+
+Windows PowerShell:
 
 ```powershell
 python "$SkillDir/scripts/imagegen.py" inspect-image "input.png"
 ```
 
+macOS or Linux shell:
+
+```bash
+python3 "$SkillDir/scripts/imagegen.py" inspect-image "input.png"
+```
+
 Optional expectations:
+
+Windows PowerShell:
 
 ```powershell
 python "$SkillDir/scripts/imagegen.py" inspect-image "input.png" `
   --components `
   --expected-size 512x512 `
+  --expect-transparent
+```
+
+macOS or Linux shell:
+
+```bash
+python3 "$SkillDir/scripts/imagegen.py" inspect-image "input.png" \
+  --components \
+  --expected-size 512x512 \
   --expect-transparent
 ```
 
@@ -130,6 +176,8 @@ Without expectations, the command prints inspection metrics. With expectations, 
 
 Stretch to an exact delivery size:
 
+Windows PowerShell:
+
 ```powershell
 python "$SkillDir/scripts/imagegen.py" normalize "input.png" `
   --delivery-size 1200x900 `
@@ -137,7 +185,18 @@ python "$SkillDir/scripts/imagegen.py" normalize "input.png" `
   --out "output.png"
 ```
 
+macOS or Linux shell:
+
+```bash
+python3 "$SkillDir/scripts/imagegen.py" normalize "input.png" \
+  --delivery-size 1200x900 \
+  --resample bilinear \
+  --out "output.png"
+```
+
 Preserve aspect ratio with a fractional edge margin:
+
+Windows PowerShell:
 
 ```powershell
 python "$SkillDir/scripts/imagegen.py" normalize "input.png" `
@@ -147,9 +206,21 @@ python "$SkillDir/scripts/imagegen.py" normalize "input.png" `
   --out "output.png"
 ```
 
+macOS or Linux shell:
+
+```bash
+python3 "$SkillDir/scripts/imagegen.py" normalize "input.png" \
+  --delivery-size 512x512 \
+  --fit contain \
+  --safe-margin 0.03 \
+  --out "output.png"
+```
+
 `stretch` is the compatibility fit mode. `contain` preserves aspect ratio on a transparent canvas. `bilinear` is the dependency-free default; `nearest` is available for intentional pixel replication.
 
 ## Split a Known Grid
+
+Windows PowerShell:
 
 ```powershell
 python "$SkillDir/scripts/imagegen.py" split-grid "sheet.png" `
@@ -160,9 +231,22 @@ python "$SkillDir/scripts/imagegen.py" split-grid "sheet.png" `
   --out-dir "candidates"
 ```
 
+macOS or Linux shell:
+
+```bash
+python3 "$SkillDir/scripts/imagegen.py" split-grid "sheet.png" \
+  --grid 3x3 \
+  --delivery-size 256x256 \
+  --expected-count 9 \
+  --resample bilinear \
+  --out-dir "candidates"
+```
+
 The command divides the complete canvas using the explicit grid, trims transparent bounds inside each cell, and contains each result in the delivery canvas. It does not detect grids automatically.
 
 ## Preview Board
+
+Windows PowerShell:
 
 ```powershell
 python "$SkillDir/scripts/imagegen.py" preview-board "input.png" `
@@ -174,9 +258,23 @@ python "$SkillDir/scripts/imagegen.py" preview-board "input.png" `
   --out-dir "previews"
 ```
 
+macOS or Linux shell:
+
+```bash
+python3 "$SkillDir/scripts/imagegen.py" preview-board "input.png" \
+  --size 64x64 \
+  --size 256x256 \
+  --preview-background transparent \
+  --preview-background white \
+  --preview-background checker \
+  --out-dir "previews"
+```
+
 The output directory contains each size/background variant, a combined board, and `preview-manifest.json`. The manifest maps every board cell to its file, size, and background. The command checks each preview, the cumulative preview workload, and the combined board against pixel limits before allocating their buffers.
 
 ## Generated-Output QA
+
+Windows PowerShell:
 
 ```powershell
 python "$SkillDir/scripts/imagegen.py" generate `
@@ -184,6 +282,17 @@ python "$SkillDir/scripts/imagegen.py" generate `
   -f "raw.png" `
   --delivery-size 1200x900 `
   --qa `
+  --postprocess-out-dir "final"
+```
+
+macOS or Linux shell:
+
+```bash
+python3 "$SkillDir/scripts/imagegen.py" generate \
+  -p "Wide editorial illustration about urban shade" \
+  -f "raw.png" \
+  --delivery-size 1200x900 \
+  --qa \
   --postprocess-out-dir "final"
 ```
 

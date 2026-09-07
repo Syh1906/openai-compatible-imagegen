@@ -3,21 +3,21 @@
 
 Language: [简体中文](./arch.zh-CN.md)
 
-This document is for contributors and maintainers. It defines the stable module, dependency, configuration, state, and release boundaries that let one image core support a portable Standalone Skill and a Codex App Plugin. It does not provide installation or configuration steps; use the [user guides](./guides/README.md) for those tasks.
+This document describes module, dependency, configuration, state, and release boundaries for contributors and maintainers. For installation and configuration steps, use the [user guides](./guides/README.md).
 
-## Sources of truth
+## Implementation map
 
 | Source | Responsibility |
 | --- | --- |
 | `scripts/` | Shared image protocol, validation, transforms, delivery, and QA |
-| `mcp/` | Plugin tools, project binding, artifacts, editor state, and runtime calls |
+| `mcp/` | Plugin tools, project binding, asynchronous jobs, artifacts, editor state, and runtime calls |
 | `web/` | Codex result cards and focused image canvas |
 | `web/widget-i18n.mjs` | English and Chinese Widget message catalog and locale resolution |
 | `scripts/plugin-file-set.mjs` | Distribution file ownership and shared-core evidence |
 | `.codex-plugin/plugin.json`, `.mcp.json` | Plugin identity and launch contract |
 | `tests/` | Executable public behavior and release boundaries |
 
-The Plugin runtime is platform-neutral at the package level. `scripts/repository_fs.py` is the only filesystem entry point: it selects `windows_repository_fs.py` on Windows and `posix_repository_fs.py` on macOS/Linux. Both adapters expose the same repository, submission-lock, atomic-publication, and safe-path contract; the adapters are Plugin-only and are excluded from the Standalone archive.
+The Plugin runtime is platform-neutral at the package level. `scripts/repository_fs.py` is the Python artifact repository's filesystem entry point: it selects `windows_repository_fs.py` on Windows and `posix_repository_fs.py` on macOS/Linux. Both adapters expose the same repository, submission-lock, atomic-publication, and safe-path contract; the adapters are Plugin-only and are excluded from the Standalone archive.
 
 ## Core flow
 
@@ -26,10 +26,15 @@ flowchart LR
     Agent[Agent or user] --> Standalone[Standalone Adapter]
     Agent --> Plugin[Codex Plugin Skill]
     Plugin --> MCP[MCP server]
-    MCP --> Runtime[Plugin Adapter]
+    MCP --> Jobs[API Key job executor]
+    Jobs --> Runtime[Plugin Adapter]
     Standalone --> Core[Shared image core]
     Runtime --> Core
     Core --> Provider[OpenAI-compatible image API]
+    Core --> Atlas[Atlas generation API]
+    Plugin --> Host[ChatGPT host image generation]
+    Host --> Handoff[Prepared image handoff]
+    Handoff --> Repository
     MCP --> Repository[Immutable artifact repository]
     MCP --> Widget[Result cards and focused canvas]
 ```
@@ -64,7 +69,7 @@ Standalone Skill -> Standalone adapter -> shared image core -> provider
 - The shared image core does not depend on Codex, MCP, or Widget code.
 - The Widget does not read credentials or call the provider.
 - MCP tools do not assemble provider requests.
-- Failures stop at their owning layer without changing providers, models, endpoints, authentication sources, protocols, or routes.
+- Failures do not change providers, models, endpoints, authentication sources, or protocols. Configured transparency retries and local fallback run within the selected route's policy.
 
 ## Configuration boundaries
 
@@ -83,6 +88,12 @@ Standalone Skill -> Standalone adapter -> shared image core -> provider
 - A `projectBindingId` binds model and Widget calls to one project across MCP processes.
 - Configuration writes and project binding protect their target directories with a local `.gitignore` containing only `*`; incompatible existing rules stop the operation without being overwritten.
 - Cross-process registries use atomic file replacement and owned locks so stale writers cannot publish over a replacement owner.
+
+API Key job responsibilities are split between [tool registration](../mcp/image-job-tools.mjs), [contracts](../mcp/image-job-contract.mjs), [durable storage](../mcp/image-job-store.mjs), [scheduling](../mcp/image-job-manager.mjs), and [execution](../mcp/image-job-execution.mjs). Submission keys identify one immutable intent. Jobs save original-image checkpoints before local delivery, support ordered result pages, and preserve partial success. Recovery resumes only never-dispatched work or local processing with saved originals; an unconfirmed provider outcome is never automatically resubmitted.
+
+Each MCP executor shares eight active item slots across jobs and honors a batch's smaller concurrency limit. Separate processes have separate slot limits; durable ownership prevents simultaneous execution of the same job. State survives restart, but execution requires a running MCP process. A crash between publication and checkpoint persistence can leave a saved image without a confirmed job result.
+
+ChatGPT operations use a prepared host handoff instead of the API job executor. A committed host image enters the same immutable repository and, for edits, retains its parent and canvas submission relationship.
 
 ## Release model
 

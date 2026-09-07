@@ -37,7 +37,20 @@ Use focused tests while iterating:
 npm run test:suite -- mcp
 npm run test:suite -- web
 node --test tests/mcp/test_mcp_tools.mjs
+```
+
+For a single Python test file, use the platform's interpreter.
+
+Windows PowerShell:
+
+```powershell
 python -m unittest discover -s tests/standalone -p test_imagegen_auth.py
+```
+
+macOS or Linux shell:
+
+```bash
+python3 -m unittest discover -s tests/standalone -p test_imagegen_auth.py
 ```
 
 `npm test` is the smart regression entry point. It reads the changed files from Git and selects only the affected suites. An unmapped source path fails closed and requires an impact rule. Use `npm run test:release` only for the complete release regression; it is not part of ordinary push or pull request checks.

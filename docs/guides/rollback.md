@@ -1,4 +1,3 @@
-<!-- updated: 2026-08-19 -->
 # Rollback
 
 > Parent: [User guides](./README.md)
@@ -36,15 +35,15 @@ codex plugin marketplace add Syh1906/openai-compatible-imagegen --ref vX.Y.Z --j
 codex plugin add openai-compatible-imagegen@openai-compatible-imagegen --json
 ```
 
-6. Confirm the installed version with `codex plugin list --json`, then start a new task before using image tools.
+6. Confirm the installed version with `codex plugin list --json`, then completely quit and restart Codex before using image tools.
 
 Do not use an unreleased commit as a rollback target. A Plugin version can read only configuration compatible with that release; consult the target release notes before reusing a newer config.
 
 ## Roll back the Standalone Skill
 
-1. Download the requested versioned Skill ZIP from GitHub Releases.
+1. Download the target Skill ZIP and `SHA256SUMS` from the same GitHub Release and [verify the digest](./updating.md#update-a-standalone-skill).
 2. Extract it to a new version-specific directory.
-3. Preserve the current installation and `auth.json` until the older version passes `info`.
+3. Prepare a compatible `auth.json` in the restored directory, following that release's configuration guide. Run `imagegen.py info` using the [platform command in the update guide](./updating.md#update-a-standalone-skill); preserve the current installation and configuration until it passes.
 4. Switch the client to the restored Skill directory.
 5. Start a new task or session.
 
@@ -52,4 +51,4 @@ Do not use `skills update`, repeated `skills add`, or `skills remove` as a confi
 
 ## Rollback result
 
-The active package reports the selected released version. Existing image artifacts remain local and are not deleted by package rollback.
+For Plugin, `codex plugin list --json` reports the selected version. For Standalone, `info` points to the directory extracted from the verified versioned archive. Existing image artifacts remain local and are not deleted by package rollback.

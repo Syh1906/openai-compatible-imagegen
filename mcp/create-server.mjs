@@ -6,7 +6,10 @@ import { z } from "zod";
 import { createEditSubmissionRegistry } from "./edit-submission-registry.mjs";
 import { annotationItemSchema, editorDraftSchema } from "./editor-draft-contract.mjs";
 import { createEditorStateRegistry } from "./editor-state-registry.mjs";
-import { executeImageBatch } from "./batch-images.mjs";
+import { createImageJobManager } from "./image-job-manager.mjs";
+import { createImageJobExecutor } from "./image-job-execution.mjs";
+import { imageJobOutputSchema, submissionKeySchema } from "./image-job-contract.mjs";
+import { imageJobResult, registerImageJobTools } from "./image-job-tools.mjs";
 import { createImageAuditHandlers } from "./image-audit-handlers.mjs";
 import {
   safeDeliveryQa,
@@ -20,8 +23,6 @@ import {
   deliveryReceiptIdSchema,
   deliveryInputSchema,
   imageArtifactOutputSchema,
-  imageArtifactsOutputSchema,
-  imageBatchOutputSchema,
   imageDeliveryOutputSchema,
   imageIdSchema,
   outputSchema,
@@ -198,7 +199,7 @@ const retainedHostErrorCodes = new Set([
 const sensitiveHostFieldKeyPattern = /(api[_-]?key|authorization|credential|password|secret|token|cookie)/i;
 const hostObservationProvenance = "unverified_widget_report";
 const DEFAULT_MODEL_PROFILE_ID = "primary/gpt-image-2";
-const SERVER_INSTRUCTIONS = "After generate_image or edit_image succeeds, call render_image_results once with the returned artifact IDs in order before the final response. After deliver_image succeeds with deliveryReady=true, call render_image_results with the returned derivative artifact IDs. After batch_images succeeds, call render_image_results once with up to 10 final presentation IDs, preferring delivery-ready derivatives over API originals. Do not ask the user to request this display step, and do not render the same result twice.";
+const SERVER_INSTRUCTIONS = "generate_image, edit_image, and batch_images submit durable asynchronous jobs. Preserve submissionKey and jobId. Poll get_image_job until done and read every result page; a polling timeout does not cancel or resubmit generation. Before the final response, render successful images with render_image_results in groups of up to 10, preferring delivery-ready derivatives and never displaying the same result twice. After deliver_image succeeds with deliveryReady=true, call render_image_results with its derivatives. Unknown outcomes must not be regenerated automatically. Do not ask the user to request the display step.";
 
 export function createImagegenServer({
   releaseIdentity,
@@ -482,24 +483,51 @@ export function createImagegenServer({
     }),
   );
 
+  const singleImageHandlers = new Map();
+  const jobExecutor = createImageJobExecutor({
+    runTask, readArtifact,
+    validateEdit: async (item, context) => await editSubmissions.resolveForEdit({
+      artifactRoot: context.artifactRoot, bindingKey: context.bindingKey, parentImageId: item.parentImageId,
+    }),
+    executeSingle: async ({ kind, request, context, runTask: taskRunner }) =>
+      await singleImageHandlers.get(kind)(request, context, taskRunner),
+  });
+  const imageJobs = createImageJobManager(jobExecutor);
+  registerImageJobTools(server, { jobs: imageJobs, projectContext, toolError });
+  const closeServer = server.close.bind(server);
+  server.close = async () => { await imageJobs.close(); await closeServer(); };
+  const onConnectionClosed = server.server.onclose;
+  server.server.onclose = () => {
+    onConnectionClosed?.();
+    void imageJobs.close().catch(() => {});
+  };
+
+  function queueImageOperation(kind, handler) {
+    singleImageHandlers.set(kind, handler);
+    return async ({ projectBindingId, submissionKey, ...request }) =>
+      await withBoundProject(projectContext, projectBindingId, async (context) => {
+        if (context.apiKeyConfigured === false) return apiProviderNotConfigured();
+        return imageJobResult(await imageJobs.submit({ context, submissionKey, spec: { kind, request } }));
+      });
+  }
+
   server.registerTool(
     "generate_image",
     {
       title: "Generate images",
-      description: "Generate one or more independent candidate images with the configured model. Multiple candidates run as ordered single-image requests and return only after the full group succeeds. After success, call render_image_results once with the returned artifact IDs before replying to the user.",
+      description: "Submit a durable image generation job and return its jobId without waiting for generation. Reuse submissionKey after a lost reply to recover the same job. Multiple candidates preserve ordered single-image requests and atomic group publication. Poll get_image_job and render successful results before replying.",
       inputSchema: {
         ...projectBindingInputSchema,
+        submissionKey: submissionKeySchema,
         prompt: z.string().min(1),
         modelProfileId: modelProfileIdSchema.optional(),
         transparency: transparencyInputSchema.optional(),
         ...outputSchema,
       },
-      outputSchema: imageArtifactsOutputSchema,
+      outputSchema: imageJobOutputSchema,
       annotations: writeAnnotations(),
     },
-    async ({ projectBindingId, prompt, modelProfileId, transparency, ...output }) =>
-      await withBoundProject(projectContext, projectBindingId, async (context) => {
-        if (context.apiKeyConfigured === false) return apiProviderNotConfigured();
+    queueImageOperation("generate", async ({ prompt, modelProfileId, transparency, ...output }, context, taskRunner) => {
         return await executeImageTask(
           {
             operation: "generate",
@@ -511,7 +539,7 @@ export function createImagegenServer({
             output,
           },
           context,
-          runTask,
+          taskRunner,
           readArtifact,
         );
       }),
@@ -521,9 +549,10 @@ export function createImagegenServer({
     "edit_image",
     {
       title: "Edit image",
-      description: "Create a new immutable image version from a parent image and prompt. After success, call render_image_results once with the returned child artifact ID before replying to the user.",
+      description: "Submit a durable edit job for a new immutable image version and immediately return jobId. Preserve submissionKey and any canvas submissionId. Poll get_image_job and render the successful child images; do not repeat uncertain edits with a new key.",
       inputSchema: {
         ...projectBindingInputSchema,
+        submissionKey: submissionKeySchema,
         parentImageId: imageIdSchema,
         prompt: z.string().min(1),
         referenceImageIds: z.array(imageIdSchema).optional(),
@@ -533,11 +562,10 @@ export function createImagegenServer({
         transparency: transparencyInputSchema.optional(),
         ...outputSchema,
       },
-      outputSchema: imageArtifactsOutputSchema,
+      outputSchema: imageJobOutputSchema,
       annotations: writeAnnotations(),
     },
-    async (arguments_) =>
-      await withBoundProject(projectContext, arguments_.projectBindingId, async (context) => {
+    queueImageOperation("edit", async (arguments_, context, taskRunner) => {
       if (context.apiKeyConfigured === false) return apiProviderNotConfigured();
       const {
         parentImageId,
@@ -643,7 +671,7 @@ export function createImagegenServer({
             output: taskOutput,
           },
           context,
-          runTask,
+          taskRunner,
           readArtifact,
           {
             onTaskCommitted: async (artifacts) => {
@@ -678,55 +706,22 @@ export function createImagegenServer({
     "batch_images",
     {
       title: "Batch image tasks",
-      description: "Run independent generation and standard edit tasks with ordered partial results. After success, call render_image_results once with up to 10 final presentation IDs, preferring delivery-ready derivatives over API originals, before replying to the user.",
+      description: "Submit a durable batch of independent generation and standard edit tasks, returning jobId immediately. Reuse submissionKey after a lost reply. Poll get_image_job for ordered partial results and all pages, rendering successful images in groups of up to 10. Concurrency shares the executor's eight slots across jobs.",
       inputSchema: {
         ...projectBindingInputSchema,
+        submissionKey: submissionKeySchema,
         items: batchItemsSchema,
         concurrency: z.number().int().min(1).max(8).optional(),
       },
-      outputSchema: imageBatchOutputSchema,
+      outputSchema: imageJobOutputSchema,
       annotations: writeAnnotations(),
     },
-    async ({ projectBindingId, items, concurrency = 3 }) =>
+    async ({ projectBindingId, submissionKey, items, concurrency }) =>
       await withBoundProject(projectContext, projectBindingId, async (context) => {
         if (context.apiKeyConfigured === false) return apiProviderNotConfigured();
-        const batch = await executeImageBatch({
-          items,
-          concurrency,
-          context,
-          runTask,
-          readArtifact,
-          validateEdit: async (item) => {
-            await editSubmissions.resolveForEdit({
-              artifactRoot: context.artifactRoot,
-              bindingKey: context.bindingKey,
-              parentImageId: item.parentImageId,
-            });
-          },
-          recordManifest: async (manifest) => await runTask({
-            operation: "record_batch",
-            modelProfileId: context.activeProfile || DEFAULT_MODEL_PROFILE_ID,
-            manifest,
-          }, context),
-        });
-        const artifacts = batch.results.flatMap((item) => (item.ok ? item.artifacts : []));
-        const presentationIds = batch.results.flatMap((item) => {
-          if (!item.ok) return [];
-          if (item.delivery?.deliveryReady && item.delivery.artifactIds?.length) return item.delivery.artifactIds;
-          return item.artifacts.map((artifact) => artifact.id);
-        }).slice(0, 10);
-        return {
-          content: [{
-            type: "text",
-            text: `批量图片任务完成：成功 ${batch.summary.succeeded} 项，失败 ${batch.summary.failed} 项。${presentationIds.length ? ` 在回复用户前调用 render_image_results 显示：${presentationIds.join(", ")}。` : ""}`,
-          }],
-          structuredContent: batch,
-          _meta: {
-            imageIds: batch.artifactIds,
-            artifacts,
-            ...(batch.batchId ? { batchId: batch.batchId } : {}),
-          },
-        };
+        return imageJobResult(await imageJobs.submit({ context, submissionKey, spec: {
+          kind: "batch", items, ...(concurrency === undefined ? {} : { concurrency }),
+        } }));
       }),
   );
 

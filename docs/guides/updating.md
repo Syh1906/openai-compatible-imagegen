@@ -1,4 +1,3 @@
-<!-- updated: 2026-08-21 -->
 # Update the Plugin or Skill
 
 > Parent: [User guides](./README.md)
@@ -14,13 +13,7 @@ Use this guide to move an existing installation to a newer Git revision or relea
 - Keep the current installation and local configuration until the new version passes its smoke check.
 - Download release ZIP files and `SHA256SUMS` from the same GitHub Release when you need a fixed local package.
 
-## Migrate transparency settings
-
-New configurations enable native transparency by default. Updates preserve an existing `config.json` so that an upgrade does not silently change image routing. After updating, call `inspect_image_config`; if it warns that `transparency.native` is missing, use `update_image_config` to set `transparency.default_route` to `native-alpha` and `transparency.native.enabled` to `true`.
-
-The default `transparency.native.retry_without_parameter` value is `true`. Set it to `false` only when you want a provider rejection to stop without a second request. In either case, the final image result reports whether the native parameter was sent, whether a retry occurred, and which route produced the result.
-
-After changing configuration, rebind the project and run `inspect_image_config` again. Keep the previous installation and configuration until this check succeeds.
+Upgrades preserve existing transparency settings. To enable native transparency, see [transparency settings](./configuration.md#transparency-settings).
 
 ## Update a Git marketplace Plugin
 
@@ -40,7 +33,7 @@ The `codex plugin` lifecycle commands below are identical in Windows PowerShell,
    codex plugin list --json
    ```
 
-3. Completely quit and restart Codex once, then start a new task or CLI session. The restart loads the updated Skill, MCP tools, and bundled dependencies.
+3. Completely quit and restart Codex once. The restart loads the updated Skill, MCP tools, and bundled dependencies.
 
 Do not remove and add the Plugin during a normal Git marketplace update. Use the Plugin ZIP or [Rollback](./rollback.md) route when you need a fixed release, archived build, different source, tag, or branch.
 
@@ -98,7 +91,7 @@ Use this route for an offline, pinned, or archived version.
    codex plugin list --json
    ```
 
-7. Start a new task. Keep the extracted directory while the local marketplace is configured to use it.
+7. Completely quit and restart Codex. Keep the extracted directory while the local marketplace is configured to use it.
 
 The local marketplace route is independent from the Git marketplace route. A Git marketplace upgrade does not replace a marketplace whose source is an extracted local directory.
 
@@ -150,7 +143,7 @@ Do not use `skills update` for a local copied archive. Do not run `skills add` a
 
 ## Verify and recover
 
-- Plugin: `codex plugin list --json` reports the expected version and the new task exposes the Plugin tools.
+- Plugin: `codex plugin list --json` reports the expected version and the current task exposes the Plugin tools.
 - Standalone: `imagegen.py info` resolves `script_path` and `auth_json` inside the new Skill directory.
 - If the smoke check fails, restore the previous directory and follow [Rollback](./rollback.md).
 

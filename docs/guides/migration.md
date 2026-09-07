@@ -1,4 +1,3 @@
-<!-- updated: 2026-08-19 -->
 # Migration
 
 > Parent: [User guides](./README.md)

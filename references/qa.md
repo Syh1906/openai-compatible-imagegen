@@ -4,15 +4,27 @@ Use QA when the user asks to inspect a file, verify a delivery size, confirm tra
 
 Both release packages use the same `qa.v1` checks. Standalone includes them in CLI JSON and `delivery_ready`; the Codex Plugin maps delivery readiness to `deliveryReady` and persists QA with the related artifact or delivery receipt. QA does not change the model, endpoint, request parameters, or retry policy.
 
+The CLI examples below are for Standalone. Set `SkillDir` as shown in [Local Auth](../SKILL.md#local-auth). Plugin agents use their bundled MCP workflow.
+
 ## Commands
 
 Inspect a PNG:
+
+Windows PowerShell:
 
 ```powershell
 python "$SkillDir/scripts/imagegen.py" inspect-image "input.png"
 ```
 
+macOS or Linux shell:
+
+```bash
+python3 "$SkillDir/scripts/imagegen.py" inspect-image "input.png"
+```
+
 Add connected-component diagnostics and an expected size:
+
+Windows PowerShell:
 
 ```powershell
 python "$SkillDir/scripts/imagegen.py" inspect-image "input.png" `
@@ -20,19 +32,47 @@ python "$SkillDir/scripts/imagegen.py" inspect-image "input.png" `
   --expected-size 128x128
 ```
 
+macOS or Linux shell:
+
+```bash
+python3 "$SkillDir/scripts/imagegen.py" inspect-image "input.png" \
+  --components \
+  --expected-size 128x128
+```
+
 Require visible content with a real alpha channel:
+
+Windows PowerShell:
 
 ```powershell
 python "$SkillDir/scripts/imagegen.py" inspect-image "input.png" `
   --expect-transparent
 ```
 
+macOS or Linux shell:
+
+```bash
+python3 "$SkillDir/scripts/imagegen.py" inspect-image "input.png" \
+  --expect-transparent
+```
+
 Attach QA to generated or edited output:
+
+Windows PowerShell:
 
 ```powershell
 python "$SkillDir/scripts/imagegen.py" generate `
   -p "Wide editorial illustration about public transit" `
   -f "raw.png" `
+  --qa
+```
+
+macOS or Linux shell:
+
+```bash
+python3 "$SkillDir/scripts/imagegen.py" generate \
+  -p "Wide editorial illustration about public transit" \
+  -f "raw.png" \
   --qa
 ```
 
@@ -70,10 +110,10 @@ For transparent generation or editing, the transparency record contains route-sp
 
 ## Boundaries
 
-- Original PNG publication and deep local QA use separate validation boundaries. Publication always checks PNG container structure, chunk ordering, CRCs, dimensions, encoding fields, compressed-stream completion, and a 4096-`IDAT`-chunk limit. Full scanline, filter, and Adam7 pass validation runs through 96 MiB of expected decompressed scanlines. From 96 MiB through 512 MiB, a bounded streaming pass validates zlib completion and exact decompressed length without retaining scanlines; a complete original is published with `api_response_validation_budget_exceeded`. Above 512 MiB, that item is rejected with `api_response_item_resource_limited`, while originals published from earlier response items remain available. Corrupt, incomplete, or excessively fragmented IDAT data is rejected at every size. Deep QA supports non-interlaced 8-bit or 16-bit RGB/RGBA PNG files up to 25 million pixels, a 256 MiB PNG file limit, and the same IDAT chunk limit. The local codec reduces 16-bit channel samples to 8-bit RGBA. Unsupported QA leaves the published original visible and reports a partial or unmet delivery state.
-- JPEG and WebP originals receive bounded publication checks. JPEG receives framing checks; WebP receives RIFF and chunk-bound checks, VP8 adds keyframe, dimension, and first-partition checks, and VP8L receives full bounded entropy-stream validation. Deep local pixel QA still reports JPEG and WebP as unsupported.
+- Original publication accepts a broader PNG subset than local processing. Deep inspection and transforms support non-interlaced 8-bit or 16-bit RGB/RGBA PNG, reducing 16-bit samples to 8-bit for processing. See the [parameter reference](parameters.md#delivery-transform-parameters) for size and validation budgets. Unsupported QA leaves the valid original visible and reports partial or unmet delivery.
+- JPEG and WebP originals receive bounded publication checks; deep local pixel QA reports those formats as unsupported.
 - `--expect-transparent` checks alpha and visible content. It does not prove semantic isolation or remove a non-uniform background.
-- `--transparent` is delivery intent; it does not send a transparent background parameter to the API.
+- `--transparent` is delivery intent; only the resolved `native-alpha` route sends the API transparency parameter. The native retry policy runs before QA and does not change its checks.
 - If prompt-only alpha or a local route fails, the original API file is returned with a warning instead of being rejected.
 - An HTTP 4xx response is `api_rejected`, not a transparency failure; no image exists to return.
 - Reference-image technical metadata may be `not_evaluated` for semantics. It does not automatically block an edit request.
