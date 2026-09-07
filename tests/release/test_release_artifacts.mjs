@@ -301,18 +301,18 @@ test("release mode rejects baseline metadata and publishes clean artifacts for t
 });
 
 
-test("the release source builds the current v1.2.0 artifact set", async (t) => {
+test("the release source builds the current v1.3.0 artifact set", async (t) => {
   const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "imagegen-release-candidate-"));
   t.after(() => rm(outputDirectory, { recursive: true, force: true }));
 
   const result = await runBuild(outputDirectory);
 
-  assert.equal(result.version, "1.2.0");
+  assert.equal(result.version, "1.3.0");
   assert.deepEqual(result.files, [
     "SHA256SUMS",
-    "openai-compatible-imagegen-codex-plugin-1.2.0.zip",
-    "openai-compatible-imagegen-shared-python-sha256-1.2.0.json",
-    "openai-compatible-imagegen-skill-1.2.0.zip",
+    "openai-compatible-imagegen-codex-plugin-1.3.0.zip",
+    "openai-compatible-imagegen-shared-python-sha256-1.3.0.json",
+    "openai-compatible-imagegen-skill-1.3.0.zip",
   ]);
   assert.deepEqual((await readdir(outputDirectory)).sort(), result.files);
 });

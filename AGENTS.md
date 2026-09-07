@@ -66,7 +66,7 @@
 - The Git marketplace Plugin must contain `dist/server.mjs`, `dist/widget/`, and `dist/scripts/`.
 - Before release, verify that marketplace metadata, Plugin manifests, package metadata, tags, and artifact versions agree.
 - Freeze the version in `CHANGELOG.md` and add `.github/release-notes/<tag>.md` before creating the annotated tag.
-- Release notes require a summary, `Highlights`, `Install`, and `Known limitations`; the Release title is exactly the version tag.
+- Release notes require a summary, `Highlights`, `Install`, and `Known limitations`; new releases also require `Commits` / `涉及提交` with change areas, commit links, and the complete version comparison as described in `CONTRIBUTING.md`. The Release title is exactly the version tag.
 - Follow the active release plan's platform matrix. Require independently built Windows and Linux candidates to have identical file sets and bytes only when that release includes cross-platform reproducibility as a gate.
 - Exclude `auth.json`, `.local/`, `verification-scratch/`, `node_modules/`, caches, and test output from release packages.
 - Do not create or move tags, create Releases, modify remotes, or publish a public MCP server without maintainer approval.

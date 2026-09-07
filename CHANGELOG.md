@@ -4,12 +4,17 @@
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-09-07
+
 ### 新增
 
 - Codex Plugin 的 API Key 生成、编辑和批量任务改为提交后立即返回任务 ID，支持分页查询进度、重复提交去重、取消排队项和恢复本地交付。长批次不再依赖一次工具调用持续等待全部图片。
-- 直接调用 MCP 工具的客户端需要为生成、编辑和批量提交增加 `submissionKey`，并通过 `get_image_job` 读取最终结果；原同步结果结构不再作为提交响应返回。
 - Standalone Skill 和 Codex Plugin 新增可选 `atlas` provider 协议，通过单次异步提交和有界结果轮询调用 Atlas Cloud 文生图模型；默认 OpenAI-compatible 路线保持不变。
 - Codex Plugin 支持导入项目中的 PNG、JPEG、WebP 继续编辑，也可将结果导出为本地文件。导入保留源文件，导出不覆盖已有文件。
+
+### 变更
+
+- API Key 图片工具的调用方式发生不兼容变化：直接调用 MCP 工具的客户端需要为生成、编辑和批量提交增加 `submissionKey`，并通过 `get_image_job` 读取最终结果；提交响应不再返回原同步结果结构。升级说明见 [v1.3.0 发布说明](.github/release-notes/v1.3.0.md)。
 
 ### 修复
 
@@ -263,7 +268,8 @@
 - Publish the initial Agent Skills-compatible image generation workflow.
 - Support OpenAI-compatible image generation, image editing, local authentication, transparent asset intent, and JSONL batches.
 
-[Unreleased]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v1.2.0...HEAD
+[Unreleased]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v1.3.0...HEAD
+[1.3.0]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v1.0.2...v1.1.0
