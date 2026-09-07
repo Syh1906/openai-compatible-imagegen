@@ -33,6 +33,7 @@ test("MCP generation returns a queryable job before the provider completes and d
         assert.ok(tool.outputSchema.required.includes("jobId"));
       }
       for (const name of ["get_image_job", "cancel_image_job", "resume_image_job"]) assert.ok(tools.some((tool) => tool.name === name));
+      assert.equal(tools.find((tool) => tool.name === "cancel_image_job").annotations.destructiveHint, true);
     } finally { finish(); }
     const job = await waitDone(client, submitted.structuredContent.jobId);
     assert.equal(job.summary.succeeded, 1);

@@ -58,7 +58,7 @@ export function registerImageJobTools(server, { jobs, projectContext, toolError 
         ? { ...input, expectedRevision: z.number().int().nonnegative().describe("Revision from get_image_job. Reuse it after a lost resume reply to avoid repeating local processing.") }
         : input,
       outputSchema: imageJobOutputSchema,
-      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: method === "resume" },
+      annotations: { readOnlyHint: false, destructiveHint: method === "cancel", idempotentHint: true, openWorldHint: method === "resume" },
     }, async ({ projectBindingId, jobId, expectedRevision }) => {
       try { return imageJobResult(await jobs[method]({ jobId, expectedRevision, context: await projectContext.require(projectBindingId) })); }
       catch (error) { return toolError(error); }

@@ -21,7 +21,7 @@ export function withCompletedImageJobs(callTool) {
       status = await callTool({ name: "get_image_job", arguments: {
         ...(request.arguments?.projectBindingId ? { projectBindingId: request.arguments.projectBindingId } : {}), jobId, limit: 1,
         afterRevision: status.structuredContent.revision, waitMs: 1000,
-      } });
+      } }, ...options);
       assert.equal(status.isError, undefined, status.content?.[0]?.text);
     }
     const items = [];
@@ -31,13 +31,16 @@ export function withCompletedImageJobs(callTool) {
       const page = await callTool({ name: "get_image_job", arguments: {
         ...(request.arguments?.projectBindingId ? { projectBindingId: request.arguments.projectBindingId } : {}),
         jobId, offset, limit: 10,
-      } });
+      } }, ...options);
       assert.equal(page.isError, undefined, page.content?.[0]?.text);
       items.push(...page.structuredContent.items);
       pageContent.push(...page.content);
       offset = page.structuredContent.nextOffset;
     } while (offset !== null);
-    const results = items.map((item) => item.result);
+    const results = items.map((item) => {
+      assert.ok(item.result, `image job item ended as ${item.state} without a completed outcome`);
+      return item.result;
+    });
     if (request.name !== "batch_images" && !results[0]?.ok) {
       return { isError: true, content: [{ type: "text", text: `${results[0].error.code}: ${results[0].error.message}` }] };
     }

@@ -51,7 +51,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 var define_RELEASE_IDENTITY_default;
 var init_define_RELEASE_IDENTITY = __esm({
   "<define:__RELEASE_IDENTITY__>"() {
-    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "1.3.0", serverBuildDigest: "6f65258f2bc690892854abee5395ae4c48333569ba37c15f6cc2889c271a96ba", widgetAssetDigest: "e0962b3706f2ebc276ccf01db6425e6881d8c278830b2b356cbc2ff632871f73", fingerprint: "2009f1c538b1b95f995c", resourceUris: { result: "ui://openai-compatible-imagegen/result-2009f1c538b1b95f995c.html", editor: "ui://openai-compatible-imagegen/editor-2009f1c538b1b95f995c.html" } };
+    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "1.3.0", serverBuildDigest: "926f23f8884d8bd3545a0342df8817d7302e1d6a15bb1720e6e9f024d64cbd5e", widgetAssetDigest: "e0962b3706f2ebc276ccf01db6425e6881d8c278830b2b356cbc2ff632871f73", fingerprint: "8766c2a4d7c725100663", resourceUris: { result: "ui://openai-compatible-imagegen/result-8766c2a4d7c725100663.html", editor: "ui://openai-compatible-imagegen/editor-8766c2a4d7c725100663.html" } };
   }
 });
 
@@ -34340,7 +34340,7 @@ function registerImageJobTools(server2, { jobs, projectContext, toolError: toolE
       description,
       inputSchema: method === "resume" ? { ...input, expectedRevision: external_exports2.number().int().nonnegative().describe("Revision from get_image_job. Reuse it after a lost resume reply to avoid repeating local processing.") } : input,
       outputSchema: imageJobOutputSchema,
-      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: method === "resume" }
+      annotations: { readOnlyHint: false, destructiveHint: method === "cancel", idempotentHint: true, openWorldHint: method === "resume" }
     }, async ({ projectBindingId, jobId, expectedRevision }) => {
       try {
         return imageJobResult(await jobs[method]({ jobId, expectedRevision, context: await projectContext.require(projectBindingId) }));
