@@ -44,9 +44,8 @@ from scripts.image_transparency_contract import (
 )
 from scripts.image_transparency import (
     NativeTransparencyPolicy,
-    TransparencyContext,
     TransparencyPolicy,
-    resolve_plan,
+    resolve_native_fallback,
 )
 from scripts.mask_policy import (
     MASK_GUARD_V2_BY_STRATEGY,
@@ -254,7 +253,7 @@ def request_with_transparency_retry(
         fallback.record["retried_without_parameter"] = True
         fallback.record["warnings"] = [
             "native_transparency_rejected",
-            "transparent_delivery_fell_back_to_local_processing",
+            *fallback.plan.warnings,
         ]
         return request_call(retry_payload), fallback, 2
 
@@ -942,7 +941,7 @@ def run_machine_task(
                         native_attempted=True,
                         native_parameter="accepted_but_no_alpha",
                         api_attempts=transparency_attempts,
-                        warnings=("native_transparency_returned_opaque_image", "transparent_delivery_fell_back_to_local_processing"),
+                        warnings=("native_transparency_returned_opaque_image", *transparency.plan.warnings),
                     ),
                     record=transparency.record,
                     mask_image_id=transparency.mask_image_id,
@@ -1270,20 +1269,15 @@ def fallback_transparency_plan(
     cfg: Config,
     reference_paths: tuple[Path, ...],
 ) -> ResolvedTransparency:
-    route = transparency.plan.native_fallback_route or "chroma-matting"
     try:
-        plan = resolve_plan(
-            TransparencyContext(
-                requested=True,
-                prompt=prompt,
-                model=cfg.model,
-                mode=operation,
-                size=str(params["size"]),
-                postprocess_allowed=True,
-                reference_paths=reference_paths,
-                route=route,
-            ),
-            cfg.transparency,
+        plan = resolve_native_fallback(
+            transparency.plan,
+            prompt=prompt,
+            model=cfg.model,
+            mode=operation,
+            size=str(params["size"]),
+            policy=cfg.transparency,
+            reference_paths=reference_paths,
         )
     except ValueError as exc:
         raise MachineTaskError("invalid_task", str(exc)) from exc

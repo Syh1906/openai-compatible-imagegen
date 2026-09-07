@@ -217,9 +217,11 @@ Atlas 协议支持输出 JPEG 或 PNG 的文生图。它不支持编辑和原生
 }
 ```
 
-透明是用户的交付意图。使用 `native-alpha` 时，只有用户提出透明需求才会发送 `background=transparent` 和 PNG 输出，并附加真实 Alpha 通道提示词。可选的 `transparency.native.model_ids` 只是能力声明，不是代码白名单；明确请求原生路线时会把请求发给配置中的模型，是否支持由 provider 决定。provider 因透明参数返回 HTTP 400/422 时，默认使用相同模型和 endpoint 去掉该参数重试一次，再按 `fallback_route` 进入本地透明处理；设置 `retry_without_parameter=false` 可关闭重试。最终结果会说明拒绝、重试、最终路线和 QA。迁移时仍会拒绝旧的 `transparent_background` 配置。
+透明是用户的交付意图。使用 `native-alpha` 时，只有用户提出透明需求才会发送 `background=transparent` 和 PNG 输出，并附加真实 Alpha 通道提示词。可选的 `transparency.native.model_ids` 只是能力声明，不是代码白名单；明确请求原生路线时会把请求发给配置中的模型，是否支持由 provider 决定。provider 因透明参数返回 HTTP 400/422 时，默认使用相同模型和 endpoint 去掉该参数重试一次；设置 `retry_without_parameter=false` 可关闭重试。最终结果会说明拒绝、重试、最终路线和 QA。迁移时仍会拒绝旧的 `transparent_background` 配置。
 
-Standalone 的原生透明存在两处限制：原生请求成功但图片不透明时会报告未满足透明要求，而 Plugin 可以尝试本地回退；原生参数被拒绝后，Standalone 启用的重试会进入本地回退，即使传入了 `--no-postprocess`。如果禁止修改本地像素，请在发起原生请求前关闭 `transparency.native.retry_without_parameter`。
+重试会保留你对本地后处理的选择。允许处理时，按 `fallback_route` 处理图片，并保留原图和通过检查的处理图。设置 `postprocess.enabled=false`，或在 Standalone 中明确传入 `--no-postprocess` 时，只检查返回图片的透明情况；图片不透明就保留原图并报告未满足透明要求。Standalone 的 `--postprocess` 可为当前请求开启本地处理。这些处理开关不会改变 API 重试设置。
+
+Standalone 仍有一处限制：首次原生请求成功但图片不透明时，会报告未满足透明要求。Plugin 生成在允许本地处理时，可以尝试回退处理。
 
 ## 配置结果
 

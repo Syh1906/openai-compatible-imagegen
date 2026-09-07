@@ -217,9 +217,11 @@ New OpenAI-compatible API Key templates enable native transparency. Installation
 }
 ```
 
-Transparency is delivery intent. For `native-alpha`, the runtime sends `background=transparent` and PNG output only when transparency is requested, with a real-alpha prompt contract. The optional `transparency.native.model_ids` list is a capability declaration, not a code whitelist; an explicit native route is sent to the configured model even when the list is empty or does not contain that ID. A transparency-related provider HTTP 400/422 is retried once without the parameter by default, using the same model and endpoint, then the configured local fallback route is applied. Set `retry_without_parameter` to `false` to disable this retry. Results explain rejection, retry, final route, and QA. Legacy `transparent_background` configuration is rejected during migration.
+Transparency is delivery intent. For `native-alpha`, the runtime sends `background=transparent` and PNG output only when transparency is requested, with a real-alpha prompt contract. The optional `transparency.native.model_ids` list is a capability declaration, not a code whitelist; an explicit native route is sent to the configured model even when the list is empty or does not contain that ID. A transparency-related provider HTTP 400/422 is retried once without the parameter by default, using the same model and endpoint. Set `retry_without_parameter` to `false` to disable this retry. Results explain rejection, retry, final route, and QA. Legacy `transparent_background` configuration is rejected during migration.
 
-Standalone has two native-transparency limitations: a successful native request that returns an opaque image is reported as unmet, while the Plugin can attempt local fallback; and after native-parameter rejection, Standalone's enabled retry selects local fallback even with `--no-postprocess`. If local pixel changes are forbidden, disable `transparency.native.retry_without_parameter` before making a native request.
+The retry preserves your local processing choice. When processing is allowed, it uses `fallback_route` and keeps both the original and any validated processed image. With `postprocess.enabled=false`, or Standalone's explicit `--no-postprocess`, it only checks the returned alpha; an opaque image remains available with unmet transparency. Standalone's explicit `--postprocess` enables local processing for that run. These processing switches do not change the API retry setting.
+
+Standalone still reports unmet transparency when the initial native request succeeds but returns an opaque image. Plugin generation can attempt local fallback in this case when processing is allowed.
 
 ## Configuration result
 

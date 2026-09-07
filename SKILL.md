@@ -108,7 +108,7 @@ Important configuration fields:
 - `proxy.url`: optional complete `http://` or `https://` proxy URL for this provider. Credentials, paths, queries, fragments, and SOCKS URLs are not accepted.
 - `url_download.proxy_mode`: `environment` or explicitly authorized `direct`.
 - `defaults`: values used when a request omits a parameter.
-- `postprocess.enabled`: default permission for local transparency processing. Native-parameter retry has the separate limitation described below.
+- `postprocess.enabled`: default permission for local transparency processing, including native fallback.
 - `transparency.default_route`: `native-alpha`, `chroma-matting`, `emissive-alpha`, or `mask-alpha`.
 - `transparency.native`: native transparency permission, optional model capability declaration, parameter retry policy, and local fallback route.
 - `transparency.prompt_only_allow`: exact model/mode/size combinations verified for prompt-only alpha generation, primarily used when local processing is not preferred.
@@ -120,7 +120,7 @@ The old `capabilities.transparent_background` setting is removed. If it remains 
 
 Treat `--transparent` as delivery intent. The CLI `--background` accepts only `auto` or `opaque`. When the resolved route is `native-alpha`, the runtime sends API `background=transparent`, PNG output, and a real-alpha prompt contract; local routes omit that parameter.
 
-Map an explicit user preference to an explicit per-run switch: use `--postprocess` when the user allows or requests local processing. For non-native routes, `--no-postprocess` disables local transparency pixel changes: an exact prompt-only rule selects `prompt-alpha`; otherwise the runtime keeps the prompt unchanged and inspects returned alpha. It does not disable a selected native request. Explicit delivery transforms may still run after transparency passes. Omitting both switches inherits `postprocess.enabled`.
+Map an explicit user preference to an explicit per-run switch: use `--postprocess` when the user allows or requests local processing. `--no-postprocess` disables local transparency pixel changes, including native fallback. For non-native routes, an exact prompt-only rule selects `prompt-alpha`; otherwise the runtime keeps the prompt unchanged and inspects returned alpha. The switch does not disable a selected native request. Explicit delivery transforms may still run after transparency passes. Omitting both switches inherits `postprocess.enabled`.
 
 Choose the request route before sending the request:
 
@@ -130,9 +130,9 @@ Choose the request route before sending the request:
 4. For every other size, including 2K and 4K, continue the API request with the user's requested model, size, and prompt unchanged, preserve every returned original, and inspect source alpha without local pixel changes. Never turn model/size folklore into a local refusal.
 5. Report incomplete or contradictory contracts, such as disabled native transparency, `mask-alpha` without a mask, or a local route combined with `--no-postprocess`. An explicit `prompt-alpha` without an exact allow rule becomes source-alpha inspection: keep the prompt unchanged, call the API, and report the returned original. Do not silently change the model, endpoint, size, or retry policy.
 
-Native transparency has a separate configured retry: a transparency-related HTTP 400/422 allows one same-request retry without the background parameter when `transparency.native.retry_without_parameter=true`. The model, provider, endpoint, prompt, size, and editing inputs remain the same. Set the switch to `false` to stop on rejection. A successful retry selects `transparency.native.fallback_route` for local processing. A successful native request that returns an opaque image is preserved with unmet transparency in Standalone; the Plugin additionally selects its local fallback for that case. See [the parameter reference](references/parameters.md#visual-deliverables-and-transparency) for policy fields.
+Native transparency has a separate configured retry: a transparency-related HTTP 400/422 allows one same-request retry without the background parameter when `transparency.native.retry_without_parameter=true`. The model, provider, endpoint, prompt, size, and editing inputs remain the same. Set the switch to `false` to stop on rejection. A successful retry uses `transparency.native.fallback_route` only when local processing is allowed; otherwise it inspects the returned alpha without local pixel changes. A successful native request that returns an opaque image is preserved with unmet transparency in Standalone; the Plugin additionally selects its local fallback for that case when processing is allowed. See [the parameter reference](references/parameters.md#visual-deliverables-and-transparency) for policy fields.
 
-Known Standalone limitation: the native-parameter retry selects local processing even with `--no-postprocess`. If the user prohibits local pixel changes, explain this conflict and obtain approval to disable `transparency.native.retry_without_parameter` before sending a native request. Do not promise that the flag alone prevents native fallback, or silently change the retry policy. Preserve originals and report the final route, API attempts, and delivery status.
+Retry permission and local processing permission are independent. Keep the user's processing choice throughout retries. Preserve originals, include validated derivatives when local processing succeeds, and report the final route, API attempts, and delivery status.
 
 Choose among all declared deterministic routes rather than treating chroma keying as the universal method. Use `chroma-matting` for isolated subjects rendered against a known solid key color. Its default edge-connected color range protects matching subject colors; select `background_scope=global` only when the declared key background must also be removed from enclosed holes such as rings, handles, counters, and lettering. Use `emissive-alpha` for particles, fire, lightning, smoke, and glow rendered against pure black; it converts luminance to continuous alpha and preserves disconnected falloff. Use `mask-alpha` when an explicit alpha, luminance, red, green, or blue mask channel exists, including masks prepared with traditional channel-selection or layer-mask workflows. A mask path and any black/white source matte color are input facts, not values the deterministic processor guesses. Hair, fur, glass, translucent fabric, reflected light, and mixed smoke/background imagery without a trusted mask or controlled plate are outside reliable deterministic extraction; preserve the original and report `unmet` instead of guessing.
 
@@ -368,7 +368,7 @@ Post-processing parameters:
 - `--fit`: `stretch` (compatibility default) or `contain`.
 - `--safe-margin`: fractional edge margin used with `--fit contain`, for example `0.03`.
 - `--postprocess-out-dir`: directory for derived files.
-- `--postprocess` / `--no-postprocess`: allow or disable local transparency pixel processing for this run; see the native-retry limitation above before combining native transparency with `--no-postprocess`.
+- `--postprocess` / `--no-postprocess`: allow or disable local transparency pixel processing for this run, including fallback after a native-parameter retry.
 - `--transparency-route`: `native-alpha`, `chroma-matting`, `emissive-alpha`, `mask-alpha`, or `prompt-alpha`; an unverified `prompt-alpha` preserves the prompt and becomes source-alpha inspection.
 - `--transparency-mask`: explicit mask input required by `mask-alpha`.
 - `--transparency-param NAME=VALUE`: repeatable, route-specific parameter override.

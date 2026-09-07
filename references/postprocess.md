@@ -38,7 +38,7 @@ The default derived-output directory is next to the source file and ends with `-
 
 Use `--transparent` for a transparent delivery request. The flag forces PNG. Only the resolved `native-alpha` route sends API `background=transparent`; local routes omit that parameter.
 
-An explicit route wins when permitted by configuration and the processing switch. A configured `native-alpha` default is selected even when local processing is disabled. For non-native defaults, local processing uses `transparency.default_route`; when local processing is disabled, an exact prompt-only allow rule may select `prompt-alpha`. Otherwise, requests at any size still reach the API with the user's prompt unchanged and receive source-alpha inspection. See [native transparency, retry policy, and the Standalone processing-switch limitation](parameters.md#visual-deliverables-and-transparency).
+An explicit route wins when permitted by configuration and the processing switch. A configured `native-alpha` default is selected even when local processing is disabled; its parameter retry also preserves that processing choice. For non-native defaults, local processing uses `transparency.default_route`; when local processing is disabled, an exact prompt-only allow rule may select `prompt-alpha`. Otherwise, requests at any size still reach the API with the user's prompt unchanged and receive source-alpha inspection. See [native transparency, retry policy, and processing controls](parameters.md#visual-deliverables-and-transparency).
 
 | Route | Use when | Processing contract |
 | --- | --- | --- |

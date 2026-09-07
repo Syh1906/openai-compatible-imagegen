@@ -73,7 +73,7 @@ Transparency route selection is deterministic:
 
 | Condition | Route | Input contract | Result when transparency fails |
 | --- | --- | --- | --- |
-| Explicit `native-alpha` route, or selected `default_route=native-alpha` with `native.enabled=true` | `native-alpha` | API `background="transparent"`, PNG output, and a real-alpha prompt contract | On a transparency-related HTTP 400/422, retry once without the parameter when enabled, then use `native.fallback_route`; otherwise report the provider error |
+| Explicit `native-alpha` route, or selected `default_route=native-alpha` with `native.enabled=true` | `native-alpha` | API `background="transparent"`, PNG output, and a real-alpha prompt contract | On a transparency-related HTTP 400/422, retry once without the parameter when enabled; use `native.fallback_route` only when local processing is allowed, otherwise inspect source alpha. Without retry, report the provider error |
 | Explicit local route, or selected `default_route=chroma-matting` | `chroma-matting` | Uniform edge-connected key-color background | Return the API image unchanged and warn |
 | Explicit local route, or selected `default_route=emissive-alpha` | `emissive-alpha` | Emissive content on a dark edge-connected background | Return the API image unchanged and warn |
 | Explicit local route, or selected `default_route=mask-alpha` | `mask-alpha` | Explicit mask matching source dimensions | Return the API image unchanged and warn |
@@ -120,9 +120,9 @@ Example configuration:
 }
 ```
 
-Standalone `auth.json.model` accepts any non-empty model ID required by the provider; the runtime does not reject nonstandard names. `native.model_ids` is only a capability declaration. An empty array applies no ID prefilter, and an explicit `native-alpha` request is still sent when the configured model is absent from the list, provided native transparency is enabled and the protocol supports it. The provider decides whether that model supports the parameter. Native requests use `background="transparent"` and PNG output. A transparency-related HTTP 400/422 allows one retry without the parameter when `retry_without_parameter=true`; a successful retry uses `native.fallback_route`. Set `retry_without_parameter=false` to disable the retry. The result reports parameter rejection, retry use, final route, and QA status.
+Standalone `auth.json.model` accepts any non-empty model ID required by the provider; the runtime does not reject nonstandard names. `native.model_ids` is only a capability declaration. An empty array applies no ID prefilter, and an explicit `native-alpha` request is still sent when the configured model is absent from the list, provided native transparency is enabled and the protocol supports it. The provider decides whether that model supports the parameter. Native requests use `background="transparent"` and PNG output. A transparency-related HTTP 400/422 allows one retry without the parameter when `retry_without_parameter=true`; a successful retry uses `native.fallback_route` only when local processing is allowed. Otherwise it inspects source alpha without changing pixels. Set `retry_without_parameter=false` to disable the retry. The result reports parameter rejection, retry use, final route, and QA status.
 
-In Standalone, native retry currently enables local fallback even with `--no-postprocess`. Follow the [native-retry limitation](../SKILL.md#transparency-workflow) when local pixel changes are forbidden. If the initial native request succeeds but returns an opaque image, Standalone preserves it with unmet transparency; Plugin generation additionally selects local fallback in that case.
+The native retry preserves the effective processing choice: Standalone uses the per-run switch or inherits `postprocess.enabled`; the Plugin uses its resolved configuration. Disabling local processing does not disable the API retry. If the initial native request succeeds but returns an opaque image, Standalone preserves it with unmet transparency; Plugin generation can additionally select local fallback when processing is allowed.
 
 `llm_assisted.max_attempts` is the total number of transparency attempts, including the first run, and must be from 1 to 3. `allow_parameter_tuning` permits documented parameter changes, `allow_route_change` permits compatible route changes, and `allow_api_retry` permits another image API request. API retry remains disabled by default.
 
@@ -140,7 +140,7 @@ Real alpha pixels depend on the returned image. Use `inspect-image --expect-tran
 | `--safe-margin` | Fractional edge margin used with `contain` |
 | `--grid` | Explicit rows and columns such as `3x3` |
 | `--expected-count` | Per-source grid count, or QA output count when no grid is used |
-| `--postprocess` / `--no-postprocess` | Allow or disable local transparency pixel processing for non-native routes; see the native-retry limitation above |
+| `--postprocess` / `--no-postprocess` | Allow or disable local transparency pixel processing, including native fallback |
 | `--transparency-route` | Explicit `native-alpha`, `chroma-matting`, `emissive-alpha`, `mask-alpha`, or `prompt-alpha`; an unverified prompt route becomes source-alpha inspection |
 | `--transparency-mask` | Mask file required by `mask-alpha` |
 | `--transparency-param NAME=VALUE` | Repeatable route-specific option for commands |
