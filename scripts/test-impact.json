@@ -272,7 +272,7 @@
     },
     {
       "name": "test-support-mcp",
-      "files": ["tests/support/fenced-record-fixture.mjs", "tests/support/file-lock-owner-worker.mjs", "tests/support/mcp-tool-client.mjs", "tests/support/project-binding-read-race-worker.mjs"],
+      "files": ["tests/support/fenced-record-fixture.mjs", "tests/support/file-lock-owner-worker.mjs", "tests/support/mcp-tool-client.mjs", "tests/support/image-job-test-client.mjs", "tests/support/project-binding-read-race-worker.mjs"],
       "suites": ["mcp"]
     },
     {

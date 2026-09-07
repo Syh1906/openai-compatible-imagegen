@@ -19,6 +19,7 @@ from image_transparency import (  # noqa: E402
     TransparencyPlan,
     TransparencyUnavailableError,
     process_file,
+    resolve_native_fallback,
     resolve_plan,
     resolve_policy,
 )
@@ -78,6 +79,23 @@ class TransparencyPlanTests(unittest.TestCase):
         self.assertEqual(plan.mode, "native-alpha")
         self.assertIn("real alpha", plan.prompt.lower())
         self.assertEqual(plan.options["native_parameter"], "transparent")
+
+    def test_native_fallback_permission_survives_plan_storage(self) -> None:
+        policy = resolve_policy({
+            "default_route": "native-alpha",
+            "native": {"enabled": True},
+        })
+        for allowed in (False, True):
+            with self.subTest(allowed=allowed):
+                context = self.context(postprocess_allowed=allowed)
+                plan = resolve_plan(context, policy)
+                restored = TransparencyPlan.from_record(plan.to_record(), plan.prompt)
+                fallback = resolve_native_fallback(
+                    restored, prompt=context.prompt, model=context.model,
+                    mode=context.mode, size=context.size, policy=policy,
+                )
+                self.assertEqual(fallback.mode, "chroma-matting" if allowed else "inspect-alpha")
+                self.assertEqual(fallback.to_record()["native_local_fallback_allowed"], allowed)
 
     def test_exact_prompt_only_rule_adds_real_alpha_contract(self) -> None:
         policy = resolve_policy(

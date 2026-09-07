@@ -6,7 +6,7 @@
 
 用 Codex Plugin 编辑项目中的图片，并把结果保存为其他工具可以使用的文件。
 
-先在图片所在项目中完成[Plugin 配置](./configuration.zh-CN.md)。所装 Plugin 需要提供 `import_local_image` 和 `export_image_artifact` 工具；可让 Codex 检查是否可用。Git marketplace 与 Release ZIP 的功能可能不同，更新前请核对目标版本的[更新记录](../../CHANGELOG.md)，再按[更新指南](./updating.zh-CN.md)操作。
+先在图片所在项目中完成[Plugin 配置](./configuration.zh-CN.md)。所装 Plugin 需要提供 `import_local_image` 和 `export_image_artifact` 工具；可让 Codex 检查是否可用。不同版本提供的工具可能不同，更新前请核对目标版本的[更新记录](../../CHANGELOG.md)，再按[更新指南](./updating.zh-CN.md)操作。
 
 ## 编辑已有图片
 

@@ -6,14 +6,7 @@
 
 ## 用户指南
 
-| 任务 | 指南 |
-| --- | --- |
-| 选择并安装发行包 | [安装](./guides/installation.zh-CN.md) |
-| 连接图片服务 | [配置](./guides/configuration.zh-CN.md) |
-| 迁移旧配置 | [迁移](./guides/migration.zh-CN.md) |
-| 更新已安装发行包 | [更新](./guides/updating.zh-CN.md) |
-| 恢复已发布版本 | [回滚](./guides/rollback.zh-CN.md) |
-| 排查故障 | [故障排查](./guides/troubleshooting.zh-CN.md) |
+[用户指南目录](./guides/README.zh-CN.md)按任务列出安装、配置、图片使用、更新和故障恢复步骤。升级前可查看[更新记录](../CHANGELOG.md)。
 
 ## 贡献者
 
@@ -22,9 +15,6 @@
 | 模块边界和数据流 | [架构](./arch.zh-CN.md) |
 | 开发和 Pull Request | [Contributing](../CONTRIBUTING.md) |
 | 漏洞报告 | [Security policy](../SECURITY.md) |
-| 已发布行为变化 | [Changelog](../CHANGELOG.md) |
-
-贡献、漏洞报告和版本记录使用项目的英文规范文档。
 
 ## 给 Agent 的入口
 

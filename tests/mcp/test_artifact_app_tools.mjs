@@ -160,6 +160,7 @@ test("tool catalog exposes the model and app-only tool groups", async () => {
     assert.deepEqual(modelTools, [
       "batch_images",
       "bind_imagegen_project",
+      "cancel_image_job",
       "deliver_image",
       "destroy_image_editor",
       "edit_image",
@@ -169,6 +170,7 @@ test("tool catalog exposes the model and app-only tool groups", async () => {
       "get_image_artifact",
       "get_image_batch_manifest",
       "get_image_delivery_receipt",
+      "get_image_job",
       "import_local_image",
       "initialize_image_config",
       "inspect_image_config",
@@ -176,6 +178,7 @@ test("tool catalog exposes the model and app-only tool groups", async () => {
       "list_image_models",
       "prepare_host_image_import",
       "render_image_results",
+      "resume_image_job",
       "stage_host_image_import",
       "update_image_config",
     ]);
@@ -190,7 +193,7 @@ test("tool catalog exposes the model and app-only tool groups", async () => {
       "save_image_annotations",
       "save_image_editor_draft",
     ]);
-    assert.equal(tools.length, 29);
+    assert.equal(tools.length, 32);
   });
 });
 

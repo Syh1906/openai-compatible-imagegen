@@ -114,7 +114,7 @@ class PluginSkeletonTests(unittest.TestCase):
         self.assertIn("url_download.proxy_mode", text)
         self.assertIn("TLS EOF", text)
         self.assertIn("allow-direct-url-download", text)
-        self.assertIn("API key", text)
+        self.assertIn("api_key_env", text)
 
         config = json.loads(AUTH_EXAMPLE_PATH.read_text(encoding="utf-8"))
         self.assertEqual(config["url_download"], {"proxy_mode": "environment"})
@@ -271,10 +271,12 @@ class PluginSkeletonTests(unittest.TestCase):
 
         self.assertIn("batch_images", text)
         self.assertIn("call `batch_images` once", text)
-        self.assertIn("Before the final response, call `render_image_results` once", text)
+        for field in ("submissionKey", "jobId", "get_image_job", "nextOffset", "afterRevision", "expectedRevision"):
+            self.assertIn(field, text)
+        self.assertIn("Render all final results in groups of up to 10 IDs", text)
         self.assertIn("Do not wait for the user to request display", text)
         self.assertIn("historical image", text)
-        self.assertIn("Report item failures without retrying them", text)
+        self.assertIn("Report item failures without retrying generation", text)
         self.assertIn("For API Key requests", text)
         self.assertIn("Mask or canvas submissions", text)
         self.assertIn("one separate selected-route edit operation", text)
@@ -317,6 +319,7 @@ class PluginSkeletonTests(unittest.TestCase):
             [
                 "batch_images",
                 "bind_imagegen_project",
+                "cancel_image_job",
                 "deliver_image",
                 "destroy_image_editor",
                 "edit_image",
@@ -328,6 +331,7 @@ class PluginSkeletonTests(unittest.TestCase):
                 "get_image_batch_manifest",
                 "get_image_delivery_receipt",
                 "get_image_editor_session",
+                "get_image_job",
                 "import_local_image",
                 "initialize_image_config",
                 "inspect_image_config",
@@ -339,6 +343,7 @@ class PluginSkeletonTests(unittest.TestCase):
                 "read_image_artifact_data",
                 "render_image_results",
                 "report_imagegen_host_observation",
+                "resume_image_job",
                 "reveal_image_artifact",
                 "save_image_annotations",
                 "save_image_editor_draft",

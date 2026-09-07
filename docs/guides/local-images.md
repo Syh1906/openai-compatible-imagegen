@@ -6,7 +6,7 @@ Language: [简体中文](./local-images.zh-CN.md)
 
 Use the Codex Plugin to edit local images and save results as files for other tools.
 
-Complete [Plugin configuration](./configuration.md) in the project containing your images. Your installation must provide `import_local_image` and `export_image_artifact`; ask Codex to check whether they are available. Git marketplace and Release ZIP installations may have different features. Check the target version's [changelog](../../CHANGELOG.md) before following the [update guide](./updating.md).
+Complete [Plugin configuration](./configuration.md) in the project containing your images. Your installation must provide `import_local_image` and `export_image_artifact`; ask Codex to check whether they are available. Available tools depend on the installed version. Check the target version's [changelog](../../CHANGELOG.md) before following the [update guide](./updating.md).
 
 ## Edit an existing image
 

@@ -173,8 +173,6 @@ test("public navigation exposes the update guide from package entry points", asy
   const documents = await Promise.all([
     "README.md",
     "README.zh-CN.md",
-    "docs/README.md",
-    "docs/README.zh-CN.md",
     "docs/guides/README.md",
     "docs/guides/README.zh-CN.md",
     "docs/guides/installation.md",
@@ -189,6 +187,27 @@ test("public navigation exposes the update guide from package entry points", asy
   for (const [relativePath, document] of documents) {
     assert.match(document, /updating(?:\.zh-CN)?\.md/, relativePath);
   }
+});
+
+test("documentation indexes route to the complete user guide catalog", async () => {
+  for (const suffix of ["", ".zh-CN"]) {
+    const index = await readFile(path.join(projectRoot, `docs/README${suffix}.md`), "utf8");
+    assert.ok(publicRelativeLinks(index).includes("./guides/README.md"));
+    const guides = await readFile(path.join(projectRoot, `docs/guides/README${suffix}.md`), "utf8");
+    for (const topic of ["installation", "configuration", "local-images", "image-jobs", "migration", "updating", "rollback", "troubleshooting"]) {
+      assert.ok(guides.includes(`./${topic}${suffix}.md`), topic);
+    }
+  }
+});
+
+test("Standalone runtime references include native transparency and its retry control", async () => {
+  for (const relativePath of ["SKILL.md", "references/parameters.md", "references/postprocess.md", "references/prompting.md", "references/qa.md"]) {
+    const document = await readFile(path.join(projectRoot, relativePath), "utf8");
+    assert.match(document, /`native-alpha`/, relativePath);
+  }
+  const skill = await readFile(path.join(projectRoot, "SKILL.md"), "utf8");
+  assert.match(skill, /retry_without_parameter/, "Standalone native retry policy");
+  assert.match(skill, /`atlas`/, "Standalone optional provider protocol");
 });
 
 test("English and Chinese README files keep commands and public links synchronized", async () => {
@@ -212,8 +231,6 @@ test("public installation docs use the latest Skills CLI without pinning a packa
   const windowsGlobalCommand = 'npx --yes skills@latest add "C:/path/to/openai-compatible-imagegen" --global --agent codex --skill openai-compatible-imagegen --copy --yes';
 
   for (const documentPath of [
-    "README.md",
-    "README.zh-CN.md",
     "docs/guides/installation.md",
     "docs/guides/installation.zh-CN.md",
   ]) {
@@ -277,6 +294,8 @@ test("public docs keep localized pairs and English runtime skills", async () => 
     ["docs/guides/updating.md", "docs/guides/updating.zh-CN.md"],
     ["docs/guides/rollback.md", "docs/guides/rollback.zh-CN.md"],
     ["docs/guides/troubleshooting.md", "docs/guides/troubleshooting.zh-CN.md"],
+    ["docs/guides/local-images.md", "docs/guides/local-images.zh-CN.md"],
+    ["docs/guides/image-jobs.md", "docs/guides/image-jobs.zh-CN.md"],
   ];
 
   for (const [englishPath, chinesePath] of pairs) {
@@ -297,7 +316,7 @@ test("public docs keep localized pairs and English runtime skills", async () => 
     readFile(path.join(projectRoot, "docs/arch.zh-CN.md"), "utf8"),
   ]);
   for (const [englishHeading, chineseHeading] of [
-    ["Sources of truth", "真相源"],
+    ["Implementation map", "实现入口"],
     ["Core flow", "核心流程"],
     ["Distribution ownership", "发行职责"],
     ["Dependency direction", "依赖方向"],

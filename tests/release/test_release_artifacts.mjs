@@ -192,15 +192,15 @@ test("Standalone releases remain independent from Plugin filesystem adapters", a
 });
 
 
-test("shared prompting guidance keeps API retry permission Standalone-only", async () => {
+test("shared prompting guidance separates assisted retries from native parameter retries", async () => {
   const prompting = await readFile(path.join(projectRoot, "references/prompting.md"), "utf8");
   const pluginSkill = await readFile(
     path.join(projectRoot, "skills/openai-compatible-imagegen/SKILL.md"),
     "utf8",
   );
-  assert.match(prompting, /Standalone adapter/i);
-  assert.match(prompting, /Plugin adapter/i);
-  assert.match(prompting, /never[^.]*second[^.]*API request/i);
+  assert.match(prompting, /Standalone adapter[^.]*additional image API request only when `allow_api_retry=true`/i);
+  assert.match(prompting, /Plugin[^.]*only local adjustment through that policy/i);
+  assert.match(prompting, /Both adapters separately support the configured native-parameter retry/i);
   assert.match(pluginSkill, /Even if policy contains `allow_api_retry`, do not request the image API again/);
 });
 
@@ -301,18 +301,18 @@ test("release mode rejects baseline metadata and publishes clean artifacts for t
 });
 
 
-test("the release source builds the current v1.2.0 artifact set", async (t) => {
+test("the release source builds the current v1.3.0 artifact set", async (t) => {
   const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "imagegen-release-candidate-"));
   t.after(() => rm(outputDirectory, { recursive: true, force: true }));
 
   const result = await runBuild(outputDirectory);
 
-  assert.equal(result.version, "1.2.0");
+  assert.equal(result.version, "1.3.0");
   assert.deepEqual(result.files, [
     "SHA256SUMS",
-    "openai-compatible-imagegen-codex-plugin-1.2.0.zip",
-    "openai-compatible-imagegen-shared-python-sha256-1.2.0.json",
-    "openai-compatible-imagegen-skill-1.2.0.zip",
+    "openai-compatible-imagegen-codex-plugin-1.3.0.zip",
+    "openai-compatible-imagegen-shared-python-sha256-1.3.0.json",
+    "openai-compatible-imagegen-skill-1.3.0.zip",
   ]);
   assert.deepEqual((await readdir(outputDirectory)).sort(), result.files);
 });

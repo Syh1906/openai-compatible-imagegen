@@ -8,6 +8,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 
 import { createImagegenServer } from "../../mcp/create-server.mjs";
 import { createReleaseBundle, RELEASE_IDENTITY_PLACEHOLDER } from "../../mcp/release-identity.mjs";
+import { withCompletedImageJobs } from "./image-job-test-client.mjs";
 
 
 export const PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAEElEQVR4nGNgaPj/H4xhDABS0gn5PEa22gAAAABJRU5ErkJggg==";
@@ -59,6 +60,7 @@ export async function withClient(dependencies, callback) {
   const projectRoot = path.join(fixtureRoot, "workspace");
   await Promise.all([mkdir(pluginRoot), mkdir(projectRoot)]);
   const artifactRoot = path.join(projectRoot, "output", "imagegen");
+  await mkdir(artifactRoot, { recursive: true });
   let bound = false;
   const projectContext = {
     async bind() {
@@ -91,6 +93,7 @@ export async function withClient(dependencies, callback) {
   const expectedBindingReceipt = dependencies.expectedBindingReceipt ?? PROJECT_BINDING_RECEIPT;
   const serverDependencies = { ...dependencies };
   delete serverDependencies.expectedBindingReceipt;
+  delete serverDependencies.rawImageJobs;
   const server = createImagegenServer({
     releaseIdentity: TEST_RELEASE_IDENTITY,
     launchContext: { cwd: pluginRoot, pluginRoot },
@@ -120,6 +123,7 @@ export async function withClient(dependencies, callback) {
       },
       ...rest,
     );
+    if (!dependencies.rawImageJobs) client.callTool = withCompletedImageJobs(client.callTool);
     await callback(client);
   } finally {
     await client.close();

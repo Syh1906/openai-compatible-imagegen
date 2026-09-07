@@ -101,6 +101,62 @@ class TransparencyDeliveryRuntimeTests(unittest.TestCase):
             bytes(channel for pixel in pixels for channel in pixel),
         )
 
+    def test_native_fallback_respects_processing_permission_through_delivery(self) -> None:
+        original = self.chroma_source()
+        response = {"data": [{"b64_json": base64.b64encode(original).decode("ascii")}]}
+        parent = self.store_source(make_png(7, 7))
+        policy = self.runtime.TransparencyPolicy(
+            default_route="native-alpha",
+            native=self.runtime.NativeTransparencyPolicy(enabled=True, retry_without_parameter=True),
+        )
+        for operation, execution_mode in (
+            ("generate", None), ("edit", None),
+            ("generate", "batch-item"), ("edit", "batch-item"),
+        ):
+            for rejected_parameter in (True, False):
+                if execution_mode and not rejected_parameter:
+                    continue
+                for allowed in (False, True):
+                    with self.subTest(operation=operation, execution_mode=execution_mode, rejected=rejected_parameter, allowed=allowed):
+                        self.cfg = self.runtime.Config(**{
+                            **self.cfg.__dict__,
+                            "postprocess": {"enabled": allowed},
+                            "transparency": policy,
+                        })
+                        task = self.generation_task(
+                            operation, [parent.metadata["id"]] if operation == "edit" else [],
+                        )
+                        task["transparency"] = {"route": "native-alpha"}
+                        if execution_mode:
+                            task["executionMode"] = execution_mode
+                        responses = [response]
+                        if rejected_parameter:
+                            responses.insert(0, self.runtime.ProviderRequestError(
+                                "API HTTP 422: background transparent is not supported",
+                                status_code=422, operation=f"images/{operation}",
+                            ))
+                        request_name = "request_json" if operation == "generate" else "request_multipart"
+                        with mock.patch.object(self.runtime, request_name, side_effect=responses) as request:
+                            result = self.run_task(task)
+
+                        self.assertTrue(result["ok"], result)
+                        self.assertEqual(request.call_count, 2 if rejected_parameter else 1)
+                        source = result["artifacts"][0]
+                        plan = source["parameters"]["transparency"]
+                        expected_route = "chroma-matting" if allowed else "inspect-alpha"
+                        self.assertEqual(plan["mode"], expected_route)
+                        if not allowed:
+                            self.assertNotIn("transparent_delivery_fell_back_to_local_processing", plan["warnings"])
+                        delivery = self.deliver(source["id"], {"qa": True})
+                        self.assertTrue(delivery["ok"], delivery)
+                        self.assertEqual(delivery["deliveryReady"], allowed, delivery)
+                        self.assertEqual(len(delivery["artifacts"]), int(allowed))
+                        self.assertEqual(self.repository.get_artifact(source["id"]).image_bytes, original)
+                        if allowed:
+                            derived = delivery["artifacts"][0]
+                            self.assertEqual(derived["derivedFrom"], source["id"])
+                            self.assertNotEqual(derived["id"], source["id"])
+
     def test_direct_delivery_allocates_and_persists_an_immutable_receipt(self) -> None:
         source = self.store_source(make_png(4, 4))
 

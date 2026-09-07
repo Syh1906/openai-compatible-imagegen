@@ -1,4 +1,3 @@
-<!-- updated: 2026-08-25 -->
 # 安装
 
 > 上级：[用户指南](./README.zh-CN.md)
@@ -24,7 +23,7 @@
 - Git
 - Node.js 20 或更高版本
 - Python 3.12 或更高版本
-- API Key 路线所需的 OpenAI-compatible 图片服务和你自己的凭据，或提供图片生成能力的 Codex App 宿主
+- API Key 路线所需的图片 API 服务和你自己的凭据，或提供图片生成能力的 Codex App 宿主
 
 Plugin 已包含预构建的 MCP server 和 Widget。无需运行 `npm install`、构建仓库或启动本地 Web server。同一个 Plugin 压缩包支持 Windows、macOS 和 Linux。
 
@@ -48,34 +47,11 @@ codex plugin marketplace add Syh1906/openai-compatible-imagegen
 codex plugin add openai-compatible-imagegen@openai-compatible-imagegen
 ```
 
-3. 也可以在 Codex App 中打开 **Plugins**，或在交互式 Codex CLI 会话中输入 `/plugins`，选择 `openai-compatible-imagegen` marketplace，然后安装 **OpenAI-Compatible Images**。
-4. 使用 `codex plugin list --json` 确认已安装版本。
-5. 安装后完全退出并重新启动 Codex 一次，再开始新任务。
-6. 继续完成 [Plugin 配置](./configuration.zh-CN.md#配置-codex-plugin)。
+也可以在 Codex App 中打开 **Plugins**，或在交互式 Codex CLI 会话中输入 `/plugins`，选择 `openai-compatible-imagegen` marketplace，然后安装 **OpenAI-Compatible Images**。
 
-第一次配置也可以在新任务中要求 Agent 调用 `initialize_image_config`。使用 `inspect_image_config` 查看脱敏结果，使用 `update_image_config` 修改支持的字段。Plugin 安装目录和 Skill 目录不保存用户配置。
-
-### 透明配置默认值
-
-对于 API Key 配置，`initialize_image_config` 默认启用原生透明。它会选择 `native-alpha`，把 `transparency.native.enabled` 设为 `true`，并在供应商拒绝透明参数时默认允许去掉该参数重试一次。模型 ID 列表只是能力声明；有效 profile 和模型 ID 仍由用户配置。仅使用 ChatGPT 的配置不使用 provider 透明设置。
-
-已有配置会为了兼容性保留，安装时不会自动改写。如果 `inspect_image_config` 提示缺少 `transparency.native`，请显式更新配置：
-
-```json
-{
-  "transparency": {
-    "default_route": "native-alpha",
-    "native": {
-      "enabled": true,
-      "model_ids": ["供应商实际模型 ID"],
-      "retry_without_parameter": true,
-      "fallback_route": "chroma-matting"
-    }
-  }
-}
-```
-
-使用 `update_image_config` 应用变更，然后重新绑定项目，再次调用 `inspect_image_config`。工具会返回有效路线、重试策略、警告和下一步，不会返回凭据。
+3. 使用 `codex plugin list --json` 确认已安装版本。
+4. 安装后完全退出并重新启动 Codex 一次。
+5. 继续完成 [Plugin 配置](./configuration.zh-CN.md#配置-codex-plugin)。
 
 ### 从 Plugin ZIP 安装
 
@@ -125,7 +101,7 @@ codex plugin add openai-compatible-imagegen@openai-compatible-imagegen
    codex plugin add openai-compatible-imagegen@openai-compatible-imagegen
    ```
 
-6. 使用 `codex plugin list --json` 确认版本。完全退出并重新启动 Codex 一次，再开始新任务。
+6. 使用 `codex plugin list --json` 确认版本。完全退出并重新启动 Codex 一次。
 7. 继续完成 [Plugin 配置](./configuration.zh-CN.md#配置-codex-plugin)。
 
 Codex 从 marketplace 目录安装 Plugin，不能直接从 ZIP 安装。只要仍在使用这个本地 marketplace，就需要保留解压目录。日常更新仍推荐使用 Git marketplace。
@@ -146,26 +122,26 @@ Codex 从 marketplace 目录安装 Plugin，不能直接从 ZIP 安装。只要�
 
 - Python 3.12 或更高版本
 - 支持 Agent Skills 的 Agent 客户端
-- OpenAI-compatible 图片服务和你自己的凭据
+- 受支持的图片 API 服务和你自己的凭据
 
 ### 操作步骤
 
-1. 从 GitHub Release 下载 `openai-compatible-imagegen-skill-<version>.zip`。
+1. 从同一个 [GitHub Release](https://github.com/Syh1906/openai-compatible-imagegen/releases) 下载 `openai-compatible-imagegen-skill-<version>.zip` 和 `SHA256SUMS`，按[校验步骤](./updating.zh-CN.md#更新-standalone-skill)核对摘要。
 2. 解压后，`openai-compatible-imagegen` 目录根部必须存在 `SKILL.md`。
 3. 把该目录放入客户端支持的 Skill 路径：
 
 | 客户端 | 用户级路径 | 项目级路径 |
 | --- | --- | --- |
 | Codex | `~/.codex/skills/openai-compatible-imagegen` | `.codex/skills/openai-compatible-imagegen` |
-| Claude Code | `~/.claude/skills/openai-compatible-imagegen` | `.claude/skills/openai-compatible-imagegen` |
-| OpenCode | `~/.config/opencode/skill/openai-compatible-imagegen` | `.opencode/skill/openai-compatible-imagegen` |
+| [Claude Code](https://code.claude.com/docs/en/skills) | `~/.claude/skills/openai-compatible-imagegen` | `.claude/skills/openai-compatible-imagegen` |
+| [OpenCode](https://opencode.ai/docs/skills/) | `~/.config/opencode/skills/openai-compatible-imagegen` | `.opencode/skills/openai-compatible-imagegen` |
 
 4. 开始新任务或新会话，让客户端重新加载 Skill。
 5. 继续完成 [Standalone 配置](./configuration.zh-CN.md#配置-standalone-skill)。
 
 ### 使用第三方 Skills CLI 安装
 
-`skills` 是第三方 Agent Skills CLI，不属于 OpenAI 或 Codex。它只能用于已经解压的 Standalone 压缩包。运行前先选择安装作用域：
+[Skills CLI](https://skills.sh/docs/cli) 是第三方工具，需要 Node.js 和 npm。请用于已经解压的 Standalone 压缩包，运行前先选择安装作用域：
 
 | 作用域 | 可用范围 | 安装副本 |
 | --- | --- | --- |
@@ -202,7 +178,7 @@ npx --yes skills@latest add /path/to/openai-compatible-imagegen --global --agent
 
 源目录根部必须包含 `SKILL.md`，并同时包含 `scripts/`、`references/`、`examples/` 和 `agents/`。不要传入仓库根目录，否则 Plugin、MCP、Widget、测试和文档文件也会被复制到 Skill 目标目录。
 
-两条命令都使用 `skills@latest`，让新安装获取当前 CLI。项目级安装会在项目中创建 `skills-lock.json`；用户级安装不会创建该项目锁文件。
+这些命令使用 `skills@latest`，让新安装获取当前 CLI。项目级安装会在项目中创建 `skills-lock.json`；用户级安装不会创建该项目锁文件。
 
 该 CLI 路线只用于首次安装。本地复制安装存在以下维护限制：
 
@@ -220,7 +196,3 @@ npx --yes skills@latest add /path/to/openai-compatible-imagegen --global --agent
 | 运行入口 | `scripts/imagegen.py` | `.mcp.json` 启动 `dist/server.mjs` |
 | UI | 仅宿主会话 | Codex App 中的结果卡和聚焦画布 |
 | 配置 | 安装目录中的 `auth.json` | 用户和可选项目 `config.json` |
-
-是否进入公开 Plugins Directory 与本项目的 Git 发布渠道无关。
-
-每个 GitHub Release 还提供 `openai-compatible-imagegen-codex-plugin-<version>.zip`，用于固定版本安装、离线检查、归档和回滚。下载后应使用该 Release 的 `SHA256SUMS` 校验。Git marketplace 仍是正常的 Plugin 安装渠道。

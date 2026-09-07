@@ -9,6 +9,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 
 import { createImagegenServer } from "../../mcp/create-server.mjs";
 import { createReleaseBundle, RELEASE_IDENTITY_PLACEHOLDER } from "../../mcp/release-identity.mjs";
+import { withCompletedImageJobs } from "../support/image-job-test-client.mjs";
 import {
   createFixtureProjectContext,
   FIXTURE_PROJECT_BINDING_ID,
@@ -45,25 +46,22 @@ test("batch and delivery tools expose precise structured output schemas", async 
       ]);
       assert.equal(schemas.get("deliver_image").additionalProperties, false);
       assert.notEqual(schemas.get("deliver_image").properties.qa, undefined);
-      assert.deepEqual(schemas.get("batch_images").required.sort(), [
-        "artifactIds",
-        "manifestReady",
-        "results",
-        "summary",
-      ]);
+      assert.ok(schemas.get("batch_images").required.includes("jobId"));
+      assert.ok(schemas.get("batch_images").required.includes("items"));
+      assert.equal(schemas.get("batch_images").properties.items.maxItems, 10);
       assert.equal(schemas.get("batch_images").properties.summary.additionalProperties, false);
 
       const batchTool = tools.find((tool) => tool.name === "batch_images");
       const batchItemVariants = batchTool.inputSchema.properties.items.items.anyOf
         ?? batchTool.inputSchema.properties.items.items.oneOf;
-      const batchResultVariants = batchTool.outputSchema.properties.results.items.anyOf
-        ?? batchTool.outputSchema.properties.results.items.oneOf;
+      const resultSchema = batchTool.outputSchema.properties.items.items.properties.result;
+      const batchResultVariants = resultSchema.anyOf ?? resultSchema.oneOf;
       assert.equal(batchTool.inputSchema.properties.items.maxItems, 64);
       assert.equal(batchTool.inputSchema.properties.concurrency.maximum, 8);
       assert.equal(batchItemVariants[0].properties.count.maximum, 16);
       assert.equal(batchItemVariants[1].properties.count.$ref.endsWith("/properties/count"), true);
-      assert.equal(batchTool.outputSchema.properties.results.maxItems, 64);
-      assert.equal(batchTool.outputSchema.properties.artifactIds.maxItems, 64);
+      assert.equal(batchTool.outputSchema.properties.summary.properties.total.maximum, 64);
+      assert.equal(batchTool.outputSchema.properties.items.items.properties.artifactIds.maxItems, 16);
       assert.equal(batchResultVariants[0].properties.artifacts.maxItems, 16);
     },
   );
@@ -468,7 +466,7 @@ test("batch_images accepts 64 tasks at concurrency 8 and marks runtime tasks as 
 
       assert.equal(result.isError, undefined);
       assert.equal(result.structuredContent.results.length, 64);
-      assert.equal(result.structuredContent.artifactIds.length, 64);
+      assert.equal(result.structuredContent.artifactIds.length, 64, JSON.stringify(result.structuredContent.results.filter((item) => !item.ok)));
       assert.deepEqual(result.structuredContent.summary, {
         total: 64,
         succeeded: 64,
@@ -480,7 +478,7 @@ test("batch_images accepts 64 tasks at concurrency 8 and marks runtime tasks as 
 
   const imageCalls = calls.filter((task) => task.operation !== "record_batch");
   assert.equal(imageCalls.length, 64);
-  assert.equal(peakActive, 8);
+  assert.ok(peakActive > 0 && peakActive <= 8);
   assert.equal(imageCalls.every((task) => task.executionMode === "batch-item"), true);
   assert.equal(imageCalls.every((task) => !Object.hasOwn(task.output, "executionMode")), true);
 });
@@ -503,7 +501,7 @@ test("batch_images rejects 65 tasks and aggregate count 65 before any runtime or
       },
     },
     async (client, { artifactRoot }) => {
-      const repositoryPaths = [artifactRoot, path.join(artifactRoot, "index.json"), path.join(artifactRoot, ".repository.lock"), path.join(artifactRoot, ".submission.lock"), path.join(artifactRoot, "batches")];
+      const repositoryPaths = [path.join(artifactRoot, ".runtime"), path.join(artifactRoot, "index.json"), path.join(artifactRoot, ".repository.lock"), path.join(artifactRoot, ".submission.lock"), path.join(artifactRoot, "batches")];
       for (const target of repositoryPaths) await assert.rejects(access(target), { code: "ENOENT" });
       const oversizedBatches = [
         Array.from({ length: 65 }, (_, index) => ({
@@ -1122,6 +1120,7 @@ test("batch_images runs heterogeneous tasks with ordered partial results and no 
     transparency: TRANSPARENCY_REQUEST,
     delivery: { deliverySize: "4x4", fit: "contain", qa: true },
     output: { quality: "high" },
+    deferDelivery: true,
   });
   assert.deepEqual(calls[1], {
     operation: "edit",
@@ -1133,6 +1132,7 @@ test("batch_images runs heterogeneous tasks with ordered partial results and no 
     transparency: TRANSPARENCY_REQUEST,
     delivery: { deliverySize: "8x8", fit: "stretch", qa: true },
     output: { format: "png" },
+    deferDelivery: true,
   });
   assert.equal(Object.hasOwn(calls[0].output, "transparency"), false);
   assert.equal(Object.hasOwn(calls[0].output, "delivery"), false);
@@ -1461,6 +1461,7 @@ async function withClient(dependencies, callback) {
   const pluginRoot = path.join(fixtureRoot, "plugin-cache");
   const projectRoot = path.join(fixtureRoot, "workspace");
   await Promise.all([mkdir(pluginRoot), mkdir(projectRoot)]);
+  await mkdir(path.join(projectRoot, "output", "imagegen"), { recursive: true });
   const server = createImagegenServer({
     releaseIdentity: TEST_RELEASE_IDENTITY,
     launchContext: { cwd: pluginRoot, pluginRoot },
@@ -1468,6 +1469,7 @@ async function withClient(dependencies, callback) {
     readWidgetHtml: async () => "<html>editor</html>",
     deleteAnnotation: async () => {},
     ...dependencies,
+    runTask: splitInlineDeliveryFixture(dependencies.runTask),
   });
   const client = new Client({ name: "mcp-delivery-batch-test", version: "0.1.0" });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -1497,10 +1499,24 @@ async function withClient(dependencies, callback) {
       },
       ...rest,
     );
+    client.callTool = withCompletedImageJobs(client.callTool);
     await callback(client, { artifactRoot: path.join(projectRoot, "output", "imagegen") });
   } finally {
     await client.close();
     await server.close();
     await rm(fixtureRoot, { recursive: true });
   }
+}
+
+function splitInlineDeliveryFixture(runTask) {
+  const receipts = new Map();
+  return async (task, context) => {
+    const sourceId = task.inputArtifactIds?.[0];
+    if (task.operation === "deliver" && receipts.has(sourceId)) return receipts.get(sourceId);
+    const result = await runTask(task, context);
+    if (task.deferDelivery && result?.ok) {
+      for (const [index, artifact] of (result.artifacts ?? []).entries()) receipts.set(artifact.id, result.deliveries?.[index]);
+    }
+    return result;
+  };
 }

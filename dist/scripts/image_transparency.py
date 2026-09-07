@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import math
 import json
 from pathlib import Path
@@ -124,6 +124,7 @@ class TransparencyPlan:
     llm_assisted: LlmAssistedPolicy = field(default_factory=LlmAssistedPolicy)
     native_retry_without_parameter: bool = False
     native_fallback_route: str | None = None
+    native_local_fallback_allowed: bool = False
     native_attempted: bool = False
     native_parameter: str | None = None
     retried_without_parameter: bool = False
@@ -140,6 +141,7 @@ class TransparencyPlan:
             "llm_assisted": self.llm_assisted.to_record(),
             "native_retry_without_parameter": self.native_retry_without_parameter,
             "native_fallback_route": self.native_fallback_route,
+            "native_local_fallback_allowed": self.native_local_fallback_allowed,
             "native_attempted": self.native_attempted,
             "native_parameter": self.native_parameter,
             "retried_without_parameter": self.retried_without_parameter,
@@ -160,6 +162,7 @@ class TransparencyPlan:
             llm_assisted=_resolve_llm_assisted(value.get("llm_assisted")),
             native_retry_without_parameter=bool(value.get("native_retry_without_parameter", False)),
             native_fallback_route=(str(value["native_fallback_route"]) if value.get("native_fallback_route") else None),
+            native_local_fallback_allowed=bool(value.get("native_local_fallback_allowed", False)),
             native_attempted=bool(value.get("native_attempted", False)),
             native_parameter=(str(value["native_parameter"]) if value.get("native_parameter") else None),
             retried_without_parameter=bool(value.get("retried_without_parameter", False)),
@@ -408,6 +411,7 @@ def resolve_plan(context: TransparencyContext, policy: TransparencyPolicy) -> Tr
             llm_assisted=policy.llm_assisted,
             native_retry_without_parameter=policy.native.retry_without_parameter,
             native_fallback_route=policy.native.fallback_route,
+            native_local_fallback_allowed=context.postprocess_allowed,
         )
     if route in LOCAL_ROUTES:
         if not context.postprocess_allowed:
@@ -452,6 +456,44 @@ def resolve_plan(context: TransparencyContext, policy: TransparencyPolicy) -> Tr
         mode=INSPECT_ALPHA_ROUTE,
         prompt=context.prompt,
         llm_assisted=policy.llm_assisted,
+    )
+
+
+def resolve_native_fallback(
+    plan: TransparencyPlan,
+    *,
+    prompt: str,
+    model: str,
+    mode: str,
+    size: str,
+    policy: TransparencyPolicy,
+    reference_paths: tuple[Path, ...] = (),
+) -> TransparencyPlan:
+    """Keep the original processing permission when native alpha is unavailable."""
+    if not plan.native_local_fallback_allowed:
+        return TransparencyPlan(
+            mode=INSPECT_ALPHA_ROUTE,
+            prompt=prompt,
+            llm_assisted=plan.llm_assisted,
+            warnings=("transparent_delivery_local_processing_disabled",),
+        )
+    fallback = resolve_plan(
+        TransparencyContext(
+            requested=True,
+            prompt=prompt,
+            model=model,
+            mode=mode,
+            size=size,
+            postprocess_allowed=plan.native_local_fallback_allowed,
+            reference_paths=reference_paths,
+            route=plan.native_fallback_route or "chroma-matting",
+        ),
+        policy,
+    )
+    return replace(
+        fallback,
+        native_local_fallback_allowed=plan.native_local_fallback_allowed,
+        warnings=("transparent_delivery_fell_back_to_local_processing",),
     )
 
 

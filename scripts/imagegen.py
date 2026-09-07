@@ -64,13 +64,12 @@ from image_postprocess import (
 from image_resize import fit_to_canvas as fit_pixels_to_canvas, resize_pixels
 from image_transparency import (
     LOCAL_ROUTES,
-    TransparencyContext,
     TransparencyPlan,
     TransparencyUnavailableError,
     normalize_route_options,
     parse_option_assignments,
     process_file as process_transparency_file,
-    resolve_plan,
+    resolve_native_fallback,
 )
 from image_transparency_runtime import (
     apply_prompt_directives,
@@ -492,18 +491,14 @@ def fallback_transparency_plan(
     cfg: Config,
     reference_paths: list[Path] | None = None,
 ) -> TransparencyPlan:
-    return resolve_plan(
-        TransparencyContext(
-            requested=True,
-            prompt=prompt,
-            model=str(params["model"]),
-            mode=mode,
-            size=str(params["size"]),
-            postprocess_allowed=True,
-            reference_paths=tuple(reference_paths or ()),
-            route=plan.native_fallback_route or "chroma-matting",
-        ),
-        cfg.transparency,
+    return resolve_native_fallback(
+        plan,
+        prompt=prompt,
+        model=str(params["model"]),
+        mode=mode,
+        size=str(params["size"]),
+        policy=cfg.transparency,
+        reference_paths=tuple(reference_paths or ()),
     )
 
 
@@ -544,7 +539,7 @@ def request_with_transparency_retry(
             native_parameter="rejected",
             retried_without_parameter=True,
             api_attempts=2,
-            warnings=("native_transparency_rejected", "transparent_delivery_fell_back_to_local_processing"),
+            warnings=("native_transparency_rejected", *fallback.warnings),
         )
         return request_call(retry_payload), fallback
     except ValueError as exc:

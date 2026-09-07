@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import importlib.util
 import http.client
 import io
@@ -1166,6 +1167,66 @@ class ParameterResolutionTests(unittest.TestCase):
         self.assertNotIn("background", request_json.call_args_list[1].args[2])
         self.assertEqual(result["transparency"]["mode"], "chroma-matting")
         self.assertTrue(result["transparency"]["retried_without_parameter"])
+
+    def test_native_retry_preserves_postprocess_choice_and_original_bytes(self) -> None:
+        from image_transparency import resolve_policy
+
+        pixels = [(0, 255, 0, 255)] * 49
+        for y in range(2, 5):
+            for x in range(2, 5):
+                pixels[y * 7 + x] = (220, 30, 40, 255)
+        original = rgba_png_bytes(7, 7, pixels)
+        response = {"data": [{"b64_json": base64.b64encode(original).decode("ascii")}]}
+        policy = resolve_policy({
+            "default_route": "native-alpha",
+            "native": {"enabled": True, "retry_without_parameter": True},
+        })
+        cases = [
+            (True, False, {}, False),
+            (False, None, {}, False),
+            (True, None, {"postprocess": False}, False),
+            (False, True, {}, True),
+            (True, None, {}, True),
+        ]
+        for operation in ("generate", "edit"):
+            for configured, explicit, task, allowed in cases:
+                with self.subTest(operation=operation, configured=configured, explicit=explicit, task=task):
+                    with tempfile.TemporaryDirectory() as directory:
+                        root = Path(directory)
+                        parent = root / "parent.png"
+                        make_rgba_png(parent, 7, 7, [(220, 30, 40, 255)] * 49)
+                        cfg = self.imagegen.Config(**{
+                            **self.cfg.__dict__,
+                            "postprocess": {"enabled": configured},
+                            "transparency": policy,
+                        })
+                        args = self.make_args(
+                            transparent=True, prompt="A red enamel badge",
+                            file=str(root / "original.png"), image=[str(parent)],
+                            postprocess=explicit,
+                        )
+                        rejected = self.imagegen.ApiRequestError(
+                            "API HTTP 422: background transparent is not supported",
+                            status_code=422, operation=f"images/{operation}",
+                        )
+                        request_name = "request_json" if operation == "generate" else "request_multipart"
+                        with mock.patch.object(self.imagegen, request_name, side_effect=[rejected, response]) as request:
+                            record = getattr(self.imagegen, operation)(cfg, args, task)
+                        result = self.imagegen.apply_postprocess(record, args, cfg, task)
+
+                        self.assertEqual(request.call_count, 2)
+                        self.assertNotIn("background", request.call_args_list[1].args[2])
+                        self.assertEqual(Path(result["original_files"][0]).read_bytes(), original)
+                        self.assertEqual(result["delivery_ready"], allowed)
+                        self.assertEqual(len(result.get("derived_files", [])), int(allowed))
+                        self.assertEqual(len(result["files"]), 2 if allowed else 1)
+                        expected_route = "chroma-matting" if allowed else "inspect-alpha"
+                        self.assertEqual(result["transparency"]["mode"], expected_route)
+                        if not allowed:
+                            self.assertNotIn(
+                                "transparent_delivery_fell_back_to_local_processing",
+                                result["transparency"]["warnings"],
+                            )
 
     def test_generate_uses_explicit_emissive_route_and_tuning(self) -> None:
         args = self.make_args(

@@ -37,7 +37,20 @@ Use focused tests while iterating:
 npm run test:suite -- mcp
 npm run test:suite -- web
 node --test tests/mcp/test_mcp_tools.mjs
+```
+
+For a single Python test file, use the platform's interpreter.
+
+Windows PowerShell:
+
+```powershell
 python -m unittest discover -s tests/standalone -p test_imagegen_auth.py
+```
+
+macOS or Linux shell:
+
+```bash
+python3 -m unittest discover -s tests/standalone -p test_imagegen_auth.py
 ```
 
 `npm test` is the smart regression entry point. It reads the changed files from Git and selects only the affected suites. An unmapped source path fails closed and requires an impact rule. Use `npm run test:release` only for the complete release regression; it is not part of ordinary push or pull request checks.
@@ -70,7 +83,7 @@ Put reusable fixtures and test helpers in `tests/support/`. Support files are no
 Prepare the release in this order:
 
 1. Move the user-visible entries from `Unreleased` into a dated version section in `CHANGELOG.md` and update its comparison links.
-2. Add `.github/release-notes/<tag>.md` with an opening summary and non-empty `Highlights`, `Install`, and `Known limitations` sections. The installation section must link to the same tag's installation guide and require `SHA256SUMS` verification.
+2. Add `.github/release-notes/<tag>.md` with an opening summary and non-empty `Highlights`, `Install`, and `Known limitations` sections. For new releases, also include `Commits` / `涉及提交`: group feature, fix, and documentation commits by change area, with a short SHA linked to the full commit and a reader-facing summary. Derive the entries from the previous release tag through the final release history, refreshing SHAs after squash or rebase. Link the complete `<previous-tag>...<tag>` comparison so readers can also find version metadata and release-preparation commits without requiring the notes commit to reference its own SHA. The installation section must link to the same tag's installation guide and require `SHA256SUMS` verification.
 3. Align `.codex-plugin/plugin.json`, `package.json`, `package-lock.json`, marketplace metadata, and built `dist/` files.
 4. Run `Release preflight` from the final commit, enter that same full 40-character commit SHA, and retain its workflow run ID after all platform candidates and byte comparisons pass.
 5. After maintainer approval, create and push one annotated version tag pointing to that exact SHA.

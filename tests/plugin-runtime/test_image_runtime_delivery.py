@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import json
 from pathlib import Path
 import tempfile
@@ -37,6 +38,21 @@ class ImageRuntimeDeliveryTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         self.temp_dir.cleanup()
+
+    def test_deferred_delivery_publishes_originals_without_starting_local_delivery(self) -> None:
+        image = base64.b64encode(make_png(2, 2)).decode("ascii")
+        with mock.patch.object(self.imagegen, "request_json", return_value={"data": [{"b64_json": image}]}), mock.patch.object(
+            self.imagegen, "run_inline_deliveries", side_effect=AssertionError("delivery started before checkpoint")
+        ):
+            result = self.imagegen.run_machine_task(
+                {"operation": "generate", "modelProfileId": "primary/gpt-image-2", "prompt": "source",
+                 "output": {"size": "2x2"}, "delivery": {"deliverySize": "4x4"}, "deferDelivery": True},
+                self.project_root, self.artifact_root, cfg=self.cfg,
+            )
+        self.assertTrue(result["ok"], result)
+        self.assertNotIn("deliveries", result)
+        self.assertEqual(len(result["artifacts"]), 1)
+        self.assertEqual(self.repository.get_artifact(result["artifacts"][0]["id"]).metadata["operation"], "generate")
 
     def store_source(self, width: int, height: int, prompt: str):
         return self.repository.store_images(
