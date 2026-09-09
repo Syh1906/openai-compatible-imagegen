@@ -460,7 +460,8 @@ async function loadModelCapabilities() {
     const result = await boundToolClient.callServerTool({ name: "list_image_models", arguments: {} });
     if (!resourceActive) return;
     hostObservationReporter.observeToolCall(result);
-    const model = result?.structuredContent?.models?.find((item) => item.id === "primary/gpt-image-2");
+    const catalog = result?.structuredContent;
+    const model = catalog?.models?.find((item) => item.id === catalog.activeProfile);
     if (result.isError || !model?.capabilities) throw new Error("model capabilities unavailable");
     modelCapabilities = model.capabilities;
     render();

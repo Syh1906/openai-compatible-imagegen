@@ -205,7 +205,7 @@ test("all product tools declare precise structured output schemas", async () => 
         "status",
       ]);
 
-      assert.deepEqual(schemas.get("list_image_models").required, ["models"]);
+      assert.deepEqual(schemas.get("list_image_models").required, ["activeProfile", "models"]);
       assert.deepEqual(schemas.get("list_image_models").properties.models.items.required.sort(), ["capabilities", "id", "model", "provider"]);
       assert.equal(schemas.get("list_image_models").properties.models.items.additionalProperties, false);
       assert.deepEqual(Object.keys(schemas.get("list_image_models").properties.models.items.properties.capabilities.properties).sort(), ["edit", "generate", "mask", "multi_reference"]);
@@ -1445,6 +1445,7 @@ test("list_image_models returns only safe configured model capabilities", async 
     async (client) => {
       const result = await client.callTool({ name: "list_image_models", arguments: {} });
       assert.deepEqual(result.structuredContent.models, models);
+      assert.equal(result.structuredContent.activeProfile, "primary/gpt-image-2");
       assert.equal(JSON.stringify(result).includes("api_key"), false);
       assert.equal(JSON.stringify(result).includes("base_url"), false);
     },

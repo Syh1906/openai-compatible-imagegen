@@ -566,7 +566,7 @@ function validateDefaults(value, allowedKeys, errorCode) {
   if (value.size !== undefined && (typeof value.size !== "string" || !/^\d+x\d+$/.test(value.size))) {
     throw configError(errorCode);
   }
-  if (value.quality !== undefined && !new Set(["auto", "low", "medium", "high"]).has(value.quality)) {
+  if (value.quality !== undefined && !new Set(["auto", "low", "medium", "high", "xhigh", "max"]).has(value.quality)) {
     throw configError(errorCode);
   }
   if (value.output_format !== undefined && !new Set(["png", "jpeg", "webp"]).has(value.output_format)) {

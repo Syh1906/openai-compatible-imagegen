@@ -34,6 +34,20 @@ class ImageConfigMigrationTests(unittest.TestCase):
     def tearDown(self) -> None:
         self.temp_dir.cleanup()
 
+    def test_migration_preserves_explicit_extended_quality_defaults(self) -> None:
+        for quality in ("xhigh", "max"):
+            with self.subTest(quality=quality):
+                source = standalone_config(api_key_env="IMAGEGEN_KEY")
+                source["defaults"]["quality"] = quality
+                self.write_source(source)
+                plan = migrate_image_config.plan_migration(
+                    source_path=self.source,
+                    source_kind="standalone",
+                    user_target=self.user_target,
+                )
+                self.assertTrue(plan.ready_to_write)
+                self.assertEqual(plan.user_config["defaults"]["quality"], quality)
+
     def test_standalone_env_key_migrates_to_the_user_config_only(self) -> None:
         source = standalone_config(api_key_env="IMAGEGEN_KEY", api_key="source-secret")
         source["proxy"] = {"url": "http://127.0.0.1:7890"}
@@ -191,21 +205,31 @@ class ImageConfigMigrationTests(unittest.TestCase):
             )
         self.assertFalse(self.user_target.exists())
 
-    def test_unknown_model_stops_without_switching_models(self) -> None:
-        self.write_source(standalone_config(api_key_env="IMAGEGEN_KEY", model="other-image-model"))
-        source_before = self.source.read_bytes()
+    def test_custom_model_ids_migrate_without_switching_models(self) -> None:
+        for source_kind in ("standalone", "development-plugin"):
+            for model in ("gpt-image-2.5-sunburst", "gpt-image-2.5-flare", "vendor/image25-fast-v3"):
+                with self.subTest(source_kind=source_kind, model=model):
+                    source = standalone_config(api_key_env="IMAGEGEN_KEY", model=model)
+                    if source_kind == "development-plugin":
+                        source = development_plugin_config()
+                        source["models"]["primary/gpt-image-2"]["model"] = model
+                    self.write_source(source)
+                    source_before = self.source.read_bytes()
+                    plan = migrate_image_config.plan_migration(
+                        source_path=self.source, source_kind=source_kind, user_target=self.user_target,
+                    )
+                    self.assertEqual(plan.user_config["models"]["primary/gpt-image-2"]["model"], model)
+                    self.assertEqual(self.source.read_bytes(), source_before)
+                    self.assertFalse(self.user_target.exists())
 
-        with self.assertRaisesRegex(
-            migrate_image_config.ConfigMigrationError,
-            "migration_model_unsupported",
-        ):
-            migrate_image_config.plan_migration(
-                source_path=self.source,
-                source_kind="standalone",
-                user_target=self.user_target,
-            )
-        self.assertEqual(self.source.read_bytes(), source_before)
-        self.assertFalse(self.user_target.exists())
+    def test_invalid_model_ids_are_rejected_by_migration(self) -> None:
+        for model in ("", "  ", 25, {"id": "image25"}):
+            with self.subTest(model=model):
+                self.write_source(standalone_config(api_key_env="IMAGEGEN_KEY", model=model))
+                with self.assertRaisesRegex(migrate_image_config.ConfigMigrationError, "migration_source_invalid"):
+                    migrate_image_config.plan_migration(
+                        source_path=self.source, source_kind="standalone", user_target=self.user_target,
+                    )
 
     def test_cli_defaults_to_redacted_dry_run_and_writes_only_with_write_flag(self) -> None:
         self.write_source(standalone_config(api_key_env="IMAGEGEN_KEY"))

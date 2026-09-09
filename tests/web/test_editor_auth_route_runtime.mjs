@@ -10,6 +10,33 @@ import {
 } from "../support/widget-runtime-host.mjs";
 import { JSDOM } from "jsdom";
 
+test("canvas reads the explicitly active custom profile rather than the legacy profile", async () => {
+  const dom = new JSDOM("<!doctype html><html><head></head><body><main></main></body></html>", {
+    url: "https://widget.local/", pretendToBeVisual: true,
+  });
+  const previous = installDomGlobals(dom.window);
+  const host = installHost(dom.window, {
+    toolName: "open_image_editor",
+    modelCatalog: {
+      activeProfile: "vendor/image25",
+      models: [{ id: "vendor/image25", provider: "vendor", model: "gpt-image-2.5-flare", capabilities: { mask: true } }],
+    },
+  });
+  try {
+    await import(`../../web/editor-runtime.mjs?custom-profile=${Date.now()}`);
+    await waitFor(() => host.toolCalls.some(({ name }) => name === "list_image_models"));
+    await waitFor(() => document.querySelector("[data-image]")?.hidden === false);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    assert.doesNotMatch(document.body.textContent, /无法读取当前模型能力/);
+  } finally {
+    sendToApp(dom.window, { jsonrpc: "2.0", id: "custom-profile-teardown", method: "ui/resource-teardown", params: {} });
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    host.dispose();
+    restoreDomGlobals(previous);
+    dom.window.close();
+  }
+});
+
 
 test("canvas keeps both routes visible and submits ChatGPT edits", async () => {
   const dom = new JSDOM("<!doctype html><html><head></head><body><main></main></body></html>", {

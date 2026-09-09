@@ -265,3 +265,25 @@ async function until(predicate) {
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
 }
+
+test("background rejection is a definite failure and never resubmits", async () => {
+  await fixture(async (context) => {
+    let calls = 0;
+    const manager = createImageJobManager({ executeItem: async ({ index }) => {
+      calls += 1;
+      const rejected = outcome(index);
+      rejected.result.error.code = "background_parameter_rejected";
+      rejected.manifestResult.errorCode = "background_parameter_rejected";
+      return rejected;
+    } });
+    try {
+      const receipt = await manager.submit({ context, submissionKey: "background-rejection", spec: spec(1, 1) });
+      await manager.drain();
+      const final = await manager.get({ context, jobId: receipt.jobId });
+      assert.equal(final.summary.failed, 1);
+      assert.equal(final.summary.unknown, 0);
+      await manager.submit({ context, submissionKey: "background-rejection", spec: spec(1, 1) });
+      assert.equal(calls, 1);
+    } finally { await manager.close(); }
+  });
+});

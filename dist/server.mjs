@@ -51,7 +51,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 var define_RELEASE_IDENTITY_default;
 var init_define_RELEASE_IDENTITY = __esm({
   "<define:__RELEASE_IDENTITY__>"() {
-    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "1.3.0", serverBuildDigest: "926f23f8884d8bd3545a0342df8817d7302e1d6a15bb1720e6e9f024d64cbd5e", widgetAssetDigest: "e0962b3706f2ebc276ccf01db6425e6881d8c278830b2b356cbc2ff632871f73", fingerprint: "8766c2a4d7c725100663", resourceUris: { result: "ui://openai-compatible-imagegen/result-8766c2a4d7c725100663.html", editor: "ui://openai-compatible-imagegen/editor-8766c2a4d7c725100663.html" } };
+    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "1.3.0", serverBuildDigest: "46053cf875844a9c21d9597ad6080af54f8e6ec59e9b5f5442b901c7c6afb902", widgetAssetDigest: "a025ce25672d322c117e90dfa61e0d6a9b3c06323cff2afca045b90656eaed51", fingerprint: "666c1362dc14c501a5a7", resourceUris: { result: "ui://openai-compatible-imagegen/result-666c1362dc14c501a5a7.html", editor: "ui://openai-compatible-imagegen/editor-666c1362dc14c501a5a7.html" } };
   }
 });
 
@@ -31248,7 +31248,7 @@ var batchIdSchema = external_exports2.string().regex(/^batch_[0-9A-HJKMNP-TV-Z]{
 var deliveryReceiptIdSchema = external_exports2.string().regex(/^delivery_[0-9a-f]{64}$/);
 var outputSchema = {
   size: external_exports2.string().optional(),
-  quality: external_exports2.enum(["auto", "low", "medium", "high"]).optional(),
+  quality: external_exports2.enum(["auto", "low", "medium", "high", "xhigh", "max"]).optional(),
   format: external_exports2.enum(["png", "jpeg", "webp"]).optional(),
   count: external_exports2.number().int().min(1).max(10).optional(),
   background: external_exports2.enum(["auto", "opaque"]).optional()
@@ -31468,6 +31468,7 @@ var imageDeliveryOutputSchema = external_exports2.object({
 // mcp/tool-errors.mjs
 init_define_RELEASE_IDENTITY();
 var STABLE_TOOL_ERROR_ENTRIES = [
+  ["background_parameter_rejected", "\u670D\u52A1\u62D2\u7EDD\u4E86\u660E\u786E\u6307\u5B9A\u7684 background \u53C2\u6570\uFF0C\u672A\u81EA\u52A8\u91CD\u8BD5\u3002\u8BF7\u8BE2\u95EE\u7528\u6237\u662F\u5426\u53BB\u6389\u8BE5\u53C2\u6570\u540E\u53D1\u8D77\u65B0\u8BF7\u6C42\uFF1B\u900F\u660E\u6548\u679C\u53EF\u80FD\u6539\u53D8\u3002"],
   ["local_image_request_invalid", "\u672C\u5730\u56FE\u7247\u4F20\u8F93\u8BF7\u6C42\u65E0\u6548\uFF0C\u8BF7\u4F7F\u7528\u9879\u76EE\u76F8\u5BF9\u8DEF\u5F84\u548C\u7A33\u5B9A\u56FE\u7247 ID\u3002"],
   ["local_image_source_invalid", "\u65E0\u6CD5\u5BFC\u5165\u6E90\u56FE\u7247\uFF1A\u8BF7\u786E\u8BA4\u5B83\u662F\u9879\u76EE\u5185\u53EF\u5B89\u5168\u8BFB\u53D6\u7684 PNG\u3001JPEG \u6216 WebP\uFF0C\u4E14\u4E0D\u8D85\u8FC7 64 MiB \u548C 1 \u4EBF\u50CF\u7D20\u3002"],
   ["local_image_import_failed", "\u65E0\u6CD5\u53D1\u5E03\u672C\u5730\u56FE\u7247\uFF0C\u8BF7\u68C0\u67E5 artifact \u4ED3\u5E93\u540E\u518D\u7EE7\u7EED\u3002"],
@@ -35125,7 +35126,7 @@ function validateDefaults(value, allowedKeys, errorCode) {
   if (value.size !== void 0 && (typeof value.size !== "string" || !/^\d+x\d+$/.test(value.size))) {
     throw configError(errorCode);
   }
-  if (value.quality !== void 0 && !(/* @__PURE__ */ new Set(["auto", "low", "medium", "high"])).has(value.quality)) {
+  if (value.quality !== void 0 && !(/* @__PURE__ */ new Set(["auto", "low", "medium", "high", "xhigh", "max"])).has(value.quality)) {
     throw configError(errorCode);
   }
   if (value.output_format !== void 0 && !(/* @__PURE__ */ new Set(["png", "jpeg", "webp"])).has(value.output_format)) {
@@ -36650,21 +36651,22 @@ function createImagegenServer({
       title: "List image models",
       description: "Return image models and safe capability declarations from the current image configuration.",
       inputSchema: { ...projectBindingInputSchema },
-      outputSchema: external_exports2.object({ models: external_exports2.array(imageModelOutputSchema) }).strict(),
+      outputSchema: external_exports2.object({ activeProfile: modelProfileIdSchema, models: external_exports2.array(imageModelOutputSchema) }).strict(),
       annotations: readAnnotations()
     },
     async ({ projectBindingId }) => await withBoundProject(projectContext, projectBindingId, async (context) => {
       if (context.apiKeyConfigured === false) return apiProviderNotConfigured();
       try {
+        const activeProfile = context.activeProfile || DEFAULT_MODEL_PROFILE_ID2;
         const result = await runTask(
-          { operation: "list_models", modelProfileId: context.activeProfile || DEFAULT_MODEL_PROFILE_ID2 },
+          { operation: "list_models", modelProfileId: activeProfile },
           context
         );
         if (!result?.ok) return toolError(new Error(result?.error?.message || "model catalog unavailable"), result?.error?.code);
         const models = external_exports2.array(imageModelOutputSchema).parse(result.models);
         return {
           content: [{ type: "text", text: `\u5DF2\u8BFB\u53D6 ${result.models.length} \u4E2A\u56FE\u7247\u6A21\u578B\u3002` }],
-          structuredContent: { models }
+          structuredContent: { activeProfile, models }
         };
       } catch (error40) {
         return toolError(error40);

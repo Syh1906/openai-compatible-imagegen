@@ -124,6 +124,10 @@ The project file cannot replace the active profile, provider, model, endpoint, p
 
 ### Check and change configuration
 
+The OpenAI-compatible route accepts `auto`, `low`, `medium`, `high`, `xhigh`, and `max` for `defaults.quality` and explicit request quality. GPT Image 2.5 Sunburst and Flare support the last two levels; availability through a third-party service depends on that service. Older models may reject them. Atlas retains `low`, `medium`, and `high`. Unsupported requests do not automatically change quality or models.
+
+To use an available GPT Image 2.5 model, set the Standalone `model` or the Plugin's `models[active_profile].model` to the exact ID supplied by your provider, such as `gpt-image-2.5-sunburst` or `gpt-image-2.5-flare`. A profile ID is a local configuration key and does not need to match the actual model ID. Rebind the Plugin project after changes. These settings apply to API Key requests; they do not select the model or quality used by ChatGPT host generation.
+
 After initialization, API Key users set the variable named by `api_key_env` in the environment used to launch Codex; ChatGPT needs no API credential. Ask Codex to check the configuration with `inspect_image_config` and bind this project. To change settings, describe the new values; Codex applies them with `update_image_config` and refreshes the project binding. A new task is not required.
 
 Configuration tools never return keys. Writes protect user and project configuration directories with a `.gitignore` containing only `*`, without changing the project root ignore file. Local plaintext credentials can be stored only in user configuration when explicitly chosen.
@@ -216,6 +220,8 @@ New OpenAI-compatible API Key templates enable native transparency. Installation
   }
 }
 ```
+
+Ordinary API requests omit `background` by default. Pass `auto` or `opaque` only when the user explicitly requests that API option. If an explicit background option is rejected, explain the failure and ask before submitting a new request without it; do not infer parameter rejection from a timeout or an ambiguous error. The configured, limited retry for native transparency remains unchanged.
 
 Transparency is delivery intent. For `native-alpha`, the runtime sends `background=transparent` and PNG output only when transparency is requested, with a real-alpha prompt contract. The optional `transparency.native.model_ids` list is a capability declaration, not a code whitelist; an explicit native route is sent to the configured model even when the list is empty or does not contain that ID. A transparency-related provider HTTP 400/422 is retried once without the parameter by default, using the same model and endpoint. Set `retry_without_parameter` to `false` to disable this retry. Results explain rejection, retry, final route, and QA. Legacy `transparent_background` configuration is rejected during migration.
 

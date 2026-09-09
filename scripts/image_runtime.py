@@ -244,6 +244,15 @@ def request_with_transparency_retry(
             or "background" not in payload
             or not _is_transparency_parameter_rejection(exc)
         ):
+            if (
+                payload.get("background") is not None
+                and _is_transparency_parameter_rejection(exc)
+                and "background" in str(exc).lower()
+            ):
+                raise MachineTaskError(
+                    "background_parameter_rejected",
+                    "Provider rejected the explicit background parameter. Ask the user whether to submit a new request without it; no retry was sent.",
+                ) from exc
             raise
         retry_payload = dict(payload)
         retry_payload.pop("background", None)
@@ -751,6 +760,8 @@ def run_machine_task(
             "output_format": params["format"],
             "output_compression": params["compression"],
         }
+        if payload["background"] is None:
+            payload.pop("background")
         if transparency is not None and transparency.plan.mode == "native-alpha":
             payload["background"] = "transparent"
             payload["output_format"] = "png"
@@ -1430,10 +1441,10 @@ def resolve_machine_output(
     size = str(output.get("size") or cfg.defaults.get("size") or DEFAULT_SIZE)
     parse_size(size)
     quality = str(output.get("quality") or cfg.defaults.get("quality") or DEFAULT_QUALITY)
-    if quality not in {"auto", "low", "medium", "high"}:
+    if quality not in {"auto", "low", "medium", "high", "xhigh", "max"}:
         raise MachineTaskError("invalid_task", f"unsupported quality: {quality}")
-    background = str(output.get("background") or "opaque")
-    if background not in {"auto", "opaque"}:
+    background = output.get("background")
+    if background is not None and (not isinstance(background, str) or background not in {"auto", "opaque"}):
         raise MachineTaskError("invalid_task", f"unsupported background: {background}")
     compression = output.get("compression")
     if compression is not None:

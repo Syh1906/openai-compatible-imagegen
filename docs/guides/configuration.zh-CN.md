@@ -124,6 +124,10 @@ API Key 用户基线声明活动 profile、provider、provider 自定义的 mode
 
 ### 检查和修改配置
 
+OpenAI-compatible 路线的 `defaults.quality` 和显式请求质量接受 `auto`、`low`、`medium`、`high`、`xhigh`、`max`。GPT Image 2.5 Sunburst 和 Flare 支持后两档；通过第三方调用时，以该服务的实际支持情况为准，旧模型可能拒绝新档位。Atlas 仍只接受 `low`、`medium`、`high`。请求不受支持时，不会自动降低质量或切换模型。
+
+使用已开放的 GPT Image 2.5 模型时，将 Standalone 的 `model` 或 Plugin 的 `models[active_profile].model` 设置为供应商提供的准确 ID，例如 `gpt-image-2.5-sunburst` 或 `gpt-image-2.5-flare`。profile ID 是本地配置键，不必与实际模型 ID 相同；Plugin 修改配置后需重新绑定项目。这些设置用于 API Key 请求，不能指定 ChatGPT 宿主生图的模型或质量。
+
 初始化后，API Key 用户需要在启动 Codex 的环境中设置 `api_key_env` 指定的变量；ChatGPT 路线不需要 API 凭据。让 Codex 使用 `inspect_image_config` 检查当前配置，并绑定这个项目。需要修改时直接说明新设置，Codex 使用 `update_image_config` 应用修改后刷新项目绑定。无需另建任务。
 
 配置工具不会返回密钥。用户配置和项目配置目录在写入时会受到内容仅为 `*` 的 `.gitignore` 保护，项目根目录的忽略规则保持不变。只有明确选择时，才在用户配置中保存本地明文凭据。
@@ -216,6 +220,8 @@ Atlas 协议支持输出 JPEG 或 PNG 的文生图。它不支持编辑和原生
   }
 }
 ```
+
+普通 API 请求默认省略 `background`；仅在用户明确要求该 API 选项时传入 `auto` 或 `opaque`。明确指定的背景参数被拒绝后，先说明失败，再询问是否去掉参数发起新请求；超时或含糊错误不能作为参数被拒绝的证据。原生透明请求已有的有限重试及其配置保持不变。
 
 透明是用户的交付意图。使用 `native-alpha` 时，只有用户提出透明需求才会发送 `background=transparent` 和 PNG 输出，并附加真实 Alpha 通道提示词。可选的 `transparency.native.model_ids` 只是能力声明，不是代码白名单；明确请求原生路线时会把请求发给配置中的模型，是否支持由 provider 决定。provider 因透明参数返回 HTTP 400/422 时，默认使用相同模型和 endpoint 去掉该参数重试一次；设置 `retry_without_parameter=false` 可关闭重试。最终结果会说明拒绝、重试、最终路线和 QA。迁移时仍会拒绝旧的 `transparent_background` 配置。
 

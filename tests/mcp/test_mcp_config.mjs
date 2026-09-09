@@ -14,7 +14,29 @@ import {
   userConfigPath,
 } from "../../mcp/config-resolution.mjs";
 import { withClient } from "../support/mcp-tool-client.mjs";
+import { outputSchema, batchItemsSchema } from "../../mcp/image-tool-schemas.mjs";
 
+
+test("image quality accepts new explicit and configured levels without accepting unknown values", async () => {
+  for (const quality of ["auto", "low", "medium", "high", "xhigh", "max"]) {
+    assert.equal(outputSchema.quality.parse(quality), quality);
+    const items = batchItemsSchema.parse([
+      { requestId: "generate", operation: "generate", prompt: "test", quality },
+      { requestId: "edit", operation: "edit", parentImageId: "img_01J00000000000000000000000", prompt: "test", quality },
+    ]);
+    assert.deepEqual(items.map((item) => item.quality), [quality, quality]);
+    await withConfigRoots(async ({ projectRoot, userHome }) => {
+      await initializeImageConfig({ userHome });
+      await writeJson(projectConfigPath(projectRoot), projectConfig());
+      const user = await updateImageConfig({ userHome, scope: "user", changes: { defaults: { quality } } });
+      const project = await updateImageConfig({ projectRoot, scope: "project", changes: { defaults: { quality } } });
+      assert.equal(user.config.defaults.quality, quality);
+      assert.equal(project.config.defaults.quality, quality);
+      await assert.rejects(updateImageConfig({ userHome, scope: "user", changes: { defaults: { quality: "ultra" } } }));
+    });
+  }
+  assert.equal(outputSchema.quality.safeParse("ultra").success, false);
+});
 
 test("configuration MCP tools initialize, inspect, and update without exposing credentials", async () => {
   const calls = [];

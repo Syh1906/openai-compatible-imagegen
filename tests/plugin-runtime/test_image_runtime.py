@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+from dataclasses import replace
 import concurrent.futures
 import hashlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -290,6 +291,31 @@ class ImageRuntimeMachineModeTests(unittest.TestCase):
         self.assertTrue(all(payload["model"] == "gpt-image-2" for payload in payloads))
         self.assertTrue(all(payload["prompt"] == "two candidates" for payload in payloads))
 
+    def test_image25_models_and_quality_survive_generation_and_edit_requests(self) -> None:
+        response = {"data": [{"b64_json": base64.b64encode(make_png(3, 2)).decode("ascii")}]}
+        for model in ("gpt-image-2.5-sunburst", "gpt-image-2.5-flare", "vendor/image25-fast-v3"):
+            for quality in ("xhigh", "max"):
+                with self.subTest(model=model, quality=quality):
+                    cfg = replace(self.cfg, model=model, defaults={"quality": quality})
+                    output = {"count": 1, "format": "png", "size": "1024x1024"}
+                    task = self.task(output=output)
+                    with mock.patch.object(self.imagegen, "request_json", return_value=response) as request:
+                        generated = self.imagegen.run_machine_task(task, self.project_root, self.artifact_root, cfg)
+                    self.assertTrue(generated["ok"], generated)
+                    self.assertEqual(request.call_args.args[1], "images/generations")
+                    self.assertEqual(request.call_args.args[2]["model"], model)
+                    self.assertEqual(request.call_args.args[2]["quality"], quality)
+                    parent_id = generated["artifacts"][0]["id"]
+                    edit = self.task(operation="edit", inputArtifactIds=[parent_id], output={**output, "quality": quality})
+                    with mock.patch.object(self.imagegen, "request_multipart", return_value=response) as request:
+                        edited = self.imagegen.run_machine_task(edit, self.project_root, self.artifact_root, cfg)
+                    self.assertTrue(edited["ok"], edited)
+                    self.assertEqual(request.call_args.args[1], "images/edits")
+                    self.assertEqual(request.call_args.args[2]["model"], model)
+                    self.assertEqual(request.call_args.args[2]["quality"], quality)
+                    self.assertEqual(request.call_args.args[3][0][0], "image[]")
+                    self.assertEqual(edited["artifacts"][0]["parentIds"], [parent_id])
+
     def test_generate_uses_configured_custom_model_id(self) -> None:
         cfg = self.imagegen.Config(
             **{
@@ -412,6 +438,41 @@ class ImageRuntimeMachineModeTests(unittest.TestCase):
         self.assertEqual(transparency["mode"], "chroma-matting")
         self.assertTrue(transparency["native_attempted"])
         self.assertTrue(transparency["retried_without_parameter"])
+
+    def test_background_is_only_sent_when_explicit(self) -> None:
+        response = {"data": [{"b64_json": base64.b64encode(make_png(2, 2)).decode("ascii")}]}
+        for background in (None, "auto", "opaque"):
+            output = {**self.task()["output"], "count": 1}
+            output.pop("background", None)
+            if background is not None:
+                output["background"] = background
+            with self.subTest(background=background), mock.patch.object(self.imagegen, "request_json", return_value=response) as request:
+                result = self.imagegen.run_machine_task(self.task(output=output), self.project_root, self.artifact_root, self.cfg)
+                self.assertTrue(result["ok"], result)
+                generation_payload = request.call_args.args[2]
+            edit_task = self.task(operation="edit", inputArtifactIds=[result["artifacts"][0]["id"]], output=output)
+            with mock.patch.object(self.imagegen, "request_multipart", return_value=response) as request:
+                edited = self.imagegen.run_machine_task(edit_task, self.project_root, self.artifact_root, self.cfg)
+                self.assertTrue(edited["ok"], edited)
+                for payload in (generation_payload, request.call_args.args[2]):
+                    if background is None:
+                        self.assertNotIn("background", payload)
+                    else:
+                        self.assertEqual(payload["background"], background)
+
+    def test_explicit_ordinary_background_rejection_requires_confirmation(self) -> None:
+        for background in ("auto", "opaque"):
+            rejected = self.imagegen.ProviderRequestError(
+                "API HTTP 400: background unsupported", status_code=400, operation="images/generations",
+            )
+            with self.subTest(background=background), mock.patch.object(self.imagegen, "request_json", side_effect=rejected) as request:
+                result = self.imagegen.run_machine_task(
+                    self.task(output={**self.task()["output"], "count": 1, "background": background}),
+                    self.project_root, self.artifact_root, self.cfg,
+                )
+                self.assertFalse(result["ok"])
+                self.assertEqual(result["error"]["code"], "background_parameter_rejected")
+                self.assertEqual(request.call_count, 1)
 
     def test_non_transparency_error_does_not_retry(self) -> None:
         policy = self.imagegen.TransparencyPolicy(

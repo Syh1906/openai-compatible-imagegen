@@ -461,21 +461,22 @@ export function createImagegenServer({
       title: "List image models",
       description: "Return image models and safe capability declarations from the current image configuration.",
       inputSchema: { ...projectBindingInputSchema },
-      outputSchema: z.object({ models: z.array(imageModelOutputSchema) }).strict(),
+      outputSchema: z.object({ activeProfile: modelProfileIdSchema, models: z.array(imageModelOutputSchema) }).strict(),
       annotations: readAnnotations(),
     },
     async ({ projectBindingId }) => await withBoundProject(projectContext, projectBindingId, async (context) => {
       if (context.apiKeyConfigured === false) return apiProviderNotConfigured();
       try {
+        const activeProfile = context.activeProfile || DEFAULT_MODEL_PROFILE_ID;
         const result = await runTask(
-          { operation: "list_models", modelProfileId: context.activeProfile || DEFAULT_MODEL_PROFILE_ID },
+          { operation: "list_models", modelProfileId: activeProfile },
           context,
         );
         if (!result?.ok) return toolError(new Error(result?.error?.message || "model catalog unavailable"), result?.error?.code);
         const models = z.array(imageModelOutputSchema).parse(result.models);
         return {
           content: [{ type: "text", text: `已读取 ${result.models.length} 个图片模型。` }],
-          structuredContent: { models },
+          structuredContent: { activeProfile, models },
         };
       } catch (error) {
         return toolError(error);
