@@ -595,7 +595,7 @@ async function loadArtifacts(imageIds, { includeLineage = false, selectedImageId
     for (const imageId of requestedImageIds) {
       const cached = artifactRecordCache.get(imageId);
       if (!(cached?.data && cached.loadState === "ready")) {
-        artifactRecordCache.record({ ...cached, id: imageId, loadState: "loading" });
+        artifactRecordCache.record({ ...cached, id: imageId, loadState: "loading", loadSlow: false });
       }
     }
     const loadingCandidates = requestedImageIds.map((imageId) => artifactRecordCache.get(imageId) || { id: imageId, loadState: "loading" });
@@ -631,7 +631,7 @@ async function loadArtifacts(imageIds, { includeLineage = false, selectedImageId
     for (const imageId of extraImageIds) {
       const cached = artifactRecordCache.get(imageId);
       if (!(cached?.data && cached.loadState === "ready")) {
-        artifactRecordCache.record({ ...cached, id: imageId, loadState: "loading" });
+        artifactRecordCache.record({ ...cached, id: imageId, loadState: "loading", loadSlow: false });
       }
     }
     artifactLoadInFlight = false;
@@ -711,7 +711,7 @@ async function hydrateArtifacts(metadata, { selectedImageId = metadata.find((art
       const merged = { ...cached, ...known, id: imageId };
       artifactRecordCache.record(cached?.data && cached.loadState === "ready"
         ? merged
-        : { ...merged, loadState: "loading" });
+        : { ...merged, loadState: "loading", loadSlow: false });
     }
     const loadingCandidates = allImageIds.map((imageId) => artifactRecordCache.get(imageId)
       || metadataById.get(imageId)
