@@ -3,6 +3,27 @@ import test from "node:test";
 
 import { createArtifactLoadRegistry } from "../../web/artifact-load-registry.mjs";
 
+test("slow reads remain pending until the original request succeeds or fails", async (t) => {
+  for (const success of [true, false]) await t.test(String(success), async () => {
+    let fireTimeout, resolveLoad, rejectLoad, cleared = false, finished = false, slow = 0;
+    const registry = createArtifactLoadRegistry({ timeoutMs: 8000,
+      setTimeoutFn: (callback) => { fireTimeout = callback; return 1; },
+      clearTimeoutFn: () => { cleared = true; },
+    });
+    const load = new Promise((resolve, reject) => { resolveLoad = resolve; rejectLoad = reject; });
+    const result = registry.settle(load, () => { slow += 1; }).then((value) => { finished = true; return value; });
+    fireTimeout();
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(slow, 1);
+    assert.equal(finished, false);
+    const value = { id: "img_slow", data: "ready" };
+    const error = new Error("actual read failure");
+    if (success) resolveLoad(value); else rejectLoad(error);
+    assert.deepEqual(await result, success ? { status: "fulfilled", value } : { status: "rejected", reason: error });
+    assert.equal(cleared, true);
+  });
+});
+
 
 test("retry clears a previous load error before the artifact becomes ready", () => {
   const registry = createRegistry();

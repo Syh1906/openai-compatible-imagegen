@@ -18,6 +18,7 @@ export function createArtifactLoadRegistry({ timeoutMs, setTimeoutFn, clearTimeo
       merged.data = candidate.data;
       merged.loadState = "ready";
       delete merged.loadError;
+      delete merged.loadSlow;
     } else if (candidate.loadState === "loading") {
       merged.loadState = "loading";
       delete merged.loadError;
@@ -25,6 +26,7 @@ export function createArtifactLoadRegistry({ timeoutMs, setTimeoutFn, clearTimeo
       merged.data = "";
       merged.loadState = "error";
       merged.loadError = candidate.loadError;
+      delete merged.loadSlow;
     } else if (!merged.loadState) {
       merged.loadState = "loading";
     }
@@ -89,19 +91,13 @@ export function createArtifactLoadRegistry({ timeoutMs, setTimeoutFn, clearTimeo
     return { accepted: true, candidate: records.get(imageId) || candidate };
   }
 
-  function settle(load) {
-    let timeoutId;
-    const timeout = new Promise((resolve) => {
-      timeoutId = setTimeoutFn(() => resolve({
-        status: "rejected",
-        reason: new ArtifactHydrationError("artifact_server_error", "MCP image artifact read timed out"),
-      }), timeoutMs);
-    });
-    const settled = Promise.resolve(load).then(
+  function settle(load, onSlow = () => {}) {
+    // This timer reports slow transport; only the original request can settle the read.
+    const timeoutId = setTimeoutFn(onSlow, timeoutMs);
+    return Promise.resolve(load).then(
       (value) => ({ status: "fulfilled", value }),
       (reason) => ({ status: "rejected", reason }),
-    );
-    return Promise.race([settled, timeout]).finally(() => clearTimeoutFn(timeoutId));
+    ).finally(() => clearTimeoutFn(timeoutId));
   }
 
   return { begin, capture, captureAttempt, get, record, settle };

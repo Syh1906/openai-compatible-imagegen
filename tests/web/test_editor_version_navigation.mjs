@@ -88,6 +88,12 @@ test("editor hydrates every parent and child version thumbnail and keeps termina
     assert.equal(document.querySelectorAll(".version-error").length, 0);
     assert.equal(document.querySelectorAll("[data-version-id] .version-thumb img").length, 4);
   } finally {
+    let closed = false;
+    const observeClose = (event) => { if (event.data?.id === "lineage-thumbnails-cleanup" && !event.data?.method) closed = true; };
+    dom.window.addEventListener("message", observeClose);
+    sendToApp(dom.window, { jsonrpc: "2.0", id: "lineage-thumbnails-cleanup", method: "ui/resource-teardown", params: {} });
+    await waitFor(() => closed);
+    dom.window.removeEventListener("message", observeClose);
     host.dispose();
     restoreDomGlobals(previous);
     dom.window.close();
@@ -263,7 +269,7 @@ test("selecting a version loads its artifact before replacing the visible image"
   }
 });
 
-test("a hanging lineage thumbnail does not block the current image and reaches a timeout error", async () => {
+test("a slow lineage thumbnail keeps the current draft editable and accepts the original result", async () => {
   const childId = "img_01J00000000000000000000015";
   const current = {
     id: IMAGE_ID,
@@ -279,8 +285,17 @@ test("a hanging lineage thumbnail does not block the current image and reaches a
     { pretendToBeVisual: true, url: "https://widget.local/" },
   );
   const previous = installDomGlobals(dom.window);
-  const nodeSetTimeout = globalThis.setTimeout;
-  dom.window.setTimeout = (callback, delay, ...args) => nodeSetTimeout(callback, delay === 8000 ? 400 : delay, ...args);
+  const originalSetTimeout = dom.window.setTimeout.bind(dom.window);
+  const originalClearTimeout = dom.window.clearTimeout.bind(dom.window);
+  const slowTimers = new Map();
+  let nextTimerId = -1;
+  dom.window.setTimeout = (callback, delay, ...args) => {
+    if (delay !== 8000) return originalSetTimeout(callback, delay, ...args);
+    const id = nextTimerId--;
+    slowTimers.set(id, callback);
+    return id;
+  };
+  dom.window.clearTimeout = (id) => { if (!slowTimers.delete(id)) originalClearTimeout(id); };
   let hangingRequestId = null;
   const hangChildRead = (event) => {
     const message = event.data;
@@ -310,8 +325,12 @@ test("a hanging lineage thumbnail does not block the current image and reaches a
     document.querySelector("[data-tool=rectangle]").click();
     canvas.dispatchEvent(pointerEvent(dom.window, "pointerdown", { clientX: 100, clientY: 100, pointerId: 1 }));
     canvas.dispatchEvent(pointerEvent(dom.window, "pointerup", { clientX: 300, clientY: 260, pointerId: 1 }));
-    await waitFor(() => document.querySelector(`[data-version-id="${childId}"] .version-error`) !== null, 800);
-    assert.equal(document.querySelector(`[data-version-id="${childId}"] .version-error`)?.textContent.trim(), "读取失败");
+    for (const callback of slowTimers.values()) callback();
+    assert.match(document.querySelector(`[data-version-id="${childId}"] .version-loading`)?.textContent, /读取较慢/);
+    assert.equal(document.querySelector(`[data-version-id="${childId}"] .version-error`), null);
+    sendArtifactData(dom.window, hangingRequestId, childId);
+    hangingRequestId = null;
+    await waitFor(() => document.querySelector(`[data-version-id="${childId}"] .version-thumb img`) !== null);
     assert.equal(document.querySelector("[data-image]").hidden, false);
     assert.equal(document.querySelector("[data-prompt]").value, "超时期间继续编辑");
     assert.equal(document.querySelectorAll("[data-annotation-id]").length, 1);

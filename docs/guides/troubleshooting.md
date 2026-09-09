@@ -36,6 +36,7 @@ Identify the failing layer before changing configuration. The project does not s
 
 | Symptom | Meaning | Action |
 | --- | --- | --- |
+| An image card says the read is slow and still waiting | Reading the saved image has taken over 8 seconds; this is not a generation failure | Keep the card open. It will display the image when the original read completes, or report the actual read error. No new generation is needed |
 | Provider rejects the request | The configured service returned an API error | Review the safe error code and provider logs; do not switch route automatically |
 | An image tool wait times out | The wait ended but generation may continue | Query the original `jobId`; recover a lost submission reply with the original key instead of creating a duplicate. See [job recovery](./image-jobs.md) |
 | Result card reports invalid data | Artifact metadata or bytes failed validation | Keep the original error and verify the installed Plugin version and build identity |
