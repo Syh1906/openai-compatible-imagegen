@@ -7,7 +7,7 @@ export const batchIdSchema = z.string().regex(/^batch_[0-9A-HJKMNP-TV-Z]{26}$/).
 export const deliveryReceiptIdSchema = z.string().regex(/^delivery_[0-9a-f]{64}$/);
 export const outputSchema = {
   size: z.string().optional(),
-  quality: z.enum(["auto", "low", "medium", "high"]).optional(),
+  quality: z.enum(["auto", "low", "medium", "high", "xhigh", "max"]).optional(),
   format: z.enum(["png", "jpeg", "webp"]).optional(),
   count: z.number().int().min(1).max(10).optional(),
   background: z.enum(["auto", "opaque"]).optional(),

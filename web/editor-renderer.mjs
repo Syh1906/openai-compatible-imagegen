@@ -81,7 +81,7 @@ export function createEditorRenderer(root, { i18n = createWidgetI18n("zh-CN") } 
         return `
           <article class="inline-result" data-result-image-id="${escapeHtml(candidate.id || "")}" data-canvas-status="${canvasDestroyed ? "destroyed" : "available"}">
             <div class="inline-preview">
-              ${hasImage ? `<button class="inline-preview-trigger" data-action="preview-image" data-preview-image-id="${escapeHtml(candidate.id)}" type="button" aria-label="放大预览候选图片 ${index + 1}" aria-haspopup="dialog" aria-controls="result-image-preview" title="放大预览"><img class="source-image" data-image src="${candidate.imageUrl}" alt="候选图片 ${index + 1}" draggable="false"><span class="inline-preview-affordance" aria-hidden="true"><i data-lucide="zoom-in"></i></span></button>` : `<div class="${candidate.loadError ? "inline-error" : "inline-loading"}">${candidate.loadError ? "图片读取失败" : candidate.id ? "正在读取图片..." : "正在等待会话图片..."}</div>`}
+              ${hasImage ? `<button class="inline-preview-trigger" data-action="preview-image" data-preview-image-id="${escapeHtml(candidate.id)}" type="button" aria-label="放大预览候选图片 ${index + 1}" aria-haspopup="dialog" aria-controls="result-image-preview" title="放大预览"><img class="source-image" data-image src="${candidate.imageUrl}" alt="候选图片 ${index + 1}" draggable="false"><span class="inline-preview-affordance" aria-hidden="true"><i data-lucide="zoom-in"></i></span></button>` : `<div class="${candidate.loadError ? "inline-error" : "inline-loading"}">${candidate.loadError ? "图片读取失败" : candidate.loadSlow ? "图片读取较慢，仍在等待..." : candidate.id ? "正在读取图片..." : "正在等待会话图片..."}</div>`}
             </div>
             <div class="inline-details">
               <div class="inline-copy"><span class="eyebrow">${items.length > 1 ? `候选 ${index + 1}` : i18n.t("result.imageResult")}</span><strong>${hasImage ? (candidate.name || `图片 ${candidate.id.slice(-6)}`) : candidate.loadError ? "无法显示图片" : "准备画布"}</strong><span data-image-id>${candidate.id || "尚未绑定图片"}</span></div>${draftLabel ? `<span class="inline-draft-state" data-draft-state="${draftKind}">${draftLabel}</span>` : ""}
@@ -246,7 +246,7 @@ export function createEditorRenderer(root, { i18n = createWidgetI18n("zh-CN") } 
           ? `<img src="data:${item.mimeType};base64,${item.data}" alt="">`
           : item.loadError
             ? `<span class="version-error" role="status" title="${escapeHtml(item.loadError)}">读取失败</span>`
-            : '<span class="version-loading" role="status">读取中</span>';
+            : `<span class="version-loading" role="status">${item.loadSlow ? '读取较慢，仍在等待' : '读取中'}</span>`;
         return `<button class="version-item ${item.role === "current" ? "current" : ""}" data-version-id="${escapeHtml(item.id)}" aria-label="${escapeHtml(accessibleLabel)}"><span class="version-thumb">${thumbnail}</span><span>${item.role === "current" ? "当前" : item.role === "parent" ? "父版本" : "修订"}</span></button>`;
       }).join("");
       root.querySelectorAll("[data-version-id]").forEach((control) => {

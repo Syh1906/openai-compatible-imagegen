@@ -295,6 +295,8 @@ def resolve_common_params(args: argparse.Namespace, cfg: Config, task: dict[str,
         fmt = "png"
 
     quality = get_value("quality", args, task, None) or cfg.defaults.get("quality") or DEFAULT_QUALITY
+    if not isinstance(quality, str) or quality not in {"auto", "low", "medium", "high", "xhigh", "max"}:
+        raise ImagegenError(f"unsupported quality: {quality}")
     model = get_value("model", args, task, None) or cfg.model
     size, aspect, resolution = resolve_size(args, cfg, task)
     timeout = get_value("timeout", args, task, None) or cfg.defaults.get("timeout_seconds") or DEFAULT_TIMEOUT_SECONDS
@@ -522,6 +524,18 @@ def request_with_transparency_retry(
             or "background" not in payload
             or not is_transparency_parameter_rejection(exc)
         ):
+            if (
+                isinstance(exc, ApiRequestError)
+                and payload.get("background") is not None
+                and is_transparency_parameter_rejection(exc)
+                and "background" in str(exc).lower()
+            ):
+                error = ApiRequestError(
+                    "Provider rejected the explicit background parameter. Ask the user whether to submit a new request without it; no retry was sent.",
+                    exc.status_code, exc.operation, exc.details,
+                )
+                error.error_kind = "background_parameter_rejected"
+                raise error from exc
             raise
         retry_payload = dict(payload)
         retry_payload.pop("background", None)

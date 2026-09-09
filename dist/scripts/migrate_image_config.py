@@ -258,8 +258,7 @@ def migrate_standalone(
     allow_plaintext_api_key: bool,
 ) -> tuple[dict[str, Any], bool]:
     reject_unknown_keys(raw, STANDALONE_KEYS)
-    model = clean_text(raw.get("model") or "gpt-image-2")
-    require_supported_model(model)
+    model = require_model_id(raw.get("model", "gpt-image-2"))
     capabilities = normalize_capabilities(raw.get("capabilities"))
     provider, requires_plaintext = migrate_provider_auth(
         {
@@ -295,8 +294,7 @@ def migrate_development_plugin(
     if set(models) != {PROFILE_ID}:
         raise ConfigMigrationError("migration_model_unsupported", "exactly one supported model profile is required")
     profile = require_object(models.get(PROFILE_ID), PROFILE_ID)
-    model = clean_text(profile.get("model"))
-    require_supported_model(model)
+    model = require_model_id(profile.get("model"))
     provider_id = clean_text(profile.get("provider"))
     if not provider_id or set(providers) != {provider_id}:
         raise ConfigMigrationError("migration_source_invalid", "the active model must reference one provider")
@@ -420,8 +418,7 @@ def validate_user_config(config: dict[str, Any]) -> None:
         raise ConfigMigrationError("migration_source_invalid", "model provider must be a trimmed string")
     provider = require_object(providers.get(provider_id), provider_id)
     validate_provider_output(provider)
-    if profile.get("model") != "gpt-image-2":
-        raise ConfigMigrationError("migration_model_unsupported", "the migrated model is not supported")
+    require_model_id(profile.get("model"))
     normalize_capabilities(profile.get("capabilities"))
     validate_defaults_output(config.get("defaults"), USER_DEFAULT_KEYS)
     validate_postprocess_output(config.get("postprocess"))
@@ -474,7 +471,7 @@ def validate_defaults_output(value: Any, allowed_keys: set[str]) -> None:
     size = defaults.get("size")
     if size is not None and (not isinstance(size, str) or re.fullmatch(r"[0-9]+x[0-9]+", size) is None):
         raise ConfigMigrationError("migration_source_invalid", "defaults.size is invalid")
-    if defaults.get("quality") is not None and defaults["quality"] not in {"auto", "low", "medium", "high"}:
+    if defaults.get("quality") is not None and defaults["quality"] not in {"auto", "low", "medium", "high", "xhigh", "max"}:
         raise ConfigMigrationError("migration_source_invalid", "defaults.quality is invalid")
     if defaults.get("output_format") is not None and defaults["output_format"] not in {"png", "jpeg", "webp"}:
         raise ConfigMigrationError("migration_source_invalid", "defaults.output_format is invalid")
@@ -699,9 +696,10 @@ def require_optional_object(value: Any, name: str) -> dict[str, Any]:
     return require_object(value, name)
 
 
-def require_supported_model(model: str) -> None:
-    if model != "gpt-image-2":
-        raise ConfigMigrationError("migration_model_unsupported", f"unsupported model: {model or '(missing)'}")
+def require_model_id(model: Any) -> str:
+    if not isinstance(model, str) or not model.strip():
+        raise ConfigMigrationError("migration_source_invalid", "model must be a non-empty string")
+    return model.strip()
 
 
 def clean_text(value: Any) -> str:

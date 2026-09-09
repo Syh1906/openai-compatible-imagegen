@@ -460,7 +460,8 @@ async function loadModelCapabilities() {
     const result = await boundToolClient.callServerTool({ name: "list_image_models", arguments: {} });
     if (!resourceActive) return;
     hostObservationReporter.observeToolCall(result);
-    const model = result?.structuredContent?.models?.find((item) => item.id === "primary/gpt-image-2");
+    const catalog = result?.structuredContent;
+    const model = catalog?.models?.find((item) => item.id === catalog.activeProfile);
     if (result.isError || !model?.capabilities) throw new Error("model capabilities unavailable");
     modelCapabilities = model.capabilities;
     render();
@@ -604,7 +605,7 @@ async function loadArtifacts(imageIds, { includeLineage = false, selectedImageId
     );
     const requestedResults = await Promise.all(requestedImageIds.map((imageId) => {
       const { attempt, load } = artifactCandidates.start(imageId);
-      return artifactRecordCache.settle(load).then((result) => {
+      return settleArtifactLoad(load, imageId, loadSequence).then((result) => {
         if (loadSequence !== artifactLoadSequence) {
           captureLateArtifactResult(imageId, result, null, attempt);
           return result;
@@ -639,7 +640,7 @@ async function loadArtifacts(imageIds, { includeLineage = false, selectedImageId
     applyArtifacts(initialArtifacts, { candidates: initialCandidates, selectedImageId: activeImageId });
     const extraResults = await Promise.all(extraImageIds.map((imageId) => {
       const { attempt, load } = artifactCandidates.start(imageId);
-      return artifactRecordCache.settle(load).then((result) => {
+      return settleArtifactLoad(load, imageId, loadSequence).then((result) => {
         if (loadSequence !== artifactLoadSequence) {
           captureLateArtifactResult(imageId, result, null, attempt);
           return result;
@@ -723,7 +724,7 @@ async function hydrateArtifacts(metadata, { selectedImageId = metadata.find((art
       const cached = artifactRecordCache.get(imageId);
       const known = metadataById.get(imageId);
       const { attempt, load } = artifactCandidates.start(imageId, known);
-      return artifactRecordCache.settle(load).then((result) => {
+      return settleArtifactLoad(load, imageId, loadSequence).then((result) => {
         if (loadSequence !== artifactLoadSequence) {
           captureLateArtifactResult(imageId, result, known, attempt);
           return result;
@@ -924,6 +925,18 @@ function applyArtifacts(artifacts, { candidates = artifacts, selectedImageId = "
   }
   imageUrl = toImageUrl(image);
   render();
+}
+function settleArtifactLoad(load, imageId, loadSequence) {
+  return artifactRecordCache.settle(load, () => {
+    if (!resourceActive || destroyInFlight || loadSequence !== artifactLoadSequence) return;
+    const candidate = artifactRecordCache.get(imageId);
+    if (!candidate || candidate.loadState !== "loading") return;
+    artifactRecordCache.record({ ...candidate, loadSlow: true });
+    const update = (item) => item.id === imageId ? artifactRecordCache.get(imageId) : item;
+    resultCandidates = resultCandidates.map(update);
+    editor = { ...editor, lineage: editor.lineage.map(update) };
+    render();
+  });
 }
 function captureLateArtifactResult(imageId, result, metadata = null, attempt = null) {
   if (!attempt) return;

@@ -130,6 +130,8 @@ Choose the request route before sending the request:
 4. For every other size, including 2K and 4K, continue the API request with the user's requested model, size, and prompt unchanged, preserve every returned original, and inspect source alpha without local pixel changes. Never turn model/size folklore into a local refusal.
 5. Report incomplete or contradictory contracts, such as disabled native transparency, `mask-alpha` without a mask, or a local route combined with `--no-postprocess`. An explicit `prompt-alpha` without an exact allow rule becomes source-alpha inspection: keep the prompt unchanged, call the API, and report the returned original. Do not silently change the model, endpoint, size, or retry policy.
 
+Ordinary API requests omit `background` by default. Pass `auto` or `opaque` only when the user explicitly requests that API option. If an explicit background option is rejected, explain the failure and ask before submitting a new request without it; do not infer parameter rejection from a timeout or an ambiguous error. The configured, limited retry for native transparency remains unchanged.
+
 Native transparency has a separate configured retry: a transparency-related HTTP 400/422 allows one same-request retry without the background parameter when `transparency.native.retry_without_parameter=true`. The model, provider, endpoint, prompt, size, and editing inputs remain the same. Set the switch to `false` to stop on rejection. A successful retry uses `transparency.native.fallback_route` only when local processing is allowed; otherwise it inspects the returned alpha without local pixel changes. A successful native request that returns an opaque image is preserved with unmet transparency in Standalone; the Plugin additionally selects its local fallback for that case when processing is allowed. See [the parameter reference](references/parameters.md#visual-deliverables-and-transparency) for policy fields.
 
 Retry permission and local processing permission are independent. Keep the user's processing choice throughout retries. Preserve originals, include validated derivatives when local processing succeeds, and report the final route, API attempts, and delivery status.
@@ -348,7 +350,7 @@ Core parameters:
 - `--size`: exact pixel size.
 - `--aspect`: `1:1`, `16:9`, `4:3`, `3:4`, or `9:16`.
 - `--resolution`: `1K`, `2K`, or `4K` when using `--aspect`.
-- `--quality`: `low`, `medium`, `high`, or `auto`.
+- `--quality`: `auto`, `low`, `medium`, `high`, `xhigh`, or `max`. The last two require model/provider support; Atlas retains `low`, `medium`, and `high`. Never downgrade quality automatically.
 - `--n`: number of images returned by one request, from 1 to 16.
 - `--format`: `png`, `jpeg`, or `webp`.
 - `--background`: `auto` or `opaque`; `transparent` was removed.

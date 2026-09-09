@@ -4,6 +4,18 @@
 
 ## [Unreleased]
 
+### 新增
+
+- Standalone Skill 与 Codex Plugin 的 API Key 请求支持 `xhigh`、`max` 质量档位，可用于 GPT Image 2.5 Sunburst、Flare；实际可用档位由所选模型和供应商决定，默认质量与模型不变。
+
+### 修复
+
+- 图片读取超过 8 秒时显示等待提示，继续接收原请求的结果；迟到的成功图片可正常显示，不再因本地计时器误报 `IMG-SERVER`。
+- Plugin 普通 API 请求默认省略 `background`，与 Standalone 保持一致；显式背景参数被拒绝时提示确认后再提交。原生透明请求已有的有限自动重试保持不变。
+- 画布按绑定配置的活动 profile 读取模型能力，使用自定义 profile 名称时不再误报能力读取失败。
+- 显式配置迁移保留供应商自定义模型 ID，不再仅允许 `gpt-image-2`。
+- Standalone 批处理行与默认配置中的未知质量值会在发送请求前被拒绝，与命令行和 Plugin 的校验一致。
+
 ## [1.3.0] - 2026-09-07
 
 ### 新增

@@ -73,4 +73,4 @@ python3 "/absolute/path/to/openai-compatible-imagegen/dist/scripts/migrate_image
 
 ## 迁移结果
 
-来源文件保持不变。写入每个目标前，迁移程序会在目标配置目录中创建或验证内容仅为 `*` 的 `.gitignore`。如果来源摘要改变、目标已经存在、schema 或 model 不受支持、仍有废弃字段、忽略规则不兼容或写入失败，迁移会停止且不覆盖现有内容。项目不提供从 Plugin 自动迁回 Standalone 的功能。
+来源文件保持不变。迁移会保留非空的供应商模型 ID，包括自定义别名；不要求使用 OpenAI 标准模型名称，也不会验证供应商是否已开放该模型。写入每个目标前，迁移程序会在目标配置目录中创建或验证内容仅为 `*` 的 `.gitignore`。如果来源摘要改变、目标已经存在、schema 或旧版 profile 结构不受支持、模型 ID 无效、仍有废弃字段、忽略规则不兼容或写入失败，迁移会停止且不覆盖现有内容。项目不提供从 Plugin 自动迁回 Standalone 的功能。

@@ -106,7 +106,7 @@ def add_common_args(
     parser.add_argument("--size", default=None)
     parser.add_argument("--aspect", default=None, choices=sorted(supported_aspects))
     parser.add_argument("--resolution", default=None, choices=sorted(supported_resolutions))
-    parser.add_argument("--quality", default=None, choices=["auto", "low", "medium", "high"])
+    parser.add_argument("--quality", default=None, choices=["auto", "low", "medium", "high", "xhigh", "max"])
     parser.add_argument("--n", type=int, default=None)
     parser.add_argument("--format", default=None, choices=["png", "jpeg", "jpg", "webp"])
     parser.add_argument("--background", default=None, choices=["auto", "opaque"])

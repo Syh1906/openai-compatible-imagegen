@@ -862,6 +862,21 @@ class ParameterResolutionTests(unittest.TestCase):
                 ["generate", "--prompt", "test", "--background", "transparent"]
             )
 
+    def test_quality_levels_are_preserved_by_both_cli_parsers_and_batch_rows(self) -> None:
+        import imagegen_cli
+
+        for parser in (self.imagegen.build_parser(), imagegen_cli.build_parser(set(), set())):
+            for quality in ("auto", "low", "medium", "high", "xhigh", "max"):
+                with self.subTest(parser=parser.prog, quality=quality):
+                    args = parser.parse_args(["generate", "--prompt", "test", "--quality", quality])
+                    self.assertEqual(args.quality, quality)
+                    result = self.imagegen.resolve_common_params(self.make_args(), self.cfg, {"quality": quality})
+                    self.assertEqual(result["quality"], quality)
+
+    def test_unknown_quality_in_batch_row_is_rejected(self) -> None:
+        with self.assertRaisesRegex(self.imagegen.ImagegenError, "unsupported quality"):
+            self.imagegen.resolve_common_params(self.make_args(), self.cfg, {"quality": "ultra"})
+
     def test_build_parser_accepts_explicit_transparency_route_mask_and_parameters(self) -> None:
         args = self.imagegen.build_parser().parse_args(
             [
@@ -1126,6 +1141,18 @@ class ParameterResolutionTests(unittest.TestCase):
         self.assertEqual(payload["output_format"], "png")
         self.assertIn("genuinely transparent", payload["prompt"])
         self.assertEqual(result["transparency"]["mode"], "native-alpha")
+
+    def test_explicit_ordinary_background_rejection_requires_confirmation(self) -> None:
+        for background in ("auto", "opaque"):
+            args = self.make_args(background=background, prompt="A red badge", file=str(ROOT / "unused-background.png"))
+            rejected = self.imagegen.ApiRequestError(
+                "API HTTP 400: background unsupported", status_code=400, operation="images/generations",
+            )
+            with self.subTest(background=background), mock.patch.object(self.imagegen, "request_json", side_effect=rejected) as request:
+                with self.assertRaises(self.imagegen.ApiRequestError) as caught:
+                    self.imagegen.generate(self.cfg, args)
+                self.assertEqual(caught.exception.error_kind, "background_parameter_rejected")
+                self.assertEqual(request.call_count, 1)
 
     def test_generate_native_alpha_retries_without_parameter_after_transparency_rejection(self) -> None:
         from image_transparency import resolve_policy

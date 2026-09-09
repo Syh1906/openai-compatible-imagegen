@@ -59,11 +59,16 @@ Returned image dimensions are measured against the resolved API `size`. A mismat
 | `low` | Low-cost drafts and direction exploration |
 | `medium` | General creation and balanced batches |
 | `high` | Final visuals, text-sensitive layouts, posters, interfaces, and detailed images |
+| `xhigh`, `max` | Additional quality levels for models that support them, including GPT Image 2.5 Sunburst and Flare |
 | `auto` | Backend-selected quality |
+
+The OpenAI-compatible route accepts these six values in CLI arguments, defaults, and JSONL rows. Model IDs, including provider aliases, are passed through without a model-name whitelist. A provider or older model may support only a subset; unsupported requests fail without changing the quality, model, or endpoint. Atlas retains its `low`, `medium`, and `high` quality options. Host generation through a ChatGPT subscription does not expose these API model controls.
 
 ## Visual Deliverables and Transparency
 
 `--asset` marks an explicit single visual deliverable and prefers PNG. It can represent a logo element, product cutout, sticker, interface element, game asset, diagram element, or other isolated deliverable. It does not select an industry or force a centered composition.
+
+Ordinary API requests omit `background` by default. Pass `auto` or `opaque` only when the user explicitly requests that API option. If an explicit background option is rejected, explain the failure and ask before submitting a new request without it; do not infer parameter rejection from a timeout or an ambiguous error. The configured, limited retry for native transparency remains unchanged.
 
 `--transparent` marks a transparent delivery intent and forces PNG. The runtime sends `background="transparent"` only when the resolved route is `native-alpha`; local routes keep the parameter out of the API request. `--background` accepts only `auto` or `opaque`; the former transparent value was removed.
 
