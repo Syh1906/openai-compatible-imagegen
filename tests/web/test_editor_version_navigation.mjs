@@ -327,7 +327,14 @@ test("a slow lineage thumbnail keeps the current draft editable and accepts the 
     canvas.dispatchEvent(pointerEvent(dom.window, "pointerup", { clientX: 300, clientY: 260, pointerId: 1 }));
     for (const callback of slowTimers.values()) callback();
     assert.match(document.querySelector(`[data-version-id="${childId}"] .version-loading`)?.textContent, /读取较慢/);
+    assert.match(document.querySelector(`[data-version-id="${childId}"]`)?.getAttribute("aria-label"), /读取较慢，仍在等待/);
     assert.equal(document.querySelector(`[data-version-id="${childId}"] .version-error`), null);
+    const previousRequestId = hangingRequestId;
+    host.notifyResultArtifacts([current]);
+    await waitFor(() => hangingRequestId !== previousRequestId);
+    assert.equal(document.querySelector(`[data-version-id="${childId}"] .version-loading`)?.textContent, "读取中");
+    assert.doesNotMatch(document.querySelector(`[data-version-id="${childId}"]`)?.getAttribute("aria-label"), /读取较慢/);
+    sendArtifactData(dom.window, previousRequestId, childId);
     sendArtifactData(dom.window, hangingRequestId, childId);
     hangingRequestId = null;
     await waitFor(() => document.querySelector(`[data-version-id="${childId}"] .version-thumb img`) !== null);

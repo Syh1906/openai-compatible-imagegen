@@ -240,7 +240,7 @@ export function createEditorRenderer(root, { i18n = createWidgetI18n("zh-CN") } 
         const roleCount = (lineageRoleCounts.get(item.role) || 0) + 1;
         lineageRoleCounts.set(item.role, roleCount);
         const roleLabel = item.role === "current" ? "当前版本" : item.role === "parent" ? "父版本" : "修订";
-        const loadStatus = item.data ? "已读取" : item.loadError ? "读取失败" : "读取中";
+        const loadStatus = item.data ? "已读取" : item.loadError ? "读取失败" : item.loadSlow ? "读取较慢，仍在等待" : "读取中";
         const accessibleLabel = `${roleLabel} ${roleCount}，${loadStatus}，图片 ${item.id.slice(-6)}`;
         const thumbnail = item.data
           ? `<img src="data:${item.mimeType};base64,${item.data}" alt="">`
