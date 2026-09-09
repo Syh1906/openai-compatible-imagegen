@@ -221,7 +221,7 @@ Atlas 协议支持输出 JPEG 或 PNG 的文生图。它不支持编辑和原生
 }
 ```
 
-普通 API 请求默认省略 `background`；仅在用户明确要求该 API 选项时传入 `auto` 或 `opaque`。明确指定的背景参数被拒绝后，先说明失败，再询问是否去掉参数发起新请求；超时或含糊错误不能作为参数被拒绝的证据。原生透明请求已有的有限重试及其配置保持不变。
+普通 API 请求默认省略 `background`。供应商支持该选项时，你可以明确指定 `auto` 或 `opaque`。如果供应商拒绝该参数，请求会停止；你可以再让 Codex 去掉该选项发起新请求。超时不会触发这一变更。原生透明请求使用下文单独说明的重试策略。
 
 透明是用户的交付意图。使用 `native-alpha` 时，只有用户提出透明需求才会发送 `background=transparent` 和 PNG 输出，并附加真实 Alpha 通道提示词。可选的 `transparency.native.model_ids` 只是能力声明，不是代码白名单；明确请求原生路线时会把请求发给配置中的模型，是否支持由 provider 决定。provider 因透明参数返回 HTTP 400/422 时，默认使用相同模型和 endpoint 去掉该参数重试一次；设置 `retry_without_parameter=false` 可关闭重试。最终结果会说明拒绝、重试、最终路线和 QA。迁移时仍会拒绝旧的 `transparent_background` 配置。
 

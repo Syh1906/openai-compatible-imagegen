@@ -221,7 +221,7 @@ New OpenAI-compatible API Key templates enable native transparency. Installation
 }
 ```
 
-Ordinary API requests omit `background` by default. Pass `auto` or `opaque` only when the user explicitly requests that API option. If an explicit background option is rejected, explain the failure and ask before submitting a new request without it; do not infer parameter rejection from a timeout or an ambiguous error. The configured, limited retry for native transparency remains unchanged.
+Ordinary API requests omit `background` by default. You can explicitly request `auto` or `opaque` if your provider supports that option. If the provider rejects it, the request stops; you can then ask Codex to submit a new request without the option. A timeout does not trigger this change. Native transparency uses the separate retry policy below.
 
 Transparency is delivery intent. For `native-alpha`, the runtime sends `background=transparent` and PNG output only when transparency is requested, with a real-alpha prompt contract. The optional `transparency.native.model_ids` list is a capability declaration, not a code whitelist; an explicit native route is sent to the configured model even when the list is empty or does not contain that ID. A transparency-related provider HTTP 400/422 is retried once without the parameter by default, using the same model and endpoint. Set `retry_without_parameter` to `false` to disable this retry. Results explain rejection, retry, final route, and QA. Legacy `transparent_background` configuration is rejected during migration.
 
