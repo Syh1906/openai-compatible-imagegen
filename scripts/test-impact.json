@@ -130,7 +130,8 @@
       "name": "mcp-cross-contract",
       "files": ["mcp/create-server.mjs", "mcp/host-observation-store.mjs", "mcp/release-identity.mjs"],
       "suites": ["mcp", "release", "web"],
-      "checks": ["build", "plugin"]
+      "checks": ["build", "plugin"],
+      "platforms": ["macos", "windows"]
     },
     {
       "name": "mcp-project-context",

@@ -147,6 +147,9 @@ test("cross-suite direct consumers are included in MCP impact plans", () => {
     selectImpactPlan(["mcp/create-server.mjs"], projectManifest).suites,
     ["mcp", "release", "web"],
   );
+  for (const file of ["mcp/create-server.mjs", "mcp/host-observation-store.mjs", "mcp/release-identity.mjs"]) {
+    assert.deepEqual(selectImpactPlan([file], projectManifest).platforms, ["linux", "macos", "windows"], file);
+  }
   assert.deepEqual(
     selectImpactPlan(["web/host-observation.mjs"], projectManifest).suites,
     ["mcp", "web"],
