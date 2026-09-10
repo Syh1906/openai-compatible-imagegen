@@ -118,7 +118,7 @@ test("only the result renderer binds an app resource while legacy editor resourc
   );
 });
 
-test("server instructions require automatic result rendering after successful image production", async () => {
+test("server and tool guidance require final delivery without excluding intermediate previews", async () => {
   await withClient(
     {
       runTask: async () => { throw new Error("not used"); },
@@ -129,7 +129,18 @@ test("server instructions require automatic result rendering after successful im
       assert.match(instructions, /generate_image.*edit_image.*render_image_results/is);
       assert.match(instructions, /deliver_image.*deliveryReady.*render_image_results/is);
       assert.match(instructions, /batch_images.*render_image_results/is);
+      assert.doesNotMatch(instructions, /never displaying the same result twice/i);
+      assert.match(instructions, /intermediate.*final/is);
       assert.match(instructions, /before (?:the )?final (?:reply|response)/i);
+      const { tools } = await client.listTools();
+      for (const name of ["get_image_job", "generate_image", "edit_image", "batch_images", "deliver_image", "render_image_results"]) {
+        const description = tools.find((tool) => tool.name === name).description;
+        assert.doesNotMatch(description, /render successful images once|never displaying the same result twice|without redisplaying/i, `${name} must allow final reuse of intermediate previews`);
+        assert.match(description, /final/i, `${name} must retain final delivery guidance`);
+      }
+      const jobDescription = tools.find((tool) => tool.name === "get_image_job").description;
+      assert.match(jobDescription, /nextOffset/);
+      assert.match(jobDescription, /intermediate.*final/is);
     },
   );
 });
@@ -1042,7 +1053,7 @@ test("render_image_results returns ordered metadata and model-visible images", a
       assert.equal(result._meta.ui.resourceUri, RESULT_WIDGET_URI);
       assert.equal(result._meta.imageArtifacts, undefined);
       assert.deepEqual(result.content, [
-        { type: "text", text: "已显示 2 张图片。" },
+        { type: "text", text: "已准备 2 张图片结果。" },
         { type: "image", data: PNG_BASE64, mimeType: "image/png" },
         { type: "image", data: PNG_BASE64, mimeType: "image/png" },
       ]);

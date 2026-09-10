@@ -95,7 +95,7 @@ export function registerHostImageImportTools(server, {
         content: [{
           type: "text",
           text: publicResult.status === "committed"
-            ? "已将宿主图片发布为项目工件。请使用 render_image_results 展示返回的图片 ID。"
+            ? "已将宿主图片发布为项目工件。收集返回的图片 ID 及其用途和版本关系；需要中途查看时可调用 render_image_results。最终回复或请求用户选择前，汇总应交付的图片统一展示，中途已展示的图片也可纳入。"
             : "已终止本次宿主图片交接。",
         }],
         structuredContent: publicResult,
