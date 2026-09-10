@@ -273,7 +273,10 @@ class PluginSkeletonTests(unittest.TestCase):
         self.assertIn("call `batch_images` once", text)
         for field in ("submissionKey", "jobId", "get_image_job", "nextOffset", "afterRevision", "expectedRevision"):
             self.assertIn(field, text)
-        self.assertIn("Render all final results in groups of up to 10 IDs", text)
+        self.assertIn("at most 10 distinct IDs per call", text)
+        self.assertIn("previously displayed IDs may be included again", text)
+        self.assertIn("reconcile the delivery set with the user request", text)
+        self.assertNotIn("without redisplaying IDs shown earlier", text)
         self.assertIn("Do not wait for the user to request display", text)
         self.assertIn("historical image", text)
         self.assertIn("Report item failures without retrying generation", text)

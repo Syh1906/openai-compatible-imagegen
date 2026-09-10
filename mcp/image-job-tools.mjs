@@ -13,7 +13,7 @@ export function imageJobResult(job) {
     });
   }).slice(0, 10);
   const action = job.done
-    ? "读取所有结果分页，并用 render_image_results 展示尚未展示的成功图片。结果未知的项不得自动重新生成。"
+    ? "读取所有结果分页并收集成功图片。最终回复前按任务目标选择交付集合，用 render_image_results 汇总展示；中途展示过的必要图片仍应纳入。结果未知的项不得自动重新生成。"
     : job.status === "interrupted"
       ? "任务执行已中断。resume_image_job 只恢复未发出的请求和已保存原图的本地处理，不重新生成结果未知的项。"
       : "继续调用 get_image_job 查询此任务；查询超时不会取消生成，请勿重新创建请求。";
@@ -27,7 +27,7 @@ export function registerImageJobTools(server, { jobs, projectContext, toolError 
   const input = { projectBindingId: projectBindingIdSchema, jobId: jobIdSchema };
   server.registerTool("get_image_job", {
     title: "Get image job",
-    description: "Read a durable image job and an ordered page of up to 10 item results. Poll the same job until done; a query timeout never resubmits or cancels generation. Render successful images once, then read nextOffset pages. Unknown outcomes must not be regenerated automatically.",
+    description: "Read a durable image job and an ordered page of up to 10 item results. Poll the same job until done; a query timeout never resubmits or cancels generation. Read all nextOffset pages and collect successful image IDs for final delivery with render_image_results. Intermediate previews may be included again in the final set using the same IDs. Unknown outcomes must not be regenerated automatically.",
     inputSchema: { ...input,
       offset: z.number().int().min(0).max(63).optional(), limit: z.number().int().min(1).max(10).optional(),
       afterRevision: z.number().int().nonnegative().optional(), waitMs: z.number().int().min(0).max(20_000).optional(),

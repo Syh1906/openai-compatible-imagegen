@@ -51,7 +51,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 var define_RELEASE_IDENTITY_default;
 var init_define_RELEASE_IDENTITY = __esm({
   "<define:__RELEASE_IDENTITY__>"() {
-    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "1.4.0", serverBuildDigest: "665a37eff82038a2fc0140266821ff85692707a0061e96378be0a10c286d80b0", widgetAssetDigest: "75ed0f5881cd9bbc786fb8c9cb3bfc091e8541ab65a7ca4eb9614d523a1a75a2", fingerprint: "d55c2ce31c0cdb6a848f", resourceUris: { result: "ui://openai-compatible-imagegen/result-d55c2ce31c0cdb6a848f.html", editor: "ui://openai-compatible-imagegen/editor-d55c2ce31c0cdb6a848f.html" } };
+    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "1.4.0", serverBuildDigest: "cc47bb315866640668063bf61841a97028ca5fc12b3bfcd84220ee45867729a9", widgetAssetDigest: "75ed0f5881cd9bbc786fb8c9cb3bfc091e8541ab65a7ca4eb9614d523a1a75a2", fingerprint: "aa82c7501a2201e4bfdb", resourceUris: { result: "ui://openai-compatible-imagegen/result-aa82c7501a2201e4bfdb.html", editor: "ui://openai-compatible-imagegen/editor-aa82c7501a2201e4bfdb.html" } };
   }
 });
 
@@ -34295,7 +34295,7 @@ function imageJobResult(job) {
       return delivery?.deliveryReady && delivery.artifacts.length ? delivery.artifacts.map((artifact) => artifact.id) : [id];
     });
   }).slice(0, 10);
-  const action = job.done ? "\u8BFB\u53D6\u6240\u6709\u7ED3\u679C\u5206\u9875\uFF0C\u5E76\u7528 render_image_results \u5C55\u793A\u5C1A\u672A\u5C55\u793A\u7684\u6210\u529F\u56FE\u7247\u3002\u7ED3\u679C\u672A\u77E5\u7684\u9879\u4E0D\u5F97\u81EA\u52A8\u91CD\u65B0\u751F\u6210\u3002" : job.status === "interrupted" ? "\u4EFB\u52A1\u6267\u884C\u5DF2\u4E2D\u65AD\u3002resume_image_job \u53EA\u6062\u590D\u672A\u53D1\u51FA\u7684\u8BF7\u6C42\u548C\u5DF2\u4FDD\u5B58\u539F\u56FE\u7684\u672C\u5730\u5904\u7406\uFF0C\u4E0D\u91CD\u65B0\u751F\u6210\u7ED3\u679C\u672A\u77E5\u7684\u9879\u3002" : "\u7EE7\u7EED\u8C03\u7528 get_image_job \u67E5\u8BE2\u6B64\u4EFB\u52A1\uFF1B\u67E5\u8BE2\u8D85\u65F6\u4E0D\u4F1A\u53D6\u6D88\u751F\u6210\uFF0C\u8BF7\u52FF\u91CD\u65B0\u521B\u5EFA\u8BF7\u6C42\u3002";
+  const action = job.done ? "\u8BFB\u53D6\u6240\u6709\u7ED3\u679C\u5206\u9875\u5E76\u6536\u96C6\u6210\u529F\u56FE\u7247\u3002\u6700\u7EC8\u56DE\u590D\u524D\u6309\u4EFB\u52A1\u76EE\u6807\u9009\u62E9\u4EA4\u4ED8\u96C6\u5408\uFF0C\u7528 render_image_results \u6C47\u603B\u5C55\u793A\uFF1B\u4E2D\u9014\u5C55\u793A\u8FC7\u7684\u5FC5\u8981\u56FE\u7247\u4ECD\u5E94\u7EB3\u5165\u3002\u7ED3\u679C\u672A\u77E5\u7684\u9879\u4E0D\u5F97\u81EA\u52A8\u91CD\u65B0\u751F\u6210\u3002" : job.status === "interrupted" ? "\u4EFB\u52A1\u6267\u884C\u5DF2\u4E2D\u65AD\u3002resume_image_job \u53EA\u6062\u590D\u672A\u53D1\u51FA\u7684\u8BF7\u6C42\u548C\u5DF2\u4FDD\u5B58\u539F\u56FE\u7684\u672C\u5730\u5904\u7406\uFF0C\u4E0D\u91CD\u65B0\u751F\u6210\u7ED3\u679C\u672A\u77E5\u7684\u9879\u3002" : "\u7EE7\u7EED\u8C03\u7528 get_image_job \u67E5\u8BE2\u6B64\u4EFB\u52A1\uFF1B\u67E5\u8BE2\u8D85\u65F6\u4E0D\u4F1A\u53D6\u6D88\u751F\u6210\uFF0C\u8BF7\u52FF\u91CD\u65B0\u521B\u5EFA\u8BF7\u6C42\u3002";
   return {
     content: [{ type: "text", text: `\u56FE\u7247\u4EFB\u52A1 ${job.jobId}\uFF1A${job.summary.succeeded}/${job.summary.total} \u9879\u6210\u529F\uFF0C${job.summary.localFailed} \u9879\u672C\u5730\u5904\u7406\u672A\u5B8C\u6210\uFF0C${job.summary.unknown} \u9879\u7ED3\u679C\u672A\u77E5\uFF0C${job.summary.running} \u9879\u6267\u884C\u4E2D\uFF0C${job.summary.queued} \u9879\u6392\u961F\u4E2D\u3002${action}${presentationIds.length ? ` \u672C\u9875\u53EF\u5C55\u793A\u7684\u56FE\u7247 ID\uFF1A${presentationIds.join(", ")}\u3002` : ""}` }],
     structuredContent: job
@@ -34305,7 +34305,7 @@ function registerImageJobTools(server2, { jobs, projectContext, toolError: toolE
   const input = { projectBindingId: projectBindingIdSchema, jobId: jobIdSchema };
   server2.registerTool("get_image_job", {
     title: "Get image job",
-    description: "Read a durable image job and an ordered page of up to 10 item results. Poll the same job until done; a query timeout never resubmits or cancels generation. Render successful images once, then read nextOffset pages. Unknown outcomes must not be regenerated automatically.",
+    description: "Read a durable image job and an ordered page of up to 10 item results. Poll the same job until done; a query timeout never resubmits or cancels generation. Read all nextOffset pages and collect successful image IDs for final delivery with render_image_results. Intermediate previews may be included again in the final set using the same IDs. Unknown outcomes must not be regenerated automatically.",
     inputSchema: {
       ...input,
       offset: external_exports2.number().int().min(0).max(63).optional(),
@@ -36112,7 +36112,7 @@ function registerHostImageImportTools(server2, {
       return {
         content: [{
           type: "text",
-          text: publicResult.status === "committed" ? "\u5DF2\u5C06\u5BBF\u4E3B\u56FE\u7247\u53D1\u5E03\u4E3A\u9879\u76EE\u5DE5\u4EF6\u3002\u8BF7\u4F7F\u7528 render_image_results \u5C55\u793A\u8FD4\u56DE\u7684\u56FE\u7247 ID\u3002" : "\u5DF2\u7EC8\u6B62\u672C\u6B21\u5BBF\u4E3B\u56FE\u7247\u4EA4\u63A5\u3002"
+          text: publicResult.status === "committed" ? "\u5DF2\u5C06\u5BBF\u4E3B\u56FE\u7247\u53D1\u5E03\u4E3A\u9879\u76EE\u5DE5\u4EF6\u3002\u6536\u96C6\u8FD4\u56DE\u7684\u56FE\u7247 ID \u53CA\u5176\u7528\u9014\u548C\u7248\u672C\u5173\u7CFB\uFF1B\u9700\u8981\u4E2D\u9014\u67E5\u770B\u65F6\u53EF\u8C03\u7528 render_image_results\u3002\u6700\u7EC8\u56DE\u590D\u6216\u8BF7\u6C42\u7528\u6237\u9009\u62E9\u524D\uFF0C\u6C47\u603B\u5E94\u4EA4\u4ED8\u7684\u56FE\u7247\u7EDF\u4E00\u5C55\u793A\uFF0C\u4E2D\u9014\u5DF2\u5C55\u793A\u7684\u56FE\u7247\u4E5F\u53EF\u7EB3\u5165\u3002" : "\u5DF2\u7EC8\u6B62\u672C\u6B21\u5BBF\u4E3B\u56FE\u7247\u4EA4\u63A5\u3002"
         }],
         structuredContent: publicResult
       };
@@ -36401,7 +36401,7 @@ var retainedHostErrorCodes = /* @__PURE__ */ new Set([
 var sensitiveHostFieldKeyPattern = /(api[_-]?key|authorization|credential|password|secret|token|cookie)/i;
 var hostObservationProvenance = "unverified_widget_report";
 var DEFAULT_MODEL_PROFILE_ID2 = "primary/gpt-image-2";
-var SERVER_INSTRUCTIONS = "generate_image, edit_image, and batch_images submit durable asynchronous jobs. Preserve submissionKey and jobId. Poll get_image_job until done and read every result page; a polling timeout does not cancel or resubmit generation. Before the final response, render successful images with render_image_results in groups of up to 10, preferring delivery-ready derivatives and never displaying the same result twice. After deliver_image succeeds with deliveryReady=true, call render_image_results with its derivatives. Unknown outcomes must not be regenerated automatically. Do not ask the user to request the display step.";
+var SERVER_INSTRUCTIONS = "generate_image, edit_image, and batch_images submit durable asynchronous jobs. Preserve submissionKey and jobId. Poll get_image_job until done and read every result page; a polling timeout does not cancel or resubmit generation. Collect successful image IDs across operations with their purpose, order, and version relationships. Before the final response, including partial delivery or user selection, reconcile the requested delivery set and render it with render_image_results in groups of up to 10. Prefer final edits and delivery-ready derivatives; omit superseded drafts and reference-only images unless requested. An intermediate display does not replace final delivery: reuse previously shown IDs when needed for a complete final set, without regenerating. Do not repeat an already complete final presentation. After deliver_image succeeds with deliveryReady=true, include its derivatives in the delivery selection for render_image_results. Report missing or failed items accurately; tool success does not prove host visibility. Unknown outcomes must not be regenerated automatically. Do not ask the user to request the display step.";
 function createImagegenServer({
   releaseIdentity,
   launchContext,
@@ -36708,7 +36708,7 @@ function createImagegenServer({
     "generate_image",
     {
       title: "Generate images",
-      description: "Submit a durable image generation job and return its jobId without waiting for generation. Reuse submissionKey after a lost reply to recover the same job. Multiple candidates preserve ordered single-image requests and atomic group publication. Poll get_image_job and render successful results before replying.",
+      description: "Submit a durable image generation job and return its jobId without waiting for generation. Reuse submissionKey after a lost reply to recover the same job. Multiple candidates preserve ordered single-image requests and atomic group publication. Poll get_image_job and collect successful image IDs for final delivery with render_image_results.",
       inputSchema: {
         ...projectBindingInputSchema,
         submissionKey: submissionKeySchema,
@@ -36741,7 +36741,7 @@ function createImagegenServer({
     "edit_image",
     {
       title: "Edit image",
-      description: "Submit a durable edit job for a new immutable image version and immediately return jobId. Preserve submissionKey and any canvas submissionId. Poll get_image_job and render the successful child images; do not repeat uncertain edits with a new key.",
+      description: "Submit a durable edit job for a new immutable image version and immediately return jobId. Preserve submissionKey and any canvas submissionId. Poll get_image_job and collect successful child image IDs for final delivery with render_image_results; do not repeat uncertain edits with a new key.",
       inputSchema: {
         ...projectBindingInputSchema,
         submissionKey: submissionKeySchema,
@@ -36886,7 +36886,7 @@ function createImagegenServer({
     "batch_images",
     {
       title: "Batch image tasks",
-      description: "Submit a durable batch of independent generation and standard edit tasks, returning jobId immediately. Reuse submissionKey after a lost reply. Poll get_image_job for ordered partial results and all pages, rendering successful images in groups of up to 10. Concurrency shares the executor's eight slots across jobs.",
+      description: "Submit a durable batch of independent generation and standard edit tasks, returning jobId immediately. Reuse submissionKey after a lost reply. Poll get_image_job for ordered partial results and all pages; collect successful image IDs for final delivery with render_image_results in groups of up to 10. Concurrency shares the executor's eight slots across jobs.",
       inputSchema: {
         ...projectBindingInputSchema,
         submissionKey: submissionKeySchema,
@@ -36931,7 +36931,7 @@ function createImagegenServer({
     "deliver_image",
     {
       title: "Deliver image",
-      description: "Run local exact-size, grid, preview-board, and QA delivery for a stable image ID. Keep the original immutable and store derivatives separately. When deliveryReady is true, call render_image_results with the returned derivative artifact IDs before replying to the user.",
+      description: "Run local exact-size, grid, preview-board, and QA delivery for a stable image ID. Keep the original immutable and store derivatives separately. When deliveryReady is true, collect the returned derivative artifact IDs for final delivery selection and present the selected results with render_image_results before replying to the user.",
       inputSchema: {
         ...projectBindingInputSchema,
         imageId: imageIdSchema,
@@ -36970,7 +36970,7 @@ function createImagegenServer({
         return {
           content: [{
             type: "text",
-            text: result.deliveryReady ? `\u5DF2\u5B8C\u6210\u56FE\u7247 ${imageId} \u7684\u672C\u5730\u4EA4\u4ED8\u3002\u5728\u56DE\u590D\u7528\u6237\u524D\u8C03\u7528 render_image_results \u663E\u793A\uFF1A${artifactIds.join(", ")}\u3002` : `\u56FE\u7247 ${imageId} \u5DF2\u4FDD\u7559\u539F\u56FE\uFF0C\u4EA4\u4ED8\u6761\u4EF6\u5C1A\u672A\u6EE1\u8DB3\u3002`
+            text: result.deliveryReady ? `\u5DF2\u5B8C\u6210\u56FE\u7247 ${imageId} \u7684\u672C\u5730\u4EA4\u4ED8\u3002\u6536\u96C6\u8FD9\u4E9B\u4EA4\u4ED8\u7ED3\u679C\uFF0C\u6700\u7EC8\u56DE\u590D\u524D\u6309\u4EFB\u52A1\u76EE\u6807\u6C47\u603B\u8C03\u7528 render_image_results\uFF1B\u4E2D\u9014\u5C55\u793A\u4E0D\u66FF\u4EE3\u6700\u7EC8\u4EA4\u4ED8\uFF1A${artifactIds.join(", ")}\u3002` : `\u56FE\u7247 ${imageId} \u5DF2\u4FDD\u7559\u539F\u56FE\uFF0C\u4EA4\u4ED8\u6761\u4EF6\u5C1A\u672A\u6EE1\u8DB3\u3002`
           }],
           structuredContent: {
             sourceArtifactId: imageId,
@@ -37110,7 +37110,7 @@ function createImagegenServer({
     "render_image_results",
     {
       title: "Render image results",
-      description: "Display one or more created images in order within one conversation result and provide an independent canvas entry for each image. Call once after generation or editing succeeds.",
+      description: "Display an explicitly selected set of up to 10 images in order, with independent canvas entries. Collect results across operations for final delivery; intermediate previews may be included again in the final set using the same IDs. Do not omit a required image because it was shown earlier, or repeat an already complete final set. This tool does not infer task completeness or select versions for you.",
       inputSchema: { ...projectBindingInputSchema, imageIds: external_exports2.array(imageIdSchema).min(1).max(10) },
       outputSchema: external_exports2.object({
         imageIds: external_exports2.array(imageIdSchema).min(1).max(10),
@@ -37145,7 +37145,7 @@ function createImagegenServer({
         }));
         return {
           content: [
-            { type: "text", text: `\u5DF2\u663E\u793A ${imageIds.length} \u5F20\u56FE\u7247\u3002` },
+            { type: "text", text: `\u5DF2\u51C6\u5907 ${imageIds.length} \u5F20\u56FE\u7247\u7ED3\u679C\u3002` },
             ...records.map(imageContent2)
           ],
           structuredContent: { imageIds, artifacts },
@@ -37490,7 +37490,7 @@ async function readImageTaskResult(artifactIds, context, readArtifact, { recover
     return {
       content: [{
         type: "text",
-        text: `${recovered ? `\u5DF2\u6062\u590D ${artifacts.length} \u5F20\u65E2\u6709\u56FE\u7247` : `\u5DF2\u521B\u5EFA ${artifacts.length} \u5F20\u56FE\u7247`}\u3002\u5728\u56DE\u590D\u7528\u6237\u524D\u8C03\u7528 render_image_results \u663E\u793A\uFF1A${artifactIds.join(", ")}\u3002`
+        text: `${recovered ? `\u5DF2\u6062\u590D ${artifacts.length} \u5F20\u65E2\u6709\u56FE\u7247` : `\u5DF2\u521B\u5EFA ${artifacts.length} \u5F20\u56FE\u7247`}\u3002\u6536\u96C6\u8FD9\u4E9B\u56FE\u7247\uFF0C\u6700\u7EC8\u56DE\u590D\u524D\u6309\u4EFB\u52A1\u76EE\u6807\u6C47\u603B\u8C03\u7528 render_image_results\uFF1B\u4E2D\u9014\u5C55\u793A\u8FC7\u7684\u5FC5\u8981\u56FE\u7247\u4ECD\u5E94\u7EB3\u5165\uFF1A${artifactIds.join(", ")}\u3002`
       }],
       structuredContent,
       _meta: {
