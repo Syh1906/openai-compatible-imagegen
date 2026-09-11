@@ -51,7 +51,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 var define_RELEASE_IDENTITY_default;
 var init_define_RELEASE_IDENTITY = __esm({
   "<define:__RELEASE_IDENTITY__>"() {
-    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "1.4.0", serverBuildDigest: "e0d022d388cc12fee516a823ba8797b04590125399b3e5553ace15e6cab9c072", widgetAssetDigest: "0e66d1b3b8a035000ac3dcb3ab75520cffd890853a4479c845d216494ea50394", fingerprint: "4bcc471fbf7a16a61963", resourceUris: { result: "ui://openai-compatible-imagegen/result-4bcc471fbf7a16a61963.html", editor: "ui://openai-compatible-imagegen/editor-4bcc471fbf7a16a61963.html" } };
+    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "1.5.0", serverBuildDigest: "53bb51c3c14288829fae1172d0641ce1f690a9befbe702647c9e915d090c2f7d", widgetAssetDigest: "0e66d1b3b8a035000ac3dcb3ab75520cffd890853a4479c845d216494ea50394", fingerprint: "a0cfdf36cd4150fc7940", resourceUris: { result: "ui://openai-compatible-imagegen/result-a0cfdf36cd4150fc7940.html", editor: "ui://openai-compatible-imagegen/editor-a0cfdf36cd4150fc7940.html" } };
   }
 });
 
@@ -37509,7 +37509,7 @@ function createImagegenServer({
     "prepare_image_edit_submission",
     {
       title: "Prepare image edit submission",
-      description: "Save the current canvas revision and issue a server submission ID that binds the next edit_image call to the same parent image, annotations, and mask policy.",
+      description: "Save the current canvas revision and issue a server submission ID that binds the selected API Key edit or ChatGPT host handoff to the same parent image, annotations, and mask policy.",
       inputSchema: {
         ...projectBindingInputSchema,
         parentImageId: imageIdSchema,

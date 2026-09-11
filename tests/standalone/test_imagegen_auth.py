@@ -1100,6 +1100,44 @@ class ParameterResolutionTests(unittest.TestCase):
 
         request.assert_not_called()
 
+    def test_cli_explicit_native_alpha_overrides_the_configured_route(self) -> None:
+        from image_transparency import resolve_policy
+
+        parser = self.imagegen.build_parser()
+        common = ["--transparent", "--transparency-route", "native-alpha"]
+        for command in (
+            ["generate", "--prompt", "A red enamel badge"],
+            ["edit", "--prompt", "A red enamel badge", "--image", "parent.png"],
+            ["batch", "--input", "rows.jsonl", "--out", "outputs"],
+        ):
+            with self.subTest(command=command[0]):
+                args = parser.parse_args(command + common)
+                self.assertEqual(args.transparency_route, "native-alpha")
+
+        cfg = self.imagegen.Config(**{
+            **self.cfg.__dict__,
+            "transparency": resolve_policy({
+                "default_route": "chroma-matting",
+                "native": {"enabled": True},
+            }),
+        })
+        args = parser.parse_args([
+            "generate", "--prompt", "A red enamel badge",
+            "--file", str(ROOT / "unused-explicit-native.png"),
+            *common,
+        ])
+        with (
+            mock.patch.object(self.imagegen, "request_json", return_value={"data": []}) as request,
+            mock.patch.object(self.imagegen, "write_response_images", return_value={
+                "files": [], "warnings": [], "api_delivery": {"status": "published", "items": []},
+            }),
+        ):
+            result = self.imagegen.generate(cfg, args)
+
+        self.assertEqual(request.call_args.args[2]["background"], "transparent")
+        self.assertEqual(request.call_args.args[2]["output_format"], "png")
+        self.assertEqual(result["transparency"]["mode"], "native-alpha")
+
     def test_generate_native_alpha_sends_transparent_background_only_for_transparent_intent(self) -> None:
         from image_transparency import resolve_policy
 

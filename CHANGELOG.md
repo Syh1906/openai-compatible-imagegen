@@ -4,6 +4,8 @@
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-09-11
+
 ### 新增
 
 - Plugin 用户配置新增 `canvas_submission_mode`：可选择等待用户发送的 `composer` 或直接发送的 `message`；未配置或设为 `auto` 时保留现有自动选择顺序。指定方式不受宿主支持时停止提交并提示。
@@ -13,6 +15,7 @@
 
 ### 修复
 
+- Standalone 的 `generate`、`edit` 和 `batch` 命令接受 `--transparency-route native-alpha`，可在已启用原生透明的配置下为单次请求选择该路线。
 - 多结果卡的方图、横图和竖图按预览区域完整缩放；宿主限制结果区高度时可以滚动查看后续卡片。
 - Standalone v2 批处理行的尺寸表达正确覆盖共享参数，透明与素材请求保留 PNG 要求，背景参数沿用既有校验。
 - 修复迁移脚本直接运行时的模块查找错误，可从安装目录之外执行文档中的迁移命令。
@@ -298,7 +301,8 @@
 - Publish the initial Agent Skills-compatible image generation workflow.
 - Support OpenAI-compatible image generation, image editing, local authentication, transparent asset intent, and JSONL batches.
 
-[Unreleased]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v1.1.1...v1.2.0

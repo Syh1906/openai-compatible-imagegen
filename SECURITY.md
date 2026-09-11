@@ -13,7 +13,7 @@ Security fixes target the latest published release. Older release artifacts and 
 ## Security boundaries
 
 - Credentials remain in user-controlled configuration or environment variables.
-- Project configuration cannot replace provider, model, endpoint, authentication source, or route permissions.
+- Codex Plugin project overrides cannot replace provider, model, endpoint, authentication source, or route permissions; those settings belong to the user configuration.
 - Plugin artifacts, annotations, versions, and delivery files are stored locally under the configured project output directory.
 - The project does not operate a hosted image service or collect image prompts and outputs.
 - Returned provider image URLs are fetched without forwarding the image API key.

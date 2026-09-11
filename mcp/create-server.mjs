@@ -1126,7 +1126,7 @@ export function createImagegenServer({
     "prepare_image_edit_submission",
     {
       title: "Prepare image edit submission",
-      description: "Save the current canvas revision and issue a server submission ID that binds the next edit_image call to the same parent image, annotations, and mask policy.",
+      description: "Save the current canvas revision and issue a server submission ID that binds the selected API Key edit or ChatGPT host handoff to the same parent image, annotations, and mask policy.",
       inputSchema: {
         ...projectBindingInputSchema,
         parentImageId: imageIdSchema,
