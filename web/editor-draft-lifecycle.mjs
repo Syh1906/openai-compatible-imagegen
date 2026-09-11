@@ -36,7 +36,7 @@ export function createEditorDraftLifecycle({
     track() {
       if (!isEligible()) return false;
       const editor = getEditor();
-      return saveQueue.track({ annotations: editor.annotations, prompt: editor.prompt });
+      return saveQueue.track({ annotations: editor.annotations, prompt: editor.prompt, ...(editor.modelSelection ? { modelSelection: editor.modelSelection } : {}) });
     },
 
     async flush() {
@@ -77,6 +77,7 @@ export function createEditorDraftLifecycle({
         ...getEditor(),
         annotations: structuredClone(draft.annotations),
         prompt: draft.prompt,
+        ...(draft.modelSelection ? { modelSelection: structuredClone(draft.modelSelection) } : {}),
         selectedAnnotationId: null,
         editingTextAnnotationId: null,
       }));

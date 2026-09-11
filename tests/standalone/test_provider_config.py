@@ -16,6 +16,27 @@ import provider_config
 
 
 class ProviderConfigAdapterTests(unittest.TestCase):
+    def test_native_profiles_keep_provider_contracts_and_own_defaults(self) -> None:
+        raw = plugin_config()
+        raw["config_version"] = 2
+        raw["defaults"] = {"timeout_seconds": 90}
+        raw["providers"]["native"] = {"protocol": "xai-images", "base_url": "https://native.example.test/v1", "api_key_env": "IMAGEGEN_TEST_KEY"}
+        raw["models"]["native/grok"] = {"provider": "native", "model": "grok-imagine-image-2.0", "aliases": [" Grok ", "ＧＲＯＫ"], "defaults": {"aspect_ratio": "1:1", "resolution": "1K"}, "capabilities": {"generate": True, "edit": True, "mask": True}, "limits": {"max_input_images": 3}}
+        cfg = provider_config.parse_plugin_config(raw, require_api_key=True, model_profile_id="native/grok")
+        self.assertEqual(cfg.protocol, "xai-images")
+        self.assertEqual(cfg.defaults, {"timeout_seconds": 90, "aspect_ratio": "1:1", "resolution": "1K"})
+        self.assertEqual(cfg.config_version, 2)
+        item = provider_config.list_model_profiles(raw)[1]
+        self.assertFalse(item["effectiveCapabilities"]["mask"])
+        self.assertEqual(item["limits"]["max_input_images"], 3)
+        self.assertEqual(item["aliases"], ["Grok"])
+
+    def test_invalid_unselected_provider_is_rejected_without_resolving_its_key(self) -> None:
+        raw = plugin_config()
+        raw["providers"]["broken"] = {"protocol": "invented", "base_url": "https://example.test", "api_key_env": "MISSING_TEST_KEY"}
+        with self.assertRaises(provider_config.ProviderConfigError):
+            provider_config.parse_plugin_config(raw, require_api_key=True, model_profile_id="primary/gpt-image-2")
+
     def setUp(self) -> None:
         self.environment = mock.patch.dict(
             os.environ,
@@ -107,6 +128,72 @@ class ProviderConfigAdapterTests(unittest.TestCase):
 
         self.assertEqual(parsed.model, "vendor-image-alpha")
 
+    def test_explicit_profiles_use_their_own_provider_without_changing_default(self) -> None:
+        raw = plugin_config()
+        for name, model in (("grok", "grok-imagine-image-2.0"), ("gemini", "gemini-3.1-flash-image")):
+            raw["providers"][name] = {
+                "protocol": "openai-compatible",
+                "base_url": f"https://{name}.example.test/v1",
+                "api_key_env": f"IMAGEGEN_{name.upper()}_KEY",
+            }
+            raw["models"][f"{name}/image"] = {
+                "provider": name, "model": model, "capabilities": {"generate": True},
+            }
+        with mock.patch.dict(os.environ, {"IMAGEGEN_GROK_KEY": "fixture-grok", "IMAGEGEN_GEMINI_KEY": "fixture-gemini"}):
+            for name in ("grok", "gemini"):
+                cfg = provider_config.parse_plugin_config(raw, require_api_key=True, model_profile_id=f"{name}/image")
+                self.assertEqual(cfg.profile_id, f"{name}/image")
+                self.assertEqual(cfg.provider_id, name)
+                self.assertEqual(cfg.base_url, f"https://{name}.example.test/v1")
+                self.assertEqual(cfg.api_key, f"fixture-{name}")
+        self.assertEqual(raw["active_profile"], "primary/gpt-image-2")
+
+    def test_independent_providers_can_share_address_and_key_reference(self) -> None:
+        raw = plugin_config()
+        raw["providers"]["gemini"] = dict(raw["providers"]["primary"])
+        raw["models"]["gemini/image"] = {"provider": "gemini", "model": "gemini-3.1-flash-image"}
+        cfg = provider_config.parse_plugin_config(raw, require_api_key=True, model_profile_id="gemini/image")
+        self.assertEqual(cfg.provider_id, "gemini")
+        self.assertEqual(cfg.model, "gemini-3.1-flash-image")
+        self.assertEqual(cfg.base_url, "https://images.example.test/v1")
+
+    def test_v2_profile_defaults_do_not_leak_to_other_models_or_local_delivery(self) -> None:
+        raw = plugin_config()
+        raw.update(config_version=2, defaults={"timeout_seconds": 120}, host_defaults={"quality": "medium"})
+        raw["models"]["primary/gpt-image-2"]["defaults"] = {"quality": "max", "size": "1536x1024"}
+        raw["providers"]["grok"] = dict(raw["providers"]["primary"])
+        raw["models"]["grok/image"] = {"provider": "grok", "model": "grok-imagine-image-2.0", "defaults": {"quality": "low"}}
+        selected = provider_config.parse_plugin_config(raw, require_api_key=True, model_profile_id="grok/image")
+        self.assertEqual(selected.defaults, {"timeout_seconds": 120, "quality": "low"})
+        gpt = provider_config.parse_plugin_config(raw, require_api_key=True, model_profile_id="primary/gpt-image-2")
+        self.assertEqual(gpt.defaults["quality"], "max")
+        local = provider_config.parse_plugin_local_config(raw)
+        self.assertEqual(local.defaults, {"timeout_seconds": 120, "quality": "medium"})
+
+    def test_standalone_accepts_same_v2_profile_selection_without_changing_legacy_model(self) -> None:
+        raw = plugin_config()
+        raw.update(config_version=2, defaults={})
+        raw["models"]["primary/gpt-image-2"]["defaults"] = {"quality": "xhigh"}
+        cfg = provider_config.parse_standalone_config(raw, require_api_key=True, model_profile_id="primary/gpt-image-2")
+        self.assertEqual(cfg.defaults["quality"], "xhigh")
+        self.assertEqual(cfg.provider_id, "primary")
+
+    def test_catalog_lists_all_profiles_with_safe_metadata_and_explicit_selection(self) -> None:
+        raw = plugin_config()
+        raw.update(config_version=2, defaults={})
+        raw["models"]["primary/gpt-image-2"].update(display_name="GPT Image", aliases=["GPT", "ｇｐｔ"])
+        raw["providers"]["gemini"] = {**raw["providers"]["primary"], "display_name": "Gemini 接口", "api_key_env": "UNSET_FIXTURE_KEY"}
+        raw["models"]["gemini/image"] = {"provider": "gemini", "model": "gemini-3.1-flash-image", "aliases": ["香蕉"], "capabilities": {"generate": True, "edit": True}}
+        catalog = provider_config.list_model_profiles(raw)
+        self.assertEqual([m["id"] for m in catalog], ["primary/gpt-image-2", "gemini/image"])
+        self.assertEqual(catalog[0]["aliases"], ["GPT"])
+        self.assertTrue(catalog[0]["isDefault"])
+        self.assertEqual(catalog[1]["providerDisplayName"], "Gemini 接口")
+        self.assertEqual(catalog[1]["availability"], "missing_credentials")
+        self.assertEqual(len(catalog[1]["selectionFingerprint"]), 64)
+        self.assertNotIn("base_url", str(catalog))
+        self.assertNotIn("UNSET_FIXTURE_KEY", str(catalog))
+
     def test_plugin_adapter_rejects_removed_transparent_background_capability(self) -> None:
         raw = plugin_config()
         raw["models"]["primary/gpt-image-2"]["capabilities"]["transparent_background"] = True
@@ -197,6 +284,20 @@ class ProviderConfigAdapterTests(unittest.TestCase):
                         require_api_key=True,
                         model_profile_id="primary/gpt-image-2",
                     )
+
+
+class ExtensibleProfileTests(unittest.TestCase):
+    def test_provider_endpoints_and_model_parameters_are_independent(self):
+        raw = plugin_config()
+        raw.update(config_version=2, defaults={})
+        raw["providers"]["primary"]["endpoints"] = {"generate": "https://generate.example.test/render", "edit": "https://edit.example.test/transform/{model}"}
+        raw["models"][raw["active_profile"]]["parameters"] = {"seed": 42, "vendor_option": {"future": True}}
+        cfg = provider_config.parse_plugin_config(raw, require_api_key=False, model_profile_id=raw["active_profile"])
+        self.assertEqual(cfg.endpoints, raw["providers"]["primary"]["endpoints"])
+        self.assertEqual(cfg.parameters, {"seed": 42, "vendor_option": {"future": True}})
+        raw["models"][raw["active_profile"]]["parameters"] = {"model": "override"}
+        with self.assertRaises(provider_config.ProviderConfigError):
+            provider_config.parse_plugin_config(raw, require_api_key=False, model_profile_id=raw["active_profile"])
 
 
 def plugin_config() -> dict:

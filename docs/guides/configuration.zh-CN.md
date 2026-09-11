@@ -6,6 +6,8 @@
 
 只配置已经安装的发行包。Standalone Skill 和 Codex Plugin 不会扫描、合并或回退到对方的配置。
 
+多个供应商、xAI/Gemini 原生协议、模型别名和画布单次参数使用 [v2 多模型配置](./models.zh-CN.md)。以下单供应商与 v1 示例继续兼容；ChatGPT 路线不需要 API 模型配置。
+
 ## 配置 Standalone Skill
 
 Standalone Skill 从安装目录读取 `auth.json`。
@@ -28,7 +30,7 @@ python3 "/absolute/path/to/openai-compatible-imagegen/scripts/quick-init.py"
 
 | 字段 | 用途 |
 | --- | --- |
-| `protocol` | `openai-compatible`（默认）或 `atlas` |
+| `protocol` | 显式选择协议，见[支持的协议](./models.zh-CN.md) |
 | `base_url` | 所选图片服务的基础 URL |
 | `model` | provider 自定义的图片模型 ID；接受任意非空 ID |
 | `api_key_env` | 保存凭据的首选环境变量 |
@@ -122,9 +124,29 @@ API Key 用户基线声明活动 profile、provider、provider 自定义的 mode
 
 项目文件不能替换活动 profile、provider、model、endpoint、proxy、认证来源、凭据环境变量、timeout、concurrency 或路线权限。不允许的覆盖会在网络请求前停止。
 
+### 选择画布提交方式
+
+在用户配置顶层添加 `canvas_submission_mode`，决定点击画布提交后如何把修改要求交给会话。该字段兼容 v1、v2，适用于 API Key 和 ChatGPT 两条路线；项目配置不能覆盖它。
+
+| 值 | 行为 |
+| --- | --- |
+| `auto`（省略时的默认值） | 保留现有顺序：宿主支持直接发送图文消息及结构化上下文时优先直接发送，否则使用支持完整图文上下文的待发送方式。 |
+| `composer` | 交接图文和编辑上下文，等待你在聊天中补充并发送；Plugin 不调用发送消息接口。输入框如何显示交接内容由宿主决定。 |
+| `message` | 直接向会话发送图文修改请求。 |
+
+例如，向已有用户配置添加以下字段：
+
+```json
+{
+  "canvas_submission_mode": "composer"
+}
+```
+
+这是配置片段，请保留已有字段。也可以直接让 Codex“把画布提交方式设为 composer，提交后等我补充再发送”。修改后重新绑定项目，并重新打开画布。指定方式不受宿主支持时会提示并停止，不会改用另一种方式；改回 `auto` 可恢复自动选择。
+
 ### 检查和修改配置
 
-OpenAI-compatible 路线的 `defaults.quality` 和显式请求质量接受 `auto`、`low`、`medium`、`high`、`xhigh`、`max`。GPT Image 2.5 Sunburst 和 Flare 支持后两档；通过第三方调用时，以该服务的实际支持情况为准，旧模型可能拒绝新档位。Atlas 仍只接受 `low`、`medium`、`high`。请求不受支持时，不会自动降低质量或切换模型。
+Standalone 扁平配置和 v1 配置中，OpenAI-compatible 路线的 `defaults.quality` 和显式请求质量接受 `auto`、`low`、`medium`、`high`、`xhigh`、`max`。GPT Image 2.5 [Sunburst](https://developers.openai.com/api/docs/models/gpt-image-2.5-sunburst) 和 [Flare](https://developers.openai.com/api/docs/models/gpt-image-2.5-flare) 的官方说明列出了后两档；通过第三方调用时，以该服务的实际支持情况为准，旧模型可能拒绝新档位。v2 profile 可声明供应商支持的其他质量值。Atlas 仍只接受 `low`、`medium`、`high`。请求不受支持时，不会自动降低质量或切换模型。
 
 使用已开放的 GPT Image 2.5 模型时，将 Standalone 的 `model` 或 Plugin 的 `models[active_profile].model` 设置为供应商提供的准确 ID，例如 `gpt-image-2.5-sunburst` 或 `gpt-image-2.5-flare`。profile ID 是本地配置键，不必与实际模型 ID 相同；Plugin 修改配置后需重新绑定项目。这些设置用于 API Key 请求，不能指定 ChatGPT 宿主生图的模型或质量。
 
@@ -195,7 +217,7 @@ Codex Plugin 在用户基线中配置同一个 provider 和 model：
 
 ## 图片服务要求
 
-默认 `openai-compatible` 协议使用以下接口；需要的操作必须由服务及所选模型支持：
+当 `openai-compatible` 的 `base_url` 以 `/v1` 结尾时，默认请求路径如下。其他基础路径及完整端点覆盖见[模型配置](./models.zh-CN.md)。服务和所选模型必须支持你需要的操作：
 
 - `POST /v1/images/generations` — 生成
 - `POST /v1/images/edits` — 编辑（需要编辑时）
@@ -206,7 +228,9 @@ Atlas 协议支持输出 JPEG 或 PNG 的文生图。它不支持编辑和原生
 
 ## 透明设置
 
-新建的 OpenAI-compatible API Key 模板默认启用原生透明；安装和更新会保留已有配置。希望旧配置也启用时，可让 Codex 合并以下设置。ChatGPT 路线不使用这些供应商参数；Atlas 需使用本地透明路线。
+下面的片段使用 Standalone 扁平配置和 v1 配置的顶层策略。v2 API 请求需将其中的 `transparency` 对象放入所选 `models[profileId]`；顶层 `transparency` 保留给 Plugin 宿主图片与独立本地交付。目前只有 OpenAI-compatible 支持专用原生透明参数；Atlas、xAI 和 Gemini 需在生成后采用适用的本地处理路线。
+
+Plugin 新建的 OpenAI-compatible API Key 模板默认启用原生透明。Standalone 示例和设置向导保留本地透明策略，需要原生透明时显式配置；安装和更新会保留已有配置。希望旧配置也启用时，可让 Codex 合并以下设置。ChatGPT 路线不使用这些供应商参数；Atlas 需使用本地透明路线。
 
 ```json
 {

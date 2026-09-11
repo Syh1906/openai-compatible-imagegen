@@ -16,11 +16,18 @@ import stat
 import sys
 from typing import Any
 
+# Resolve package-qualified shared imports when this entry is run by its file path.
+PACKAGE_ROOT = Path(__file__).resolve().parent.parent
+if str(PACKAGE_ROOT) not in sys.path:
+    sys.path.insert(0, str(PACKAGE_ROOT))
+
 from provider_config import (
     PLACEHOLDER_API_KEYS,
     ProviderConfigError,
     parse_plugin_config,
+    parse_plugin_local_config,
 )
+from model_profiles import CONTRACT, validate_model_profiles
 from repository_fs import (
     DirectoryLease,
     delete_file_safely,
@@ -155,10 +162,21 @@ def plan_migration(
             include_project_overrides=project_target is not None,
             allow_plaintext_api_key=allow_plaintext_api_key,
         )
+    elif source_kind == "plugin-v1":
+        if project_target is not None:
+            raise ConfigMigrationError("migration_project_override_forbidden", "Plugin v1 upgrades write one new user configuration")
+        user_config = upgrade_plugin_config(raw)
+        requires_plaintext = False
+        for provider in user_config.get("providers", {}).values():
+            if provider.get("api_key_env"):
+                provider.pop("api_key", None)
+            elif provider.get("api_key"):
+                requires_plaintext = True
+        project_config = None
     else:
         raise ConfigMigrationError(
             "migration_source_kind_invalid",
-            "source kind must be standalone or development-plugin",
+            "source kind must be standalone, development-plugin, or plugin-v1",
         )
 
     validate_user_config(user_config)
@@ -406,6 +424,9 @@ def normalize_capabilities(value: Any) -> dict[str, bool]:
 
 
 def validate_user_config(config: dict[str, Any]) -> None:
+    if config.get("config_version") == 2:
+        validate_upgraded_config(config)
+        return
     require_exact_output_keys(config, USER_TOP_LEVEL_KEYS, "user configuration")
     if config.get("config_version") != 1 or config.get("active_profile") != PROFILE_ID:
         raise ConfigMigrationError("migration_source_invalid", "invalid Plugin configuration identity")
@@ -431,6 +452,46 @@ def validate_user_config(config: dict[str, Any]) -> None:
             model_profile_id=PROFILE_ID,
         )
     except ProviderConfigError as exc:
+        raise ConfigMigrationError("migration_source_invalid", str(exc)) from exc
+
+
+def upgrade_plugin_config(raw: dict[str, Any]) -> dict[str, Any]:
+    require_exact_output_keys(raw, USER_TOP_LEVEL_KEYS | {"auth_mode", "canvas_submission_mode"}, "Plugin v1 configuration")
+    if raw.get("config_version") != 1:
+        raise ConfigMigrationError("migration_source_invalid", "plugin-v1 requires config_version 1")
+    validate_defaults_output(raw.get("defaults"), USER_DEFAULT_KEYS)
+    upgraded = deepcopy(raw)
+    image_defaults = {key: value for key, value in raw.get("defaults", {}).items() if key in CONTRACT["imageDefaultKeys"]}
+    upgraded["config_version"] = 2
+    upgraded["defaults"] = {key: value for key, value in raw.get("defaults", {}).items() if key in CONTRACT["executionDefaultKeys"]}
+    if image_defaults:
+        upgraded["host_defaults"] = deepcopy(image_defaults)
+    active = upgraded.get("active_profile")
+    if active is not None and active in upgraded.get("models", {}):
+        upgraded["models"][active]["defaults"] = deepcopy(image_defaults)
+        if "transparency" in raw:
+            upgraded["models"][active]["transparency"] = deepcopy(raw["transparency"])
+    validate_upgraded_config(upgraded)
+    return upgraded
+
+
+def validate_upgraded_config(config: dict[str, Any]) -> None:
+    require_exact_output_keys(config, USER_TOP_LEVEL_KEYS | {"auth_mode", "canvas_submission_mode", "host_defaults"}, "Plugin v2 configuration")
+    if config.get("canvas_submission_mode", "auto") not in ("auto", "composer", "message"):
+        raise ConfigMigrationError("migration_source_invalid", "invalid canvas_submission_mode")
+    if config.get("auth_mode", "apikey") not in {"apikey", "chatgpt"}:
+        raise ConfigMigrationError("migration_source_invalid", "invalid auth_mode")
+    try:
+        if any(key in config for key in ("active_profile", "providers", "models")):
+            validate_model_profiles(config)
+            for profile in config["models"]:
+                parse_plugin_config(config, require_api_key=False, model_profile_id=profile)
+        elif config.get("auth_mode") != "chatgpt":
+            raise ValueError("API Key configuration requires providers and models")
+        parse_plugin_local_config(config)
+        validate_postprocess_output(config.get("postprocess"))
+        validate_storage_output(config.get("storage"))
+    except (ValueError, TypeError, KeyError) as exc:
         raise ConfigMigrationError("migration_source_invalid", str(exc)) from exc
 
 
@@ -727,7 +788,7 @@ def _is_allowed_system_ancestor(path: Path) -> bool:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", required=True, type=Path)
-    parser.add_argument("--source-kind", required=True, choices=["standalone", "development-plugin"])
+    parser.add_argument("--source-kind", required=True, choices=["standalone", "development-plugin", "plugin-v1"])
     parser.add_argument("--user-home", type=Path, default=Path.home())
     parser.add_argument("--project-root", type=Path)
     parser.add_argument("--include-project-overrides", action="store_true")

@@ -16,8 +16,33 @@ import {
 import { withClient } from "../support/mcp-tool-client.mjs";
 import { outputSchema, batchItemsSchema } from "../../mcp/image-tool-schemas.mjs";
 
+test("canvas submission mode is a validated user preference with the existing automatic default", async () => {
+  await withConfigRoots(async ({ projectRoot, userHome }) => {
+    for (const config_version of [1, 2]) {
+      await writeJson(userConfigPath(userHome), { config_version, auth_mode: "chatgpt" });
+      assert.equal((await resolveImageConfigBinding({ projectRoot, userHome })).canvasSubmissionMode, "auto");
+      for (const mode of ["composer", "message", "auto"]) {
+        await updateImageConfig({ userHome, changes: { canvas_submission_mode: mode } });
+        const binding = await resolveImageConfigBinding({ projectRoot, userHome });
+        assert.equal(binding.canvasSubmissionMode, mode);
+        assert.equal((await inspectImageConfig({ userHome })).canvasSubmissionMode, mode);
+        assert.equal(binding.localRuntimeConfig.canvas_submission_mode, undefined);
+      }
+      for (const mode of [null, "", "other", false, {}]) {
+        await assert.rejects(updateImageConfig({ userHome, changes: { canvas_submission_mode: mode } }), { code: "image_config_invalid" });
+      }
+    }
+    await writeJson(userConfigPath(userHome), userConfig({ canvas_submission_mode: "composer" }));
+    assert.equal((await resolveImageConfigBinding({ projectRoot, userHome })).apiRuntimeConfig.canvas_submission_mode, undefined);
+    await writeJson(projectConfigPath(projectRoot), projectConfig());
+    await assert.rejects(updateImageConfig({ projectRoot, scope: "project", changes: { canvas_submission_mode: "composer" } }), { code: "image_config_update_forbidden" });
+    await writeJson(projectConfigPath(projectRoot), { ...projectConfig(), canvas_submission_mode: "message" });
+    await assert.rejects(resolveImageConfigBinding({ projectRoot, userHome }), { code: "project_config_forbidden" });
+  });
+});
 
-test("image quality accepts new explicit and configured levels without accepting unknown values", async () => {
+
+test("image quality schema accepts native values while v1 defaults keep legacy validation", async () => {
   for (const quality of ["auto", "low", "medium", "high", "xhigh", "max"]) {
     assert.equal(outputSchema.quality.parse(quality), quality);
     const items = batchItemsSchema.parse([
@@ -35,7 +60,7 @@ test("image quality accepts new explicit and configured levels without accepting
       await assert.rejects(updateImageConfig({ userHome, scope: "user", changes: { defaults: { quality: "ultra" } } }));
     });
   }
-  assert.equal(outputSchema.quality.safeParse("ultra").success, false);
+  assert.equal(outputSchema.quality.safeParse("ultra").success, true);
 });
 
 test("configuration MCP tools initialize, inspect, and update without exposing credentials", async () => {
@@ -212,6 +237,139 @@ test("custom profile and model IDs remain valid and are exposed by inspection", 
     assert.equal(inspected.modelId, "vendor-image-v7");
     assert.equal(inspected.transparencySummary.retryWithoutParameter, false);
     assert.equal(inspected.transparencySummary.fallbackRoute, "emissive-alpha");
+  });
+});
+
+test("all selectable profiles validate their own provider, including inactive profiles", async () => {
+  await withConfigRoots(async ({ projectRoot, userHome }) => {
+    const config = userConfig();
+    config.providers.gemini = { ...config.providers.primary };
+    config.models["gemini/image"] = { provider: "gemini", model: "gemini-3.1-flash-image", capabilities: { generate: true } };
+    await writeJson(userConfigPath(userHome), config);
+    const binding = await resolveImageConfigBinding({ projectRoot, userHome });
+    assert.equal(binding.apiRuntimeConfig.models["gemini/image"].provider, "gemini");
+    assert.equal(binding.activeProfile, "primary/gpt-image-2");
+    config.providers.gemini.protocol = "unimplemented-protocol";
+    await writeJson(userConfigPath(userHome), config);
+    await assert.rejects(resolveImageConfigBinding({ projectRoot, userHome }), { code: "image_config_invalid" });
+  });
+});
+
+test("default profile can be explicitly updated only in user configuration", async () => {
+  await withConfigRoots(async ({ projectRoot, userHome }) => {
+    const config = userConfig();
+    config.providers.grok = { ...config.providers.primary, base_url: "https://grok.example.test/v1" };
+    config.models["grok/image"] = { provider: "grok", model: "grok-imagine-image-2.0" };
+    await writeJson(userConfigPath(userHome), config);
+    await writeJson(projectConfigPath(projectRoot), projectConfig());
+    const updated = await updateImageConfig({ userHome, changes: { active_profile: "grok/image" } });
+    assert.equal(updated.config.active_profile, "grok/image");
+    assert.equal(updated.requiresRebind, true);
+    await assert.rejects(updateImageConfig({ userHome, changes: { active_profile: "missing" } }));
+    await assert.rejects(updateImageConfig({ projectRoot, scope: "project", changes: { active_profile: "grok/image" } }), { code: "image_config_update_forbidden" });
+  });
+});
+
+test("v2 separates provider routing, per-profile defaults and host defaults", async () => {
+  await withConfigRoots(async ({ projectRoot, userHome }) => {
+    const config = userConfig();
+    config.config_version = 2;
+    config.defaults = { timeout_seconds: 120, concurrency: 2 };
+    config.host_defaults = { quality: "medium" };
+    config.providers.primary.display_name = "GPT 接口";
+    config.models["primary/gpt-image-2"] = {
+      ...config.models["primary/gpt-image-2"], display_name: "GPT Image", aliases: ["GPT", "GPT图片"],
+      defaults: { size: "1536x1024", quality: "max", output_format: "png" },
+    };
+    config.providers.gemini = { ...config.providers.primary, display_name: "Gemini 接口" };
+    config.models["gemini/image"] = {
+      provider: "gemini", model: "gemini-3.1-flash-image", aliases: ["香蕉"],
+      defaults: { quality: "low" }, capabilities: { generate: true, edit: true },
+    };
+    await writeJson(userConfigPath(userHome), config);
+    await writeJson(projectConfigPath(projectRoot), projectConfig({ defaults: { quality: "high" } }));
+    const binding = await resolveImageConfigBinding({ projectRoot, userHome });
+    assert.equal(binding.activeProfile, "primary/gpt-image-2");
+    assert.equal(binding.apiRuntimeConfig.models["gemini/image"].defaults.quality, "high");
+    assert.equal(binding.apiRuntimeConfig.models["gemini/image"].defaults.size, undefined);
+    assert.equal(binding.localRuntimeConfig.defaults.quality, "high");
+    assert.equal(binding.runtimeDefaults.concurrency, 2);
+    assert.equal(binding.localRuntimeConfig.providers, undefined);
+    assert.equal(binding.localRuntimeConfig.models, undefined);
+    config.models["gemini/image"].aliases.push("ｇｐｔ");
+    await writeJson(userConfigPath(userHome), config);
+    await assert.rejects(resolveImageConfigBinding({ projectRoot, userHome }), { code: "image_config_invalid" });
+  });
+});
+
+test("native providers and dimension intent remain separate in v2", async () => {
+  await withConfigRoots(async ({ projectRoot, userHome }) => {
+    const config = userConfig();
+    config.config_version = 2;
+    config.defaults = {};
+    config.providers.native = { protocol: "xai-images", base_url: "https://native.example.test/v1", api_key_env: "UNSET_NATIVE_KEY" };
+    config.models["native/image"] = { provider: "native", model: "custom-native", aliases: [" 格洛克 "], defaults: { aspect_ratio: "1:1", resolution: "1K" }, limits: { max_input_images: 3 } };
+    await writeJson(userConfigPath(userHome), config);
+    await writeJson(projectConfigPath(projectRoot), projectConfig({ defaults: { size: "1024x1024" } }));
+    const binding = await resolveImageConfigBinding({ projectRoot, userHome });
+    assert.equal(binding.apiRuntimeConfig.providers.native.protocol, "xai-images");
+    assert.deepEqual(binding.apiRuntimeConfig.models["native/image"].defaults, { size: "1024x1024" });
+    config.models["native/image"].defaults.size = "1024x1024";
+    await writeJson(userConfigPath(userHome), config);
+    await assert.rejects(resolveImageConfigBinding({ projectRoot, userHome }), { code: "image_config_invalid" });
+  });
+});
+
+test("v2 custom endpoints and future parameters preserve routing declarations", async () => {
+  await withConfigRoots(async ({ projectRoot, userHome }) => {
+    const config = userConfig();
+    config.config_version = 2;
+    config.defaults = {};
+    config.providers.primary.endpoints = { generate: "https://generate.example.test/render", edit: "https://edit.example.test/{model}" };
+    config.models[config.active_profile].parameters = { seed: 42, vendor_option: { future: true } };
+    config.models[config.active_profile].parameter_fields = { seed: { title: "随机种子", type: "integer", path: ["seed"], default: 7 } };
+    config.models[config.active_profile].defaults = { quality: "future-tier" };
+    await writeJson(userConfigPath(userHome), config);
+    const binding = await resolveImageConfigBinding({ projectRoot, userHome });
+    assert.deepEqual(binding.apiRuntimeConfig.providers.primary.endpoints, config.providers.primary.endpoints);
+    assert.equal(binding.apiRuntimeConfig.models[config.active_profile].parameters.seed, 42);
+    assert.equal(binding.apiRuntimeConfig.models[config.active_profile].parameter_fields.seed.default, 7);
+    config.models[config.active_profile].parameters.model = "override";
+    await writeJson(userConfigPath(userHome), config);
+    await assert.rejects(resolveImageConfigBinding({ projectRoot, userHome }), { code: "image_config_invalid" });
+  });
+});
+
+test("v2 inspection selects API profile transparency and keeps host policy separate", async () => {
+  await withConfigRoots(async ({ userHome }) => {
+    const config = userConfig();
+    config.config_version = 2;
+    config.defaults = {};
+    config.transparency = { default_route: "emissive-alpha" };
+    config.models[config.active_profile].transparency = {
+      default_route: "native-alpha", native: { enabled: true, retry_without_parameter: false },
+    };
+    await writeJson(userConfigPath(userHome), config);
+    let result = await inspectImageConfig({ userHome });
+    assert.equal(result.transparencySummary.defaultRoute, "native-alpha");
+    assert.equal(result.transparencySummary.retryWithoutParameter, false);
+    assert.equal(result.warnings.length, 0);
+    config.auth_mode = "chatgpt";
+    await writeJson(userConfigPath(userHome), config);
+    result = await inspectImageConfig({ userHome });
+    assert.equal(result.transparencySummary.defaultRoute, "emissive-alpha");
+    assert.equal(result.warnings.length, 0);
+    config.auth_mode = "apikey";
+    config.providers.primary.protocol = "xai-images";
+    delete config.models[config.active_profile].transparency;
+    await writeJson(userConfigPath(userHome), config);
+    result = await inspectImageConfig({ userHome });
+    assert.equal(result.transparencySummary.defaultRoute, "chroma-matting");
+    assert.equal(result.warnings.length, 0);
+    config.providers.primary.protocol = "openai-compatible";
+    await writeJson(userConfigPath(userHome), config);
+    result = await inspectImageConfig({ userHome });
+    assert.ok(result.nextSteps.some((step) => step.includes(`models[${JSON.stringify(config.active_profile)}].transparency`)));
   });
 });
 

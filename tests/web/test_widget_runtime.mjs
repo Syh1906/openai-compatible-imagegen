@@ -55,6 +55,7 @@ test("the render result opens the selected candidate after server-backed artifac
     const prompt = document.querySelector("[data-prompt]");
     prompt.value = "只修改第二个候选";
     prompt.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
+    await waitFor(() => document.querySelector("[data-action=submit]")?.disabled === false);
     document.querySelector("[data-action=submit]").click();
     await waitFor(() => host.messages.length === 1);
     await waitFor(() => document.querySelectorAll("[data-action=open-editor]").length === 2);

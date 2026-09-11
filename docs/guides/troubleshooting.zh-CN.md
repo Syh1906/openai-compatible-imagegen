@@ -22,6 +22,8 @@
 
 ## 配置问题
 
+选模与原生协议问题先核对[多模型配置](./models.zh-CN.md)：同模型多个渠道需指定 profile 或唯一别名；删除或修改了草稿模型配置后需重新选择；通用参数不属于所选协议时使用该协议原生 `parameters` 或独立本地交付。API 返回不支持或结果未知时不自动换模型、端点、协议或凭据。
+
 | 现象 | 检查 | 处理 |
 | --- | --- | --- |
 | 缺少用户配置 | Plugin 用户配置路径存在 | 要求 Agent 调用 `initialize_image_config`，或根据包内示例创建 |
@@ -30,7 +32,7 @@
 | 项目覆盖被拒绝 | 项目文件只修改四个允许字段 | 删除 provider、model、endpoint、auth、timeout、concurrency 和 route 字段 |
 | 输出目录被拒绝 | 值是安全的项目相对子目录 | 使用 `output/imagegen/` 这类相对子目录 |
 | 本地忽略保护被拒绝 | 目标配置或输出目录的 `.gitignore` 内容仅为 `*` | 检查现有规则；Plugin 不会覆盖不兼容的本地忽略文件 |
-| Model 未列出 | 活动 profile 目录中声明了该 model | 添加受支持的 model 声明，不要强制使用未声明能力 |
+| Model 未列出 | 用户配置中是否有该 model 对应的 profile | 添加模型 profile 后重新绑定项目，只声明服务支持的能力 |
 
 ## 运行时问题
 

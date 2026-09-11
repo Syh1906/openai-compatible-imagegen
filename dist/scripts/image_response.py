@@ -41,7 +41,7 @@ class ImageInspection:
 def publish_response_images(
     response: dict[str, Any],
     out_file: Path,
-    requested_format: str,
+    requested_format: str | None,
     decode_item: Callable[[dict[str, Any]], bytes],
     expected_count: int | None = None,
     expected_size: tuple[int, int] | None = None,
@@ -143,7 +143,7 @@ def publish_response_images(
                         f"{actual_size[0]}x{actual_size[1]}; requested "
                         f"{expected_size[0]}x{expected_size[1]}; original image was published"
                     )
-            if actual_format != requested_format:
+            if requested_format is not None and actual_format != requested_format:
                 item_warnings.append(
                     f"api_response_format_mismatch: API image item {response_index} is {actual_format}; "
                     f"requested {requested_format}; original image was published as "

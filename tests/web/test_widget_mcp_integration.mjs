@@ -277,6 +277,7 @@ function fixtureConfigBinding(projectRoot, stateRoot) {
     activeProfile: "primary/gpt-image-2",
     apiKeyConfigured: true,
     defaultAuthMode: "apikey",
+    canvasSubmissionMode: "auto",
     chatgptRequirement: "codex_app_imagegen_handoff",
     runtimeDefaults: Object.freeze({ timeout_seconds: 600, concurrency: 3 }),
     artifactRoot: path.join(stateRoot, "artifacts"),

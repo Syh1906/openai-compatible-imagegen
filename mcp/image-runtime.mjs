@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -84,10 +85,23 @@ export async function runImageTask(task, options = {}) {
         reject(new Error(`image runtime failed: ${code}`));
       }
     });
+    let runtimeConfigJson = effectiveConfigJson;
+    let runtimeConfigSha256 = effectiveConfigSha256;
+    if (["generate", "edit"].includes(task.operation)) {
+      const selected = JSON.parse(effectiveConfigJson);
+      const profile = selected.models?.[task.modelProfileId];
+      if (profile && selected.providers?.[profile.provider]) {
+        selected.active_profile = task.modelProfileId;
+        selected.models = { [task.modelProfileId]: profile };
+        selected.providers = { [profile.provider]: selected.providers[profile.provider] };
+        runtimeConfigJson = JSON.stringify(selected);
+        runtimeConfigSha256 = createHash("sha256").update(runtimeConfigJson).digest("hex");
+      }
+    }
     child.stdin.end(JSON.stringify({
       task,
-      effectiveConfigJson,
-      effectiveConfigSha256,
+      effectiveConfigJson: runtimeConfigJson,
+      effectiveConfigSha256: runtimeConfigSha256,
     }));
   });
 }

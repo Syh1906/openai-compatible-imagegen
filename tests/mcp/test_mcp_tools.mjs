@@ -209,6 +209,7 @@ test("all product tools declare precise structured output schemas", async () => 
 
       assert.deepEqual(schemas.get("bind_imagegen_project").required.sort(), [
         "apiKeyConfigured",
+        "canvasSubmissionMode",
         "chatgptRequirement",
         "defaultAuthMode",
         "distribution",

@@ -51,7 +51,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 var define_RELEASE_IDENTITY_default;
 var init_define_RELEASE_IDENTITY = __esm({
   "<define:__RELEASE_IDENTITY__>"() {
-    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "1.4.0", serverBuildDigest: "cc47bb315866640668063bf61841a97028ca5fc12b3bfcd84220ee45867729a9", widgetAssetDigest: "75ed0f5881cd9bbc786fb8c9cb3bfc091e8541ab65a7ca4eb9614d523a1a75a2", fingerprint: "aa82c7501a2201e4bfdb", resourceUris: { result: "ui://openai-compatible-imagegen/result-aa82c7501a2201e4bfdb.html", editor: "ui://openai-compatible-imagegen/editor-aa82c7501a2201e4bfdb.html" } };
+    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "1.4.0", serverBuildDigest: "e0d022d388cc12fee516a823ba8797b04590125399b3e5553ace15e6cab9c072", widgetAssetDigest: "69c698d4be024aa4307fbfc667de01a95d094037044ff01350ca2aa4267e2481", fingerprint: "342e5e2334db7b67a42c", resourceUris: { result: "ui://openai-compatible-imagegen/result-342e5e2334db7b67a42c.html", editor: "ui://openai-compatible-imagegen/editor-342e5e2334db7b67a42c.html" } };
   }
 });
 
@@ -31248,7 +31248,10 @@ var batchIdSchema = external_exports2.string().regex(/^batch_[0-9A-HJKMNP-TV-Z]{
 var deliveryReceiptIdSchema = external_exports2.string().regex(/^delivery_[0-9a-f]{64}$/);
 var outputSchema = {
   size: external_exports2.string().optional(),
-  quality: external_exports2.enum(["auto", "low", "medium", "high", "xhigh", "max"]).optional(),
+  quality: external_exports2.string().min(1).optional(),
+  aspectRatio: external_exports2.string().min(1).optional(),
+  resolution: external_exports2.string().min(1).optional(),
+  parameters: external_exports2.record(external_exports2.unknown()).optional(),
   format: external_exports2.enum(["png", "jpeg", "webp"]).optional(),
   count: external_exports2.number().int().min(1).max(10).optional(),
   background: external_exports2.enum(["auto", "opaque"]).optional()
@@ -31500,6 +31503,11 @@ var STABLE_TOOL_ERROR_ENTRIES = [
   ["host_image_request_invalid", "\u5BBF\u4E3B\u56FE\u7247\u4EA4\u63A5\u53C2\u6570\u65E0\u6548\u3002"],
   ["image_canvas_destroyed", "\u5F53\u524D\u56FE\u7247\u7684\u753B\u5E03\u5DF2\u7ECF\u9500\u6BC1\u3002"],
   ["image_task_failed", "\u56FE\u7247\u4EFB\u52A1\u6267\u884C\u5931\u8D25\u3002"],
+  ["image_content_blocked", "\u4F9B\u5E94\u5546\u62D2\u7EDD\u4E86\u56FE\u7247\u5185\u5BB9\u8BF7\u6C42\uFF1B\u672A\u91CD\u8BD5\u6216\u5207\u6362\u8DEF\u7EBF\u3002"],
+  ["image_response_empty", "\u4F9B\u5E94\u5546\u6CA1\u6709\u8FD4\u56DE\u6700\u7EC8\u56FE\u7247\uFF1B\u672A\u8FFD\u52A0\u751F\u6210\u8BF7\u6C42\u3002"],
+  ["image_response_incomplete", "\u4F9B\u5E94\u5546\u8FD4\u56DE\u7684\u56FE\u7247\u4EFB\u52A1\u5C1A\u672A\u5B8C\u6210\uFF1B\u672C\u6B21\u6CA1\u6709\u53D1\u5E03\u56FE\u7247\uFF0C\u8BF7\u52FF\u91CD\u590D\u63D0\u4EA4\u3002"],
+  ["image_response_invalid_mime", "\u4F9B\u5E94\u5546\u8FD4\u56DE\u4E86\u4E0D\u652F\u6301\u7684\u56FE\u7247 MIME \u7C7B\u578B\uFF1B\u672A\u53D1\u5E03\u8BE5\u5185\u5BB9\u3002"],
+  ["image_protocol_error", "\u56FE\u7247\u8BF7\u6C42\u6216\u54CD\u5E94\u4E0D\u7B26\u5408\u6240\u9009\u534F\u8BAE\uFF0C\u8BF7\u68C0\u67E5\u53C2\u6570\u4E0E\u670D\u52A1\u652F\u6301\u60C5\u51B5\u3002"],
   ["invalid_json", "\u56FE\u7247\u8FD0\u884C\u65F6\u8F93\u5165\u4E0D\u662F\u6709\u6548 JSON\u3002"],
   ["invalid_task", "\u56FE\u7247\u4EFB\u52A1\u53C2\u6570\u65E0\u6548\u3002"],
   ["mask_policy_missing", "\u5F53\u524D\u6807\u6CE8\u7F3A\u5C11\u53EF\u9A8C\u8BC1\u7684\u8499\u7248\u7B56\u7565\u3002"],
@@ -31618,9 +31626,99 @@ function registerLocalImageTransferTools(server2, { projectContext, transfer, to
   }));
 }
 
+// mcp/model-selection.mjs
+init_define_RELEASE_IDENTITY();
+import { createHash as createHash2 } from "node:crypto";
+
+// scripts/model-profile-contract.json
+var model_profile_contract_default = {
+  version: 1,
+  protocols: ["openai-compatible", "atlas", "xai-images", "gemini-interactions", "gemini-generate-content"],
+  providerKeys: ["protocol", "base_url", "api_key", "api_key_env", "user_agent", "url_download", "proxy"],
+  profileKeys: ["provider", "model", "capabilities"],
+  providerMetadataKeys: ["display_name", "endpoints"],
+  profileMetadataKeys: ["display_name", "aliases", "description", "defaults", "transparency", "limits", "parameters", "parameter_fields"],
+  parameterFieldKeys: ["title", "description", "type", "path", "default", "enum", "minimum", "maximum"],
+  parameterFieldTypes: ["string", "integer", "number", "boolean", "object", "array"],
+  reservedParameterKeys: ["model", "prompt", "input", "contents", "image", "images", "mask", "n", "stream", "store", "previous_interaction_id", "api_key", "apiKey", "authorization", "headers", "base_url", "endpoint"],
+  executionDefaultKeys: ["timeout_seconds", "concurrency"],
+  imageDefaultKeys: ["size", "quality", "output_format", "aspect_ratio", "resolution"],
+  qualityValues: ["auto", "low", "medium", "high", "xhigh", "max"],
+  formatValues: ["png", "jpeg", "webp"],
+  reservedAliases: ["chatgpt", "codex", "codex\u5185\u7F6E", "codex \u5185\u7F6E", "apikey"]
+};
+
+// mcp/model-selection.mjs
+var modelSelectionSchema = external_exports2.object({
+  authMode: external_exports2.enum(["apikey", "chatgpt"]),
+  modelProfileId: external_exports2.string().min(1).optional(),
+  selectionFingerprint: external_exports2.string().regex(/^[a-f0-9]{64}$/).optional(),
+  parameters: external_exports2.record(external_exports2.unknown()).optional(),
+  output: external_exports2.object({
+    size: external_exports2.string().optional(),
+    quality: external_exports2.string().optional(),
+    format: external_exports2.string().optional(),
+    aspectRatio: external_exports2.string().optional(),
+    resolution: external_exports2.string().optional(),
+    background: external_exports2.string().optional()
+  }).strict().optional()
+}).strict();
+function resolveModelSelection(context, selection) {
+  const config2 = context.apiRuntimeConfig ?? JSON.parse(context.effectiveConfigJson || "{}");
+  const models = config2.models || {};
+  let id = selection ?? config2.active_profile ?? context.activeProfile;
+  if (!Object.hasOwn(models, id)) {
+    const alias = String(id).normalize("NFKC").trim().toLowerCase();
+    const aliases = Object.entries(models).filter(([, model]) => (model.aliases || []).some((value) => value.normalize("NFKC").trim().toLowerCase() === alias));
+    const matches = aliases.length ? aliases : Object.entries(models).filter(([, model]) => model.model === id);
+    if (matches.length !== 1) throw selectionError("unsupported_model_profile", matches.length ? "model selection is ambiguous" : "model selection is not configured");
+    id = matches[0][0];
+  }
+  const profile = models[id];
+  const provider = { ...config2.providers[profile.provider] };
+  delete provider.api_key;
+  const frozen = {
+    contract: model_profile_contract_default.version,
+    profileId: id,
+    profile,
+    provider,
+    defaults: config2.defaults || {},
+    transparency: (config2.config_version === 1 ? config2.transparency : profile.transparency) ?? null
+  };
+  return { modelProfileId: id, selectionFingerprint: createHash2("sha256").update(canonical(frozen)).digest("hex") };
+}
+function bindCanvasSelection(context, request, selection) {
+  if (!selection) return request;
+  modelSelectionSchema.parse(selection);
+  if (selection.authMode !== "apikey") throw selectionError("edit_submission_mismatch", "canvas submission requires the ChatGPT route");
+  const resolved = resolveModelSelection(context, selection.modelProfileId);
+  if (selection.selectionFingerprint && resolved.selectionFingerprint !== selection.selectionFingerprint) throw selectionError("image_config_changed", "canvas model configuration changed; reopen and resubmit");
+  if (request.modelProfileId && resolveModelSelection(context, request.modelProfileId).modelProfileId !== resolved.modelProfileId) throw selectionError("edit_submission_mismatch", "canvas model selection does not match request");
+  if (request.parameters && canonical(request.parameters) !== canonical(selection.parameters || {})) throw selectionError("edit_submission_mismatch", "canvas parameters do not match request");
+  if (selection.output) {
+    for (const key of ["size", "quality", "format", "aspectRatio", "resolution", "background"]) {
+      if (request[key] !== void 0 && request[key] !== selection.output[key]) throw selectionError("edit_submission_mismatch", "canvas output parameters do not match request");
+    }
+  }
+  return { ...request, ...selection.output, modelProfileId: resolved.modelProfileId, ...selection.parameters ? { parameters: structuredClone(selection.parameters) } : {} };
+}
+function modelDefaultOutput(context, profileId) {
+  const config2 = context.apiRuntimeConfig ?? JSON.parse(context.effectiveConfigJson);
+  const defaults = config2.config_version === 2 ? config2.models[profileId].defaults || {} : config2.defaults || {};
+  return Object.fromEntries(Object.entries(defaults).filter(([key]) => model_profile_contract_default.imageDefaultKeys.includes(key)).map(([key, value]) => [key === "output_format" ? "format" : key === "aspect_ratio" ? "aspectRatio" : key, value]));
+}
+function canonical(value) {
+  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
+  if (value && typeof value === "object") return `{${Object.keys(value).sort().map((key) => `${JSON.stringify(key)}:${canonical(value[key])}`).join(",")}}`;
+  return JSON.stringify(value);
+}
+function selectionError(code, message) {
+  return Object.assign(new Error(message), { code });
+}
+
 // mcp/edit-submission-registry.mjs
 init_define_RELEASE_IDENTITY();
-import { createHash as createHash2, randomBytes as randomBytes2 } from "node:crypto";
+import { createHash as createHash3, randomBytes as randomBytes2 } from "node:crypto";
 var SUBMISSION_ID_PATTERN = /^sub_[0-9a-f]{32}$/;
 var IMAGE_ID_PATTERN = /^img_[0-9A-HJKMNP-TV-Z]{26}$/;
 var SHA256_PATTERN = /^[0-9a-f]{64}$/;
@@ -31646,7 +31744,8 @@ function createEditSubmissionRegistry({ idFactory = createSubmissionId } = {}) {
       id,
       parentImageId: revision.parentImageId,
       annotationId: revision.annotationId,
-      revisionSha256: digestRevision(revision)
+      revisionSha256: digestRevision(revision),
+      ...revision.modelSelection ? { modelSelection: structuredClone(revision.modelSelection) } : {}
     });
     recordsById.set(id, {
       bindingKey: revision.bindingKey,
@@ -31782,7 +31881,8 @@ function normalizeIssueInput(input) {
     maskSha256,
     maskPolicySha256,
     sourcePrompt: input.sourcePrompt,
-    items: input.items
+    items: input.items,
+    ...input.modelSelection ? { modelSelection: modelSelectionSchema.parse(input.modelSelection) } : {}
   };
 }
 function normalizeLookupInput(input, { requireSubmissionId }) {
@@ -31817,9 +31917,10 @@ function digestRevision(revision) {
     maskPolicySha256: revision.maskPolicySha256,
     maskSha256: revision.maskSha256,
     parentImageId: revision.parentImageId,
-    sourcePrompt: revision.sourcePrompt
+    sourcePrompt: revision.sourcePrompt,
+    ...revision.modelSelection ? { modelSelection: revision.modelSelection } : {}
   };
-  return createHash2("sha256").update(canonicalJson2(canonicalRevision), "utf8").digest("hex");
+  return createHash3("sha256").update(canonicalJson2(canonicalRevision), "utf8").digest("hex");
 }
 function canonicalJson2(value) {
   if (value === null || typeof value === "boolean" || typeof value === "string") {
@@ -31899,13 +32000,14 @@ var annotationItemSchema = external_exports2.discriminatedUnion("type", [
 ]);
 var editorDraftSchema = external_exports2.object({
   annotations: external_exports2.array(annotationItemSchema).max(100),
-  prompt: external_exports2.string().max(600)
+  prompt: external_exports2.string().max(600),
+  modelSelection: modelSelectionSchema.optional()
 }).strict();
 function parseEditorDraft(value, { allowNull = false } = {}) {
   if (allowNull && value === null) return null;
   const parsed = editorDraftSchema.safeParse(value);
   if (!parsed.success) throw new TypeError("invalid editor draft");
-  if (parsed.data.annotations.length === 0 && parsed.data.prompt.trim() === "") return null;
+  if (parsed.data.annotations.length === 0 && parsed.data.prompt.trim() === "" && !parsed.data.modelSelection) return null;
   return structuredClone(parsed.data);
 }
 
@@ -32904,7 +33006,7 @@ function delay2(milliseconds) {
 
 // mcp/image-job-contract.mjs
 init_define_RELEASE_IDENTITY();
-import { createHash as createHash3 } from "node:crypto";
+import { createHash as createHash4 } from "node:crypto";
 import path7 from "node:path";
 var jobIdSchema = external_exports2.string().regex(/^job_[a-f0-9]{64}$/);
 var submissionKeySchema = external_exports2.string().regex(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/).describe("Stable key for this intended submission. Reuse exactly after a lost reply; use a new key only for a new generation intent.");
@@ -33015,11 +33117,11 @@ function jobIdentity(context, submissionKey) {
   return `job_${digestCanonical(["image-job.v1", scopeHash(context), submissionKey])}`;
 }
 function digestCanonical(value) {
-  return createHash3("sha256").update(JSON.stringify(canonical(value))).digest("hex");
+  return createHash4("sha256").update(JSON.stringify(canonical2(value))).digest("hex");
 }
-function canonical(value) {
-  if (Array.isArray(value)) return value.map(canonical);
-  if (value && typeof value === "object") return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical(value[key])]));
+function canonical2(value) {
+  if (Array.isArray(value)) return value.map(canonical2);
+  if (value && typeof value === "object") return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonical2(value[key])]));
   return value;
 }
 function jobSnapshot(record2, { now = Date.now(), offset = 0, limit = 10 } = {}) {
@@ -33444,7 +33546,7 @@ function failedOutcome(record2, index, candidateCode) {
 
 // mcp/image-job-execution.mjs
 init_define_RELEASE_IDENTITY();
-import { createHash as createHash4 } from "node:crypto";
+import { createHash as createHash5 } from "node:crypto";
 
 // mcp/batch-images.mjs
 init_define_RELEASE_IDENTITY();
@@ -34239,7 +34341,7 @@ function createImageJobExecutor({ runTask, readArtifact, validateEdit, executeSi
           deliveries.push({ ok: false, sourceArtifactId: sourceId, error: { code: "image_job_cancelled" } });
           continue;
         }
-        const deliveryReceiptId = `delivery_${createHash4("sha256").update(`${jobId}\0${index}\0${localAttempt}\0${sourceId}`).digest("hex")}`;
+        const deliveryReceiptId = `delivery_${createHash5("sha256").update(`${jobId}\0${index}\0${localAttempt}\0${sourceId}`).digest("hex")}`;
         try {
           deliveries.push(await runTask({
             operation: "deliver",
@@ -34455,7 +34557,7 @@ function stableFailure(code, message, cause) {
 
 // mcp/runtime-diagnostics.mjs
 init_define_RELEASE_IDENTITY();
-import { createHash as createHash5 } from "node:crypto";
+import { createHash as createHash6 } from "node:crypto";
 import path9 from "node:path";
 import { fileURLToPath as fileURLToPath4 } from "node:url";
 var MAX_RUNTIME_ROOT_ENTRIES = 32;
@@ -34496,7 +34598,7 @@ function createRuntimeObservation({
   };
 }
 function fingerprintPath(value) {
-  return createHash5("sha256").update(normalizePath(value), "utf8").digest("hex").slice(0, 20);
+  return createHash6("sha256").update(normalizePath(value), "utf8").digest("hex").slice(0, 20);
 }
 function pathRelation(child, parent) {
   const relative = path9.relative(path9.resolve(parent), path9.resolve(child));
@@ -34559,7 +34661,7 @@ function normalizePath(value) {
   return normalized;
 }
 function fingerprintValue(value) {
-  return createHash5("sha256").update(String(value), "utf8").digest("hex").slice(0, 20);
+  return createHash6("sha256").update(String(value), "utf8").digest("hex").slice(0, 20);
 }
 function opaqueStringSummary(value) {
   if (typeof value !== "string") return { fingerprint: null, length: 0 };
@@ -34575,14 +34677,14 @@ function uriScheme(uri) {
 
 // mcp/project-context.mjs
 init_define_RELEASE_IDENTITY();
-import { createHash as createHash7, randomBytes as randomBytes6 } from "node:crypto";
+import { createHash as createHash8, randomBytes as randomBytes6 } from "node:crypto";
 import { constants } from "node:fs";
 import { access, lstat as lstat8 } from "node:fs/promises";
 import path13 from "node:path";
 
 // mcp/config-resolution.mjs
 init_define_RELEASE_IDENTITY();
-import { createHash as createHash6, randomUUID } from "node:crypto";
+import { createHash as createHash7, randomUUID } from "node:crypto";
 import { lstat as lstat6, readFile as readFile2, writeFile as writeFile2 } from "node:fs/promises";
 import os from "node:os";
 import path11 from "node:path";
@@ -34637,13 +34739,15 @@ var ACTIVE_PROFILE = "primary/gpt-image-2";
 var USER_TOP_LEVEL_KEYS = /* @__PURE__ */ new Set([
   "config_version",
   "auth_mode",
+  "canvas_submission_mode",
   "active_profile",
   "providers",
   "models",
   "defaults",
   "postprocess",
   "transparency",
-  "storage"
+  "storage",
+  "host_defaults"
 ]);
 var PROJECT_TOP_LEVEL_KEYS = /* @__PURE__ */ new Set(["config_version", "defaults", "storage"]);
 var USER_DEFAULT_KEYS = /* @__PURE__ */ new Set([
@@ -34655,21 +34759,14 @@ var USER_DEFAULT_KEYS = /* @__PURE__ */ new Set([
 ]);
 var PROJECT_DEFAULT_KEYS = /* @__PURE__ */ new Set(["size", "quality", "output_format"]);
 var STORAGE_KEYS = /* @__PURE__ */ new Set(["output_directory"]);
-var PROVIDER_KEYS = /* @__PURE__ */ new Set([
-  "protocol",
-  "base_url",
-  "api_key",
-  "api_key_env",
-  "user_agent",
-  "url_download",
-  "proxy"
-]);
-var MODEL_KEYS = /* @__PURE__ */ new Set(["provider", "model", "capabilities"]);
+var PROVIDER_KEYS = new Set(model_profile_contract_default.providerKeys);
+var MODEL_KEYS = new Set(model_profile_contract_default.profileKeys);
 var CAPABILITY_KEYS = /* @__PURE__ */ new Set(["generate", "edit", "mask", "multi_reference"]);
-var PROVIDER_PROTOCOLS = /* @__PURE__ */ new Set(["openai-compatible", "atlas"]);
+var PROVIDER_PROTOCOLS = new Set(model_profile_contract_default.protocols);
 var DEFAULT_TIMEOUT_SECONDS = 600;
 var DEFAULT_CONCURRENCY = 3;
-var USER_UPDATE_KEYS = /* @__PURE__ */ new Set(["auth_mode", "providers", "models", "defaults", "postprocess", "transparency", "storage"]);
+var CANVAS_SUBMISSION_MODES = /* @__PURE__ */ new Set(["auto", "composer", "message"]);
+var USER_UPDATE_KEYS = /* @__PURE__ */ new Set(["auth_mode", "canvas_submission_mode", "active_profile", "providers", "models", "defaults", "host_defaults", "postprocess", "transparency", "storage"]);
 var PROJECT_UPDATE_KEYS = /* @__PURE__ */ new Set(["defaults", "storage"]);
 var CONFIG_TEMPLATE = Object.freeze({
   config_version: 1,
@@ -34778,15 +34875,19 @@ async function inspectImageConfig({ userHome = os.homedir(), projectRoot } = {})
   const activeModel = activeProfile && user?.models?.[activeProfile];
   const defaultAuthMode = normalizeAuthMode(user?.auth_mode);
   const apiKeyConfigured = hasCompleteApiDeclaration(user);
-  const transparency = user?.transparency || {};
+  const profileTransparency = defaultAuthMode === "apikey" && user?.config_version === 2;
+  const transparency = (profileTransparency ? activeModel?.transparency : user?.transparency) || {};
+  const transparencyPath = profileTransparency ? `models[${JSON.stringify(activeProfile)}].transparency` : "transparency";
+  const protocol = user?.providers?.[activeModel?.provider]?.protocol || "openai-compatible";
+  const supportsNative = defaultAuthMode === "apikey" && protocol === "openai-compatible";
   const native = transparency.native || {};
   const warnings = [];
   const nextSteps = [];
-  if (!isRecord2(transparency.native) && transparency.default_route !== "native-alpha") {
-    warnings.push("\u5F53\u524D\u914D\u7F6E\u672A\u58F0\u660E transparency.native\uFF1B\u4E3A\u4FDD\u6301\u517C\u5BB9\u4ECD\u4F7F\u7528\u65E7\u900F\u660E\u8DEF\u7EBF\u3002\u82E5\u8981\u542F\u7528\u539F\u751F\u900F\u660E\uFF0C\u8BF7\u66F4\u65B0\u900F\u660E\u914D\u7F6E\u5E76\u91CD\u65B0\u7ED1\u5B9A\u9879\u76EE\u3002");
-    nextSteps.push("\u5C06 transparency.default_route \u8BBE\u7F6E\u4E3A native-alpha\uFF0C\u5E76\u786E\u8BA4 transparency.native.enabled=true");
+  if (supportsNative && !isRecord2(transparency.native) && transparency.default_route !== "native-alpha") {
+    warnings.push(`\u5F53\u524D\u914D\u7F6E\u672A\u58F0\u660E ${transparencyPath}.native\uFF1B\u4E3A\u4FDD\u6301\u517C\u5BB9\u4ECD\u4F7F\u7528\u65E7\u900F\u660E\u8DEF\u7EBF\u3002\u82E5\u8981\u542F\u7528\u539F\u751F\u900F\u660E\uFF0C\u8BF7\u66F4\u65B0\u900F\u660E\u914D\u7F6E\u5E76\u91CD\u65B0\u7ED1\u5B9A\u9879\u76EE\u3002`);
+    nextSteps.push(`\u5C06 ${transparencyPath}.default_route \u8BBE\u7F6E\u4E3A native-alpha\uFF0C\u5E76\u786E\u8BA4 ${transparencyPath}.native.enabled=true`);
   }
-  if (activeModel?.model && Array.isArray(native.model_ids) && native.model_ids.length && !native.model_ids.includes(activeModel.model)) {
+  if (supportsNative && activeModel?.model && Array.isArray(native.model_ids) && native.model_ids.length && !native.model_ids.includes(activeModel.model)) {
     warnings.push("\u5F53\u524D\u6A21\u578B ID \u672A\u5217\u5165 transparency.native.model_ids\uFF1B\u660E\u786E\u8BF7\u6C42 native-alpha \u4ECD\u4F1A\u4EA4\u7531\u4F9B\u5E94\u5546\u5224\u5B9A\u3002");
   }
   if (!nextSteps.length) nextSteps.push("\u786E\u8BA4\u5F53\u524D\u6A21\u578B\u548C\u900F\u660E\u7B56\u7565\u540E\u91CD\u65B0\u7ED1\u5B9A\u9879\u76EE");
@@ -34795,6 +34896,7 @@ async function inspectImageConfig({ userHome = os.homedir(), projectRoot } = {})
     project: { path: projectRoot ? projectConfigPath(projectRoot) : null, exists: Boolean(project), config: project ? redactConfig(project) : null },
     activeProfile,
     defaultAuthMode,
+    canvasSubmissionMode: user?.canvas_submission_mode ?? "auto",
     apiKeyConfigured,
     chatgptRequirement: CHATGPT_REQUIREMENT,
     provider: activeModel?.provider || null,
@@ -34881,6 +34983,7 @@ async function resolveImageConfigBinding({
     effectiveConfigSha256: sha256(Buffer.from(effectiveConfigJson, "utf8")),
     activeProfile: apiRuntimeConfig?.active_profile ?? null,
     defaultAuthMode: normalizeAuthMode(userConfig.auth_mode),
+    canvasSubmissionMode: userConfig.canvas_submission_mode ?? "auto",
     apiKeyConfigured: apiRuntimeConfig !== null,
     chatgptRequirement: CHATGPT_REQUIREMENT,
     localRuntimeConfig: Object.freeze(localRuntimeConfig),
@@ -34967,6 +35070,18 @@ function redactConfig(config2) {
 function mergeConfigChanges(current, changes) {
   const result = structuredClone(current);
   for (const [key, value] of Object.entries(changes)) {
+    if (key === "canvas_submission_mode") {
+      if (!CANVAS_SUBMISSION_MODES.has(value)) throw invalidImageConfigError();
+      result[key] = value;
+      continue;
+    }
+    if (key === "active_profile") {
+      if (typeof value !== "string" || !value.trim() || value !== value.trim()) {
+        throw new ImageConfigManagementError("image_config_update_invalid");
+      }
+      result[key] = value;
+      continue;
+    }
     if (key === "auth_mode") {
       if (!(/* @__PURE__ */ new Set(["apikey", "chatgpt"])).has(value)) {
         throw new ImageConfigManagementError("image_config_update_invalid");
@@ -35026,7 +35141,9 @@ function parseConfigSnapshot(configBytes, errorCode) {
 }
 function validateUserConfig(config2) {
   requireExactKeys(config2, USER_TOP_LEVEL_KEYS, "image_config_invalid");
-  if (config2.config_version !== 1) throw invalidImageConfigError();
+  if (![1, 2].includes(config2.config_version)) throw invalidImageConfigError();
+  if (config2.canvas_submission_mode !== void 0 && !CANVAS_SUBMISSION_MODES.has(config2.canvas_submission_mode)) throw invalidImageConfigError();
+  if (config2.config_version === 1 && config2.host_defaults !== void 0) throw invalidImageConfigError();
   const authMode = normalizeAuthMode(config2.auth_mode);
   if (authMode === null) throw invalidImageConfigError();
   const hasAnyApiDeclaration = ["active_profile", "providers", "models"].some((key) => config2[key] !== void 0);
@@ -35035,24 +35152,89 @@ function validateUserConfig(config2) {
     throw invalidImageConfigError();
   }
   if (hasCompleteApiConfig) validateApiConfig(config2);
-  validateDefaults(config2.defaults, USER_DEFAULT_KEYS, "image_config_invalid");
+  validateDefaults(config2.defaults, config2.config_version === 2 ? new Set(model_profile_contract_default.executionDefaultKeys) : USER_DEFAULT_KEYS, "image_config_invalid");
+  validateDefaults(config2.host_defaults, new Set(model_profile_contract_default.imageDefaultKeys), "image_config_invalid");
   validatePostprocess(config2.postprocess);
   validateTransparency(config2.transparency);
   validateStorageShape(config2.storage, "image_config_invalid");
 }
 function validateApiConfig(config2) {
   if (typeof config2.active_profile !== "string" || !config2.active_profile.trim()) throw invalidImageConfigError();
-  const model = config2.models[config2.active_profile];
-  if (!isRecord2(model)) throw invalidImageConfigError();
-  requireExactKeys(model, MODEL_KEYS, "image_config_invalid");
-  if (typeof model.model !== "string" || !model.model.trim() || model.model.trim() !== model.model || typeof model.provider !== "string") {
+  if (!isRecord2(config2.models[config2.active_profile])) throw invalidImageConfigError();
+  for (const [providerId, provider] of Object.entries(config2.providers)) {
+    if (!providerId || stripPythonWhitespace(providerId) !== providerId) throw invalidImageConfigError();
+    validateProvider(provider, config2.config_version);
+  }
+  for (const [profileId, model] of Object.entries(config2.models)) {
+    if (!profileId || stripPythonWhitespace(profileId) !== profileId || !isRecord2(model)) throw invalidImageConfigError();
+    requireExactKeys(model, config2.config_version === 2 ? /* @__PURE__ */ new Set([...MODEL_KEYS, ...model_profile_contract_default.profileMetadataKeys]) : MODEL_KEYS, "image_config_invalid");
+    if (typeof model.model !== "string" || !model.model.trim() || model.model.trim() !== model.model || typeof model.provider !== "string") {
+      throw invalidImageConfigError();
+    }
+    const providerId = stripPythonWhitespace(model.provider);
+    if (!providerId || providerId !== model.provider || !Object.hasOwn(config2.providers, providerId)) throw invalidImageConfigError();
+    validateCapabilities(model.capabilities);
+    validateMetadataText(model.display_name, 200);
+    validateMetadataText(model.description, 600);
+    validateDefaults(model.defaults, new Set(model_profile_contract_default.imageDefaultKeys), "image_config_invalid");
+    validateTransparency(model.transparency);
+    if (model.parameters !== void 0 && (!isRecord2(model.parameters) || Object.keys(model.parameters).some((key) => model_profile_contract_default.reservedParameterKeys.includes(key)))) throw invalidImageConfigError();
+    validateParameterFields(model.parameter_fields, model.parameters);
+    if (model.limits !== void 0 && (!isRecord2(model.limits) || unknownKeys(model.limits, /* @__PURE__ */ new Set(["max_input_images"])).length || model.limits.max_input_images !== void 0 && (!Number.isInteger(model.limits.max_input_images) || model.limits.max_input_images < 1))) throw invalidImageConfigError();
+  }
+  validateModelAliases(config2.models);
+}
+function validateParameterFields(fields, parameters = {}) {
+  if (fields === void 0) return;
+  if (!isRecord2(fields)) throw invalidImageConfigError();
+  const paths = [];
+  for (const [name, field] of Object.entries(fields)) {
+    if (!name.trim() || !isRecord2(field) || unknownKeys(field, new Set(model_profile_contract_default.parameterFieldKeys)).length || !model_profile_contract_default.parameterFieldTypes.includes(field.type)) throw invalidImageConfigError();
+    const parts = field.path;
+    if (!Array.isArray(parts) || !parts.length || parts.some((key) => typeof key !== "string" || !key || ["__proto__", "constructor", "prototype"].includes(key)) || model_profile_contract_default.reservedParameterKeys.includes(parts[0])) throw invalidImageConfigError();
+    if (paths.some((other) => other.slice(0, parts.length).join("\0") === parts.join("\0") || parts.slice(0, other.length).join("\0") === other.join("\0"))) throw invalidImageConfigError();
+    paths.push(parts);
+    for (const key of ["title", "description"]) {
+      if (field[key] !== void 0 && (typeof field[key] !== "string" || !field[key].trim())) throw invalidImageConfigError();
+    }
+    for (const key of ["minimum", "maximum"]) {
+      if (field[key] !== void 0 && (!["integer", "number"].includes(field.type) || !Number.isFinite(field[key]))) throw invalidImageConfigError();
+    }
+    if ((field.minimum ?? -Infinity) > (field.maximum ?? Infinity)) throw invalidImageConfigError();
+    const validateValue = (value) => {
+      const matches = field.type === "integer" ? Number.isInteger(value) : field.type === "number" ? Number.isFinite(value) : field.type === "array" ? Array.isArray(value) : field.type === "object" ? isRecord2(value) : typeof value === field.type;
+      if (!matches) throw invalidImageConfigError();
+      if (["integer", "number"].includes(field.type) && (value < (field.minimum ?? -Infinity) || value > (field.maximum ?? Infinity))) throw invalidImageConfigError();
+    };
+    const configuredValue = parts.reduce((value, key) => isRecord2(value) ? value[key] : void 0, parameters);
+    if (configuredValue !== void 0) validateValue(configuredValue);
+    if (field.enum !== void 0) {
+      if (!Array.isArray(field.enum) || !field.enum.length) throw invalidImageConfigError();
+      field.enum.forEach(validateValue);
+    }
+    if (Object.hasOwn(field, "default")) validateValue(field.default);
+  }
+}
+function validateMetadataText(value, maximum) {
+  if (value === void 0) return;
+  if (typeof value !== "string" || !value || value !== value.trim() || [...value].length > maximum || /[\x00-\x1f\x7f]/.test(value)) {
     throw invalidImageConfigError();
   }
-  const providerId = stripPythonWhitespace(model.provider);
-  if (!providerId || providerId !== model.provider) throw invalidImageConfigError();
-  const provider = config2.providers[providerId];
-  validateProvider(provider);
-  validateCapabilities(model.capabilities);
+}
+function validateModelAliases(models) {
+  const normalize = (value) => value.normalize("NFKC").trim().toLowerCase();
+  const aliases = /* @__PURE__ */ new Map();
+  for (const [id, model] of Object.entries(models)) {
+    const values = model.aliases ?? [];
+    if (!Array.isArray(values) || values.length > 32) throw invalidImageConfigError();
+    for (const alias of values) {
+      validateMetadataText(typeof alias === "string" ? alias.trim() : alias, 200);
+      if (alias === void 0) throw invalidImageConfigError();
+      const key = normalize(alias);
+      if (!key || model_profile_contract_default.reservedAliases.includes(key) || Object.keys(models).some((other) => other !== id && normalize(other) === key) || aliases.has(key) && aliases.get(key) !== id) throw invalidImageConfigError();
+      aliases.set(key, id);
+    }
+  }
 }
 function validateProjectConfig(config2) {
   const unknownTopLevel = unknownKeys(config2, PROJECT_TOP_LEVEL_KEYS);
@@ -35069,9 +35251,18 @@ function validateProjectConfig(config2) {
     validateStorageShape(config2.storage, "project_config_invalid");
   }
 }
-function validateProvider(provider) {
+function validateProvider(provider, version2 = 1) {
   if (!isRecord2(provider)) throw invalidImageConfigError();
-  requireExactKeys(provider, PROVIDER_KEYS, "image_config_invalid");
+  requireExactKeys(provider, version2 === 2 ? /* @__PURE__ */ new Set([...PROVIDER_KEYS, ...model_profile_contract_default.providerMetadataKeys]) : PROVIDER_KEYS, "image_config_invalid");
+  validateMetadataText(provider.display_name, 200);
+  if (provider.endpoints !== void 0) {
+    if (!isRecord2(provider.endpoints) || unknownKeys(provider.endpoints, /* @__PURE__ */ new Set(["generate", "edit"])).length) throw invalidImageConfigError();
+    for (const endpoint of Object.values(provider.endpoints)) {
+      if (typeof endpoint !== "string" || endpoint !== endpoint.trim() || /[\x00-\x1f\x7f]/.test(endpoint) || !isValidBaseUrl(endpoint)) throw invalidImageConfigError();
+      const parsed = new URL(endpoint);
+      if (parsed.username || parsed.password || parsed.hash) throw invalidImageConfigError();
+    }
+  }
   if (!PROVIDER_PROTOCOLS.has(provider.protocol)) throw invalidImageConfigError();
   if (typeof provider.base_url !== "string" || !isValidBaseUrl(stripPythonWhitespace(provider.base_url).replace(/\/+$/, ""))) {
     throw invalidImageConfigError();
@@ -35123,13 +35314,17 @@ function validateCapabilities(value) {
 function validateDefaults(value, allowedKeys, errorCode) {
   if (value === void 0) return;
   if (!isRecord2(value) || unknownKeys(value, allowedKeys).length) throw configError(errorCode);
+  if (allowedKeys === USER_DEFAULT_KEYS || allowedKeys === PROJECT_DEFAULT_KEYS) {
+    if (value.quality !== void 0 && !model_profile_contract_default.qualityValues.includes(value.quality)) throw configError(errorCode);
+    if (value.output_format !== void 0 && !model_profile_contract_default.formatValues.includes(value.output_format)) throw configError(errorCode);
+  }
   if (value.size !== void 0 && (typeof value.size !== "string" || !/^\d+x\d+$/.test(value.size))) {
     throw configError(errorCode);
   }
-  if (value.quality !== void 0 && !(/* @__PURE__ */ new Set(["auto", "low", "medium", "high", "xhigh", "max"])).has(value.quality)) {
+  if (value.quality !== void 0 && (typeof value.quality !== "string" || !value.quality.trim())) {
     throw configError(errorCode);
   }
-  if (value.output_format !== void 0 && !(/* @__PURE__ */ new Set(["png", "jpeg", "webp"])).has(value.output_format)) {
+  if (value.output_format !== void 0 && (typeof value.output_format !== "string" || !value.output_format.trim())) {
     throw configError(errorCode);
   }
   if (value.timeout_seconds !== void 0 && !integerInRange(value.timeout_seconds, 1, 600)) {
@@ -35138,6 +35333,9 @@ function validateDefaults(value, allowedKeys, errorCode) {
   if (value.concurrency !== void 0 && !integerInRange(value.concurrency, 1, 8)) {
     throw configError(errorCode);
   }
+  if (value.aspect_ratio !== void 0 && (typeof value.aspect_ratio !== "string" || !/^(auto|[0-9]+(?:\.[0-9]+)?:[0-9]+(?:\.[0-9]+)?)$/.test(value.aspect_ratio))) throw configError(errorCode);
+  if (value.resolution !== void 0 && (typeof value.resolution !== "string" || !value.resolution.trim())) throw configError(errorCode);
+  if (value.size !== void 0 && (value.aspect_ratio !== void 0 || value.resolution !== void 0)) throw configError(errorCode);
 }
 function validatePostprocess(value) {
   if (value === void 0) return;
@@ -35196,21 +35394,44 @@ function validateStorageShape(value, errorCode) {
 function mergeEffectiveConfig(userConfig, projectConfig) {
   const effective = structuredClone(userConfig);
   if (projectConfig?.defaults) {
-    effective.defaults = { ...effective.defaults || {}, ...projectConfig.defaults };
+    if (effective.config_version === 2) {
+      for (const model of Object.values(effective.models || {})) {
+        model.defaults = mergeImageDefaults(model.defaults, projectConfig.defaults);
+      }
+      effective.host_defaults = mergeImageDefaults(effective.host_defaults, projectConfig.defaults);
+    } else {
+      effective.defaults = { ...effective.defaults || {}, ...projectConfig.defaults };
+    }
   }
   if (projectConfig?.storage) {
     effective.storage = { ...effective.storage || {}, ...projectConfig.storage };
   }
   return effective;
 }
+function mergeImageDefaults(lower, higher) {
+  const merged = { ...lower || {}, ...higher };
+  if (higher.size !== void 0) {
+    delete merged.aspect_ratio;
+    delete merged.resolution;
+  } else if (higher.aspect_ratio !== void 0 || higher.resolution !== void 0) {
+    delete merged.size;
+  }
+  return merged;
+}
 function createLocalRuntimeConfig(config2) {
-  return Object.fromEntries(
+  const local = Object.fromEntries(
     ["config_version", "defaults", "postprocess", "transparency", "storage"].filter((key) => config2[key] !== void 0).map((key) => [key, structuredClone(config2[key])])
   );
+  if (config2.config_version === 2) {
+    local.config_version = 1;
+    local.defaults = { ...config2.defaults || {}, ...config2.host_defaults || {} };
+  }
+  return local;
 }
 function createApiRuntimeConfig(config2) {
   const runtimeConfig = structuredClone(config2);
   delete runtimeConfig.auth_mode;
+  delete runtimeConfig.canvas_submission_mode;
   return runtimeConfig;
 }
 function hasCompleteApiDeclaration(config2) {
@@ -35303,7 +35524,7 @@ function stripPythonWhitespace(value) {
   return String(value).replace(/^[\u0009-\u000d\u001c-\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+/u, "").replace(/[\u0009-\u000d\u001c-\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+$/u, "");
 }
 function sha256(value) {
-  return createHash6("sha256").update(value).digest("hex");
+  return createHash7("sha256").update(value).digest("hex");
 }
 function integerInRange(value, minimum, maximum) {
   return Number.isInteger(value) && value >= minimum && value <= maximum;
@@ -35633,6 +35854,7 @@ function createProjectContext({
           projectBindingId: requestedBindingId,
           distribution: "plugin",
           defaultAuthMode: configBinding.defaultAuthMode,
+          canvasSubmissionMode: configBinding.canvasSubmissionMode ?? "auto",
           apiKeyConfigured: configBinding.apiKeyConfigured,
           chatgptRequirement: configBinding.chatgptRequirement
         };
@@ -35667,7 +35889,7 @@ function createProjectContext({
   });
 }
 function projectBindingKey(projectBindingId) {
-  return createHash7("sha256").update(`${PROJECT_BINDING_KEY_SEED}\0${projectBindingId}`, "utf8").digest("hex");
+  return createHash8("sha256").update(`${PROJECT_BINDING_KEY_SEED}\0${projectBindingId}`, "utf8").digest("hex");
 }
 function newProjectBindingId() {
   return `pbind_${randomBytes6(32).toString("hex")}`;
@@ -36142,6 +36364,7 @@ async function prepareImport(input, context, { importer, editSubmissions, readAr
     if (!claimed || claimed.completedArtifactIds) {
       throw new Error("ChatGPT canvas edit submission is not available");
     }
+    if (claimed.receipt.modelSelection?.authMode === "apikey") throw new Error("canvas submission requires the API Key route");
     const parent = await readArtifact(input.parentImageId, context);
     const structuredContent = await importer.prepare({
       ...input,
@@ -36236,7 +36459,26 @@ var imageModelOutputSchema = external_exports2.object({
   id: external_exports2.string().min(1),
   provider: external_exports2.string().min(1),
   model: external_exports2.string().min(1),
-  capabilities: imageModelCapabilitiesOutputSchema
+  capabilities: imageModelCapabilitiesOutputSchema,
+  effectiveCapabilities: imageModelCapabilitiesOutputSchema.optional(),
+  displayName: external_exports2.string().optional(),
+  aliases: external_exports2.array(external_exports2.string()).optional(),
+  description: external_exports2.string().optional(),
+  providerDisplayName: external_exports2.string().optional(),
+  protocol: external_exports2.string().optional(),
+  isDefault: external_exports2.boolean().optional(),
+  defaults: external_exports2.object({
+    size: external_exports2.string().optional(),
+    quality: external_exports2.string().optional(),
+    output_format: external_exports2.string().optional(),
+    aspect_ratio: external_exports2.string().optional(),
+    resolution: external_exports2.string().optional()
+  }).strict().optional(),
+  limits: external_exports2.object({ quality: external_exports2.array(external_exports2.string()).optional(), max_input_images: external_exports2.number().int().positive().optional() }).strict().optional(),
+  availability: external_exports2.enum(["configured", "missing_credentials"]).optional(),
+  selectionFingerprint: external_exports2.string().regex(/^[a-f0-9]{64}$/).optional(),
+  parameterFields: external_exports2.record(external_exports2.unknown()).optional(),
+  parameters: external_exports2.record(external_exports2.unknown()).optional()
 }).strict();
 var editorSessionOutputSchema = external_exports2.object({
   id: editorSessionIdSchema,
@@ -36301,6 +36543,7 @@ var annotationOutputSchema = external_exports2.object({
   maskPolicy: maskPolicyOutputSchema.nullable()
 }).strict();
 var editSubmissionOutputSchema = external_exports2.object({
+  modelSelection: modelSelectionSchema.optional(),
   id: submissionIdSchema2,
   parentImageId: imageIdSchema,
   annotationId: annotationIdSchema2.nullable(),
@@ -36514,6 +36757,7 @@ function createImagegenServer({
         projectBindingId: projectBindingIdSchema,
         distribution: external_exports2.literal("plugin"),
         defaultAuthMode: external_exports2.enum(["apikey", "chatgpt"]),
+        canvasSubmissionMode: external_exports2.enum(["auto", "composer", "message"]),
         apiKeyConfigured: external_exports2.boolean(),
         chatgptRequirement: external_exports2.literal("codex_app_imagegen_handoff")
       }).strict(),
@@ -36701,6 +36945,11 @@ function createImagegenServer({
     singleImageHandlers.set(kind, handler);
     return async ({ projectBindingId, submissionKey, ...request }) => await withBoundProject(projectContext, projectBindingId, async (context) => {
       if (context.apiKeyConfigured === false) return apiProviderNotConfigured();
+      if (kind === "edit" && request.submissionId) {
+        const prepared = await editSubmissions.resolveForEdit({ ...request, artifactRoot: context.artifactRoot, bindingKey: context.bindingKey });
+        request = bindCanvasSelection(context, request, prepared?.receipt?.modelSelection);
+      }
+      if (context.apiRuntimeConfig?.models) request.modelProfileId = resolveModelSelection(context, request.modelProfileId).modelProfileId;
       return imageJobResult(await imageJobs.submit({ context, submissionKey, spec: { kind, request } }));
     });
   }
@@ -36898,6 +37147,7 @@ function createImagegenServer({
     },
     async ({ projectBindingId, submissionKey, items, concurrency }) => await withBoundProject(projectContext, projectBindingId, async (context) => {
       if (context.apiKeyConfigured === false) return apiProviderNotConfigured();
+      if (context.apiRuntimeConfig?.models) items = items.map((item) => ({ ...item, modelProfileId: resolveModelSelection(context, item.modelProfileId).modelProfileId }));
       return imageJobResult(await imageJobs.submit({ context, submissionKey, spec: {
         kind: "batch",
         items,
@@ -37174,6 +37424,7 @@ function createImagegenServer({
         artifact: imageArtifactOutputSchema,
         auth: external_exports2.object({
           defaultAuthMode: external_exports2.enum(["apikey", "chatgpt"]),
+          canvasSubmissionMode: external_exports2.enum(["auto", "composer", "message"]),
           apiKeyConfigured: external_exports2.boolean(),
           chatgptRequirement: external_exports2.literal("codex_app_imagegen_handoff")
         }).strict().optional()
@@ -37210,6 +37461,7 @@ function createImagegenServer({
             ...context.defaultAuthMode ? {
               auth: {
                 defaultAuthMode: context.defaultAuthMode,
+                canvasSubmissionMode: context.canvasSubmissionMode ?? "auto",
                 apiKeyConfigured: context.apiKeyConfigured,
                 chatgptRequirement: context.chatgptRequirement
               }
@@ -37262,7 +37514,8 @@ function createImagegenServer({
         ...projectBindingInputSchema,
         parentImageId: imageIdSchema,
         items: external_exports2.array(annotationItemSchema).max(100),
-        sourcePrompt: external_exports2.string().max(600)
+        sourcePrompt: external_exports2.string().max(600),
+        modelSelection: modelSelectionSchema.optional()
       },
       outputSchema: external_exports2.object({
         annotation: annotationOutputSchema.nullable(),
@@ -37271,10 +37524,18 @@ function createImagegenServer({
       annotations: writeAnnotations2(),
       _meta: { ui: { visibility: ["app"] } }
     },
-    async ({ projectBindingId, parentImageId, items, sourcePrompt }) => await withBoundProject(
+    async ({ projectBindingId, parentImageId, items, sourcePrompt, modelSelection }) => await withBoundProject(
       projectContext,
       projectBindingId,
       async (context) => {
+        if (modelSelection?.authMode === "apikey") {
+          const resolved = resolveModelSelection(context, modelSelection.modelProfileId);
+          if (modelSelection.selectionFingerprint && modelSelection.selectionFingerprint !== resolved.selectionFingerprint) return toolError(new Error("canvas model configuration changed; select the model again"), "image_config_changed");
+          modelSelection = { ...modelSelection, ...resolved, output: modelDefaultOutput(context, resolved.modelProfileId) };
+          context = { ...context, activeProfile: modelSelection.modelProfileId };
+        } else if (modelSelection) {
+          modelSelection = { authMode: "chatgpt" };
+        }
         try {
           await readArtifact(parentImageId, context);
         } catch (error40) {
@@ -37308,6 +37569,11 @@ function createImagegenServer({
           }
         }
         try {
+          if (modelSelection?.authMode === "apikey" && annotation?.hasMask && modelHasCapability(context, modelSelection.modelProfileId, "mask")) {
+            const { size: _size2, format: _format, aspectRatio: _aspect, resolution: _resolution, ...defaults } = modelSelection.output;
+            const { count: _count, ...maskOutput } = deriveMaskedEditOutput(defaults, annotation.maskPolicy);
+            modelSelection = { ...modelSelection, output: maskOutput };
+          }
           const submission = await editSubmissions.issue({
             artifactRoot: context.artifactRoot,
             bindingKey: context.bindingKey,
@@ -37316,7 +37582,8 @@ function createImagegenServer({
             maskSha256: annotation?.maskPolicy?.maskSha256 ?? null,
             maskPolicySha256: annotation?.maskPolicy?.policySha256 ?? null,
             sourcePrompt,
-            items
+            items,
+            ...modelSelection ? { modelSelection } : {}
           });
           return {
             content: [{ type: "text", text: `\u5DF2\u51C6\u5907\u56FE\u7247 ${parentImageId} \u7684\u5F85\u53D1\u9001\u4FEE\u6539\u3002` }],
@@ -37525,6 +37792,9 @@ async function withBoundProject(projectContext, projectBindingId, callback) {
 }
 function modelHasCapability(context, modelProfileId, capability) {
   const runtimeConfig = context.apiRuntimeConfig ?? JSON.parse(context.effectiveConfigJson);
+  const model = runtimeConfig?.models?.[modelProfileId];
+  const protocol = runtimeConfig?.providers?.[model?.provider]?.protocol;
+  if (capability === "mask" && protocol && protocol !== "openai-compatible") return false;
   return runtimeConfig?.models?.[modelProfileId]?.capabilities?.[capability] === true;
 }
 function apiProviderNotConfigured() {
@@ -37633,7 +37903,7 @@ function writeAnnotations2() {
 
 // mcp/file-edit-submission-registry.mjs
 init_define_RELEASE_IDENTITY();
-import { createHash as createHash8 } from "node:crypto";
+import { createHash as createHash9 } from "node:crypto";
 import { lstat as lstat10, mkdir as mkdir6 } from "node:fs/promises";
 import path15 from "node:path";
 var SCHEMA_VERSION3 = "edit-submissions.v1";
@@ -37674,7 +37944,8 @@ function createFileEditSubmissionRegistry({
         id,
         parentImageId: revision.parentImageId,
         annotationId: revision.annotationId,
-        revisionSha256: digestRevision(revision)
+        revisionSha256: digestRevision(revision),
+        ...revision.modelSelection ? { modelSelection: structuredClone(revision.modelSelection) } : {}
       });
       record2.submissions.push({
         id,
@@ -37683,6 +37954,7 @@ function createFileEditSubmissionRegistry({
         maskSha256: revision.maskSha256,
         maskPolicySha256: revision.maskPolicySha256,
         revisionSha256: receipt.revisionSha256,
+        ...revision.modelSelection ? { modelSelection: structuredClone(revision.modelSelection) } : {},
         state: "prepared",
         completedArtifactIds: []
       });
@@ -37804,7 +38076,7 @@ async function prepareScope2(input) {
   ]) {
     await ensureCanonicalDirectory2(directory, { create: directory !== artifactRoot });
   }
-  const parentKey = createHash8("sha256").update(`${input.bindingKey}\0${input.parentImageId}`, "utf8").digest("hex");
+  const parentKey = createHash9("sha256").update(`${input.bindingKey}\0${input.parentImageId}`, "utf8").digest("hex");
   return {
     bindingKey: input.bindingKey,
     parentImageId: input.parentImageId,
@@ -37898,7 +38170,8 @@ function receiptFor(record2, submission) {
     id: submission.id,
     parentImageId: record2.parentImageId,
     annotationId: submission.annotationId,
-    revisionSha256: submission.revisionSha256
+    revisionSha256: submission.revisionSha256,
+    ...submission.modelSelection ? { modelSelection: structuredClone(submission.modelSelection) } : {}
   });
 }
 function recoverExpiredClaim(record2, currentTime, leaseTimeoutMs) {
@@ -37947,6 +38220,7 @@ function validateRecord(value, scope) {
   return value;
 }
 function validateSubmission(value) {
+  if (value?.modelSelection !== void 0 && !modelSelectionSchema.safeParse(value.modelSelection).success) invalidState3();
   if (!value || Object.getPrototypeOf(value) !== Object.prototype) invalidState3();
   const keys = Object.keys(value).sort();
   if (JSON.stringify(keys) !== JSON.stringify([
@@ -37956,6 +38230,7 @@ function validateSubmission(value) {
     "id",
     "maskPolicySha256",
     "maskSha256",
+    ...value.modelSelection === void 0 ? [] : ["modelSelection"],
     "revisionSha256",
     "state"
   ])) invalidState3();
@@ -37995,7 +38270,7 @@ function invalidStateError() {
 
 // mcp/file-editor-state-registry.mjs
 init_define_RELEASE_IDENTITY();
-import { createHash as createHash9 } from "node:crypto";
+import { createHash as createHash10 } from "node:crypto";
 import { lstat as lstat11, mkdir as mkdir7 } from "node:fs/promises";
 import path16 from "node:path";
 var SCHEMA_VERSION4 = "editor-state.v1";
@@ -38165,7 +38440,7 @@ async function prepareScope3(input, { create }) {
     });
     stateMissing = !exists;
   }
-  const recordKey2 = createHash9("sha256").update(bindingKey, "utf8").digest("hex");
+  const recordKey2 = createHash10("sha256").update(bindingKey, "utf8").digest("hex");
   return {
     bindingKey,
     bindingsDirectory,
@@ -38295,6 +38570,7 @@ function invalidStateError2() {
 // mcp/image-runtime.mjs
 init_define_RELEASE_IDENTITY();
 import { spawn as spawn3 } from "node:child_process";
+import { createHash as createHash11 } from "node:crypto";
 import path17 from "node:path";
 import { fileURLToPath as fileURLToPath6 } from "node:url";
 var runtimeRelativePath4 = import.meta.url.replaceAll("\\", "/").includes("/dist/server.mjs") ? "./scripts/image_runtime.py" : "../scripts/image_runtime.py";
@@ -38369,10 +38645,23 @@ async function runImageTask(task, options = {}) {
         reject(new Error(`image runtime failed: ${code}`));
       }
     });
+    let runtimeConfigJson = effectiveConfigJson;
+    let runtimeConfigSha256 = effectiveConfigSha256;
+    if (["generate", "edit"].includes(task.operation)) {
+      const selected = JSON.parse(effectiveConfigJson);
+      const profile = selected.models?.[task.modelProfileId];
+      if (profile && selected.providers?.[profile.provider]) {
+        selected.active_profile = task.modelProfileId;
+        selected.models = { [task.modelProfileId]: profile };
+        selected.providers = { [profile.provider]: selected.providers[profile.provider] };
+        runtimeConfigJson = JSON.stringify(selected);
+        runtimeConfigSha256 = createHash11("sha256").update(runtimeConfigJson).digest("hex");
+      }
+    }
     child.stdin.end(JSON.stringify({
       task,
-      effectiveConfigJson,
-      effectiveConfigSha256
+      effectiveConfigJson: runtimeConfigJson,
+      effectiveConfigSha256: runtimeConfigSha256
     }));
   });
 }

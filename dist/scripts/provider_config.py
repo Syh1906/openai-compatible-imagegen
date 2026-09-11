@@ -7,6 +7,9 @@ import urllib.parse
 import re
 
 from image_transparency import TransparencyPolicy, resolve_policy as resolve_transparency_policy
+from model_profiles import CONTRACT, model_selection_fingerprint, normalize_alias, validate_image_defaults, validate_model_profiles
+from native_image_protocols import NATIVE_PROTOCOLS
+from image_parameters import resolve_parameter_defaults
 
 
 DEFAULT_MODEL = "gpt-image-2"
@@ -53,6 +56,12 @@ class EffectiveImageConfig:
     user_agent: str = DEFAULT_USER_AGENT
     url_download: dict[str, Any] = field(default_factory=lambda: dict(DEFAULT_URL_DOWNLOAD))
     proxy: dict[str, str] = field(default_factory=lambda: dict(DEFAULT_PROXY))
+    config_version: int = 1
+    limits: dict[str, Any] = field(default_factory=dict)
+    endpoints: dict[str, str] = field(default_factory=dict)
+    parameters: dict[str, Any] = field(default_factory=dict)
+    parameter_fields: dict[str, Any] = field(default_factory=dict)
+    selection_snapshot: dict[str, Any] | None = field(default=None, repr=False, compare=False)
 
 
 @dataclass(frozen=True)
@@ -69,9 +78,12 @@ def parse_standalone_config(
     raw: dict[str, Any],
     *,
     require_api_key: bool,
-    model_profile_id: str = "primary/gpt-image-2",
+    model_profile_id: str | None = None,
 ) -> EffectiveImageConfig:
-    del model_profile_id
+    if "config_version" in raw:
+        return parse_plugin_config(raw, require_api_key=require_api_key, model_profile_id=model_profile_id or raw.get("active_profile"))
+    if model_profile_id is not None:
+        raise ProviderConfigError("profile selection requires a provider/model configuration")
     return _parse_standalone_config(raw, require_api_key=require_api_key)
 
 
@@ -81,14 +93,16 @@ def parse_plugin_config(
     require_api_key: bool,
     model_profile_id: str,
 ) -> EffectiveImageConfig:
-    if raw.get("config_version") != 1:
-        raise ProviderConfigError("image config requires config_version 1")
-    if raw.get("active_profile") != model_profile_id:
-        raise ProviderConfigError(f"image config active_profile must be {model_profile_id}")
+    try:
+        validate_model_profiles(raw)
+    except ValueError as exc:
+        raise ProviderConfigError(str(exc)) from exc
     providers = raw.get("providers")
     models = raw.get("models")
     if not isinstance(providers, dict) or not isinstance(models, dict):
         raise ProviderConfigError("image config requires providers and models objects")
+    if not isinstance(raw.get("active_profile"), str) or raw["active_profile"] not in models:
+        raise ProviderConfigError("image config active_profile must reference a configured model profile")
     profile = models.get(model_profile_id)
     if not isinstance(profile, dict):
         raise ProviderConfigError(f"image config missing model profile: {model_profile_id}")
@@ -113,7 +127,9 @@ def parse_plugin_config(
     if not model:
         raise ProviderConfigError(f"image config model profile {model_profile_id} missing model")
     try:
-        transparency = resolve_transparency_policy(raw.get("transparency"))
+        transparency = resolve_transparency_policy(
+            profile.get("transparency") if raw["config_version"] == 2 else raw.get("transparency")
+        )
     except ValueError as exc:
         raise ProviderConfigError(str(exc)) from exc
     return EffectiveImageConfig(
@@ -121,12 +137,18 @@ def parse_plugin_config(
         api_key=api_key,
         api_key_source=api_key_source,
         model=model,
-        defaults=raw.get("defaults") if isinstance(raw.get("defaults"), dict) else {},
+        defaults={**(raw.get("defaults") or {}), **(profile.get("defaults") or {})} if raw["config_version"] == 2
+        else raw.get("defaults") if isinstance(raw.get("defaults"), dict) else {},
         provider_id=provider_id,
         profile_id=model_profile_id,
         capabilities=normalize_model_capabilities(profile.get("capabilities")),
         postprocess=resolve_postprocess_config(raw.get("postprocess")),
         protocol=protocol,
+        config_version=raw["config_version"],
+        limits=dict(profile.get("limits") or {}),
+        endpoints=dict(provider.get("endpoints") or {}),
+        parameters=resolve_parameter_defaults(profile.get("parameter_fields", {}), profile.get("parameters", {})),
+        parameter_fields=dict(profile.get("parameter_fields", {})),
         transparency=transparency,
         user_agent=resolve_user_agent(provider.get("user_agent"), config_label="user config"),
         url_download=resolve_url_download_config(provider.get("url_download")),
@@ -135,12 +157,16 @@ def parse_plugin_config(
 
 
 def parse_plugin_local_config(raw: dict[str, Any]) -> LocalImageConfig:
-    if raw.get("config_version") != 1:
-        raise ProviderConfigError("image config requires config_version 1")
+    if raw.get("config_version") not in (1, 2):
+        raise ProviderConfigError("image config requires config_version 1 or 2")
     defaults = raw.get("defaults")
     if defaults is not None and not isinstance(defaults, dict):
         raise ProviderConfigError("image config defaults must be an object")
     try:
+        if raw["config_version"] == 2:
+            validate_image_defaults(defaults, execution=True)
+            validate_image_defaults(raw.get("host_defaults"))
+            defaults = {**(defaults or {}), **(raw.get("host_defaults") or {})}
         transparency = resolve_transparency_policy(raw.get("transparency"))
     except ValueError as exc:
         raise ProviderConfigError(str(exc)) from exc
@@ -149,6 +175,37 @@ def parse_plugin_local_config(raw: dict[str, Any]) -> LocalImageConfig:
         postprocess=resolve_postprocess_config(raw.get("postprocess")),
         transparency=transparency,
     )
+
+
+def list_model_profiles(raw: dict[str, Any]) -> list[dict[str, Any]]:
+    result = []
+    for profile_id, profile in raw.get("models", {}).items():
+        cfg = parse_plugin_config(raw, require_api_key=False, model_profile_id=profile_id)
+        aliases = {}
+        for alias in profile.get("aliases", []):
+            aliases.setdefault(normalize_alias(alias), alias.strip())
+        capabilities = normalize_model_capabilities(cfg.capabilities)
+        effective = {key: capabilities.get(key, False) for key in MODEL_CAPABILITY_KEYS}
+        if cfg.protocol == "atlas":
+            effective.update(edit=False, mask=False, multi_reference=False)
+        limits = dict(cfg.limits)
+        if cfg.protocol in NATIVE_PROTOCOLS:
+            effective["mask"] = False
+        result.append({
+            "id": profile_id, "provider": cfg.provider_id, "model": cfg.model,
+            "capabilities": capabilities, "effectiveCapabilities": effective,
+            "displayName": profile.get("display_name", cfg.model), "aliases": list(aliases.values()),
+            "description": profile.get("description", ""),
+            "providerDisplayName": raw["providers"][cfg.provider_id].get("display_name", cfg.provider_id),
+            "protocol": cfg.protocol, "isDefault": profile_id == raw["active_profile"],
+            "defaults": {k: v for k, v in cfg.defaults.items() if k in CONTRACT["imageDefaultKeys"]},
+            "limits": limits,
+            "parameterFields": cfg.parameter_fields,
+            "parameters": cfg.parameters,
+            "availability": "configured" if cfg.api_key else "missing_credentials",
+            "selectionFingerprint": model_selection_fingerprint(raw, profile_id),
+        })
+    return result
 
 
 def _parse_standalone_config(raw: dict[str, Any], *, require_api_key: bool) -> EffectiveImageConfig:
@@ -200,7 +257,7 @@ def is_valid_base_url(value: str) -> bool:
 
 def resolve_provider_protocol(value: Any) -> str:
     protocol = str(value or "").strip()
-    if protocol not in {"openai-compatible", "atlas"}:
+    if protocol not in CONTRACT["protocols"]:
         raise ProviderConfigError(f"unsupported provider protocol: {value}")
     return protocol
 

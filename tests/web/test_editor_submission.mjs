@@ -46,6 +46,44 @@ function preparedResponse({ annotationId = "ann_01", submissionId = "sub_01" } =
   };
 }
 
+for (const mode of [undefined, "auto", "composer", "message"]) {
+  test(`submission mode ${mode ?? "omitted"} selects the intended route when both are supported`, async () => {
+    const calls = [];
+    const coordinator = createSubmissionCoordinator({
+      app: {
+        getHostCapabilities: () => ({ message: { text: {}, image: {} }, updateModelContext: { text: {}, image: {}, structuredContent: {} } }),
+        callServerTool: async () => preparedResponse(),
+        updateModelContext: async (request) => { calls.push(request); return {}; },
+        sendMessage: async () => { calls.push("message"); return {}; },
+      },
+      rasterizePreview: async () => ({ mimeType: "image/png", data: "preview-data" }),
+    });
+    const result = await coordinator.submit(editorState(), undefined, { canvasSubmissionMode: mode });
+    assert.equal(result.delivery, mode === "composer" ? "composer" : "message");
+    assert.equal(calls.length, mode === "composer" ? 1 : 2);
+    assert.deepEqual(calls[0].content?.map((item) => item.type), mode === "composer" ? ["text", "image"] : undefined);
+  });
+}
+
+for (const mode of ["composer", "message", "invalid"]) {
+  test(`unsupported explicit submission mode ${mode} stops before side effects`, async () => {
+    const calls = [];
+    const coordinator = createSubmissionCoordinator({
+      app: {
+        getHostCapabilities: () => mode === "composer"
+          ? { message: { text: {}, image: {} }, updateModelContext: { structuredContent: {} } }
+          : { updateModelContext: { text: {}, image: {}, structuredContent: {} } },
+        callServerTool: async () => { calls.push("prepare"); return preparedResponse(); },
+        updateModelContext: async () => { calls.push("context"); return {}; },
+        sendMessage: async () => { calls.push("message"); return {}; },
+      },
+      rasterizePreview: async () => { calls.push("preview"); return { mimeType: "image/png", data: "preview-data" }; },
+    });
+    await assert.rejects(coordinator.submit(editorState(), undefined, { canvasSubmissionMode: mode }), { stage: "capabilities" });
+    assert.deepEqual(calls, []);
+  });
+}
+
 test("submission text keeps edit and protect mask intent explicit", () => {
   const result = buildSubmissionText({
     imageId: editorState().image.id,
@@ -677,6 +715,26 @@ test("API Key canvas submission freezes its route and actual edit parent", async
 
   assert.equal(result.snapshot.authMode, "apikey");
   assert.equal(result.snapshot.parentImageId, editorState().image.id);
+});
+
+test("canvas model selection is carried by preparation, host context, text and snapshot", async () => {
+  const selection = { authMode: "apikey", modelProfileId: "other/channel", parameters: { seed: 7 } };
+  const calls = [];
+  const coordinator = createSubmissionCoordinator({
+    rasterizePreview: async () => ({ mimeType: "image/png", data: "preview" }),
+    app: {
+      getHostCapabilities: () => ({ message: { text: {}, image: {} }, updateModelContext: { structuredContent: {} } }),
+      callServerTool: async (request) => { calls.push(request); return preparedResponse(); },
+      updateModelContext: async (request) => { calls.push(request); },
+      sendMessage: async (request) => { calls.push(request); return {}; },
+    },
+  });
+  const result = await coordinator.submit(editorState(), () => {}, { authMode: "apikey", modelSelection: selection });
+  assert.deepEqual(calls[0].arguments.modelSelection, selection);
+  assert.deepEqual(calls[1].structuredContent.modelSelection, selection);
+  assert.match(calls[2].content[0].text, /other\/channel/);
+  assert.match(calls[2].content[0].text, /seed/);
+  assert.deepEqual(result.snapshot.modelSelection, selection);
 });
 
 test("retry after a message failure does not save or publish context twice", async () => {

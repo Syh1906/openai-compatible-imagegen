@@ -145,7 +145,7 @@ export function installHost(window, { toolName, editorSessionStatus = "active", 
         if (draft.annotations.length || draft.prompt.trim()) editorDrafts.set(draftImageId, draft);
         else editorDrafts.delete(draftImageId);
       }
-      if (toolName === "list_image_models" && rejectModelCatalog) {
+      if (toolName === "list_image_models" && (typeof rejectModelCatalog === "function" ? rejectModelCatalog() : rejectModelCatalog)) {
         sendToApp(window, {
           jsonrpc: "2.0",
           id: message.id,
@@ -224,7 +224,7 @@ export function installHost(window, { toolName, editorSessionStatus = "active", 
             content: [],
             structuredContent: modelCatalog ?? {
               activeProfile: "primary/gpt-image-2",
-              models: [{ id: "primary/gpt-image-2", provider: "primary", model: "gpt-image-2", capabilities: { mask: maskCapability } }],
+              models: [{ id: "primary/gpt-image-2", provider: "primary", model: "gpt-image-2", isDefault: true, capabilities: { generate: true, edit: true, mask: maskCapability, multi_reference: true } }],
             },
           }
         : toolName === "report_imagegen_host_observation"

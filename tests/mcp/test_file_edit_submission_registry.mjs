@@ -20,6 +20,20 @@ const FIRST_SUBMISSION_ID = "sub_00000000000000000000000000000001";
 const SECOND_SUBMISSION_ID = "sub_00000000000000000000000000000002";
 const ARTIFACT_ID = "img_01J00000000000000000000002";
 
+test("canvas model selection survives registry restart and contributes to the revision", async () => {
+  const artifactRoot = await createArtifactRoot("model-selection");
+  const selection = { authMode: "apikey", modelProfileId: "custom/profile", selectionFingerprint: "a".repeat(64), parameters: { seed: 9 } };
+  try {
+    const first = createFileEditSubmissionRegistry({ idFactory: () => FIRST_SUBMISSION_ID });
+    const receipt = await first.issue({ ...submissionInput(artifactRoot, FIRST_PARENT_ID), modelSelection: selection });
+    const restored = await createFileEditSubmissionRegistry().resolveForEdit(lookupInput(artifactRoot, FIRST_PARENT_ID, FIRST_SUBMISSION_ID));
+    assert.deepEqual(restored.receipt.modelSelection, selection);
+    const second = createFileEditSubmissionRegistry({ idFactory: () => SECOND_SUBMISSION_ID });
+    const changed = await second.issue({ ...submissionInput(artifactRoot, FIRST_PARENT_ID), modelSelection: { ...selection, modelProfileId: "another/profile" } });
+    assert.notEqual(receipt.revisionSha256, changed.revisionSha256);
+  } finally { await rm(artifactRoot, { recursive: true, force: true }); }
+});
+
 
 test("persisted in-flight pointer and submission states must agree exactly", async (t) => {
   await t.test("a null pointer rejects an in-flight submission", async () => {

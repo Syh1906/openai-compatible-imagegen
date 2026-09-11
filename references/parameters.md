@@ -4,6 +4,8 @@ This reference describes the Standalone CLI surface. The Codex Plugin uses the s
 
 ## Parameter Priority
 
+For v2 providers, model profiles, native protocols, and canvas fields, see [model configuration](models.md). `list-models` lists configured profiles without a provider request. `--profile` selects an exact profile or unique alias; JSONL rows can set `modelProfileId`. `--parameters` accepts a native JSON object, with row-level `parameters` taking precedence. V2 image defaults belong to each profile; shared defaults contain execution settings. These controls do not apply to ChatGPT host generation.
+
 ```text
 per-row batch fields > shared command flags > auth.json defaults > built-in defaults
 ```
@@ -26,9 +28,11 @@ This is the runtime order after the agent has interpreted the request and constr
 | Preview | `preview-board` | Local target-size and background previews |
 | Transparency | `apply-transparency` | Local declared transparency processing for an existing PNG |
 
-The generation and edit endpoints above apply to `protocol=openai-compatible`. With `protocol=atlas`, generation submits to `POST /api/v1/model/generateImage` and polls `GET /api/v1/model/prediction/{request_id}`. Atlas supports PNG or JPEG text-to-image output; edits and `native-alpha` are rejected before submission. Polling does not resubmit the generation request. For `n>1`, Atlas submits one request per candidate and collects the complete group before publication; a candidate request failure prevents group publication.
+The generation and edit endpoints above assume `protocol=openai-compatible` and a base URL ending in `/v1`; complete overrides and other protocols follow [model configuration](models.md). With `protocol=atlas`, generation submits to `POST /api/v1/model/generateImage` and polls `GET /api/v1/model/prediction/{request_id}`. Atlas supports PNG or JPEG text-to-image output; edits and `native-alpha` are rejected before submission. Polling does not resubmit the generation request. For `n>1`, Atlas submits one request per candidate and collects the complete group before publication; a candidate request failure prevents group publication.
 
 ## Size Guidance
+
+The pixel preset table below applies to OpenAI-compatible and Atlas. Native xAI/Gemini protocols use the common fields supported by their adapters; see [model configuration](models.md).
 
 Use `--size` for exact API output pixels. Use `--aspect` plus `--resolution` when the request describes shape and clarity without exact pixels.
 
@@ -50,7 +54,7 @@ Returned image dimensions are measured against the resolved API `size`. A mismat
 | `3:4` | `1152x1536` | `1536x2048` | `3072x4096` |
 | `9:16` | `864x1536` | `1152x2048` | `2160x3840` |
 
-`--size` wins over `--aspect` and `--resolution`. When all are omitted, the script uses `defaults.size`, then its built-in size.
+Flat and v1 configurations retain pixel presets and legacy size precedence. In v2, a higher-priority dimension representation replaces the lower-priority one; supplying `--size` together with `--aspect` or `--resolution` at the same priority is invalid. Native xAI/Gemini adapters accept their supported aspect/resolution fields instead of OpenAI pixel-size presets. See [model configuration](models.md).
 
 ## Quality Guidance
 
@@ -62,9 +66,11 @@ Returned image dimensions are measured against the resolved API `size`. A mismat
 | `xhigh`, `max` | Additional quality levels for models that support them, including GPT Image 2.5 Sunburst and Flare |
 | `auto` | Backend-selected quality |
 
-The OpenAI-compatible route accepts these six values in CLI arguments, defaults, and JSONL rows. Model IDs, including provider aliases, are passed through without a model-name whitelist. A provider or older model may support only a subset; unsupported requests fail without changing the quality, model, or endpoint. Atlas retains its `low`, `medium`, and `high` quality options. Host generation through a ChatGPT subscription does not expose these API model controls.
+V1 OpenAI-compatible configurations accept these six values. V2 preserves non-empty provider quality values without a future model-value whitelist, where the selected protocol has a quality field. A provider may support only a subset; unsupported requests fail without changing quality, model, or endpoint. Atlas retains `low`, `medium`, and `high`. Host generation through ChatGPT does not expose these API model controls.
 
 ## Visual Deliverables and Transparency
+
+The API background and native-alpha controls below apply to OpenAI-compatible. Atlas, xAI, and Gemini do not transport that dedicated parameter here; local processing of a saved supported PNG remains separate.
 
 `--asset` marks an explicit single visual deliverable and prefers PNG. It can represent a logo element, product cutout, sticker, interface element, game asset, diagram element, or other isolated deliverable. It does not select an industry or force a centered composition.
 
@@ -92,7 +98,7 @@ The prompt-only allow list matches `model`, `mode`, and exact pixel `size` toget
 
 Only add a prompt-only rule after verifying that exact backend combination. In particular, do not turn a 2K or 4K request into a 1K request just to use an alpha prompt. A missing prompt-only rule never prevents the image request: it selects the configured local route when processing is allowed, or preserves and inspects the API original when processing is disabled.
 
-Example configuration:
+Example for flat Standalone or v1 configuration (v2 places `transparency` inside the selected model profile and keeps `postprocess` at the top level):
 
 ```json
 {

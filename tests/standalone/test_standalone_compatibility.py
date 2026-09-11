@@ -41,7 +41,7 @@ V030_COMMANDS = {
 class StandaloneCompatibilityTests(unittest.TestCase):
     def test_v030_command_and_argument_snapshot(self) -> None:
         parser = build_parser(SUPPORTED_ASPECTS, SUPPORTED_RESOLUTIONS)
-        self.assertEqual(set(parser._subparsers._group_actions[0].choices), V030_COMMANDS)
+        self.assertEqual(set(parser._subparsers._group_actions[0].choices), V030_COMMANDS | {"list-models"})
 
         generate = parser.parse_args(
             ["generate", "--prompt", "a blue square", "--aspect", "16:9", "--n", "2"]

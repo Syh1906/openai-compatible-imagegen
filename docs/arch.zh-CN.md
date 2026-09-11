@@ -32,6 +32,9 @@ flowchart LR
     Runtime --> Core
     Core --> Provider[OpenAI-compatible 图片 API]
     Core --> Atlas[Atlas 生成 API]
+    Core --> XAI[xAI Images API]
+    Core --> Interactions[Gemini Interactions API]
+    Core --> Content[Gemini generateContent API]
     Plugin --> Host[ChatGPT 宿主生图]
     Host --> Handoff[已准备的图片交接]
     Handoff --> Repository
@@ -72,6 +75,8 @@ Standalone Skill -> Standalone adapter -> shared image core -> provider
 - 故障不会改变 provider、model、endpoint、认证来源或协议。透明参数重试和本地回退按所选路线的配置策略执行。
 
 ## 配置边界
+
+共享协议注册表按配置选择适配器。连接信息、模型默认值与原生字段见[模型配置](./guides/models.zh-CN.md)。MCP 将所选 profile 与配置指纹绑定到画布提交；Widget 不构造供应商请求。
 
 - Standalone Skill 只读取已安装 Skill 同目录的 `auth.json`。
 - Codex Plugin 读取固定的用户配置和可选项目配置。
