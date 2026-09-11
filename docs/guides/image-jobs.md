@@ -12,6 +12,8 @@ Describe the images as usual, for example: “Generate 40 different plant icons 
 
 A batch supports up to 64 items and 64 images in total. Concurrency is 1–8 and defaults to the user configuration. Multiple candidates for the same prompt still use ordered requests and are saved only when the whole group succeeds.
 
+Square, landscape, and portrait images fit entirely within each result card's preview. If Codex limits the result area's height, scroll vertically inside it to reach later cards.
+
 ## Continue after a timeout
 
 A tool timeout does not prove generation failed or that no charge occurred. Tell Codex: “Query the previous image job and continue showing results without regenerating.”

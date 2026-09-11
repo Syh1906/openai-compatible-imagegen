@@ -140,7 +140,7 @@ def add_postprocess_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--postprocess-out-dir", default=None)
     parser.add_argument(
         "--transparency-route",
-        choices=["chroma-matting", "emissive-alpha", "mask-alpha", "prompt-alpha"],
+        choices=["chroma-matting", "emissive-alpha", "mask-alpha", "prompt-alpha", "native-alpha"],
         default=None,
     )
     parser.add_argument("--transparency-mask", default=None)
