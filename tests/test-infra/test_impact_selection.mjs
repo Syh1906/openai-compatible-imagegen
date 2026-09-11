@@ -301,6 +301,15 @@ test("the test infrastructure suite includes both test runtimes", () => {
 });
 
 
+test("plugin identity changes require every supported platform before integration", () => {
+  for (const file of [".codex-plugin/plugin.json", ".mcp.json", "scripts/plugin-file-set.mjs"]) {
+    const plan = selectImpactPlan([file], projectManifest);
+    assert.deepEqual(plan.platforms, ["linux", "macos", "windows"], file);
+    assert.ok(plan.suites.includes("release"), file);
+  }
+});
+
+
 test("the MCP suite declares its external Python runtime dependency", () => {
   assert.deepEqual(projectManifest.suites.mcp.requires, ["python"]);
 });

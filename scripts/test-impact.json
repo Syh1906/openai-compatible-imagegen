@@ -27,7 +27,8 @@
       "name": "plugin-manifest",
       "files": [".codex-plugin/plugin.json", ".mcp.json", "scripts/plugin-file-set.mjs"],
       "suites": ["release"],
-      "checks": ["build", "plugin"]
+      "checks": ["build", "plugin"],
+      "platforms": ["macos", "windows"]
     },
     {
       "name": "marketplace",
