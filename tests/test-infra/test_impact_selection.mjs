@@ -195,6 +195,15 @@ test("locale-sensitive widget paths select all runners without widening other wi
 });
 
 
+test("result document layout changes select all supported runners", () => {
+  for (const file of ["web/index.html", "tests/web/test_widget_styles.mjs"]) {
+    const plan = selectImpactPlan([file], projectManifest);
+    assert.deepEqual(plan.suites, ["web"], file);
+    assert.deepEqual(plan.platforms, ["linux", "macos", "windows"], file);
+  }
+  assert.deepEqual(selectImpactPlan(["web/index.html"], projectManifest).checks, ["build", "plugin"]);
+});
+
 test("platform-specific production rules retain their build gates", () => {
   const cases = [
     ["scripts/reveal_in_explorer.py", ["build", "diff", "plugin"]],

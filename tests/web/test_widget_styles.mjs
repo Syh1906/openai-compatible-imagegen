@@ -69,6 +69,22 @@ test("multiple mixed-aspect results stay compact and independently scannable", a
   assert.match(compactViewport, /\.inline-results\.multiple \.inline-preview \{[^}]*height: 180px;[^}]*aspect-ratio: auto/);
 });
 
+test("multi-result preview tracks cannot grow beyond the available preview box", async () => {
+  const html = await readFile(new URL("../../web/index.html", import.meta.url), "utf8");
+  const triggerRules = html.match(/\.inline-results\.multiple \.inline-preview-trigger \{([^}]*)\}/)?.[1] || "";
+
+  assert.match(triggerRules, /grid-template-columns: minmax\(0, 1fr\)/);
+  assert.match(triggerRules, /grid-template-rows: minmax\(0, 1fr\)/);
+});
+
+test("height-capped result documents allow scrolling while the editor remains fixed", async () => {
+  const html = await readFile(new URL("../../web/index.html", import.meta.url), "utf8");
+
+  assert.match(html, /html:has\(body\[data-view="result"\]\) \{[^}]*overflow-y: auto/);
+  assert.match(html, /html:has\(body\[data-preview-open="true"\]\) \{[^}]*overflow: hidden/);
+  assert.match(html, /html, body \{[^}]*overflow: hidden/);
+});
+
 test("compact editors keep toolbar actions and every mask control reachable", async () => {
   const html = await readFile(new URL("../../web/index.html", import.meta.url), "utf8");
   const compactViewport = html.match(/@media \(max-width: 520px\) \{(?<rules>[\s\S]*?)\n      \}/)?.groups?.rules || "";
