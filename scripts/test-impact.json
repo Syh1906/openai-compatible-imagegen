@@ -178,6 +178,13 @@
       "checks": ["build", "plugin"]
     },
     {
+      "name": "widget-result-layout",
+      "files": ["web/index.html", "tests/web/test_widget_styles.mjs"],
+      "suites": ["web"],
+      "checks": ["build", "plugin"],
+      "platforms": ["macos", "windows"]
+    },
+    {
       "name": "widget-result-locale",
       "files": ["web/editor-runtime.mjs"],
       "suites": ["web"],
