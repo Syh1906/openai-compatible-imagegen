@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Standalone 的生成、编辑与批处理命令接受 `--transparency-route native-alpha`，与原生透明输出能力保持一致。
+
 ### 新增
 
 - Plugin 用户配置新增 `canvas_submission_mode`：可选择等待用户发送的 `composer` 或直接发送的 `message`；未配置或设为 `auto` 时保留现有自动选择顺序。指定方式不受宿主支持时停止提交并提示。
