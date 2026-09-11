@@ -57,6 +57,8 @@
       .inline-results.multiple { grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); grid-auto-rows: max-content; align-items: start; align-content: start; gap: 8px; padding: 8px; }
       .inline-result { display: grid; grid-template-columns: minmax(180px, 42%) minmax(220px, 1fr); width: 100%; height: 100%; min-height: 220px; overflow: hidden; border: 1px solid var(--line); background: var(--surface); }
       .inline-results.multiple .inline-result { grid-template-columns: 1fr; grid-template-rows: auto auto; width: 100%; height: auto; min-width: 0; min-height: 0; align-self: start; }
+      html:has(body[data-view="result"]) { overflow-y: auto; }
+      html:has(body[data-preview-open="true"]) { overflow: hidden; }
       body[data-view="result"] { height: auto; overflow: visible; }
       body[data-view="result"] main, body[data-view="result"] .inline-results, body[data-view="result"] .inline-result { height: auto; }
       body[data-view="result"] .inline-results { min-height: 0; overflow: visible; }
@@ -64,7 +66,7 @@
       .inline-preview { display: grid; min-width: 0; min-height: 0; place-items: center; overflow: hidden; border-right: 1px solid var(--line); background-color: var(--checker-base); background-image: linear-gradient(45deg, var(--checker-tile) 25%, transparent 25%), linear-gradient(-45deg, var(--checker-tile) 25%, transparent 25%), linear-gradient(45deg, transparent 75%, var(--checker-tile) 75%), linear-gradient(-45deg, transparent 75%, var(--checker-tile) 75%); background-size: 18px 18px; background-position: 0 0, 0 9px, 9px -9px, -9px 0; }
       .inline-preview .source-image { width: 100%; height: 100%; max-width: none; max-height: none; object-fit: contain; }
       .inline-results.multiple .inline-preview { position: relative; aspect-ratio: 16 / 10; border-right: 0; border-bottom: 1px solid var(--line); }
-      .inline-results.multiple .inline-preview-trigger { position: absolute; inset: 0; }
+      .inline-results.multiple .inline-preview-trigger { position: absolute; inset: 0; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
       .inline-results.multiple .source-image { display: block; width: 100%; height: 100%; max-width: 100%; max-height: 100%; object-fit: contain; }
       .inline-preview-trigger { position: relative; display: grid; width: 100%; height: 100%; min-height: 0; padding: 0; overflow: hidden; border: 0; background: transparent; cursor: zoom-in; }
       .inline-preview-trigger:focus-visible { outline: 3px solid var(--focus); outline-offset: -3px; }
