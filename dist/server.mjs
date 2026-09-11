@@ -51,7 +51,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 var define_RELEASE_IDENTITY_default;
 var init_define_RELEASE_IDENTITY = __esm({
   "<define:__RELEASE_IDENTITY__>"() {
-    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "1.4.0", serverBuildDigest: "0c4944abfccef9c5719f89672854ee0fd1466b6982a26115f9dd16360aeff4c7", widgetAssetDigest: "0e66d1b3b8a035000ac3dcb3ab75520cffd890853a4479c845d216494ea50394", fingerprint: "2c8d3fd69f2fc8594c12", resourceUris: { result: "ui://openai-compatible-imagegen/result-2c8d3fd69f2fc8594c12.html", editor: "ui://openai-compatible-imagegen/editor-2c8d3fd69f2fc8594c12.html" } };
+    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "1.5.0", serverBuildDigest: "53bb51c3c14288829fae1172d0641ce1f690a9befbe702647c9e915d090c2f7d", widgetAssetDigest: "0e66d1b3b8a035000ac3dcb3ab75520cffd890853a4479c845d216494ea50394", fingerprint: "a0cfdf36cd4150fc7940", resourceUris: { result: "ui://openai-compatible-imagegen/result-a0cfdf36cd4150fc7940.html", editor: "ui://openai-compatible-imagegen/editor-a0cfdf36cd4150fc7940.html" } };
   }
 });
 
