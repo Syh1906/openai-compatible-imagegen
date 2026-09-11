@@ -5,10 +5,33 @@ import { createServer, request as requestHttp } from "node:http";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
+import { EventEmitter } from "node:events";
+import { PassThrough } from "node:stream";
 
 import { runImageTask } from "../../mcp/image-runtime.mjs";
 
 const PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAEElEQVR4nGNgaPj/H4xhDABS0gn5PEa22gAAAABJRU5ErkJggg==";
+
+test("selected runtime snapshot excludes unrelated provider credentials and has its own digest", async () => {
+  let envelope;
+  const effectiveConfigJson = JSON.stringify({ config_version: 2, active_profile: "a", providers: { a: { api_key: "fixture-a" }, b: { api_key: "fixture-b" } }, models: { a: { provider: "a" }, b: { provider: "b" } } });
+  await runImageTask({ operation: "generate", modelProfileId: "b" }, {
+    projectRoot: process.cwd(), artifactRoot: path.join(process.cwd(), "unused"), effectiveConfigJson,
+    effectiveConfigSha256: createHash("sha256").update(effectiveConfigJson).digest("hex"), pythonCommand: "unused",
+    spawnProcess() {
+      const child = new EventEmitter();
+      child.stdout = new PassThrough(); child.stderr = new PassThrough();
+      child.stdin = { end(value) { envelope = JSON.parse(value); child.stdout.write('{"ok":true}'); child.emit("close", 0); } };
+      return child;
+    },
+  });
+  const selected = JSON.parse(envelope.effectiveConfigJson);
+  assert.deepEqual(Object.keys(selected.providers), ["b"]);
+  assert.deepEqual(Object.keys(selected.models), ["b"]);
+  assert.equal(selected.active_profile, "b");
+  assert.equal(envelope.effectiveConfigJson.includes("fixture-a"), false);
+  assert.equal(envelope.effectiveConfigSha256, createHash("sha256").update(envelope.effectiveConfigJson).digest("hex"));
+});
 
 test("Node bridge runs the Python generate and edit path end to end", async () => {
   const projectRoot = await mkdtemp(path.join(os.tmpdir(), "imagegen-runtime-"));
@@ -150,3 +173,55 @@ async function fileExists(targetPath) {
     throw error;
   }
 }
+
+test("concurrent model selections preserve provider credentials, native parameters and artifact provenance", async () => {
+  const projectRoot = await mkdtemp(path.join(os.tmpdir(), "imagegen-multi-profile-"));
+  const requests = [];
+  const api = createServer((request, response) => {
+    let body = "";
+    request.on("data", (chunk) => { body += chunk; });
+    request.on("end", () => {
+      requests.push({ path: request.url, auth: request.headers.authorization, body: JSON.parse(body) });
+      response.writeHead(200, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ data: [{ b64_json: PNG_BASE64 }] }));
+    });
+  });
+  await new Promise((resolve) => api.listen(0, "127.0.0.1", resolve));
+  try {
+    const base = `http://127.0.0.1:${api.address().port}`;
+    const configuration = {
+      config_version: 2, active_profile: "openai",
+      providers: {
+        first: { protocol: "openai-compatible", base_url: `${base}/first`, api_key: "fixture-first" },
+        second: { protocol: "xai-images", base_url: `${base}/second`, api_key: "fixture-second" },
+      },
+      models: {
+        openai: { provider: "first", model: "custom-openai", capabilities: { generate: true }, parameters: { seed: 7 } },
+        xai: { provider: "second", model: "custom-xai", capabilities: { generate: true }, parameters: { seed: 13 } },
+      },
+      defaults: { concurrency: 2 },
+    };
+    const effectiveConfigJson = JSON.stringify(configuration);
+    const runtime = { projectRoot, artifactRoot: path.join(projectRoot, "artifacts"), effectiveConfigJson,
+      effectiveConfigSha256: createHash("sha256").update(effectiveConfigJson).digest("hex") };
+    const results = await Promise.all(["openai", "xai"].map((modelProfileId) => runImageTask({
+      operation: "generate", modelProfileId, prompt: "cube", inputArtifactIds: [], annotationId: null,
+      output: { count: 1 },
+    }, runtime)));
+    for (const result of results) assert.equal(result.ok, true, JSON.stringify(result.error));
+    assert.deepEqual(requests.map((request) => request.path).sort(), ["/first/images/generations", "/second/images/generations"]);
+    for (const [index, profile] of ["openai", "xai"].entries()) {
+      const expected = configuration.models[profile];
+      const request = requests.find((item) => item.body.model === expected.model);
+      assert.equal(request.auth, `Bearer ${configuration.providers[expected.provider].api_key}`);
+      assert.equal(request.body.seed, expected.parameters.seed);
+      assert.equal(results[index].artifacts[0].model, expected.model);
+      assert.equal(results[index].artifacts[0].parameters.modelProfileId, profile);
+    }
+    assert.equal(configuration.active_profile, "openai");
+    assert.notEqual(results[0].artifacts[0].id, results[1].artifacts[0].id);
+  } finally {
+    await new Promise((resolve) => api.close(resolve));
+    await rm(projectRoot, { recursive: true });
+  }
+});

@@ -22,6 +22,8 @@ Identify the failing layer before changing configuration. The project does not s
 
 ## Configuration problems
 
+For model selection or native protocol issues, check [model configuration](./models.md). Select an exact profile or unique alias when multiple channels expose the same model; reselect a draft model after its configuration changes. Use supported native `parameters` or local delivery when a common field is not part of the protocol. Unsupported or unknown API outcomes never trigger automatic model, endpoint, protocol, or credential changes.
+
 | Symptom | Check | Action |
 | --- | --- | --- |
 | User configuration missing | Plugin user config path exists | Ask the Agent to call `initialize_image_config`, or create it from the bundled example |
@@ -30,7 +32,7 @@ Identify the failing layer before changing configuration. The project does not s
 | Project override rejected | Project file changes only four allowed fields | Remove provider, model, endpoint, auth, timeout, concurrency, and route fields |
 | Output directory rejected | Value is a safe project-relative directory | Use a relative child such as `output/imagegen/` |
 | Local ignore protection rejected | The target configuration or output directory has a `.gitignore` containing only `*` | Review the existing rule; the Plugin does not overwrite incompatible local ignore files |
-| Model not listed | Model exists in the active profile catalog | Add a supported model declaration; do not force an undeclared capability |
+| Model not listed | The model has a profile in user configuration | Add the model profile and rebind the project; declare only capabilities the service supports |
 
 ## Runtime problems
 

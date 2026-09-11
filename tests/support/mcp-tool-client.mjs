@@ -26,6 +26,7 @@ const PROJECT_BINDING_RECEIPT = Object.freeze({
   projectBindingId: PROJECT_BINDING_ID,
   distribution: "plugin",
   defaultAuthMode: "apikey",
+  canvasSubmissionMode: "auto",
   apiKeyConfigured: true,
   chatgptRequirement: "codex_app_imagegen_handoff",
 });

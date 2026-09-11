@@ -229,6 +229,7 @@ test("ChatGPT-only projects reject API tools before any provider runtime call", 
     projectBindingId,
     distribution: "plugin",
     defaultAuthMode: "chatgpt",
+    canvasSubmissionMode: "auto",
     apiKeyConfigured: false,
     chatgptRequirement: "codex_app_imagegen_handoff",
   };

@@ -64,7 +64,7 @@ If the API image already has usable alpha, that original file remains the transp
 
 The quality gate checks edge key-color coverage, transparent-pixel ratio, visible-pixel ratio, visible border ratio, and direct or directional key-color contamination around partial-alpha or transparency-adjacent subject edges. Directional checks catch pale green, cyan, yellow, or magenta spill even when its absolute RGB distance exceeds the extraction range. Contamination limits are independent from `inner_tolerance` and `outer_tolerance`, so narrowing the processing range cannot weaken acceptance. A non-uniform edge or unrecoverable contamination is an `unmet` result; the processor does not publish a guessed cutout.
 
-For a non-native route with local processing disabled, `prompt-alpha` requires an exact `auth.json.transparency.prompt_only_allow` match for model, mode, and pixel size. The prompt requests a real alpha channel, but the model may still return an opaque image. Without a match, the request still runs with the original prompt and the returned image is checked for existing alpha.
+For a non-native route with local processing disabled, `prompt-alpha` requires an exact `resolved transparency.prompt_only_allow` match for model, mode, and pixel size. The prompt requests a real alpha channel, but the model may still return an opaque image. Without a match, the request still runs with the original prompt and the returned image is checked for existing alpha.
 
 Transparency processing is observational after the API response exists:
 

@@ -12,6 +12,8 @@ test("shallow editor viewports keep the canvas and primary controls inside the f
   assert.match(shallowViewport, /\.tool-rail \{[^}]*overflow-y: auto/);
   assert.match(shallowViewport, /\.version-item \{[^}]*grid-template-rows:/);
   assert.doesNotMatch(shallowViewport, /\.stroke-button, \.swatch, \.custom-color \{[^}]*width:/);
+  assert.match(html, /\.workspace \{[^}]*grid-template-rows: minmax\(0, 1fr\)/);
+  assert.match(html, /\.intent-panel \{[^}]*overflow-y: auto/);
 });
 
 test("interactive controls use restrained motion with a reduced-motion override", async () => {

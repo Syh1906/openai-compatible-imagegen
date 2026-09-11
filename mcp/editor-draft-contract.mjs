@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { modelSelectionSchema } from "./model-selection.mjs";
 
 
 const normalizedCoordinate = z.number().min(0).max(1);
@@ -28,12 +29,13 @@ export const annotationItemSchema = z.discriminatedUnion("type", [
 export const editorDraftSchema = z.object({
   annotations: z.array(annotationItemSchema).max(100),
   prompt: z.string().max(600),
+  modelSelection: modelSelectionSchema.optional(),
 }).strict();
 
 export function parseEditorDraft(value, { allowNull = false } = {}) {
   if (allowNull && value === null) return null;
   const parsed = editorDraftSchema.safeParse(value);
   if (!parsed.success) throw new TypeError("invalid editor draft");
-  if (parsed.data.annotations.length === 0 && parsed.data.prompt.trim() === "") return null;
+  if (parsed.data.annotations.length === 0 && parsed.data.prompt.trim() === "" && !parsed.data.modelSelection) return null;
   return structuredClone(parsed.data);
 }

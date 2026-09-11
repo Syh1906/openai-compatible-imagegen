@@ -17,6 +17,7 @@ import { createEditorDraftLifecycle } from "./editor-draft-lifecycle.mjs";
 import { createWidgetI18n } from "./widget-i18n.mjs";
 import { createEditorToast } from "./editor-toast.mjs";
 import { createEditorRenderer } from "./editor-renderer.mjs";
+import { initialModelSelection, modelSelectionStatus, renderModelSelector } from "./editor-model-selection.mjs";
 import { createEditorDraftRegistry, draftStatusMessage } from "./editor-drafts.mjs";
 import {
   composerSubmissionStatus,
@@ -104,6 +105,9 @@ const artifactRecordCache = createArtifactLoadRegistry({
   clearTimeoutFn: window.clearTimeout.bind(window),
 });
 let modelCapabilities = null;
+let modelCatalog = null;
+let modelCatalogStatus = "idle";
+let authRouteReceived = false;
 let authRoute = createEditorAuthRoute({ defaultAuthMode: "apikey", apiKeyConfigured: true, chatgptRequirement: "codex_app_imagegen_handoff" });
 let uiCleanup = null;
 let uiAbortController = null;
@@ -276,7 +280,7 @@ function bindUi() {
     { selector: "[data-action]", skip: (button) => button.dataset.action === "open-editor", handle: (button, event) => void handleAction(button.dataset.action, event) },
     { selector: ".tool-button[data-tool]", handle: activateTool },
     { selector: "[data-mask-mode], [data-mask-operation], [data-mask-radius]", handle: applyMaskControl },
-    { selector: "[data-auth-mode]", handle: (button) => { if (interactionLocked() || !authRoute) return; authRoute = selectEditorAuthMode(authRoute, button.dataset.authMode); clearSubmissionStatus(); render(); } },
+    { selector: "[data-auth-mode]", handle: (button) => { if (interactionLocked() || !authRoute) return; authRoute = selectEditorAuthMode(authRoute, button.dataset.authMode); editor = { ...editor, modelSelection: { ...editor.modelSelection, authMode: button.dataset.authMode } }; clearSubmissionStatus(); render(); } },
   ], uiAbortController.signal);
   uiCleanup = () => {
     colorCleanup?.();
@@ -449,27 +453,32 @@ async function connectHost() {
     render();
   }
 }
-async function loadModelCapabilities() {
-  if (modelCapabilities !== null) return;
+async function loadModelCapabilities({ retry = false } = {}) {
+  if (!authRouteReceived) return;
+  if (modelCatalogStatus === "loading" || (!retry && modelCatalogStatus !== "idle")) return;
+  modelCatalog = [];
   modelCapabilities = {};
   if (authRoute?.apiKeyConfigured === false) {
+    modelCatalogStatus = "unconfigured";
     render();
     return;
   }
+  modelCatalogStatus = "loading";
+  render();
   try {
     const result = await boundToolClient.callServerTool({ name: "list_image_models", arguments: {} });
     if (!resourceActive) return;
     hostObservationReporter.observeToolCall(result);
     const catalog = result?.structuredContent;
-    const model = catalog?.models?.find((item) => item.id === catalog.activeProfile);
-    if (result.isError || !model?.capabilities) throw new Error("model capabilities unavailable");
-    modelCapabilities = model.capabilities;
+    if (result.isError || !Array.isArray(catalog?.models)) throw new Error("model capabilities unavailable");
+    modelCatalog = catalog.models.map((model) => ({ ...model, isDefault: model.id === catalog.activeProfile }));
+    modelCatalogStatus = modelCatalog.length ? "ready" : "empty";
     render();
   } catch (error) {
     if (!resourceActive) return;
     modelCapabilities = {};
+    modelCatalogStatus = "error";
     render();
-    toast("无法读取当前模型能力");
   }
 }
 async function requestOpenEditor(imageId = editor.image.id) {
@@ -525,12 +534,14 @@ async function requestOpenEditor(imageId = editor.image.id) {
       }
       return;
     }
+    receiveEditorAuthRoute(ensured.result);
     draftLifecycle.restoreTransferred(ensured.session.draft);
     if (!resourceActive || !opened) return;
     inlineStatus = "";
     inlineStatusTone = "neutral";
     inlineStatusImageId = "";
     widgetRole = "editor";
+    void loadModelCapabilities();
     render();
     sessionController.start();
     const artifacts = ensured.opened ? extractResultArtifacts(ensured.result) : [];
@@ -782,8 +793,16 @@ async function hydrateArtifacts(metadata, { selectedImageId = metadata.find((art
     toast(failure);
   }
 }
+function receiveEditorAuthRoute(result) {
+  const receivedRoute = createEditorAuthRoute(result?.structuredContent?.auth);
+  if (receivedRoute) {
+    authRouteReceived = true;
+    authRoute = receivedRoute;
+    if (hostReady && widgetRole === "editor") void loadModelCapabilities();
+  }
+}
 function ingestToolResult(result) {
-  authRoute = createEditorAuthRoute(result?.structuredContent?.auth) || authRoute;
+  receiveEditorAuthRoute(result);
   const editorSession = result?.structuredContent?.editorSession;
   if (editorSession?.id) {
     const newUiOwner = !sessionController.isUiOwner(editorSession.id);
@@ -1188,6 +1207,7 @@ function restoreHistoryEditor(snapshot) {
   return normalizeMaskOperationState(normalizeEditorColorState({ ...snapshot, ...palette }));
 }
 function markEditorDestroyed(imageId) {
+  draftLifecycle.discardServerDraft();
   if (imageId) { destroyedCanvasImageIds.add(imageId); draftRegistry.destroy(imageId); }
   resetDraft();
   submissionStatus = "画布已销毁，无法继续编辑；请返回会话";
@@ -1303,6 +1323,7 @@ function selectVersion(id) {
 }
 
 async function submitChanges() {
+  if (editor.modelSelection?.authMode === "apikey" && modelSelectionStatus(editor.modelSelection, modelCatalog || []).blocked) return;
   const draftStatusAtSubmit = draftRegistry.status(editor.image.id, editor);
   if (editorDestroyed() || submissionInFlight || artifactLoadInFlight || draftStatusAtSubmit.kind === "pending" || (draftStatusAtSubmit.kind === "updated" && draftStatusAtSubmit.canUpdate === false) || !editor.image.id || (!editor.annotations.length && !editor.prompt.trim())) return;
   const updatingTaskInput = draftStatusAtSubmit.kind === "updated";
@@ -1322,7 +1343,12 @@ async function submitChanges() {
       submissionStatus = submissionProgressStatus(stage, Boolean(editor.annotations.length));
       submissionStatusTone = "progress";
       render();
-    }, { authMode: authRoute?.selectedAuthMode, apiKeyConfigured: authRoute?.apiKeyConfigured });
+    }, {
+      authMode: authRoute?.selectedAuthMode,
+      apiKeyConfigured: authRoute?.apiKeyConfigured,
+      canvasSubmissionMode: authRoute?.canvasSubmissionMode,
+      modelSelection: editor.modelSelection,
+    });
     submissionInFlight = false;
     if (!resourceActive) return;
     const composerAcknowledged = result.delivery !== "composer" || result.contextAcknowledged;
@@ -1379,6 +1405,18 @@ function resetDraft() {
   submissionCoordinator.reset();
 }
 function render() {
+  if (modelCatalog?.length && editor.modelSelection && !editor.modelSelection.modelProfileId) {
+    editor = { ...editor, modelSelection: initialModelSelection(null, editor.image, modelCatalog, editor.modelSelection.authMode) };
+  }
+  if (modelCatalog !== null && authRouteReceived && !editor.modelSelection) {
+    editor = { ...editor, modelSelection: initialModelSelection(null, editor.image, modelCatalog, authRoute?.selectedAuthMode || "chatgpt") };
+  }
+  if (editor.modelSelection && authRoute) authRoute = selectEditorAuthMode(authRoute, editor.modelSelection.authMode);
+  if (authRoute?.selectedAuthMode === "chatgpt") modelCapabilities = { edit: true, mask: true, multi_reference: true };
+  else {
+    const selectedModel = modelSelectionStatus(editor.modelSelection, modelCatalog || []).model;
+    modelCapabilities = selectedModel?.effectiveCapabilities || selectedModel?.capabilities || {};
+  }
   document.body.dataset.view = widgetRole;
   if (widgetRole === "result") {
     if (resultPreview.isActive()) { resultPreview.reconcile(); widgetI18n.localizeTree(root); return; }
@@ -1428,6 +1466,16 @@ function render() {
     submissionStatus: submissionStatus || draftStatusMessage(draftRegistry.status(editor.image.id, editor)),
     submissionStatusTone,
   });
+  renderModelSelector(root, { models: modelCatalog || [], catalogStatus: modelCatalogStatus, selection: editor.modelSelection, locked: interactionLocked(), onRetry: () => void loadModelCapabilities({ retry: true }), onChange: (selection) => {
+    editor = { ...editor, modelSelection: selection };
+    clearSubmissionStatus();
+    render();
+  } });
+  renderer.refreshIcons();
+  const selectionStatus = modelSelectionStatus(editor.modelSelection, modelCatalog || []);
+  if (selectionStatus.blocked && editor.modelSelection?.authMode === "apikey") root.querySelector("[data-action=submit]").disabled = true;
+  const catalogSummary = { idle: "正在读取模型…", loading: "正在读取模型…", error: "模型列表读取失败", empty: "尚未配置 API 模型", unconfigured: "尚未配置 API 模型" };
+  root.querySelector("[data-model-summary]").textContent = editor.modelSelection?.authMode === "apikey" && modelCatalogStatus !== "ready" ? catalogSummary[modelCatalogStatus] : selectionStatus.label;
   keyboardController.renderLayer();
   bindDynamicUi();
   colorController.position();
@@ -1507,7 +1555,8 @@ function clearSubmissionStatus() {
   element.classList.toggle("visible", Boolean(submissionStatus));
   const submitButton = root.querySelector("[data-action=submit]");
   if (submitButton) {
-    submitButton.disabled = submissionInFlight || draftStatus.kind === "pending" || (draftStatus.kind === "updated" && draftStatus.canUpdate === false) || !editor.image.id || (!editor.annotations.length && !editor.prompt.trim());
+    const modelBlocked = editor.modelSelection?.authMode === "apikey" && modelSelectionStatus(editor.modelSelection, modelCatalog || []).blocked;
+    submitButton.disabled = interactionLocked() || modelBlocked || draftStatus.kind === "pending" || (draftStatus.kind === "updated" && draftStatus.canUpdate === false) || !editor.image.id || (!editor.annotations.length && !editor.prompt.trim());
     submitButton.textContent = draftStatus.kind === "pending" ? "已放入输入框" : draftStatus.kind === "updated" ? draftStatus.canUpdate === false ? "等待上一版确认" : "更新任务输入框" : draftStatus.kind === "writing" ? "重新确认" : "提交修改";
   }
 }

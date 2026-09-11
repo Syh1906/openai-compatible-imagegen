@@ -2,7 +2,7 @@
 
 # OpenAI-Compatible Images
 
-**Generate, inspect, edit, and deliver images through an OpenAI-compatible API, Atlas Cloud, or the Codex App ChatGPT route.**
+**Generate, inspect, edit, and deliver images through configured API providers or the Codex App ChatGPT route.**
 
 [![Release](https://img.shields.io/github/v/release/Syh1906/openai-compatible-imagegen?style=flat-square)](https://github.com/Syh1906/openai-compatible-imagegen/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
@@ -12,9 +12,11 @@ English | [简体中文](README.zh-CN.md)
 
 </div>
 
-OpenAI-Compatible Images ships one image core in two installation shapes. Use the portable Standalone Skill with Agent clients and command-line workflows, or install the Codex Plugin for result cards, focused canvas editing, annotations, immutable artifacts, and version history. API Key routes support the default OpenAI-compatible protocol and optional Atlas Cloud image generation.
+OpenAI-Compatible Images ships one image core in two installation shapes. Use the portable Standalone Skill with Agent clients and command-line workflows, or install the Codex Plugin for result cards, focused canvas editing, annotations, immutable artifacts, and version history.
 
 ## Choose your package
+
+API Key profiles support OpenAI-compatible, Atlas, xAI Images, Gemini Interactions, and Gemini generateContent protocols. Configure provider connections, aliases, and native parameter fields independently, then choose a model for one request or canvas edit. See [model configuration](docs/guides/models.md).
 
 | Package | Best for | Includes |
 | --- | --- | --- |

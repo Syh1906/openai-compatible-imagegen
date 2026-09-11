@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
+import { modelSelectionSchema } from "./model-selection.mjs";
 
 
 const SUBMISSION_ID_PATTERN = /^sub_[0-9a-f]{32}$/;
@@ -33,6 +34,7 @@ export function createEditSubmissionRegistry({ idFactory = createSubmissionId } 
       parentImageId: revision.parentImageId,
       annotationId: revision.annotationId,
       revisionSha256: digestRevision(revision),
+      ...(revision.modelSelection ? { modelSelection: structuredClone(revision.modelSelection) } : {}),
     });
     recordsById.set(id, {
       bindingKey: revision.bindingKey,
@@ -198,6 +200,7 @@ export function normalizeIssueInput(input) {
     maskPolicySha256,
     sourcePrompt: input.sourcePrompt,
     items: input.items,
+    ...(input.modelSelection ? { modelSelection: modelSelectionSchema.parse(input.modelSelection) } : {}),
   };
 }
 
@@ -244,6 +247,7 @@ export function digestRevision(revision) {
     maskSha256: revision.maskSha256,
     parentImageId: revision.parentImageId,
     sourcePrompt: revision.sourcePrompt,
+    ...(revision.modelSelection ? { modelSelection: revision.modelSelection } : {}),
   };
   return createHash("sha256")
     .update(canonicalJson(canonicalRevision), "utf8")

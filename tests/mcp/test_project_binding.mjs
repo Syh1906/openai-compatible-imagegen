@@ -75,6 +75,23 @@ test("path leak assertions detect Windows paths after JSON escaping", () => {
   );
 });
 
+test("configured canvas submission mode reaches project binding and editor receipts", async () => {
+  await withProjectRoots(async ({ pluginRoot, projectA, userHome }) => {
+    const configPath = userConfigPath(userHome);
+    const config = JSON.parse(await readFile(configPath, "utf8"));
+    await writeFile(configPath, JSON.stringify({ ...config, canvas_submission_mode: "composer" }));
+    const server = createTestServer({ pluginRoot });
+    try {
+      const bound = await server._registeredTools.bind_imagegen_project.handler({ projectRoot: projectA });
+      assert.equal(bound.structuredContent.canvasSubmissionMode, "composer");
+      const opened = await server._registeredTools.open_image_editor.handler({ projectBindingId: bound.structuredContent.projectBindingId, imageId: IMAGE_ID });
+      assert.equal(opened.structuredContent.auth.canvasSubmissionMode, "composer");
+    } finally {
+      await server.close();
+    }
+  });
+});
+
 
 test("explicit project binding IDs restore one project across MCP processes without host metadata", async () => {
   await withProjectRoots(async ({ pluginRoot, projectA }) => {
@@ -802,6 +819,7 @@ function bindingReceipt(status, projectBindingId) {
     projectBindingId,
     distribution: "plugin",
     defaultAuthMode: "apikey",
+    canvasSubmissionMode: "auto",
     apiKeyConfigured: true,
     chatgptRequirement: "codex_app_imagegen_handoff",
   };

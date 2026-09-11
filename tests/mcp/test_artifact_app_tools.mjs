@@ -249,6 +249,7 @@ async function withClient(dependencies, callback) {
       projectBindingId: PROJECT_BINDING_ID,
       distribution: "plugin",
       defaultAuthMode: "apikey",
+      canvasSubmissionMode: "auto",
       apiKeyConfigured: true,
       chatgptRequirement: "codex_app_imagegen_handoff",
     });
@@ -279,6 +280,7 @@ function createFixtureProjectContext(projectRoot) {
     userConfigSha256: "1".repeat(64),
     projectConfigSha256: null,
     defaultAuthMode: "apikey",
+    canvasSubmissionMode: "auto",
     apiKeyConfigured: true,
     chatgptRequirement: "codex_app_imagegen_handoff",
   };
@@ -290,6 +292,7 @@ function createFixtureProjectContext(projectRoot) {
         projectBindingId: PROJECT_BINDING_ID,
         distribution: "plugin",
         defaultAuthMode: "apikey",
+        canvasSubmissionMode: "auto",
         apiKeyConfigured: true,
         chatgptRequirement: "codex_app_imagegen_handoff",
       };

@@ -5,6 +5,7 @@ import io
 import json
 import os
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -24,6 +25,51 @@ else:
 
 
 class ImageConfigMigrationTests(unittest.TestCase):
+    def test_direct_entry_runs_outside_package_without_pythonpath(self):
+        environment = {key: value for key, value in os.environ.items() if key != "PYTHONPATH"}
+        result = subprocess.run(
+            [sys.executable, str(SCRIPTS / "migrate_image_config.py"), "--help"],
+            cwd=self.root, env=environment, capture_output=True, text=True, timeout=30,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("plugin-v1", result.stdout)
+        self.assertIn("--expected-source-sha256", result.stdout)
+
+    def test_plugin_v1_upgrade_preserves_canvas_submission_preference(self):
+        for mode in ("auto", "composer", "message"):
+            upgraded = migrate_image_config.upgrade_plugin_config({
+                "config_version": 1, "auth_mode": "chatgpt", "canvas_submission_mode": mode,
+            })
+            self.assertEqual(upgraded["canvas_submission_mode"], mode)
+        for mode in (None, "unknown", False, {}):
+            with self.assertRaises(migrate_image_config.ConfigMigrationError):
+                migrate_image_config.upgrade_plugin_config({
+                    "config_version": 1, "auth_mode": "chatgpt", "canvas_submission_mode": mode,
+                })
+
+    def test_plugin_v1_upgrade_moves_image_defaults_only_to_active_profile(self):
+        source = {"config_version": 1, "auth_mode": "chatgpt", "active_profile": "first", "providers": {
+            "p": {"protocol": "openai-compatible", "base_url": "https://example.test/v1", "api_key_env": "TEST_IMAGE_KEY"}},
+            "models": {"first": {"provider": "p", "model": "custom", "capabilities": {"generate": True}},
+                       "second": {"provider": "p", "model": "another", "capabilities": {"generate": True}}},
+            "defaults": {"quality": "max", "size": "1024x1024", "timeout_seconds": 60},
+            "transparency": {"default_route": "chroma-matting"}}
+        self.write_source(source)
+        plan = migrate_image_config.plan_migration(source_path=self.source, source_kind="plugin-v1", user_target=self.user_target)
+        migrated = plan.user_config
+        self.assertEqual(migrated["config_version"], 2)
+        self.assertEqual(migrated["defaults"], {"timeout_seconds": 60})
+        self.assertEqual(migrated["models"]["first"]["defaults"]["quality"], "max")
+        self.assertNotIn("defaults", migrated["models"]["second"])
+        self.assertEqual(migrated["host_defaults"], {"quality": "max", "size": "1024x1024"})
+        self.assertEqual(migrated["transparency"], source["transparency"])
+        self.assertEqual(json.loads(self.source.read_text()), source)
+
+    def test_chatgpt_only_v1_upgrade_does_not_add_api_configuration(self):
+        self.write_source({"config_version": 1, "auth_mode": "chatgpt", "defaults": {"quality": "high"}})
+        plan = migrate_image_config.plan_migration(source_path=self.source, source_kind="plugin-v1", user_target=self.user_target)
+        self.assertEqual(plan.user_config, {"config_version": 2, "auth_mode": "chatgpt", "defaults": {}, "host_defaults": {"quality": "high"}})
+
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
         self.root = Path(self.temp_dir.name)

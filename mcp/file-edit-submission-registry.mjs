@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { modelSelectionSchema } from "./model-selection.mjs";
 import { lstat, mkdir } from "node:fs/promises";
 import path from "node:path";
 
@@ -65,6 +66,7 @@ export function createFileEditSubmissionRegistry({
         parentImageId: revision.parentImageId,
         annotationId: revision.annotationId,
         revisionSha256: digestRevision(revision),
+        ...(revision.modelSelection ? { modelSelection: structuredClone(revision.modelSelection) } : {}),
       });
       record.submissions.push({
         id,
@@ -73,6 +75,7 @@ export function createFileEditSubmissionRegistry({
         maskSha256: revision.maskSha256,
         maskPolicySha256: revision.maskPolicySha256,
         revisionSha256: receipt.revisionSha256,
+        ...(revision.modelSelection ? { modelSelection: structuredClone(revision.modelSelection) } : {}),
         state: "prepared",
         completedArtifactIds: [],
       });
@@ -327,6 +330,7 @@ function receiptFor(record, submission) {
     parentImageId: record.parentImageId,
     annotationId: submission.annotationId,
     revisionSha256: submission.revisionSha256,
+    ...(submission.modelSelection ? { modelSelection: structuredClone(submission.modelSelection) } : {}),
   });
 }
 
@@ -395,6 +399,7 @@ function validateRecord(value, scope) {
 
 
 function validateSubmission(value) {
+  if (value?.modelSelection !== undefined && !modelSelectionSchema.safeParse(value.modelSelection).success) invalidState();
   if (!value || Object.getPrototypeOf(value) !== Object.prototype) invalidState();
   const keys = Object.keys(value).sort();
   if (JSON.stringify(keys) !== JSON.stringify([
@@ -404,6 +409,7 @@ function validateSubmission(value) {
     "id",
     "maskPolicySha256",
     "maskSha256",
+    ...(value.modelSelection === undefined ? [] : ["modelSelection"]),
     "revisionSha256",
     "state",
   ])) invalidState();

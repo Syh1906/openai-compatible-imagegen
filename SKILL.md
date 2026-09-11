@@ -1,17 +1,19 @@
 ---
 name: openai-compatible-imagegen
-description: Generate, edit, and batch-process images through the bundled script and configured API Key provider (OpenAI-compatible or Atlas Cloud). Use for photos, illustrations, product visuals, posters, covers, diagrams, UI references, game art, transparent subjects, reference-image edits, inpainting, multi-reference compositions, and image batches when this local OpenAI-compatible workflow is the requested backend. Do not force this workflow when the user explicitly selects another image tool or backend.
+description: Generate, edit, and batch-process images through the bundled script and configured API Key provider (OpenAI-compatible, Atlas, xAI, or Gemini). Use for photos, illustrations, product visuals, posters, covers, diagrams, UI references, game art, transparent subjects, reference-image edits, inpainting, multi-reference compositions, and image batches when this local OpenAI-compatible workflow is the requested backend. Do not force this workflow when the user explicitly selects another image tool or backend.
 ---
 
 # OpenAI-Compatible Images Skill
 
-This is the Standalone distribution. Read configuration only from `auth.json` beside this installed skill; do not discover, merge, or fall back to the Codex Plugin configuration under `~/.codex/openai-compatible-imagegen/`. When the Codex Plugin distribution is active, follow its bundled `skills/openai-compatible-imagegen/SKILL.md` instead of this CLI workflow. Standalone uses the configured API Key provider: `openai-compatible` by default, or the optional `atlas` protocol. ChatGPT subscription handoff is a Plugin-only capability. Atlas supports text-to-image generation with PNG or JPEG output; edits and native transparency are unsupported. Never switch protocols to work around a failure.
+This is the Standalone distribution. Read configuration only from `auth.json` beside this installed skill; do not discover, merge, or fall back to the Codex Plugin configuration under `~/.codex/openai-compatible-imagegen/`. When the Codex Plugin distribution is active, follow its bundled `skills/openai-compatible-imagegen/SKILL.md` instead of this CLI workflow. Standalone uses the configured API Key provider: `openai-compatible`, `atlas`, `xai-images`, `gemini-interactions`, or `gemini-generate-content`, as explicitly configured. ChatGPT subscription handoff is a Plugin-only capability. Atlas supports text-to-image generation with PNG or JPEG output; edits and native transparency are unsupported. Never switch protocols to work around a failure.
 
 Use the bundled script for API calls. Resolve `$SkillDir` from the physical directory containing this `SKILL.md`; never substitute another same-named installation. Run `$SkillDir/scripts/imagegen.py info` before an API request and require both `script_path` and `auth_json` to remain under `$SkillDir`. Stop and report the path mismatch instead of using a different copy. When validating this skill through another agent, require it to report the absolute `imagegen.py` path actually executed.
 
 Do not rewrite the API client inline. The script is the authority for request validity: do not reject, rewrite, or ask the user to change a model, size, or transparency request based on remembered provider limitations. Run the command and report its actual result. Only a validation error emitted by the script or an API response can establish that the request failed.
 
 ## Workflow
+
+For a v2 provider/model configuration, run `list-models` before selecting an API model. Resolve the user's choice by exact profile ID, unique alias, or unique actual model ID; clarify multiple matching channels. Use `--profile` explicitly and preserve per-call native JSON through `--parameters`; JSONL rows use `modelProfileId` and `parameters`. Do not change `active_profile` for a one-call preference. Use the configured protocol (`openai-compatible`, `atlas`, `xai-images`, `gemini-interactions`, or `gemini-generate-content`), never infer or switch it from a model name. See [model configuration](references/models.md) for v2 defaults and parameter fields. ChatGPT handoff remains Plugin-only.
 
 1. Run `info` to inspect the local configuration. If `auth.json` is missing, run `scripts/quick-init.py`.
 2. Choose one mode:
@@ -101,7 +103,7 @@ If both are present, the script uses `api_key` unless it is a template placehold
 
 Important configuration fields:
 
-- `protocol`: `openai-compatible` (default) or `atlas`.
+- `protocol`: `openai-compatible` (default), `atlas`, `xai-images`, `gemini-interactions`, or `gemini-generate-content`. For provider/model structures, set it in the provider; see [model configuration](references/models.md).
 - `base_url`: provider base URL; OpenAI-compatible services usually use `/v1`, while Atlas uses its service root.
 - `api_key` or `api_key_env`: local authentication.
 - `model`: default image model.
@@ -121,6 +123,8 @@ The old `capabilities.transparent_background` setting is removed. If it remains 
 Treat `--transparent` as delivery intent. The CLI `--background` accepts only `auto` or `opaque`. When the resolved route is `native-alpha`, the runtime sends API `background=transparent`, PNG output, and a real-alpha prompt contract; local routes omit that parameter.
 
 Map an explicit user preference to an explicit per-run switch: use `--postprocess` when the user allows or requests local processing. `--no-postprocess` disables local transparency pixel changes, including native fallback. For non-native routes, an exact prompt-only rule selects `prompt-alpha`; otherwise the runtime keeps the prompt unchanged and inspects returned alpha. The switch does not disable a selected native request. Explicit delivery transforms may still run after transparency passes. Omitting both switches inherits `postprocess.enabled`.
+
+The native request and background controls below apply to OpenAI-compatible. Atlas, xAI, and Gemini have no dedicated native-alpha transport here; use compatible local delivery on saved PNG originals. For v2 API calls, resolve transparency from the selected profile, not the top-level host/local policy.
 
 Choose the request route before sending the request:
 

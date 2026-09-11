@@ -291,6 +291,17 @@ class ImageRuntimeMachineModeTests(unittest.TestCase):
         self.assertTrue(all(payload["model"] == "gpt-image-2" for payload in payloads))
         self.assertTrue(all(payload["prompt"] == "two candidates" for payload in payloads))
 
+    def test_native_batch_generation_preserves_dimension_intent_and_actual_image(self):
+        cfg = replace(self.cfg, protocol="gemini-generate-content", config_version=2)
+        response = {"candidates": [{"content": {"parts": [{"inlineData": {"data": base64.b64encode(make_png(3, 2)).decode()}}]}}]}
+        task = self.task(executionMode="batch-item", output={"count": 1, "aspectRatio": "3:2", "resolution": "2K"})
+        with mock.patch.object(self.imagegen.image_transport, "request_json", return_value=response) as send:
+            result = self.imagegen.run_machine_task(task, self.project_root, self.artifact_root, cfg)
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["artifacts"][0]["width"], 3)
+        self.assertEqual(send.call_args.kwargs["payload"]["generationConfig"]["imageConfig"], {"aspectRatio": "3:2", "imageSize": "2K"})
+        self.assertEqual(result["apiDelivery"]["status"], "published")
+
     def test_image25_models_and_quality_survive_generation_and_edit_requests(self) -> None:
         response = {"data": [{"b64_json": base64.b64encode(make_png(3, 2)).decode("ascii")}]}
         for model in ("gpt-image-2.5-sunburst", "gpt-image-2.5-flare", "vendor/image25-fast-v3"):
@@ -1575,7 +1586,7 @@ class ImageRuntimeMachineModeTests(unittest.TestCase):
 
         self.assertTrue(result["ok"])
         self.assertEqual(
-            result["models"],
+            [{key: item[key] for key in ("id", "provider", "model", "capabilities")} for item in result["models"]],
             [
                 {
                     "id": "primary/gpt-image-2",

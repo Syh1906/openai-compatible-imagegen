@@ -2,6 +2,7 @@ import { RESOURCE_MIME_TYPE, registerAppResource } from "@modelcontextprotocol/e
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createLocalImageTransfer, registerLocalImageTransferTools } from "./local-image-transfer.mjs";
 import { z } from "zod";
+import { modelSelectionSchema, resolveModelSelection, bindCanvasSelection, modelDefaultOutput } from "./model-selection.mjs";
 
 import { createEditSubmissionRegistry } from "./edit-submission-registry.mjs";
 import { annotationItemSchema, editorDraftSchema } from "./editor-draft-contract.mjs";
@@ -68,6 +69,22 @@ const imageModelOutputSchema = z.object({
   provider: z.string().min(1),
   model: z.string().min(1),
   capabilities: imageModelCapabilitiesOutputSchema,
+  effectiveCapabilities: imageModelCapabilitiesOutputSchema.optional(),
+  displayName: z.string().optional(),
+  aliases: z.array(z.string()).optional(),
+  description: z.string().optional(),
+  providerDisplayName: z.string().optional(),
+  protocol: z.string().optional(),
+  isDefault: z.boolean().optional(),
+  defaults: z.object({
+    size: z.string().optional(), quality: z.string().optional(), output_format: z.string().optional(),
+    aspect_ratio: z.string().optional(), resolution: z.string().optional(),
+  }).strict().optional(),
+  limits: z.object({ quality: z.array(z.string()).optional(), max_input_images: z.number().int().positive().optional() }).strict().optional(),
+  availability: z.enum(["configured", "missing_credentials"]).optional(),
+  selectionFingerprint: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+  parameterFields: z.record(z.unknown()).optional(),
+  parameters: z.record(z.unknown()).optional(),
 }).strict();
 const editorSessionOutputSchema = z.object({
   id: editorSessionIdSchema,
@@ -132,6 +149,7 @@ const annotationOutputSchema = z.object({
   maskPolicy: maskPolicyOutputSchema.nullable(),
 }).strict();
 const editSubmissionOutputSchema = z.object({
+  modelSelection: modelSelectionSchema.optional(),
   id: submissionIdSchema,
   parentImageId: imageIdSchema,
   annotationId: annotationIdSchema.nullable(),
@@ -315,6 +333,7 @@ export function createImagegenServer({
         projectBindingId: projectBindingIdSchema,
         distribution: z.literal("plugin"),
         defaultAuthMode: z.enum(["apikey", "chatgpt"]),
+        canvasSubmissionMode: z.enum(["auto", "composer", "message"]),
         apiKeyConfigured: z.boolean(),
         chatgptRequirement: z.literal("codex_app_imagegen_handoff"),
       }).strict(),
@@ -508,6 +527,12 @@ export function createImagegenServer({
     return async ({ projectBindingId, submissionKey, ...request }) =>
       await withBoundProject(projectContext, projectBindingId, async (context) => {
         if (context.apiKeyConfigured === false) return apiProviderNotConfigured();
+        if (kind === "edit" && request.submissionId) {
+          const prepared = await editSubmissions.resolveForEdit({ ...request, artifactRoot: context.artifactRoot, bindingKey: context.bindingKey });
+          request = bindCanvasSelection(context, request, prepared?.receipt?.modelSelection);
+        }
+        // Resolve the default before persisting the durable request.
+        if (context.apiRuntimeConfig?.models) request.modelProfileId = resolveModelSelection(context, request.modelProfileId).modelProfileId;
         return imageJobResult(await imageJobs.submit({ context, submissionKey, spec: { kind, request } }));
       });
   }
@@ -720,6 +745,7 @@ export function createImagegenServer({
     async ({ projectBindingId, submissionKey, items, concurrency }) =>
       await withBoundProject(projectContext, projectBindingId, async (context) => {
         if (context.apiKeyConfigured === false) return apiProviderNotConfigured();
+        if (context.apiRuntimeConfig?.models) items = items.map((item) => ({ ...item, modelProfileId: resolveModelSelection(context, item.modelProfileId).modelProfileId }));
         return imageJobResult(await imageJobs.submit({ context, submissionKey, spec: {
           kind: "batch", items, ...(concurrency === undefined ? {} : { concurrency }),
         } }));
@@ -1013,6 +1039,7 @@ export function createImagegenServer({
         artifact: imageArtifactOutputSchema,
         auth: z.object({
           defaultAuthMode: z.enum(["apikey", "chatgpt"]),
+          canvasSubmissionMode: z.enum(["auto", "composer", "message"]),
           apiKeyConfigured: z.boolean(),
           chatgptRequirement: z.literal("codex_app_imagegen_handoff"),
         }).strict().optional(),
@@ -1049,6 +1076,7 @@ export function createImagegenServer({
             ...(context.defaultAuthMode ? {
               auth: {
                 defaultAuthMode: context.defaultAuthMode,
+                canvasSubmissionMode: context.canvasSubmissionMode ?? "auto",
                 apiKeyConfigured: context.apiKeyConfigured,
                 chatgptRequirement: context.chatgptRequirement,
               },
@@ -1104,6 +1132,7 @@ export function createImagegenServer({
         parentImageId: imageIdSchema,
         items: z.array(annotationItemSchema).max(100),
         sourcePrompt: z.string().max(600),
+        modelSelection: modelSelectionSchema.optional(),
       },
       outputSchema: z.object({
         annotation: annotationOutputSchema.nullable(),
@@ -1112,10 +1141,18 @@ export function createImagegenServer({
       annotations: writeAnnotations(),
       _meta: { ui: { visibility: ["app"] } },
     },
-    async ({ projectBindingId, parentImageId, items, sourcePrompt }) => await withBoundProject(
+    async ({ projectBindingId, parentImageId, items, sourcePrompt, modelSelection }) => await withBoundProject(
       projectContext,
       projectBindingId,
       async (context) => {
+        if (modelSelection?.authMode === "apikey") {
+          const resolved = resolveModelSelection(context, modelSelection.modelProfileId);
+          if (modelSelection.selectionFingerprint && modelSelection.selectionFingerprint !== resolved.selectionFingerprint) return toolError(new Error("canvas model configuration changed; select the model again"), "image_config_changed");
+          modelSelection = { ...modelSelection, ...resolved, output: modelDefaultOutput(context, resolved.modelProfileId) };
+          context = { ...context, activeProfile: modelSelection.modelProfileId };
+        } else if (modelSelection) {
+          modelSelection = { authMode: "chatgpt" };
+        }
         try {
           await readArtifact(parentImageId, context);
         } catch (error) {
@@ -1151,6 +1188,11 @@ export function createImagegenServer({
         }
 
         try {
+          if (modelSelection?.authMode === "apikey" && annotation?.hasMask && modelHasCapability(context, modelSelection.modelProfileId, "mask")) {
+            const { size: _size, format: _format, aspectRatio: _aspect, resolution: _resolution, ...defaults } = modelSelection.output;
+            const { count: _count, ...maskOutput } = deriveMaskedEditOutput(defaults, annotation.maskPolicy);
+            modelSelection = { ...modelSelection, output: maskOutput };
+          }
           const submission = await editSubmissions.issue({
             artifactRoot: context.artifactRoot,
             bindingKey: context.bindingKey,
@@ -1160,6 +1202,7 @@ export function createImagegenServer({
             maskPolicySha256: annotation?.maskPolicy?.policySha256 ?? null,
             sourcePrompt,
             items,
+            ...(modelSelection ? { modelSelection } : {}),
           });
           return {
             content: [{ type: "text", text: `已准备图片 ${parentImageId} 的待发送修改。` }],
@@ -1385,6 +1428,9 @@ async function withBoundProject(projectContext, projectBindingId, callback) {
 
 function modelHasCapability(context, modelProfileId, capability) {
   const runtimeConfig = context.apiRuntimeConfig ?? JSON.parse(context.effectiveConfigJson);
+  const model = runtimeConfig?.models?.[modelProfileId];
+  const protocol = runtimeConfig?.providers?.[model?.provider]?.protocol;
+  if (capability === "mask" && protocol && protocol !== "openai-compatible") return false;
   return runtimeConfig?.models?.[modelProfileId]?.capabilities?.[capability] === true;
 }
 

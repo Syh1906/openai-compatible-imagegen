@@ -6,6 +6,7 @@ import path from "node:path";
 import { pathContainsSymbolicLink } from "./filesystem-path-safety.mjs";
 import { replaceFileAtomically } from "./atomic-file-replace.mjs";
 import { ensureLocalIgnore, LocalIgnoreGuardError } from "./local-ignore-guard.mjs";
+import modelContract from "../scripts/model-profile-contract.json" with { type: "json" };
 
 
 const CONFIG_DIRECTORY = "openai-compatible-imagegen";
@@ -14,6 +15,7 @@ const ACTIVE_PROFILE = "primary/gpt-image-2";
 const USER_TOP_LEVEL_KEYS = new Set([
   "config_version",
   "auth_mode",
+  "canvas_submission_mode",
   "active_profile",
   "providers",
   "models",
@@ -21,6 +23,7 @@ const USER_TOP_LEVEL_KEYS = new Set([
   "postprocess",
   "transparency",
   "storage",
+  "host_defaults",
 ]);
 const PROJECT_TOP_LEVEL_KEYS = new Set(["config_version", "defaults", "storage"]);
 const USER_DEFAULT_KEYS = new Set([
@@ -32,21 +35,14 @@ const USER_DEFAULT_KEYS = new Set([
 ]);
 const PROJECT_DEFAULT_KEYS = new Set(["size", "quality", "output_format"]);
 const STORAGE_KEYS = new Set(["output_directory"]);
-const PROVIDER_KEYS = new Set([
-  "protocol",
-  "base_url",
-  "api_key",
-  "api_key_env",
-  "user_agent",
-  "url_download",
-  "proxy",
-]);
-const MODEL_KEYS = new Set(["provider", "model", "capabilities"]);
+const PROVIDER_KEYS = new Set(modelContract.providerKeys);
+const MODEL_KEYS = new Set(modelContract.profileKeys);
 const CAPABILITY_KEYS = new Set(["generate", "edit", "mask", "multi_reference"]);
-const PROVIDER_PROTOCOLS = new Set(["openai-compatible", "atlas"]);
+const PROVIDER_PROTOCOLS = new Set(modelContract.protocols);
 const DEFAULT_TIMEOUT_SECONDS = 600;
 const DEFAULT_CONCURRENCY = 3;
-const USER_UPDATE_KEYS = new Set(["auth_mode", "providers", "models", "defaults", "postprocess", "transparency", "storage"]);
+const CANVAS_SUBMISSION_MODES = new Set(["auto", "composer", "message"]);
+const USER_UPDATE_KEYS = new Set(["auth_mode", "canvas_submission_mode", "active_profile", "providers", "models", "defaults", "host_defaults", "postprocess", "transparency", "storage"]);
 const PROJECT_UPDATE_KEYS = new Set(["defaults", "storage"]);
 const CONFIG_TEMPLATE = Object.freeze({
   config_version: 1,
@@ -165,15 +161,19 @@ export async function inspectImageConfig({ userHome = os.homedir(), projectRoot 
   const activeModel = activeProfile && user?.models?.[activeProfile];
   const defaultAuthMode = normalizeAuthMode(user?.auth_mode);
   const apiKeyConfigured = hasCompleteApiDeclaration(user);
-  const transparency = user?.transparency || {};
+  const profileTransparency = defaultAuthMode === "apikey" && user?.config_version === 2;
+  const transparency = (profileTransparency ? activeModel?.transparency : user?.transparency) || {};
+  const transparencyPath = profileTransparency ? `models[${JSON.stringify(activeProfile)}].transparency` : "transparency";
+  const protocol = user?.providers?.[activeModel?.provider]?.protocol || "openai-compatible";
+  const supportsNative = defaultAuthMode === "apikey" && protocol === "openai-compatible";
   const native = transparency.native || {};
   const warnings = [];
   const nextSteps = [];
-  if (!isRecord(transparency.native) && transparency.default_route !== "native-alpha") {
-    warnings.push("当前配置未声明 transparency.native；为保持兼容仍使用旧透明路线。若要启用原生透明，请更新透明配置并重新绑定项目。");
-    nextSteps.push("将 transparency.default_route 设置为 native-alpha，并确认 transparency.native.enabled=true");
+  if (supportsNative && !isRecord(transparency.native) && transparency.default_route !== "native-alpha") {
+    warnings.push(`当前配置未声明 ${transparencyPath}.native；为保持兼容仍使用旧透明路线。若要启用原生透明，请更新透明配置并重新绑定项目。`);
+    nextSteps.push(`将 ${transparencyPath}.default_route 设置为 native-alpha，并确认 ${transparencyPath}.native.enabled=true`);
   }
-  if (activeModel?.model && Array.isArray(native.model_ids) && native.model_ids.length && !native.model_ids.includes(activeModel.model)) {
+  if (supportsNative && activeModel?.model && Array.isArray(native.model_ids) && native.model_ids.length && !native.model_ids.includes(activeModel.model)) {
     warnings.push("当前模型 ID 未列入 transparency.native.model_ids；明确请求 native-alpha 仍会交由供应商判定。");
   }
   if (!nextSteps.length) nextSteps.push("确认当前模型和透明策略后重新绑定项目");
@@ -182,6 +182,7 @@ export async function inspectImageConfig({ userHome = os.homedir(), projectRoot 
     project: { path: projectRoot ? projectConfigPath(projectRoot) : null, exists: Boolean(project), config: project ? redactConfig(project) : null },
     activeProfile,
     defaultAuthMode,
+    canvasSubmissionMode: user?.canvas_submission_mode ?? "auto",
     apiKeyConfigured,
     chatgptRequirement: CHATGPT_REQUIREMENT,
     provider: activeModel?.provider || null,
@@ -275,6 +276,7 @@ export async function resolveImageConfigBinding({
     effectiveConfigSha256: sha256(Buffer.from(effectiveConfigJson, "utf8")),
     activeProfile: apiRuntimeConfig?.active_profile ?? null,
     defaultAuthMode: normalizeAuthMode(userConfig.auth_mode),
+    canvasSubmissionMode: userConfig.canvas_submission_mode ?? "auto",
     apiKeyConfigured: apiRuntimeConfig !== null,
     chatgptRequirement: CHATGPT_REQUIREMENT,
     localRuntimeConfig: Object.freeze(localRuntimeConfig),
@@ -369,6 +371,18 @@ function redactConfig(config) {
 function mergeConfigChanges(current, changes) {
   const result = structuredClone(current);
   for (const [key, value] of Object.entries(changes)) {
+    if (key === "canvas_submission_mode") {
+      if (!CANVAS_SUBMISSION_MODES.has(value)) throw invalidImageConfigError();
+      result[key] = value;
+      continue;
+    }
+    if (key === "active_profile") {
+      if (typeof value !== "string" || !value.trim() || value !== value.trim()) {
+        throw new ImageConfigManagementError("image_config_update_invalid");
+      }
+      result[key] = value;
+      continue;
+    }
     if (key === "auth_mode") {
       if (!new Set(["apikey", "chatgpt"]).has(value)) {
         throw new ImageConfigManagementError("image_config_update_invalid");
@@ -435,7 +449,9 @@ function parseConfigSnapshot(configBytes, errorCode) {
 
 function validateUserConfig(config) {
   requireExactKeys(config, USER_TOP_LEVEL_KEYS, "image_config_invalid");
-  if (config.config_version !== 1) throw invalidImageConfigError();
+  if (![1, 2].includes(config.config_version)) throw invalidImageConfigError();
+  if (config.canvas_submission_mode !== undefined && !CANVAS_SUBMISSION_MODES.has(config.canvas_submission_mode)) throw invalidImageConfigError();
+  if (config.config_version === 1 && config.host_defaults !== undefined) throw invalidImageConfigError();
   const authMode = normalizeAuthMode(config.auth_mode);
   if (authMode === null) throw invalidImageConfigError();
   const hasAnyApiDeclaration = ["active_profile", "providers", "models"]
@@ -446,7 +462,8 @@ function validateUserConfig(config) {
   }
 
   if (hasCompleteApiConfig) validateApiConfig(config);
-  validateDefaults(config.defaults, USER_DEFAULT_KEYS, "image_config_invalid");
+  validateDefaults(config.defaults, config.config_version === 2 ? new Set(modelContract.executionDefaultKeys) : USER_DEFAULT_KEYS, "image_config_invalid");
+  validateDefaults(config.host_defaults, new Set(modelContract.imageDefaultKeys), "image_config_invalid");
   validatePostprocess(config.postprocess);
   validateTransparency(config.transparency);
   validateStorageShape(config.storage, "image_config_invalid");
@@ -455,18 +472,95 @@ function validateUserConfig(config) {
 
 function validateApiConfig(config) {
   if (typeof config.active_profile !== "string" || !config.active_profile.trim()) throw invalidImageConfigError();
+  if (!isRecord(config.models[config.active_profile])) throw invalidImageConfigError();
+  for (const [providerId, provider] of Object.entries(config.providers)) {
+    if (!providerId || stripPythonWhitespace(providerId) !== providerId) throw invalidImageConfigError();
+    validateProvider(provider, config.config_version);
+  }
+  for (const [profileId, model] of Object.entries(config.models)) {
+    if (!profileId || stripPythonWhitespace(profileId) !== profileId || !isRecord(model)) throw invalidImageConfigError();
+    requireExactKeys(model, config.config_version === 2 ? new Set([...MODEL_KEYS, ...modelContract.profileMetadataKeys]) : MODEL_KEYS, "image_config_invalid");
+    if (typeof model.model !== "string" || !model.model.trim() || model.model.trim() !== model.model || typeof model.provider !== "string") {
+      throw invalidImageConfigError();
+    }
+    const providerId = stripPythonWhitespace(model.provider);
+    if (!providerId || providerId !== model.provider || !Object.hasOwn(config.providers, providerId)) throw invalidImageConfigError();
+    validateCapabilities(model.capabilities);
+    validateMetadataText(model.display_name, 200);
+    validateMetadataText(model.description, 600);
+    validateDefaults(model.defaults, new Set(modelContract.imageDefaultKeys), "image_config_invalid");
+    validateTransparency(model.transparency);
+    if (model.parameters !== undefined && (!isRecord(model.parameters)
+      || Object.keys(model.parameters).some((key) => modelContract.reservedParameterKeys.includes(key)))) throw invalidImageConfigError();
+    validateParameterFields(model.parameter_fields, model.parameters);
+    if (model.limits !== undefined && (!isRecord(model.limits)
+      || unknownKeys(model.limits, new Set(["max_input_images"])).length
+      || (model.limits.max_input_images !== undefined
+        && (!Number.isInteger(model.limits.max_input_images) || model.limits.max_input_images < 1)))) throw invalidImageConfigError();
+  }
+  validateModelAliases(config.models);
+}
 
-  const model = config.models[config.active_profile];
-  if (!isRecord(model)) throw invalidImageConfigError();
-  requireExactKeys(model, MODEL_KEYS, "image_config_invalid");
-  if (typeof model.model !== "string" || !model.model.trim() || model.model.trim() !== model.model || typeof model.provider !== "string") {
+function validateParameterFields(fields, parameters = {}) {
+  if (fields === undefined) return;
+  if (!isRecord(fields)) throw invalidImageConfigError();
+  const paths = [];
+  for (const [name, field] of Object.entries(fields)) {
+    if (!name.trim() || !isRecord(field) || unknownKeys(field, new Set(modelContract.parameterFieldKeys)).length
+      || !modelContract.parameterFieldTypes.includes(field.type)) throw invalidImageConfigError();
+    const parts = field.path;
+    if (!Array.isArray(parts) || !parts.length || parts.some((key) => typeof key !== "string" || !key || ["__proto__", "constructor", "prototype"].includes(key))
+      || modelContract.reservedParameterKeys.includes(parts[0])) throw invalidImageConfigError();
+    if (paths.some((other) => other.slice(0, parts.length).join("\0") === parts.join("\0") || parts.slice(0, other.length).join("\0") === other.join("\0"))) throw invalidImageConfigError();
+    paths.push(parts);
+    for (const key of ["title", "description"]) {
+      if (field[key] !== undefined && (typeof field[key] !== "string" || !field[key].trim())) throw invalidImageConfigError();
+    }
+    for (const key of ["minimum", "maximum"]) {
+      if (field[key] !== undefined && (!["integer", "number"].includes(field.type) || !Number.isFinite(field[key]))) throw invalidImageConfigError();
+    }
+    if ((field.minimum ?? -Infinity) > (field.maximum ?? Infinity)) throw invalidImageConfigError();
+    const validateValue = (value) => {
+      const matches = field.type === "integer" ? Number.isInteger(value)
+        : field.type === "number" ? Number.isFinite(value)
+        : field.type === "array" ? Array.isArray(value)
+        : field.type === "object" ? isRecord(value) : typeof value === field.type;
+      if (!matches) throw invalidImageConfigError();
+      if (["integer", "number"].includes(field.type) && (value < (field.minimum ?? -Infinity) || value > (field.maximum ?? Infinity))) throw invalidImageConfigError();
+    };
+    const configuredValue = parts.reduce((value, key) => isRecord(value) ? value[key] : undefined, parameters);
+    if (configuredValue !== undefined) validateValue(configuredValue);
+    if (field.enum !== undefined) {
+      if (!Array.isArray(field.enum) || !field.enum.length) throw invalidImageConfigError();
+      field.enum.forEach(validateValue);
+    }
+    if (Object.hasOwn(field, "default")) validateValue(field.default);
+  }
+}
+
+function validateMetadataText(value, maximum) {
+  if (value === undefined) return;
+  if (typeof value !== "string" || !value || value !== value.trim() || [...value].length > maximum || /[\x00-\x1f\x7f]/.test(value)) {
     throw invalidImageConfigError();
   }
-  const providerId = stripPythonWhitespace(model.provider);
-  if (!providerId || providerId !== model.provider) throw invalidImageConfigError();
-  const provider = config.providers[providerId];
-  validateProvider(provider);
-  validateCapabilities(model.capabilities);
+}
+
+function validateModelAliases(models) {
+  const normalize = (value) => value.normalize("NFKC").trim().toLowerCase();
+  const aliases = new Map();
+  for (const [id, model] of Object.entries(models)) {
+    const values = model.aliases ?? [];
+    if (!Array.isArray(values) || values.length > 32) throw invalidImageConfigError();
+    for (const alias of values) {
+      validateMetadataText(typeof alias === "string" ? alias.trim() : alias, 200);
+      if (alias === undefined) throw invalidImageConfigError();
+      const key = normalize(alias);
+      if (!key || modelContract.reservedAliases.includes(key)
+        || Object.keys(models).some((other) => other !== id && normalize(other) === key)
+        || (aliases.has(key) && aliases.get(key) !== id)) throw invalidImageConfigError();
+      aliases.set(key, id);
+    }
+  }
 }
 
 
@@ -487,9 +581,18 @@ function validateProjectConfig(config) {
 }
 
 
-function validateProvider(provider) {
+function validateProvider(provider, version = 1) {
   if (!isRecord(provider)) throw invalidImageConfigError();
-  requireExactKeys(provider, PROVIDER_KEYS, "image_config_invalid");
+  requireExactKeys(provider, version === 2 ? new Set([...PROVIDER_KEYS, ...modelContract.providerMetadataKeys]) : PROVIDER_KEYS, "image_config_invalid");
+  validateMetadataText(provider.display_name, 200);
+  if (provider.endpoints !== undefined) {
+    if (!isRecord(provider.endpoints) || unknownKeys(provider.endpoints, new Set(["generate", "edit"])).length) throw invalidImageConfigError();
+    for (const endpoint of Object.values(provider.endpoints)) {
+      if (typeof endpoint !== "string" || endpoint !== endpoint.trim() || /[\x00-\x1f\x7f]/.test(endpoint) || !isValidBaseUrl(endpoint)) throw invalidImageConfigError();
+      const parsed = new URL(endpoint);
+      if (parsed.username || parsed.password || parsed.hash) throw invalidImageConfigError();
+    }
+  }
   if (!PROVIDER_PROTOCOLS.has(provider.protocol)) throw invalidImageConfigError();
   if (
     typeof provider.base_url !== "string"
@@ -563,13 +666,17 @@ function validateCapabilities(value) {
 function validateDefaults(value, allowedKeys, errorCode) {
   if (value === undefined) return;
   if (!isRecord(value) || unknownKeys(value, allowedKeys).length) throw configError(errorCode);
+  if (allowedKeys === USER_DEFAULT_KEYS || allowedKeys === PROJECT_DEFAULT_KEYS) {
+    if (value.quality !== undefined && !modelContract.qualityValues.includes(value.quality)) throw configError(errorCode);
+    if (value.output_format !== undefined && !modelContract.formatValues.includes(value.output_format)) throw configError(errorCode);
+  }
   if (value.size !== undefined && (typeof value.size !== "string" || !/^\d+x\d+$/.test(value.size))) {
     throw configError(errorCode);
   }
-  if (value.quality !== undefined && !new Set(["auto", "low", "medium", "high", "xhigh", "max"]).has(value.quality)) {
+  if (value.quality !== undefined && (typeof value.quality !== "string" || !value.quality.trim())) {
     throw configError(errorCode);
   }
-  if (value.output_format !== undefined && !new Set(["png", "jpeg", "webp"]).has(value.output_format)) {
+  if (value.output_format !== undefined && (typeof value.output_format !== "string" || !value.output_format.trim())) {
     throw configError(errorCode);
   }
   if (value.timeout_seconds !== undefined && !integerInRange(value.timeout_seconds, 1, 600)) {
@@ -578,6 +685,9 @@ function validateDefaults(value, allowedKeys, errorCode) {
   if (value.concurrency !== undefined && !integerInRange(value.concurrency, 1, 8)) {
     throw configError(errorCode);
   }
+  if (value.aspect_ratio !== undefined && (typeof value.aspect_ratio !== "string" || !/^(auto|[0-9]+(?:\.[0-9]+)?:[0-9]+(?:\.[0-9]+)?)$/.test(value.aspect_ratio))) throw configError(errorCode);
+  if (value.resolution !== undefined && (typeof value.resolution !== "string" || !value.resolution.trim())) throw configError(errorCode);
+  if (value.size !== undefined && (value.aspect_ratio !== undefined || value.resolution !== undefined)) throw configError(errorCode);
 }
 
 
@@ -651,7 +761,14 @@ function validateStorageShape(value, errorCode) {
 function mergeEffectiveConfig(userConfig, projectConfig) {
   const effective = structuredClone(userConfig);
   if (projectConfig?.defaults) {
-    effective.defaults = { ...(effective.defaults || {}), ...projectConfig.defaults };
+    if (effective.config_version === 2) {
+      for (const model of Object.values(effective.models || {})) {
+        model.defaults = mergeImageDefaults(model.defaults, projectConfig.defaults);
+      }
+      effective.host_defaults = mergeImageDefaults(effective.host_defaults, projectConfig.defaults);
+    } else {
+      effective.defaults = { ...(effective.defaults || {}), ...projectConfig.defaults };
+    }
   }
   if (projectConfig?.storage) {
     effective.storage = { ...(effective.storage || {}), ...projectConfig.storage };
@@ -660,18 +777,36 @@ function mergeEffectiveConfig(userConfig, projectConfig) {
 }
 
 
+function mergeImageDefaults(lower, higher) {
+  const merged = { ...(lower || {}), ...higher };
+  if (higher.size !== undefined) {
+    delete merged.aspect_ratio;
+    delete merged.resolution;
+  } else if (higher.aspect_ratio !== undefined || higher.resolution !== undefined) {
+    delete merged.size;
+  }
+  return merged;
+}
+
 function createLocalRuntimeConfig(config) {
-  return Object.fromEntries(
+  const local = Object.fromEntries(
     ["config_version", "defaults", "postprocess", "transparency", "storage"]
       .filter((key) => config[key] !== undefined)
       .map((key) => [key, structuredClone(config[key])]),
   );
+  // The local adapter needs a flat output configuration and never receives API routes.
+  if (config.config_version === 2) {
+    local.config_version = 1;
+    local.defaults = { ...(config.defaults || {}), ...(config.host_defaults || {}) };
+  }
+  return local;
 }
 
 
 function createApiRuntimeConfig(config) {
   const runtimeConfig = structuredClone(config);
   delete runtimeConfig.auth_mode;
+  delete runtimeConfig.canvas_submission_mode;
   return runtimeConfig;
 }
 

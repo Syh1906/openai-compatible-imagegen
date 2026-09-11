@@ -128,6 +128,7 @@ async function prepareImport(input, context, { importer, editSubmissions, readAr
     if (!claimed || claimed.completedArtifactIds) {
       throw new Error("ChatGPT canvas edit submission is not available");
     }
+    if (claimed.receipt.modelSelection?.authMode === "apikey") throw new Error("canvas submission requires the API Key route");
     const parent = await readArtifact(input.parentImageId, context);
     const structuredContent = await importer.prepare({
       ...input,

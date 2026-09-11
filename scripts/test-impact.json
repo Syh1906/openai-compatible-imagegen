@@ -109,7 +109,7 @@
     },
     {
       "name": "image-provider-runtime",
-      "files": ["scripts/image_transport.py", "scripts/provider_config.py", "scripts/image_runtime.py", "scripts/imagegen.py"],
+      "files": ["scripts/image_transport.py", "scripts/provider_config.py", "scripts/image_runtime.py", "scripts/imagegen.py", "scripts/model-profile-contract.json", "scripts/model_profiles.py", "scripts/image_parameters.py", "scripts/image_request_options.py", "scripts/image_provider_requests.py", "scripts/native_image_protocols.py", "scripts/protocol_contract.py", "scripts/protocol_xai_images.py", "scripts/protocol_gemini_interactions.py", "scripts/protocol_gemini_content.py", "scripts/protocol_openai_images.py", "scripts/protocol_atlas_images.py"],
       "suites": ["shared", "standalone", "plugin-runtime", "mcp", "release"],
       "checks": ["build", "diff", "plugin"],
       "platforms": ["macos", "windows"]

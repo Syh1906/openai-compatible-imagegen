@@ -25,6 +25,7 @@ import {
 
 
 const execFileAsync = promisify(execFile);
+const pythonCommand = process.env.PYTHON ?? (process.platform === "win32" ? "python" : "python3");
 const projectRoot = fileURLToPath(new URL("../..", import.meta.url));
 const buildScript = fileURLToPath(new URL("../../scripts/build-release-artifacts.mjs", import.meta.url));
 const releaseWorkflow = fileURLToPath(new URL("../../.github/workflows/release-artifacts.yml", import.meta.url));
@@ -43,6 +44,18 @@ test("Plugin excludes Standalone adapters while retaining the shared core", () =
   assert.equal(runtimeFileNames.includes("imagegen_cli.py"), false);
 });
 const sharedCoreFiles = [
+  "image_parameters.py",
+  "image_provider_requests.py",
+  "image_request_options.py",
+  "model-profile-contract.json",
+  "model_profiles.py",
+  "native_image_protocols.py",
+  "protocol_contract.py",
+  "protocol_openai_images.py",
+  "protocol_atlas_images.py",
+  "protocol_xai_images.py",
+  "protocol_gemini_content.py",
+  "protocol_gemini_interactions.py",
   "image_alpha.py",
   "image_emissive_alpha.py",
   "image_download.py",
@@ -76,6 +89,7 @@ const standaloneFiles = [
   "examples/auth.example.json",
   "examples/batch.example.jsonl",
   "references/parameters.md",
+  "references/models.md",
   "references/postprocess.md",
   "references/prompting.md",
   "references/qa.md",
@@ -634,7 +648,7 @@ function hashesOf(artifacts) {
 
 
 async function requireStandardZipReader(archivePaths) {
-  await execFileAsync("python", [
+  await execFileAsync(pythonCommand, [
     "-c",
     "import sys, zipfile\nfor value in sys.argv[1:]:\n    with zipfile.ZipFile(value) as archive:\n        assert archive.testzip() is None\n        assert archive.namelist() == sorted(archive.namelist())",
     ...archivePaths,

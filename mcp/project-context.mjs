@@ -113,6 +113,7 @@ export function createProjectContext({
           projectBindingId: requestedBindingId,
           distribution: "plugin",
           defaultAuthMode: configBinding.defaultAuthMode,
+          canvasSubmissionMode: configBinding.canvasSubmissionMode ?? "auto",
           apiKeyConfigured: configBinding.apiKeyConfigured,
           chatgptRequirement: configBinding.chatgptRequirement,
         };

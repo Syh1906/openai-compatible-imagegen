@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "protocols": ["openai-compatible", "atlas", "xai-images", "gemini-interactions", "gemini-generate-content"],
+  "providerKeys": ["protocol", "base_url", "api_key", "api_key_env", "user_agent", "url_download", "proxy"],
+  "profileKeys": ["provider", "model", "capabilities"],
+  "providerMetadataKeys": ["display_name", "endpoints"],
+  "profileMetadataKeys": ["display_name", "aliases", "description", "defaults", "transparency", "limits", "parameters", "parameter_fields"],
+  "parameterFieldKeys": ["title", "description", "type", "path", "default", "enum", "minimum", "maximum"],
+  "parameterFieldTypes": ["string", "integer", "number", "boolean", "object", "array"],
+  "reservedParameterKeys": ["model", "prompt", "input", "contents", "image", "images", "mask", "n", "stream", "store", "previous_interaction_id", "api_key", "apiKey", "authorization", "headers", "base_url", "endpoint"],
+  "executionDefaultKeys": ["timeout_seconds", "concurrency"],
+  "imageDefaultKeys": ["size", "quality", "output_format", "aspect_ratio", "resolution"],
+  "qualityValues": ["auto", "low", "medium", "high", "xhigh", "max"],
+  "formatValues": ["png", "jpeg", "webp"],
+  "reservedAliases": ["chatgpt", "codex", "codex内置", "codex 内置", "apikey"]
+}
