@@ -22,6 +22,11 @@ for import_root in (SCRIPT_DIR, SKILL_DIR):
 
 import image_delivery
 import image_transport
+import image_provider_requests
+from native_image_protocols import NATIVE_PROTOCOLS
+from image_request_options import resolve_request_options
+from image_parameters import merge_parameters, validate_parameters, validate_parameter_values
+from model_profiles import model_selection_fingerprint
 from scripts.image_response import (
     MAX_IMAGE_RESPONSE_BYTES,
     MAX_IMAGE_RESPONSE_ITEMS,
@@ -65,6 +70,7 @@ from scripts.provider_config import (
     normalize_model_capabilities,
     parse_plugin_config,
     parse_plugin_local_config,
+    list_model_profiles,
 )
 from scripts.repository_fs import SubmissionLock
 
@@ -146,6 +152,8 @@ def display_path(path: Path) -> str:
 
 def request_json(cfg: Config, path: str, payload: dict[str, Any], timeout: int) -> dict[str, Any]:
     try:
+        if cfg.protocol in NATIVE_PROTOCOLS or cfg.config_version == 2 or cfg.endpoints or cfg.parameters:
+            return image_provider_requests.request_image(cfg, "generate", payload, timeout)
         return image_transport.request_json(
             base_url=cfg.base_url,
             api_key=cfg.api_key,
@@ -156,6 +164,8 @@ def request_json(cfg: Config, path: str, payload: dict[str, Any], timeout: int) 
             response_limit=MAX_JSON_RESPONSE_BYTES,
             proxy_url=cfg.proxy.get("url"),
         )
+    except image_provider_requests.ProtocolError:
+        raise
     except image_transport.TransportError as exc:
         raise _provider_image_error(exc) from exc
     except ValueError as exc:
@@ -164,6 +174,8 @@ def request_json(cfg: Config, path: str, payload: dict[str, Any], timeout: int) 
 
 def request_atlas_image(cfg: Config, payload: dict[str, Any], timeout: int) -> dict[str, Any]:
     try:
+        if cfg.config_version == 2 or cfg.endpoints or cfg.parameters:
+            return image_provider_requests.request_image(cfg, "generate", payload, timeout)
         return image_transport.request_atlas_image(
             base_url=cfg.base_url,
             api_key=cfg.api_key,
@@ -173,6 +185,8 @@ def request_atlas_image(cfg: Config, payload: dict[str, Any], timeout: int) -> d
             response_limit=MAX_JSON_RESPONSE_BYTES,
             proxy_url=cfg.proxy.get("url"),
         )
+    except image_provider_requests.ProtocolError:
+        raise
     except image_transport.TransportError as exc:
         raise _provider_image_error(exc) from exc
     except ValueError as exc:
@@ -187,6 +201,8 @@ def request_multipart(
     timeout: int,
 ) -> dict[str, Any]:
     try:
+        if cfg.protocol in NATIVE_PROTOCOLS or cfg.config_version == 2 or cfg.endpoints or cfg.parameters:
+            return image_provider_requests.request_image(cfg, "edit", fields, timeout, files=files)
         return image_transport.request_multipart(
             base_url=cfg.base_url,
             api_key=cfg.api_key,
@@ -198,6 +214,8 @@ def request_multipart(
             response_limit=MAX_JSON_RESPONSE_BYTES,
             proxy_url=cfg.proxy.get("url"),
         )
+    except image_provider_requests.ProtocolError:
+        raise
     except image_transport.TransportError as exc:
         raise _provider_image_error(exc) from exc
     except ValueError as exc:
@@ -244,6 +262,15 @@ def request_with_transparency_retry(
             or "background" not in payload
             or not _is_transparency_parameter_rejection(exc)
         ):
+            if (
+                payload.get("background") is not None
+                and _is_transparency_parameter_rejection(exc)
+                and "background" in str(exc).lower()
+            ):
+                raise MachineTaskError(
+                    "background_parameter_rejected",
+                    "Provider rejected the explicit background parameter. Ask the user whether to submit a new request without it; no retry was sent.",
+                ) from exc
             raise
         retry_payload = dict(payload)
         retry_payload.pop("background", None)
@@ -365,8 +392,8 @@ def publish_partial_response_images(
     item_summaries: list[dict[str, Any]] = []
     total_bytes = 0
     direct_download = cfg.url_download.get("proxy_mode") == "direct"
-    expected_size = parse_size(str(params["size"]))
-    requested_mime_type = machine_mime_type(str(params["format"]))
+    expected_size = parse_size(params["size"]) if params["size"] else None
+    requested_mime_type = machine_mime_type(params["format"]) if params["format"] else None
 
     for response_index, item in enumerate(data[:expected_count], start=1):
         if not isinstance(item, dict):
@@ -419,9 +446,9 @@ def publish_partial_response_images(
             "height": metadata["height"],
         }
         item_summaries.append(item_summary)
-        if metadata["mimeType"] != requested_mime_type:
+        if requested_mime_type is not None and metadata["mimeType"] != requested_mime_type:
             issues.append({"code": "format_mismatch", "responseIndex": response_index})
-        if (metadata["width"], metadata["height"]) != expected_size:
+        if expected_size is not None and (metadata["width"], metadata["height"]) != expected_size:
             issues.append({"code": "size_mismatch", "responseIndex": response_index})
 
     if not records:
@@ -539,6 +566,12 @@ def run_machine_task(
                 raise MachineTaskError("image_config_changed", "Image configuration changed after project binding")
         elif effective_cfg is None:
             raise MachineTaskError("image_config_changed", "Image configuration snapshot is unavailable")
+        if operation == "list_models" and config_snapshot is not None:
+            try:
+                raw = json.loads(config_snapshot.decode("utf-8-sig"))
+                return {"ok": True, "models": list_model_profiles(raw)}
+            except (ValueError, TypeError, KeyError) as exc:
+                raise MachineTaskError("image_config_invalid", str(exc)) from exc
         if effective_cfg is None:
             try:
                 effective_cfg = (
@@ -561,6 +594,14 @@ def run_machine_task(
                 "unsupported_model_profile",
                 f"unsupported model profile: {profile_id}",
             )
+        if operation in {"generate", "edit"}:
+            try:
+                request_parameters = (task.get("output") or {}).get("parameters", {})
+                validate_parameters(request_parameters)
+                effective_cfg = replace(effective_cfg, parameters=merge_parameters(effective_cfg.parameters, request_parameters))
+                validate_parameter_values(effective_cfg.parameter_fields, effective_cfg.parameters)
+            except (ValueError, TypeError) as exc:
+                raise MachineTaskError("invalid_task", str(exc)) from exc
         if operation == "list_models":
             return {
                 "ok": True,
@@ -633,6 +674,9 @@ def run_machine_task(
             raise MachineTaskError("invalid_task", "inputArtifactIds must be an array of artifact IDs")
         if operation == "edit" and not input_ids:
             raise MachineTaskError("invalid_task", "edit requires a parent artifact ID")
+        maximum_inputs = effective_cfg.limits.get("max_input_images")
+        if maximum_inputs is not None and len(input_ids) > maximum_inputs:
+            raise MachineTaskError("unsupported_capability", "reference image count exceeds the configured model limit")
         if not has_strict_capability(effective_cfg.capabilities, operation):
             raise MachineTaskError(
                 "unsupported_capability",
@@ -765,14 +809,11 @@ def run_machine_task(
                 else 1
             ),
         }
-        if quality_is_configured:
-            payload["quality"] = params["quality"]
-        if background_is_configured:
-            payload["background"] = params["background"]
-        if format_is_configured:
-            payload["output_format"] = params["format"]
-        if params["compression"] is not None:
-            payload["output_compression"] = params["compression"]
+        if payload["background"] is None:
+            payload.pop("background")
+        for key in ("aspectRatio", "resolution"):
+            if params.get(key) is not None:
+                payload[key] = params[key]
         if transparency is not None and transparency.plan.mode == "native-alpha":
             payload["background"] = "transparent"
             payload["output_format"] = "png"
@@ -970,6 +1011,11 @@ def run_machine_task(
                 )
                 transparency.record.update(transparency.plan.to_record())
         stored_parameters = {key: value for key, value in params.items() if key != "timeout"}
+        stored_parameters["modelProfileId"] = effective_cfg.profile_id
+        if config_snapshot is not None:
+            stored_parameters["selectionFingerprint"] = model_selection_fingerprint(json.loads(config_snapshot.decode("utf-8-sig")), effective_cfg.profile_id)
+        if effective_cfg.parameters:
+            stored_parameters["modelParameters"] = effective_cfg.parameters
         if transparency is not None:
             stored_parameters["transparency"] = transparency.record
             stored_parameters["transparency"]["api_attempts"] = transparency_attempts
@@ -1026,7 +1072,7 @@ def run_machine_task(
             )
         return result
     except Exception as exc:
-        code = exc.code if isinstance(exc, MachineTaskError) else "image_task_failed"
+        code = exc.code if isinstance(exc, (MachineTaskError, image_provider_requests.ProtocolError)) else "image_task_failed"
         return {
             "ok": False,
             "error": {
@@ -1419,6 +1465,7 @@ def edit_submission_fingerprint(
         "inputArtifactIds": task.get("inputArtifactIds") or [],
         "annotationId": task.get("annotationId"),
         "output": {key: value for key, value in params.items() if key != "timeout"},
+        **({"parameters": task["output"]["parameters"]} if (task.get("output") or {}).get("parameters") else {}),
         "hasMask": task.get("mask") is not None,
         "maskPolicy": task.get("maskPolicy"),
         "transparency": task.get("transparency"),
@@ -1433,6 +1480,15 @@ def resolve_machine_output(
     *,
     count_limit: int = 10,
 ) -> dict[str, Any]:
+    if cfg.protocol in NATIVE_PROTOCOLS or cfg.config_version == 2:
+        try:
+            params = resolve_request_options(cfg, output)
+        except ValueError as exc:
+            raise MachineTaskError("invalid_task", str(exc)) from exc
+        count = output.get("count", 1)
+        if type(count) is not int or not 1 <= count <= count_limit:
+            raise MachineTaskError("invalid_task", f"count must be between 1 and {count_limit}")
+        return {**params, "count": count, "timeout": cfg.defaults.get("timeout_seconds", DEFAULT_TIMEOUT_SECONDS)}
     output_format = str(output.get("format") or cfg.defaults.get("output_format") or DEFAULT_FORMAT).lower()
     if output_format == "jpg":
         output_format = "jpeg"
@@ -1452,10 +1508,10 @@ def resolve_machine_output(
     size = str(output.get("size") or cfg.defaults.get("size") or DEFAULT_SIZE)
     parse_size(size)
     quality = str(output.get("quality") or cfg.defaults.get("quality") or DEFAULT_QUALITY)
-    if quality not in {"auto", "low", "medium", "high"}:
+    if quality not in {"auto", "low", "medium", "high", "xhigh", "max"}:
         raise MachineTaskError("invalid_task", f"unsupported quality: {quality}")
-    background = str(output.get("background") or "opaque")
-    if background not in {"auto", "opaque"}:
+    background = output.get("background")
+    if background is not None and (not isinstance(background, str) or background not in {"auto", "opaque"}):
         raise MachineTaskError("invalid_task", f"unsupported background: {background}")
     compression = output.get("compression")
     if compression is not None:

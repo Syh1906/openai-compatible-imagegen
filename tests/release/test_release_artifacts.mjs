@@ -25,6 +25,7 @@ import {
 
 
 const execFileAsync = promisify(execFile);
+const pythonCommand = process.env.PYTHON ?? (process.platform === "win32" ? "python" : "python3");
 const projectRoot = fileURLToPath(new URL("../..", import.meta.url));
 const buildScript = fileURLToPath(new URL("../../scripts/build-release-artifacts.mjs", import.meta.url));
 const releaseWorkflow = fileURLToPath(new URL("../../.github/workflows/release-artifacts.yml", import.meta.url));
@@ -43,6 +44,18 @@ test("Plugin excludes Standalone adapters while retaining the shared core", () =
   assert.equal(runtimeFileNames.includes("imagegen_cli.py"), false);
 });
 const sharedCoreFiles = [
+  "image_parameters.py",
+  "image_provider_requests.py",
+  "image_request_options.py",
+  "model-profile-contract.json",
+  "model_profiles.py",
+  "native_image_protocols.py",
+  "protocol_contract.py",
+  "protocol_openai_images.py",
+  "protocol_atlas_images.py",
+  "protocol_xai_images.py",
+  "protocol_gemini_content.py",
+  "protocol_gemini_interactions.py",
   "image_alpha.py",
   "image_emissive_alpha.py",
   "image_download.py",
@@ -76,6 +89,7 @@ const standaloneFiles = [
   "examples/auth.example.json",
   "examples/batch.example.jsonl",
   "references/parameters.md",
+  "references/models.md",
   "references/postprocess.md",
   "references/prompting.md",
   "references/qa.md",
@@ -301,18 +315,18 @@ test("release mode rejects baseline metadata and publishes clean artifacts for t
 });
 
 
-test("the release source builds the current v1.3.0 artifact set", async (t) => {
+test("the release source builds the current v1.5.0 artifact set", async (t) => {
   const outputDirectory = await mkdtemp(path.join(os.tmpdir(), "imagegen-release-candidate-"));
   t.after(() => rm(outputDirectory, { recursive: true, force: true }));
 
   const result = await runBuild(outputDirectory);
 
-  assert.equal(result.version, "1.3.0");
+  assert.equal(result.version, "1.5.0");
   assert.deepEqual(result.files, [
     "SHA256SUMS",
-    "openai-compatible-imagegen-codex-plugin-1.3.0.zip",
-    "openai-compatible-imagegen-shared-python-sha256-1.3.0.json",
-    "openai-compatible-imagegen-skill-1.3.0.zip",
+    "openai-compatible-imagegen-codex-plugin-1.5.0.zip",
+    "openai-compatible-imagegen-shared-python-sha256-1.5.0.json",
+    "openai-compatible-imagegen-skill-1.5.0.zip",
   ]);
   assert.deepEqual((await readdir(outputDirectory)).sort(), result.files);
 });
@@ -634,7 +648,7 @@ function hashesOf(artifacts) {
 
 
 async function requireStandardZipReader(archivePaths) {
-  await execFileAsync("python", [
+  await execFileAsync(pythonCommand, [
     "-c",
     "import sys, zipfile\nfor value in sys.argv[1:]:\n    with zipfile.ZipFile(value) as archive:\n        assert archive.testzip() is None\n        assert archive.namelist() == sorted(archive.namelist())",
     ...archivePaths,

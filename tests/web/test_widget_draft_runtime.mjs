@@ -32,7 +32,7 @@ test("editor changes are saved automatically after the debounce window", { timeo
     await waitFor(() => host.toolCalls.some(({ name }) => name === "save_image_editor_draft"), 1500);
     const saves = host.toolCalls.filter(({ name }) => name === "save_image_editor_draft");
     assert.equal(saves.length, 1);
-    assert.deepEqual(saves[0].arguments.draft, { annotations: [], prompt: "防抖后自动保存" });
+    assert.deepEqual(saves[0].arguments.draft, { annotations: [], prompt: "防抖后自动保存", modelSelection: { authMode: "apikey", modelProfileId: "primary/gpt-image-2" } });
   } finally {
     host.dispose();
     restoreDomGlobals(previous);

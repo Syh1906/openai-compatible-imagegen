@@ -197,6 +197,25 @@ test("tool catalog exposes the model and app-only tool groups", async () => {
   });
 });
 
+test("final presentation can reuse intermediate images and preserve the selected delivery order", async () => {
+  const second = "img_01J00000000000000000000001";
+  const finalEdit = "img_01J00000000000000000000002";
+  await withClient({}, async (client) => {
+    for (const imageId of [IMAGE_ID, second]) {
+      const preview = await client.callTool({ name: "render_image_results", arguments: { imageIds: [imageId] } });
+      assert.equal(preview.isError, undefined);
+    }
+    // The caller selects the final edit instead of its superseded original.
+    const imageIds = [second, finalEdit];
+    const result = await client.callTool({ name: "render_image_results", arguments: { imageIds } });
+    assert.equal(result.isError, undefined);
+    assert.deepEqual(result.structuredContent.imageIds, imageIds);
+    assert.deepEqual(result.structuredContent.artifacts.map((item) => item.id), imageIds);
+    assert.equal(result.content.filter((item) => item.type === "image").length, 2);
+    assert.ok(result.structuredContent.artifacts.every((item) => item.canvasStatus === "available"));
+  });
+});
+
 async function withClient(dependencies, callback) {
   const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), "imagegen-app-tools-"));
   const pluginRoot = path.join(fixtureRoot, "plugin-cache");
@@ -230,6 +249,7 @@ async function withClient(dependencies, callback) {
       projectBindingId: PROJECT_BINDING_ID,
       distribution: "plugin",
       defaultAuthMode: "apikey",
+      canvasSubmissionMode: "auto",
       apiKeyConfigured: true,
       chatgptRequirement: "codex_app_imagegen_handoff",
     });
@@ -260,6 +280,7 @@ function createFixtureProjectContext(projectRoot) {
     userConfigSha256: "1".repeat(64),
     projectConfigSha256: null,
     defaultAuthMode: "apikey",
+    canvasSubmissionMode: "auto",
     apiKeyConfigured: true,
     chatgptRequirement: "codex_app_imagegen_handoff",
   };
@@ -271,6 +292,7 @@ function createFixtureProjectContext(projectRoot) {
         projectBindingId: PROJECT_BINDING_ID,
         distribution: "plugin",
         defaultAuthMode: "apikey",
+        canvasSubmissionMode: "auto",
         apiKeyConfigured: true,
         chatgptRequirement: "codex_app_imagegen_handoff",
       };

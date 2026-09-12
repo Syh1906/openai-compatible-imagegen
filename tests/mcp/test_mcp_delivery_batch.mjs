@@ -1488,6 +1488,7 @@ async function withClient(dependencies, callback) {
       projectBindingId: FIXTURE_PROJECT_BINDING_ID,
       distribution: "plugin",
       defaultAuthMode: "apikey",
+      canvasSubmissionMode: "auto",
       apiKeyConfigured: true,
       chatgptRequirement: "codex_app_imagegen_handoff",
     });

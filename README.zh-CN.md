@@ -2,7 +2,7 @@
 
 # OpenAI 兼容图片
 
-**通过 OpenAI 兼容图片 API、Atlas Cloud 或 Codex App 的 ChatGPT 路线生成、检查、编辑并交付图片。**
+**通过配置的图片 API 供应商或 Codex App 的 ChatGPT 路线生成、检查、编辑并交付图片。**
 
 [![Release](https://img.shields.io/github/v/release/Syh1906/openai-compatible-imagegen?style=flat-square)](https://github.com/Syh1906/openai-compatible-imagegen/releases)
 [![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE)
@@ -12,11 +12,13 @@
 
 </div>
 
-OpenAI 兼容图片（OpenAI-Compatible Images）把同一套图片核心发布为两种安装形态。Standalone Skill 适合 Agent 客户端和命令行工作流；Codex Plugin 在此基础上增加结果卡、聚焦画布、标注、不可变产物和版本历史。API Key 路线支持默认的 OpenAI-compatible 协议和可选的 Atlas Cloud 图片生成。
+OpenAI 兼容图片（OpenAI-Compatible Images）把同一套图片核心发布为两种安装形态。Standalone Skill 适合 Agent 客户端和命令行工作流；Codex Plugin 在此基础上增加结果卡、聚焦画布、标注、不可变产物和版本历史。
 
 MuAPI 可以通过 OpenAI 兼容的图片生成路线使用。服务详情请参阅 [MuAPI 图片 API](https://muapi.ai/ai-image-api) 和 [OpenAI 兼容端点参考](https://muapi.ai/docs/openai-compatible)，然后按照下面的 [MuAPI 配置](docs/guides/configuration.zh-CN.md#配置-muapi) 操作。
 
 ## 选择安装形态
+
+API Key profile 支持 OpenAI-compatible、Atlas、xAI Images、Gemini Interactions 和 Gemini generateContent 协议。供应商连接、模型别名和原生参数字段可独立配置，聊天与画布可以选择仅用于本次请求的模型。参见[多模型配置](docs/guides/models.zh-CN.md)。
 
 | 安装形态 | 适合场景 | 包含内容 |
 | --- | --- | --- |

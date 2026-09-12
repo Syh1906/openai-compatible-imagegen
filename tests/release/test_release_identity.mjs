@@ -21,6 +21,7 @@ import { createReleaseBundle } from "../../mcp/release-identity.mjs";
 
 
 const execFileAsync = promisify(execFile);
+const pythonCommand = process.env.PYTHON ?? (process.platform === "win32" ? "python" : "python3");
 const projectRoot = fileURLToPath(new URL("../..", import.meta.url));
 const manifestPath = fileURLToPath(new URL("../../.codex-plugin/plugin.json", import.meta.url));
 const widgetOutput = fileURLToPath(new URL("../../dist/widget/index.html", import.meta.url));
@@ -43,6 +44,18 @@ const PNG_BYTES = Buffer.from(
   "base64",
 );
 const EXPECTED_RUNTIME_FILES = [
+  "image_parameters.py",
+  "image_provider_requests.py",
+  "image_request_options.py",
+  "model-profile-contract.json",
+  "model_profiles.py",
+  "native_image_protocols.py",
+  "protocol_atlas_images.py",
+  "protocol_contract.py",
+  "protocol_gemini_content.py",
+  "protocol_gemini_interactions.py",
+  "protocol_openai_images.py",
+  "protocol_xai_images.py",
   "local_image_transfer.py",
   "artifact_repository.py",
   "host_image_import.py",
@@ -223,12 +236,19 @@ test("the built plugin exposes one content-bound release identity", async () => 
     "widget/index.html",
   ].sort());
 
-  const { stdout: runtimeHelp } = await execFileAsync("python", [runtimeOutput, "--help"], {
+  const { stdout: runtimeHelp } = await execFileAsync(pythonCommand, [runtimeOutput, "--help"], {
     cwd: projectRoot,
     env: { ...process.env, PYTHONDONTWRITEBYTECODE: "1" },
   });
   assert.match(runtimeHelp, /usage: image_runtime\.py /);
   assert.match(runtimeHelp, /--project-root/);
+
+  const { stdout: migrationHelp } = await execFileAsync(pythonCommand, [path.join(projectRoot, "dist", "scripts", "migrate_image_config.py"), "--help"], {
+    cwd: os.tmpdir(),
+    env: { ...process.env, PYTHONPATH: "", PYTHONDONTWRITEBYTECODE: "1" },
+  });
+  assert.match(migrationHelp, /plugin-v1/);
+  assert.match(migrationHelp, /--expected-source-sha256/);
 
   const widgetHtml = await readFile(widgetOutput, "utf8");
   assert.equal(count(widgetHtml, "<!doctype html>"), 1);

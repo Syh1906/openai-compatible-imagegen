@@ -11,6 +11,7 @@ def build_parser(
 ) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="imagegen")
     sub = parser.add_subparsers(dest="command", required=True)
+    sub.add_parser("list-models", help="List configured API Key model profiles without credentials")
 
     init_parser = sub.add_parser("init")
     init_parser.add_argument("--force", action="store_true", help="Recreate auth.json from the example template")
@@ -103,10 +104,12 @@ def add_common_args(
     supported_resolutions: set[str],
 ) -> None:
     parser.add_argument("--model", default=None)
+    parser.add_argument("--profile", default=None, help="API Key model profile ID or unique configured alias")
+    parser.add_argument("--parameters", default=None, help="Native model parameter overrides as a JSON object")
     parser.add_argument("--size", default=None)
-    parser.add_argument("--aspect", default=None, choices=sorted(supported_aspects))
-    parser.add_argument("--resolution", default=None, choices=sorted(supported_resolutions))
-    parser.add_argument("--quality", default=None, choices=["auto", "low", "medium", "high"])
+    parser.add_argument("--aspect", default=None)
+    parser.add_argument("--resolution", default=None)
+    parser.add_argument("--quality", default=None)
     parser.add_argument("--n", type=int, default=None)
     parser.add_argument("--format", default=None, choices=["png", "jpeg", "jpg", "webp"])
     parser.add_argument("--background", default=None, choices=["auto", "opaque"])
@@ -137,7 +140,7 @@ def add_postprocess_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--postprocess-out-dir", default=None)
     parser.add_argument(
         "--transparency-route",
-        choices=["chroma-matting", "emissive-alpha", "mask-alpha", "prompt-alpha"],
+        choices=["chroma-matting", "emissive-alpha", "mask-alpha", "prompt-alpha", "native-alpha"],
         default=None,
     )
     parser.add_argument("--transparency-mask", default=None)

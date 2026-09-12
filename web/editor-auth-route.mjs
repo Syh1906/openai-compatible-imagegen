@@ -7,11 +7,13 @@ export function createEditorAuthRoute(receipt) {
     || !AUTH_MODES.has(receipt.defaultAuthMode)
     || typeof receipt.apiKeyConfigured !== "boolean"
     || receipt.chatgptRequirement !== "codex_app_imagegen_handoff"
+    || (receipt.canvasSubmissionMode !== undefined && !["auto", "composer", "message"].includes(receipt.canvasSubmissionMode))
   ) {
     return null;
   }
   return Object.freeze({
     selectedAuthMode: receipt.defaultAuthMode,
+    canvasSubmissionMode: receipt.canvasSubmissionMode ?? "auto",
     apiKeyConfigured: receipt.apiKeyConfigured,
     chatgptRequirement: receipt.chatgptRequirement,
   });

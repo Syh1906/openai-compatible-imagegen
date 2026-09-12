@@ -5,6 +5,7 @@ import io
 import json
 import os
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -24,6 +25,51 @@ else:
 
 
 class ImageConfigMigrationTests(unittest.TestCase):
+    def test_direct_entry_runs_outside_package_without_pythonpath(self):
+        environment = {key: value for key, value in os.environ.items() if key != "PYTHONPATH"}
+        result = subprocess.run(
+            [sys.executable, str(SCRIPTS / "migrate_image_config.py"), "--help"],
+            cwd=self.root, env=environment, capture_output=True, text=True, timeout=30,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("plugin-v1", result.stdout)
+        self.assertIn("--expected-source-sha256", result.stdout)
+
+    def test_plugin_v1_upgrade_preserves_canvas_submission_preference(self):
+        for mode in ("auto", "composer", "message"):
+            upgraded = migrate_image_config.upgrade_plugin_config({
+                "config_version": 1, "auth_mode": "chatgpt", "canvas_submission_mode": mode,
+            })
+            self.assertEqual(upgraded["canvas_submission_mode"], mode)
+        for mode in (None, "unknown", False, {}):
+            with self.assertRaises(migrate_image_config.ConfigMigrationError):
+                migrate_image_config.upgrade_plugin_config({
+                    "config_version": 1, "auth_mode": "chatgpt", "canvas_submission_mode": mode,
+                })
+
+    def test_plugin_v1_upgrade_moves_image_defaults_only_to_active_profile(self):
+        source = {"config_version": 1, "auth_mode": "chatgpt", "active_profile": "first", "providers": {
+            "p": {"protocol": "openai-compatible", "base_url": "https://example.test/v1", "api_key_env": "TEST_IMAGE_KEY"}},
+            "models": {"first": {"provider": "p", "model": "custom", "capabilities": {"generate": True}},
+                       "second": {"provider": "p", "model": "another", "capabilities": {"generate": True}}},
+            "defaults": {"quality": "max", "size": "1024x1024", "timeout_seconds": 60},
+            "transparency": {"default_route": "chroma-matting"}}
+        self.write_source(source)
+        plan = migrate_image_config.plan_migration(source_path=self.source, source_kind="plugin-v1", user_target=self.user_target)
+        migrated = plan.user_config
+        self.assertEqual(migrated["config_version"], 2)
+        self.assertEqual(migrated["defaults"], {"timeout_seconds": 60})
+        self.assertEqual(migrated["models"]["first"]["defaults"]["quality"], "max")
+        self.assertNotIn("defaults", migrated["models"]["second"])
+        self.assertEqual(migrated["host_defaults"], {"quality": "max", "size": "1024x1024"})
+        self.assertEqual(migrated["transparency"], source["transparency"])
+        self.assertEqual(json.loads(self.source.read_text()), source)
+
+    def test_chatgpt_only_v1_upgrade_does_not_add_api_configuration(self):
+        self.write_source({"config_version": 1, "auth_mode": "chatgpt", "defaults": {"quality": "high"}})
+        plan = migrate_image_config.plan_migration(source_path=self.source, source_kind="plugin-v1", user_target=self.user_target)
+        self.assertEqual(plan.user_config, {"config_version": 2, "auth_mode": "chatgpt", "defaults": {}, "host_defaults": {"quality": "high"}})
+
     def setUp(self) -> None:
         self.temp_dir = tempfile.TemporaryDirectory()
         self.root = Path(self.temp_dir.name)
@@ -33,6 +79,20 @@ class ImageConfigMigrationTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         self.temp_dir.cleanup()
+
+    def test_migration_preserves_explicit_extended_quality_defaults(self) -> None:
+        for quality in ("xhigh", "max"):
+            with self.subTest(quality=quality):
+                source = standalone_config(api_key_env="IMAGEGEN_KEY")
+                source["defaults"]["quality"] = quality
+                self.write_source(source)
+                plan = migrate_image_config.plan_migration(
+                    source_path=self.source,
+                    source_kind="standalone",
+                    user_target=self.user_target,
+                )
+                self.assertTrue(plan.ready_to_write)
+                self.assertEqual(plan.user_config["defaults"]["quality"], quality)
 
     def test_standalone_env_key_migrates_to_the_user_config_only(self) -> None:
         source = standalone_config(api_key_env="IMAGEGEN_KEY", api_key="source-secret")
@@ -191,21 +251,31 @@ class ImageConfigMigrationTests(unittest.TestCase):
             )
         self.assertFalse(self.user_target.exists())
 
-    def test_unknown_model_stops_without_switching_models(self) -> None:
-        self.write_source(standalone_config(api_key_env="IMAGEGEN_KEY", model="other-image-model"))
-        source_before = self.source.read_bytes()
+    def test_custom_model_ids_migrate_without_switching_models(self) -> None:
+        for source_kind in ("standalone", "development-plugin"):
+            for model in ("gpt-image-2.5-sunburst", "gpt-image-2.5-flare", "vendor/image25-fast-v3"):
+                with self.subTest(source_kind=source_kind, model=model):
+                    source = standalone_config(api_key_env="IMAGEGEN_KEY", model=model)
+                    if source_kind == "development-plugin":
+                        source = development_plugin_config()
+                        source["models"]["primary/gpt-image-2"]["model"] = model
+                    self.write_source(source)
+                    source_before = self.source.read_bytes()
+                    plan = migrate_image_config.plan_migration(
+                        source_path=self.source, source_kind=source_kind, user_target=self.user_target,
+                    )
+                    self.assertEqual(plan.user_config["models"]["primary/gpt-image-2"]["model"], model)
+                    self.assertEqual(self.source.read_bytes(), source_before)
+                    self.assertFalse(self.user_target.exists())
 
-        with self.assertRaisesRegex(
-            migrate_image_config.ConfigMigrationError,
-            "migration_model_unsupported",
-        ):
-            migrate_image_config.plan_migration(
-                source_path=self.source,
-                source_kind="standalone",
-                user_target=self.user_target,
-            )
-        self.assertEqual(self.source.read_bytes(), source_before)
-        self.assertFalse(self.user_target.exists())
+    def test_invalid_model_ids_are_rejected_by_migration(self) -> None:
+        for model in ("", "  ", 25, {"id": "image25"}):
+            with self.subTest(model=model):
+                self.write_source(standalone_config(api_key_env="IMAGEGEN_KEY", model=model))
+                with self.assertRaisesRegex(migrate_image_config.ConfigMigrationError, "migration_source_invalid"):
+                    migrate_image_config.plan_migration(
+                        source_path=self.source, source_kind="standalone", user_target=self.user_target,
+                    )
 
     def test_cli_defaults_to_redacted_dry_run_and_writes_only_with_write_flag(self) -> None:
         self.write_source(standalone_config(api_key_env="IMAGEGEN_KEY"))

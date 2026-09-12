@@ -10,8 +10,9 @@ Choose the guide that matches the task you need to complete.
 | --- | --- |
 | Choose Standalone Skill or Codex Plugin and install it | [Installation](./installation.md) |
 | Connect an image service and set output defaults | [Configuration](./configuration.md) |
+| Configure providers, model aliases, and per-edit parameters | [Providers and model selection](./models.md) |
 | Edit local references and send results to other tools | [Import and export local images](./local-images.md) |
-| Track long batches and handle timeouts, cancellation, and recovery | [Long-running generation and batches](./image-jobs.md) |
+| View final images, track long batches, and handle timeouts, cancellation, and recovery | [Long-running generation and batches](./image-jobs.md) |
 | Move an older Standalone or Plugin configuration | [Migration](./migration.md) |
 | Update an installed Plugin or Skill | [Updating](./updating.md) |
 | Restore an earlier released package | [Rollback](./rollback.md) |

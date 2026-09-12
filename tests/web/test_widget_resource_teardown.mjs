@@ -296,7 +296,7 @@ test("resource teardown cancels pending toast dismissal", { timeout: 5000 }, asy
     { pretendToBeVisual: true, url: "https://widget.local/" },
   );
   const previous = installDomGlobals(dom.window);
-  const host = installHost(dom.window, { toolName: "open_image_editor", rejectModelCatalog: true });
+  const host = installHost(dom.window, { toolName: "open_image_editor", revealArtifactIsError: true });
   const nativeSetTimeout = dom.window.setTimeout.bind(dom.window);
   let toastDismissal = null;
   dom.window.setTimeout = (callback, delay, ...args) => {
@@ -309,6 +309,8 @@ test("resource teardown cancels pending toast dismissal", { timeout: 5000 }, asy
 
   try {
     await import(`../../web/editor-runtime.mjs?teardown-toast=${Date.now()}`);
+    await waitFor(() => document.querySelector("[data-action=reveal-image]")?.disabled === false);
+    document.querySelector("[data-action=reveal-image]").click();
     await waitFor(() => document.querySelector("[data-toast]")?.classList.contains("visible"));
     assert.equal(typeof toastDismissal, "function");
     const toast = document.querySelector("[data-toast]");

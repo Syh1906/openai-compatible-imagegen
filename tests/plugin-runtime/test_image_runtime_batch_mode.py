@@ -100,6 +100,18 @@ class ImageRuntimeBatchExecutionModeTests(unittest.TestCase):
             ]
         }
 
+    def test_batch_item_preserves_extended_quality(self) -> None:
+        for quality in ("xhigh", "max"):
+            with self.subTest(quality=quality):
+                task = self.task(2)
+                task["output"]["quality"] = quality
+                with mock.patch.object(self.runtime, "request_json", return_value=self.response(2)) as request:
+                    result = self.runtime.run_machine_task(task, self.project_root, self.artifact_root, self.cfg)
+                self.assertTrue(result["ok"], result)
+                self.assertEqual(request.call_count, 1)
+                self.assertEqual(request.call_args.args[2]["quality"], quality)
+                self.assertEqual(request.call_args.args[2]["n"], 2)
+
     def test_batch_item_generate_sends_one_provider_request_with_requested_n(self) -> None:
         task = self.task(3)
         with mock.patch.object(

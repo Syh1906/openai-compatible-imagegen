@@ -22,6 +22,9 @@ for import_root in (SCRIPT_DIR, SKILL_DIR):
         sys.path.insert(0, str(import_root))
 
 import image_transport
+import image_provider_requests
+from native_image_protocols import NATIVE_PROTOCOLS
+from image_request_options import merge_dimensions, resolve_request_options
 from scripts.image_download import (
     ImageDownloadError,
     download_image_url as _download_image_url,
@@ -35,6 +38,9 @@ from provider_config import (
 )
 from image_preview import preview_board_image as build_preview_board
 from image_cli import build_parser as build_cli_parser
+from image_parameters import merge_parameters, validate_parameters, validate_parameter_values
+from model_profiles import resolve_profile_id
+from provider_config import list_model_profiles
 from image_batch import (
     fail_record,
     normalize_batch_args,
@@ -148,7 +154,7 @@ class ApiRequestError(ImagegenError):
 Config = EffectiveImageConfig
 
 
-def load_config(require_api_key: bool = True) -> Config:
+def load_config(require_api_key: bool = True, model_profile_id: str | None = None) -> Config:
     if not AUTH_PATH.is_file():
         raise ImagegenError(
             f"missing auth.json: {display_path(AUTH_PATH)}\n"
@@ -160,7 +166,10 @@ def load_config(require_api_key: bool = True) -> Config:
     except json.JSONDecodeError as exc:
         raise ImagegenError(f"auth.json is not valid JSON: {exc}") from exc
     try:
-        return parse_standalone_config(raw, require_api_key=require_api_key)
+        if model_profile_id is not None and "config_version" in raw:
+            model_profile_id = resolve_profile_id(raw, model_profile_id)
+        cfg = parse_standalone_config(raw, require_api_key=require_api_key, model_profile_id=model_profile_id)
+        return replace(cfg, selection_snapshot=raw if "config_version" in raw else None)
     except ProviderConfigError as exc:
         raise ImagegenError(str(exc)) from exc
 
@@ -285,6 +294,28 @@ def infer_resolution_from_size(size: str) -> str | None:
 
 def resolve_common_params(args: argparse.Namespace, cfg: Config, task: dict[str, Any] | None = None) -> dict[str, Any]:
     task = task or {}
+    if cfg.protocol in NATIVE_PROTOCOLS or cfg.config_version == 2:
+        try:
+            keys = ("size", "aspectRatio", "resolution", "quality", "format", "background", "compression", "moderation")
+            shared = {key: getattr(args, "aspect" if key == "aspectRatio" else key, None) for key in keys}
+            row = {key: task.get("aspect" if key == "aspectRatio" else key) for key in keys}
+            strict = cfg.config_version == 2
+            explicit = merge_dimensions(merge_dimensions({}, shared, strict=strict), row, strict=strict)
+            explicit["background"] = normalize_background(explicit.get("background"))
+            if get_value("asset", args, task, False) or transparent_intent(args, task):
+                explicit["format"] = "png"
+            options = resolve_request_options(cfg, explicit)
+        except ValueError as exc:
+            raise ImagegenError(str(exc)) from exc
+        count = get_value("n", args, task, None)
+        count = 1 if count is None else count
+        timeout = get_value("timeout", args, task, None)
+        timeout = cfg.defaults.get("timeout_seconds", DEFAULT_TIMEOUT_SECONDS) if timeout is None else timeout
+        if type(count) is not int or not 1 <= count <= MAX_IMAGES_PER_REQUEST:
+            raise ImagegenError(f"n must be between 1 and {MAX_IMAGES_PER_REQUEST}")
+        if type(timeout) is not int or not 1 <= timeout <= 600:
+            raise ImagegenError("timeout must be between 1 and 600")
+        return {"model": cfg.model, "size": options["size"], "aspect": options["aspectRatio"], "resolution": options["resolution"], "quality": options["quality"], "output_format": options["format"], "background": options["background"], "moderation": options["moderation"], "output_compression": options["compression"], "n": count, "timeout": timeout, "direct_url_download": bool(cfg.url_download.get("proxy_mode") == "direct" or getattr(args, "allow_direct_url_download", False))}
     asset = bool(get_value("asset", args, task, False))
     background = normalize_background(get_value("background", args, task, None))
     transparent = transparent_intent(args, task)
@@ -295,6 +326,8 @@ def resolve_common_params(args: argparse.Namespace, cfg: Config, task: dict[str,
         fmt = "png"
 
     quality = get_value("quality", args, task, None) or cfg.defaults.get("quality") or DEFAULT_QUALITY
+    if not isinstance(quality, str) or quality not in {"auto", "low", "medium", "high", "xhigh", "max"}:
+        raise ImagegenError(f"unsupported quality: {quality}")
     model = get_value("model", args, task, None) or cfg.model
     size, aspect, resolution = resolve_size(args, cfg, task)
     timeout = get_value("timeout", args, task, None) or cfg.defaults.get("timeout_seconds") or DEFAULT_TIMEOUT_SECONDS
@@ -420,6 +453,8 @@ def api_url(cfg: Config, path: str) -> str:
 
 def request_json(cfg: Config, path: str, payload: dict[str, Any], timeout: int) -> dict[str, Any]:
     try:
+        if cfg.protocol in NATIVE_PROTOCOLS or cfg.config_version == 2 or cfg.endpoints or cfg.parameters:
+            return image_provider_requests.request_image(cfg, "generate", payload, timeout)
         return image_transport.request_json(
             base_url=cfg.base_url,
             api_key=cfg.api_key,
@@ -430,6 +465,8 @@ def request_json(cfg: Config, path: str, payload: dict[str, Any], timeout: int) 
             response_limit=MAX_JSON_RESPONSE_BYTES,
             proxy_url=cfg.proxy.get("url"),
         )
+    except image_provider_requests.ProtocolError:
+        raise
     except image_transport.TransportError as exc:
         if exc.status_code is not None:
             raise ApiRequestError(str(exc), exc.status_code, exc.operation or path) from exc
@@ -440,6 +477,8 @@ def request_json(cfg: Config, path: str, payload: dict[str, Any], timeout: int) 
 
 def request_atlas_image(cfg: Config, payload: dict[str, Any], timeout: int) -> dict[str, Any]:
     try:
+        if cfg.config_version == 2 or cfg.endpoints or cfg.parameters:
+            return image_provider_requests.request_image(cfg, "generate", payload, timeout)
         return image_transport.request_atlas_image(
             base_url=cfg.base_url,
             api_key=cfg.api_key,
@@ -449,6 +488,8 @@ def request_atlas_image(cfg: Config, payload: dict[str, Any], timeout: int) -> d
             response_limit=MAX_JSON_RESPONSE_BYTES,
             proxy_url=cfg.proxy.get("url"),
         )
+    except image_provider_requests.ProtocolError:
+        raise
     except image_transport.TransportError as exc:
         if exc.status_code is not None:
             raise ApiRequestError(
@@ -469,6 +510,8 @@ def request_multipart(
     timeout: int,
 ) -> dict[str, Any]:
     try:
+        if cfg.protocol in NATIVE_PROTOCOLS or cfg.config_version == 2 or cfg.endpoints or cfg.parameters:
+            return image_provider_requests.request_image(cfg, "edit", fields, timeout, files=files)
         return image_transport.request_multipart(
             base_url=cfg.base_url,
             api_key=cfg.api_key,
@@ -480,6 +523,8 @@ def request_multipart(
             response_limit=MAX_JSON_RESPONSE_BYTES,
             proxy_url=cfg.proxy.get("url"),
         )
+    except image_provider_requests.ProtocolError:
+        raise
     except image_transport.TransportError as exc:
         if exc.status_code is not None:
             raise ApiRequestError(str(exc), exc.status_code, exc.operation or path) from exc
@@ -533,6 +578,18 @@ def request_with_transparency_retry(
             or "background" not in payload
             or not is_transparency_parameter_rejection(exc)
         ):
+            if (
+                isinstance(exc, ApiRequestError)
+                and payload.get("background") is not None
+                and is_transparency_parameter_rejection(exc)
+                and "background" in str(exc).lower()
+            ):
+                error = ApiRequestError(
+                    "Provider rejected the explicit background parameter. Ask the user whether to submit a new request without it; no retry was sent.",
+                    exc.status_code, exc.operation, exc.details,
+                )
+                error.error_kind = "background_parameter_rejected"
+                raise error from exc
             raise
         retry_payload = dict(payload)
         retry_payload.pop("background", None)
@@ -578,6 +635,9 @@ def drop_none(values: dict[str, Any]) -> dict[str, Any]:
 
 def generate(cfg: Config, args: argparse.Namespace, task: dict[str, Any] | None = None) -> dict[str, Any]:
     task = task or {}
+    cfg = request_config(cfg, args, task)
+    if cfg.config_version == 2 and not cfg.capabilities.get("generate"):
+        raise ImagegenError("configured model profile does not support image generation")
     prompt = str(get_value("prompt", args, task, "") or "").strip()
     if not prompt:
         raise ImagegenError("prompt is required")
@@ -588,7 +648,7 @@ def generate(cfg: Config, args: argparse.Namespace, task: dict[str, Any] | None 
         params["background"] = "transparent"
     validate_postprocess_args(args, task)
     prompt = apply_prompt_directives(prompt, args, task, transparency_plan)
-    out_file = resolve_output_file(args, task, params["output_format"], prompt)
+    out_file = resolve_output_file(args, task, params["output_format"] or "png", prompt)
     payload = {
         "model": params["model"],
         "prompt": prompt,
@@ -598,10 +658,8 @@ def generate(cfg: Config, args: argparse.Namespace, task: dict[str, Any] | None 
         "moderation": params["moderation"],
         "output_compression": params["output_compression"],
     }
-    if request_field_is_configured("quality", args, cfg, task):
-        payload["quality"] = params["quality"]
-    if request_field_is_configured("format", args, cfg, task) or transparency_plan.mode == "native-alpha":
-        payload["output_format"] = params["output_format"]
+    if cfg.protocol in NATIVE_PROTOCOLS:
+        payload.update(aspectRatio=params["aspect"], resolution=params["resolution"])
     if cfg.protocol == "atlas":
         if transparency_plan.mode == "native-alpha":
             raise ImagegenError("Atlas protocol does not support native-alpha generation")
@@ -660,13 +718,14 @@ def generate(cfg: Config, args: argparse.Namespace, task: dict[str, Any] | None 
         params["direct_url_download"],
         cfg.proxy.get("url"),
         expected_count=params["n"],
-        expected_size=parse_size(params["size"]),
+        expected_size=parse_size(params["size"]) if params["size"] else None,
         planned_extra_dir=_planned_extra_dir(task),
     )
     return success_record(task, prompt, "generate", delivery, params, transparency_plan)
 
 
 def edit(cfg: Config, args: argparse.Namespace, task: dict[str, Any] | None = None) -> dict[str, Any]:
+    cfg = request_config(cfg, args, task or {})
     task = task or {}
     if cfg.protocol == "atlas":
         raise ImagegenError("Atlas protocol does not support image edits")
@@ -678,6 +737,11 @@ def edit(cfg: Config, args: argparse.Namespace, task: dict[str, Any] | None = No
     image_paths = normalize_paths(images_value)
     if not image_paths:
         raise ImagegenError("edit requires at least one --image")
+    maximum_inputs = cfg.limits.get("max_input_images")
+    if maximum_inputs is not None and len(image_paths) > maximum_inputs:
+        raise ImagegenError("reference image count exceeds the configured model limit")
+    if cfg.config_version == 2 and (not cfg.capabilities.get("edit") or (len(image_paths) > 1 and not cfg.capabilities.get("multi_reference"))):
+        raise ImagegenError("configured model profile does not support this image edit")
     reference_report = inspect_reference_metadata(image_paths)
     mask_value = task.get("mask") if "mask" in task else getattr(args, "mask", None)
     mask_path = Path(mask_value).expanduser().resolve() if mask_value else None
@@ -697,7 +761,7 @@ def edit(cfg: Config, args: argparse.Namespace, task: dict[str, Any] | None = No
         params["background"] = "transparent"
     validate_postprocess_args(args, task)
     prompt = apply_prompt_directives(prompt, args, task, transparency_plan)
-    out_file = resolve_output_file(args, task, params["output_format"], prompt)
+    out_file = resolve_output_file(args, task, params["output_format"] or "png", prompt)
     fields = {
         "model": params["model"],
         "prompt": prompt,
@@ -711,6 +775,8 @@ def edit(cfg: Config, args: argparse.Namespace, task: dict[str, Any] | None = No
     if request_field_is_configured("format", args, cfg, task) or transparency_plan.mode == "native-alpha":
         fields["output_format"] = params["output_format"]
     files = [("image[]", path) for path in image_paths]
+    if cfg.protocol in NATIVE_PROTOCOLS:
+        fields.update(aspectRatio=params["aspect"], resolution=params["resolution"])
     if mask_path:
         files.append(("mask", mask_path))
     try:
@@ -742,7 +808,7 @@ def edit(cfg: Config, args: argparse.Namespace, task: dict[str, Any] | None = No
         params["direct_url_download"],
         cfg.proxy.get("url"),
         expected_count=params["n"],
-        expected_size=parse_size(params["size"]),
+        expected_size=parse_size(params["size"]) if params["size"] else None,
         planned_extra_dir=_planned_extra_dir(task),
     )
     return success_record(
@@ -1182,6 +1248,7 @@ def apply_postprocess(
 def run_one_task(cfg: Config, base_args: argparse.Namespace, task: dict[str, Any]) -> dict[str, Any]:
     mode = task_mode(task)
     try:
+        cfg = request_config(cfg, base_args, task)
         if mode == "generate":
             return apply_postprocess(generate(cfg, base_args, task), base_args, cfg, task)
         if mode in {"edit", "multi-reference", "multi_reference"}:
@@ -1223,8 +1290,8 @@ def batch(cfg: Config, args: argparse.Namespace) -> int:
             out_dir,
             now_stamp(),
             slugify,
-            lambda task: str(resolve_common_params(batch_args, cfg, task)["output_format"]),
-            lambda task: resolve_batch_transparency(task, batch_args, cfg).mode in LOCAL_ROUTES,
+            lambda task: resolve_common_params(batch_args, request_config(cfg, batch_args, task), task)["output_format"] or "png",
+            lambda task: resolve_batch_transparency(task, batch_args, request_config(cfg, batch_args, task)).mode in LOCAL_ROUTES,
         )
     except (TypeError, ValueError) as exc:
         raise ImagegenError(str(exc)) from exc
@@ -1406,6 +1473,33 @@ def build_parser() -> argparse.ArgumentParser:
     return build_cli_parser(SUPPORTED_ASPECTS, SUPPORTED_RESOLUTIONS)
 
 
+def request_config(cfg: Config, args: argparse.Namespace, task: dict[str, Any]) -> Config:
+    selection = task.get("modelProfileId") or task.get("profile") or getattr(args, "profile", None)
+    if cfg.config_version == 2:
+        selection = selection or task.get("model") or getattr(args, "model", None)
+    if cfg.selection_snapshot is not None:
+        snapshot = cfg.selection_snapshot
+        try:
+            profile_id = resolve_profile_id(snapshot, selection or cfg.profile_id)
+            cfg = replace(parse_standalone_config(snapshot, require_api_key=True, model_profile_id=profile_id), selection_snapshot=snapshot)
+        except ValueError as exc:
+            raise ImagegenError(str(exc)) from exc
+    elif selection and selection != cfg.profile_id:
+        cfg = load_config(model_profile_id=selection)
+    if not cfg.api_key:
+        raise ImagegenError("selected provider is missing api_key or api_key_env")
+    overrides = task.get("parameters", getattr(args, "parameters", None))
+    if overrides is not None:
+        try:
+            overrides = json.loads(overrides) if isinstance(overrides, str) else overrides
+            validate_parameters(overrides)
+            cfg = replace(cfg, parameters=merge_parameters(cfg.parameters, overrides))
+            validate_parameter_values(cfg.parameter_fields, cfg.parameters)
+        except (ValueError, TypeError) as exc:
+            raise ImagegenError(str(exc)) from exc
+    return cfg
+
+
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
@@ -1422,20 +1516,31 @@ def main() -> int:
             return apply_transparency_command(args)
         if args.command == "init":
             return init_auth(args)
-        cfg = load_config(require_api_key=args.command != "info")
+        if args.command == "list-models":
+            raw = json.loads(AUTH_PATH.read_text(encoding="utf-8-sig"))
+            if "config_version" not in raw:
+                raise ImagegenError("list-models requires a provider/model configuration")
+            print(json.dumps({"activeProfile": raw["active_profile"], "models": list_model_profiles(raw)}, ensure_ascii=False, indent=2))
+            return 0
+        cfg = load_config(require_api_key=False)
         if args.command == "info":
             return info(cfg)
         if args.command == "generate":
+            cfg = request_config(cfg, args, {})
             result = apply_postprocess(generate(cfg, args), args, cfg)
             print_summary([result])
             return 0
         if args.command == "edit":
+            cfg = request_config(cfg, args, {})
             result = apply_postprocess(edit(cfg, args), args, cfg)
             print_summary([result])
             return 0
         if args.command == "batch":
             return batch(cfg, args)
         raise ImagegenError(f"unsupported command: {args.command}")
+    except image_provider_requests.ProtocolError as exc:
+        print(f"error: error_kind={exc.error_kind}: {exc}", file=sys.stderr)
+        return 2
     except ApiRequestError as exc:
         fields = [f"error_kind={exc.error_kind}"]
         if exc.status_code is not None:

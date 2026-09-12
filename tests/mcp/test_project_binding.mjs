@@ -75,6 +75,23 @@ test("path leak assertions detect Windows paths after JSON escaping", () => {
   );
 });
 
+test("configured canvas submission mode reaches project binding and editor receipts", async () => {
+  await withProjectRoots(async ({ pluginRoot, projectA, userHome }) => {
+    const configPath = userConfigPath(userHome);
+    const config = JSON.parse(await readFile(configPath, "utf8"));
+    await writeFile(configPath, JSON.stringify({ ...config, canvas_submission_mode: "composer" }));
+    const server = createTestServer({ pluginRoot });
+    try {
+      const bound = await server._registeredTools.bind_imagegen_project.handler({ projectRoot: projectA });
+      assert.equal(bound.structuredContent.canvasSubmissionMode, "composer");
+      const opened = await server._registeredTools.open_image_editor.handler({ projectBindingId: bound.structuredContent.projectBindingId, imageId: IMAGE_ID });
+      assert.equal(opened.structuredContent.auth.canvasSubmissionMode, "composer");
+    } finally {
+      await server.close();
+    }
+  });
+});
+
 
 test("explicit project binding IDs restore one project across MCP processes without host metadata", async () => {
   await withProjectRoots(async ({ pluginRoot, projectA }) => {
@@ -97,7 +114,7 @@ test("explicit project binding IDs restore one project across MCP processes with
       assert.equal(bound.structuredContent.defaultAuthMode, "apikey");
       assert.equal(bound.structuredContent.apiKeyConfigured, true);
       assert.equal(bound.structuredContent.chatgptRequirement, "codex_app_imagegen_handoff");
-      assert.deepEqual(catalog.structuredContent, { models: [] });
+      assert.deepEqual(catalog.structuredContent, { activeProfile: "primary/gpt-image-2", models: [] });
       assertValuesHidden([bound, catalog], [projectA]);
     } finally {
       await Promise.all([modelServer.close(), widgetServer.close()]);
@@ -312,7 +329,7 @@ test("explicit project binding is idempotent when callers reuse its ID", async (
 
       assert.deepEqual(first.structuredContent, bindingReceipt("bound", projectBindingId));
       assert.deepEqual(second.structuredContent, bindingReceipt("already_bound", projectBindingId));
-      assert.deepEqual(catalog.structuredContent, { models: [] });
+      assert.deepEqual(catalog.structuredContent, { activeProfile: "primary/gpt-image-2", models: [] });
       assert.equal(taskCalls.length, 1);
       assert.equal(taskCalls[0].context.projectRoot, path.resolve(projectA));
       assert.equal(taskCalls[0].context.artifactRoot, path.join(path.resolve(projectA), "output", "imagegen"));
@@ -360,7 +377,7 @@ test("project binding freezes the selected config and rejects later changes", as
       const recovered = await listModels({ projectBindingId });
       assert.deepEqual(rebound.structuredContent, bindingReceipt("rebound", projectBindingId));
       assert.equal(rebound.content?.[0]?.text, "已更新当前图片项目的配置绑定。");
-      assert.deepEqual(recovered.structuredContent, { models: [] });
+      assert.deepEqual(recovered.structuredContent, { activeProfile: "primary/gpt-image-2", models: [] });
       assert.equal(taskCalls, 1);
     } finally {
       await server.close();
@@ -587,7 +604,7 @@ test("explicit project bindings persist when the server restarts", async () => {
     const restartedServer = createTestServer({ pluginRoot });
     try {
       const result = await restartedServer._registeredTools.list_image_models.handler({ projectBindingId });
-      assert.deepEqual(result.structuredContent, { models: [] });
+      assert.deepEqual(result.structuredContent, { activeProfile: "primary/gpt-image-2", models: [] });
       assertValuesHidden([result], [projectA]);
     } finally {
       await restartedServer.close();
@@ -802,6 +819,7 @@ function bindingReceipt(status, projectBindingId) {
     projectBindingId,
     distribution: "plugin",
     defaultAuthMode: "apikey",
+    canvasSubmissionMode: "auto",
     apiKeyConfigured: true,
     chatgptRequirement: "codex_app_imagegen_handoff",
   };

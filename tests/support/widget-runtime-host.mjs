@@ -5,7 +5,7 @@ export const PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQ
 export const FULL_MESSAGE_HOST_CAPABILITIES = { message: { text: {}, image: {} }, updateModelContext: { structuredContent: {} } };
 export const CODEX_COMPOSER_HOST_CAPABILITIES = { message: {}, updateModelContext: { text: {}, image: {}, structuredContent: {} } };
 
-export function installHost(window, { toolName, editorSessionStatus = "active", destroySessionStatus = "destroyed", canvasStatus = "available", initialDisplayMode = "inline", initialHostContext = { locale: "zh-CN" }, deferModelContext = false, deferDisplayModeRequests = false, deferOpenImageEditor = false, deferDestroyImageEditor = false, deferArtifactDataImageIds = [], children = [], maskCapability = true, failMessageOnce = false, failOpenImageId = null, artifactOverride = null, initialEditorDraft = null, initialEditorResultIncludesArtifact = true, initialArtifacts = null, initialResultIncludesToolInput = true, initialResultToolInputArguments = null, initialResultText = null, initialResultNotificationOrder = "result-first", initialResultIsError = false, initialResultIncludesImages = true, initialResultIncludesStructuredContent = true, initialResultIncludesWidgetImages = false, rejectModelCatalog = false, rejectDisplayMode = null, rejectFinalizeImageEditor = false, saveDraftIsError = false, uniqueEditorSessionIds = false, artifactDataIsError = false, revealArtifactIsError = false, failArtifactDataImageId = null, failArtifactDataImageIds = [], artifactDataPayloadInvalid = false, authConfig = { defaultAuthMode: "apikey", apiKeyConfigured: true, chatgptRequirement: "codex_app_imagegen_handoff" }, hostCapabilities = FULL_MESSAGE_HOST_CAPABILITIES }) {
+export function installHost(window, { toolName, editorSessionStatus = "active", destroySessionStatus = "destroyed", canvasStatus = "available", initialDisplayMode = "inline", initialHostContext = { locale: "zh-CN" }, deferModelContext = false, deferDisplayModeRequests = false, deferOpenImageEditor = false, deferDestroyImageEditor = false, deferArtifactDataImageIds = [], children = [], maskCapability = true, failMessageOnce = false, failOpenImageId = null, artifactOverride = null, initialEditorDraft = null, initialEditorResultIncludesArtifact = true, initialArtifacts = null, initialResultIncludesToolInput = true, initialResultToolInputArguments = null, initialResultText = null, initialResultNotificationOrder = "result-first", initialResultIsError = false, initialResultIncludesImages = true, initialResultIncludesStructuredContent = true, initialResultIncludesWidgetImages = false, rejectModelCatalog = false, modelCatalog = null, rejectDisplayMode = null, rejectFinalizeImageEditor = false, saveDraftIsError = false, uniqueEditorSessionIds = false, artifactDataIsError = false, revealArtifactIsError = false, failArtifactDataImageId = null, failArtifactDataImageIds = [], artifactDataPayloadInvalid = false, authConfig = { defaultAuthMode: "apikey", apiKeyConfigured: true, chatgptRequirement: "codex_app_imagegen_handoff" }, hostCapabilities = FULL_MESSAGE_HOST_CAPABILITIES }) {
   const toolCalls = [];
   const resourceReads = [];
   const displayModeRequests = [];
@@ -145,7 +145,7 @@ export function installHost(window, { toolName, editorSessionStatus = "active", 
         if (draft.annotations.length || draft.prompt.trim()) editorDrafts.set(draftImageId, draft);
         else editorDrafts.delete(draftImageId);
       }
-      if (toolName === "list_image_models" && rejectModelCatalog) {
+      if (toolName === "list_image_models" && (typeof rejectModelCatalog === "function" ? rejectModelCatalog() : rejectModelCatalog)) {
         sendToApp(window, {
           jsonrpc: "2.0",
           id: message.id,
@@ -222,8 +222,9 @@ export function installHost(window, { toolName, editorSessionStatus = "active", 
         : toolName === "list_image_models"
         ? {
             content: [],
-            structuredContent: {
-              models: [{ id: "primary/gpt-image-2", provider: "primary", model: "gpt-image-2", capabilities: { mask: maskCapability } }],
+            structuredContent: modelCatalog ?? {
+              activeProfile: "primary/gpt-image-2",
+              models: [{ id: "primary/gpt-image-2", provider: "primary", model: "gpt-image-2", isDefault: true, capabilities: { generate: true, edit: true, mask: maskCapability, multi_reference: true } }],
             },
           }
         : toolName === "report_imagegen_host_observation"

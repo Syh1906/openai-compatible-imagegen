@@ -32,6 +32,9 @@ flowchart LR
     Runtime --> Core
     Core --> Provider[OpenAI-compatible image API]
     Core --> Atlas[Atlas generation API]
+    Core --> XAI[xAI Images API]
+    Core --> Interactions[Gemini Interactions API]
+    Core --> Content[Gemini generateContent API]
     Plugin --> Host[ChatGPT host image generation]
     Host --> Handoff[Prepared image handoff]
     Handoff --> Repository
@@ -72,6 +75,8 @@ Standalone Skill -> Standalone adapter -> shared image core -> provider
 - Failures do not change providers, models, endpoints, authentication sources, or protocols. Configured transparency retries and local fallback run within the selected route's policy.
 
 ## Configuration boundaries
+
+The shared protocol registry selects an adapter from the configured protocol. Provider connections, profile defaults, and native fields are defined in [model configuration](./guides/models.md). MCP freezes the selected profile and configuration fingerprint in each canvas submission; the widget never constructs provider payloads.
 
 - The Standalone Skill reads only `auth.json` beside the installed Skill.
 - The Codex Plugin reads its fixed user configuration and an optional project configuration.

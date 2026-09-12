@@ -164,6 +164,7 @@ function contentKey(value) {
   return JSON.stringify({
     annotations: Array.isArray(value.annotations) ? value.annotations : [],
     prompt: String(value.prompt || "").trim(),
+    ...(value.modelSelection ? { modelSelection: value.modelSelection } : {}),
   });
 }
 

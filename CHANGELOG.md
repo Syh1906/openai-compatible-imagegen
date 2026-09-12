@@ -4,13 +4,37 @@
 
 ## [Unreleased]
 
-### Added
+## [1.5.0] - 2026-09-11
 
-- Document MuAPI as a generation-only OpenAI-compatible image provider for Standalone and Plugin configuration.
+### 新增
 
-### Fixed
+- Plugin 用户配置新增 `canvas_submission_mode`：可选择等待用户发送的 `composer` 或直接发送的 `message`；未配置或设为 `auto` 时保留现有自动选择顺序。指定方式不受宿主支持时停止提交并提示。
+- API Key 路线支持 v2 多供应商和模型配置、显示名称与别名、每个模型的默认参数、独立生成/编辑端点以及声明式参数字段；新增 xAI Images、Gemini Interactions 和 Gemini generateContent 协议适配器。
+- 画布可搜索并选择本次编辑使用的 API 模型与参数，展开时列出全部已配置模型并标出当前选择与默认模型；读取失败可手动重新读取。选择随草稿保存并绑定提交，ChatGPT 继续使用 Codex 内置路线，本次选择不修改默认模型。
+- Standalone 新增 `list-models`、`--profile` 和 `--parameters`；显式 `plugin-v1` 迁移将旧图片默认值保留给原活动模型与宿主，其他模型不继承这些参数。
 
-- Omit optional OpenAI-compatible request defaults such as `quality`, `output_format`, and `background` when they were not configured or requested, so providers with a narrower published schema can receive the documented request shape.
+### 修复
+
+- Standalone 的 `generate`、`edit` 和 `batch` 命令接受 `--transparency-route native-alpha`，可在已启用原生透明的配置下为单次请求选择该路线。
+- 多结果卡的方图、横图和竖图按预览区域完整缩放；宿主限制结果区高度时可以滚动查看后续卡片。
+- Standalone v2 批处理行的尺寸表达正确覆盖共享参数，透明与素材请求保留 PNG 要求，背景参数沿用既有校验。
+- 修复迁移脚本直接运行时的模块查找错误，可从安装目录之外执行文档中的迁移命令。
+- v2 API Key 配置查询按活动模型读取透明策略，避免把宿主本地设置误报为 API 策略，或提示不支持原生透明的协议启用该参数。
+- Plugin 在最终回复中汇总需要交付或比较的图片，包括中途预览过的结果；默认使用修改后的最终版本，并说明缺少的结果。
+
+## [1.4.0] - 2026-09-09
+
+### 新增
+
+- Standalone Skill 与 Codex Plugin 的 API Key 请求支持 `xhigh`、`max` 质量档位，可用于 GPT Image 2.5 Sunburst、Flare；实际可用档位由所选模型和供应商决定，默认质量与模型不变。
+
+### 修复
+
+- 图片读取超过 8 秒时显示等待提示，继续接收原请求的结果；迟到的成功图片可正常显示，不再因本地计时器误报 `IMG-SERVER`。重新读取时重新计时，版本缩略图的无障碍标签与可见状态一致。
+- Plugin 普通 API 请求默认省略 `background`，与 Standalone 保持一致；显式背景参数被拒绝时提示确认后再提交。原生透明请求已有的有限自动重试保持不变。
+- 画布按绑定配置的活动 profile 读取模型能力，使用自定义 profile 名称时不再误报能力读取失败。
+- 显式配置迁移保留供应商自定义模型 ID，不再仅允许 `gpt-image-2`。
+- Standalone 批处理行与默认配置中的未知质量值会在发送请求前被拒绝，与命令行和 Plugin 的校验一致。
 
 ## [1.3.0] - 2026-09-07
 
@@ -277,7 +301,9 @@
 - Publish the initial Agent Skills-compatible image generation workflow.
 - Support OpenAI-compatible image generation, image editing, local authentication, transparent asset intent, and JSONL batches.
 
-[Unreleased]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v1.3.0...HEAD
+[Unreleased]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v1.4.0...v1.5.0
+[1.4.0]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v1.1.1...v1.2.0
 [1.1.1]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v1.1.0...v1.1.1

@@ -2,6 +2,7 @@ import { RESOURCE_MIME_TYPE, registerAppResource } from "@modelcontextprotocol/e
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createLocalImageTransfer, registerLocalImageTransferTools } from "./local-image-transfer.mjs";
 import { z } from "zod";
+import { modelSelectionSchema, resolveModelSelection, bindCanvasSelection, modelDefaultOutput } from "./model-selection.mjs";
 
 import { createEditSubmissionRegistry } from "./edit-submission-registry.mjs";
 import { annotationItemSchema, editorDraftSchema } from "./editor-draft-contract.mjs";
@@ -68,6 +69,22 @@ const imageModelOutputSchema = z.object({
   provider: z.string().min(1),
   model: z.string().min(1),
   capabilities: imageModelCapabilitiesOutputSchema,
+  effectiveCapabilities: imageModelCapabilitiesOutputSchema.optional(),
+  displayName: z.string().optional(),
+  aliases: z.array(z.string()).optional(),
+  description: z.string().optional(),
+  providerDisplayName: z.string().optional(),
+  protocol: z.string().optional(),
+  isDefault: z.boolean().optional(),
+  defaults: z.object({
+    size: z.string().optional(), quality: z.string().optional(), output_format: z.string().optional(),
+    aspect_ratio: z.string().optional(), resolution: z.string().optional(),
+  }).strict().optional(),
+  limits: z.object({ quality: z.array(z.string()).optional(), max_input_images: z.number().int().positive().optional() }).strict().optional(),
+  availability: z.enum(["configured", "missing_credentials"]).optional(),
+  selectionFingerprint: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+  parameterFields: z.record(z.unknown()).optional(),
+  parameters: z.record(z.unknown()).optional(),
 }).strict();
 const editorSessionOutputSchema = z.object({
   id: editorSessionIdSchema,
@@ -132,6 +149,7 @@ const annotationOutputSchema = z.object({
   maskPolicy: maskPolicyOutputSchema.nullable(),
 }).strict();
 const editSubmissionOutputSchema = z.object({
+  modelSelection: modelSelectionSchema.optional(),
   id: submissionIdSchema,
   parentImageId: imageIdSchema,
   annotationId: annotationIdSchema.nullable(),
@@ -199,7 +217,7 @@ const retainedHostErrorCodes = new Set([
 const sensitiveHostFieldKeyPattern = /(api[_-]?key|authorization|credential|password|secret|token|cookie)/i;
 const hostObservationProvenance = "unverified_widget_report";
 const DEFAULT_MODEL_PROFILE_ID = "primary/gpt-image-2";
-const SERVER_INSTRUCTIONS = "generate_image, edit_image, and batch_images submit durable asynchronous jobs. Preserve submissionKey and jobId. Poll get_image_job until done and read every result page; a polling timeout does not cancel or resubmit generation. Before the final response, render successful images with render_image_results in groups of up to 10, preferring delivery-ready derivatives and never displaying the same result twice. After deliver_image succeeds with deliveryReady=true, call render_image_results with its derivatives. Unknown outcomes must not be regenerated automatically. Do not ask the user to request the display step.";
+const SERVER_INSTRUCTIONS = "generate_image, edit_image, and batch_images submit durable asynchronous jobs. Preserve submissionKey and jobId. Poll get_image_job until done and read every result page; a polling timeout does not cancel or resubmit generation. Collect successful image IDs across operations with their purpose, order, and version relationships. Before the final response, including partial delivery or user selection, reconcile the requested delivery set and render it with render_image_results in groups of up to 10. Prefer final edits and delivery-ready derivatives; omit superseded drafts and reference-only images unless requested. An intermediate display does not replace final delivery: reuse previously shown IDs when needed for a complete final set, without regenerating. Do not repeat an already complete final presentation. After deliver_image succeeds with deliveryReady=true, include its derivatives in the delivery selection for render_image_results. Report missing or failed items accurately; tool success does not prove host visibility. Unknown outcomes must not be regenerated automatically. Do not ask the user to request the display step.";
 
 export function createImagegenServer({
   releaseIdentity,
@@ -315,6 +333,7 @@ export function createImagegenServer({
         projectBindingId: projectBindingIdSchema,
         distribution: z.literal("plugin"),
         defaultAuthMode: z.enum(["apikey", "chatgpt"]),
+        canvasSubmissionMode: z.enum(["auto", "composer", "message"]),
         apiKeyConfigured: z.boolean(),
         chatgptRequirement: z.literal("codex_app_imagegen_handoff"),
       }).strict(),
@@ -461,21 +480,22 @@ export function createImagegenServer({
       title: "List image models",
       description: "Return image models and safe capability declarations from the current image configuration.",
       inputSchema: { ...projectBindingInputSchema },
-      outputSchema: z.object({ models: z.array(imageModelOutputSchema) }).strict(),
+      outputSchema: z.object({ activeProfile: modelProfileIdSchema, models: z.array(imageModelOutputSchema) }).strict(),
       annotations: readAnnotations(),
     },
     async ({ projectBindingId }) => await withBoundProject(projectContext, projectBindingId, async (context) => {
       if (context.apiKeyConfigured === false) return apiProviderNotConfigured();
       try {
+        const activeProfile = context.activeProfile || DEFAULT_MODEL_PROFILE_ID;
         const result = await runTask(
-          { operation: "list_models", modelProfileId: context.activeProfile || DEFAULT_MODEL_PROFILE_ID },
+          { operation: "list_models", modelProfileId: activeProfile },
           context,
         );
         if (!result?.ok) return toolError(new Error(result?.error?.message || "model catalog unavailable"), result?.error?.code);
         const models = z.array(imageModelOutputSchema).parse(result.models);
         return {
           content: [{ type: "text", text: `已读取 ${result.models.length} 个图片模型。` }],
-          structuredContent: { models },
+          structuredContent: { activeProfile, models },
         };
       } catch (error) {
         return toolError(error);
@@ -507,6 +527,12 @@ export function createImagegenServer({
     return async ({ projectBindingId, submissionKey, ...request }) =>
       await withBoundProject(projectContext, projectBindingId, async (context) => {
         if (context.apiKeyConfigured === false) return apiProviderNotConfigured();
+        if (kind === "edit" && request.submissionId) {
+          const prepared = await editSubmissions.resolveForEdit({ ...request, artifactRoot: context.artifactRoot, bindingKey: context.bindingKey });
+          request = bindCanvasSelection(context, request, prepared?.receipt?.modelSelection);
+        }
+        // Resolve the default before persisting the durable request.
+        if (context.apiRuntimeConfig?.models) request.modelProfileId = resolveModelSelection(context, request.modelProfileId).modelProfileId;
         return imageJobResult(await imageJobs.submit({ context, submissionKey, spec: { kind, request } }));
       });
   }
@@ -515,7 +541,7 @@ export function createImagegenServer({
     "generate_image",
     {
       title: "Generate images",
-      description: "Submit a durable image generation job and return its jobId without waiting for generation. Reuse submissionKey after a lost reply to recover the same job. Multiple candidates preserve ordered single-image requests and atomic group publication. Poll get_image_job and render successful results before replying.",
+      description: "Submit a durable image generation job and return its jobId without waiting for generation. Reuse submissionKey after a lost reply to recover the same job. Multiple candidates preserve ordered single-image requests and atomic group publication. Poll get_image_job and collect successful image IDs for final delivery with render_image_results.",
       inputSchema: {
         ...projectBindingInputSchema,
         submissionKey: submissionKeySchema,
@@ -549,7 +575,7 @@ export function createImagegenServer({
     "edit_image",
     {
       title: "Edit image",
-      description: "Submit a durable edit job for a new immutable image version and immediately return jobId. Preserve submissionKey and any canvas submissionId. Poll get_image_job and render the successful child images; do not repeat uncertain edits with a new key.",
+      description: "Submit a durable edit job for a new immutable image version and immediately return jobId. Preserve submissionKey and any canvas submissionId. Poll get_image_job and collect successful child image IDs for final delivery with render_image_results; do not repeat uncertain edits with a new key.",
       inputSchema: {
         ...projectBindingInputSchema,
         submissionKey: submissionKeySchema,
@@ -706,7 +732,7 @@ export function createImagegenServer({
     "batch_images",
     {
       title: "Batch image tasks",
-      description: "Submit a durable batch of independent generation and standard edit tasks, returning jobId immediately. Reuse submissionKey after a lost reply. Poll get_image_job for ordered partial results and all pages, rendering successful images in groups of up to 10. Concurrency shares the executor's eight slots across jobs.",
+      description: "Submit a durable batch of independent generation and standard edit tasks, returning jobId immediately. Reuse submissionKey after a lost reply. Poll get_image_job for ordered partial results and all pages; collect successful image IDs for final delivery with render_image_results in groups of up to 10. Concurrency shares the executor's eight slots across jobs.",
       inputSchema: {
         ...projectBindingInputSchema,
         submissionKey: submissionKeySchema,
@@ -719,6 +745,7 @@ export function createImagegenServer({
     async ({ projectBindingId, submissionKey, items, concurrency }) =>
       await withBoundProject(projectContext, projectBindingId, async (context) => {
         if (context.apiKeyConfigured === false) return apiProviderNotConfigured();
+        if (context.apiRuntimeConfig?.models) items = items.map((item) => ({ ...item, modelProfileId: resolveModelSelection(context, item.modelProfileId).modelProfileId }));
         return imageJobResult(await imageJobs.submit({ context, submissionKey, spec: {
           kind: "batch", items, ...(concurrency === undefined ? {} : { concurrency }),
         } }));
@@ -757,7 +784,7 @@ export function createImagegenServer({
     "deliver_image",
     {
       title: "Deliver image",
-      description: "Run local exact-size, grid, preview-board, and QA delivery for a stable image ID. Keep the original immutable and store derivatives separately. When deliveryReady is true, call render_image_results with the returned derivative artifact IDs before replying to the user.",
+      description: "Run local exact-size, grid, preview-board, and QA delivery for a stable image ID. Keep the original immutable and store derivatives separately. When deliveryReady is true, collect the returned derivative artifact IDs for final delivery selection and present the selected results with render_image_results before replying to the user.",
       inputSchema: {
         ...projectBindingInputSchema,
         imageId: imageIdSchema,
@@ -800,7 +827,7 @@ export function createImagegenServer({
             content: [{
               type: "text",
               text: result.deliveryReady
-                ? `已完成图片 ${imageId} 的本地交付。在回复用户前调用 render_image_results 显示：${artifactIds.join(", ")}。`
+                ? `已完成图片 ${imageId} 的本地交付。收集这些交付结果，最终回复前按任务目标汇总调用 render_image_results；中途展示不替代最终交付：${artifactIds.join(", ")}。`
                 : `图片 ${imageId} 已保留原图，交付条件尚未满足。`,
             }],
             structuredContent: {
@@ -947,7 +974,7 @@ export function createImagegenServer({
     "render_image_results",
     {
       title: "Render image results",
-      description: "Display one or more created images in order within one conversation result and provide an independent canvas entry for each image. Call once after generation or editing succeeds.",
+      description: "Display an explicitly selected set of up to 10 images in order, with independent canvas entries. Collect results across operations for final delivery; intermediate previews may be included again in the final set using the same IDs. Do not omit a required image because it was shown earlier, or repeat an already complete final set. This tool does not infer task completeness or select versions for you.",
       inputSchema: { ...projectBindingInputSchema, imageIds: z.array(imageIdSchema).min(1).max(10) },
       outputSchema: z.object({
         imageIds: z.array(imageIdSchema).min(1).max(10),
@@ -982,7 +1009,7 @@ export function createImagegenServer({
         }));
         return {
           content: [
-            { type: "text", text: `已显示 ${imageIds.length} 张图片。` },
+            { type: "text", text: `已准备 ${imageIds.length} 张图片结果。` },
             ...records.map(imageContent),
           ],
           structuredContent: { imageIds, artifacts },
@@ -1012,6 +1039,7 @@ export function createImagegenServer({
         artifact: imageArtifactOutputSchema,
         auth: z.object({
           defaultAuthMode: z.enum(["apikey", "chatgpt"]),
+          canvasSubmissionMode: z.enum(["auto", "composer", "message"]),
           apiKeyConfigured: z.boolean(),
           chatgptRequirement: z.literal("codex_app_imagegen_handoff"),
         }).strict().optional(),
@@ -1048,6 +1076,7 @@ export function createImagegenServer({
             ...(context.defaultAuthMode ? {
               auth: {
                 defaultAuthMode: context.defaultAuthMode,
+                canvasSubmissionMode: context.canvasSubmissionMode ?? "auto",
                 apiKeyConfigured: context.apiKeyConfigured,
                 chatgptRequirement: context.chatgptRequirement,
               },
@@ -1097,12 +1126,13 @@ export function createImagegenServer({
     "prepare_image_edit_submission",
     {
       title: "Prepare image edit submission",
-      description: "Save the current canvas revision and issue a server submission ID that binds the next edit_image call to the same parent image, annotations, and mask policy.",
+      description: "Save the current canvas revision and issue a server submission ID that binds the selected API Key edit or ChatGPT host handoff to the same parent image, annotations, and mask policy.",
       inputSchema: {
         ...projectBindingInputSchema,
         parentImageId: imageIdSchema,
         items: z.array(annotationItemSchema).max(100),
         sourcePrompt: z.string().max(600),
+        modelSelection: modelSelectionSchema.optional(),
       },
       outputSchema: z.object({
         annotation: annotationOutputSchema.nullable(),
@@ -1111,10 +1141,18 @@ export function createImagegenServer({
       annotations: writeAnnotations(),
       _meta: { ui: { visibility: ["app"] } },
     },
-    async ({ projectBindingId, parentImageId, items, sourcePrompt }) => await withBoundProject(
+    async ({ projectBindingId, parentImageId, items, sourcePrompt, modelSelection }) => await withBoundProject(
       projectContext,
       projectBindingId,
       async (context) => {
+        if (modelSelection?.authMode === "apikey") {
+          const resolved = resolveModelSelection(context, modelSelection.modelProfileId);
+          if (modelSelection.selectionFingerprint && modelSelection.selectionFingerprint !== resolved.selectionFingerprint) return toolError(new Error("canvas model configuration changed; select the model again"), "image_config_changed");
+          modelSelection = { ...modelSelection, ...resolved, output: modelDefaultOutput(context, resolved.modelProfileId) };
+          context = { ...context, activeProfile: modelSelection.modelProfileId };
+        } else if (modelSelection) {
+          modelSelection = { authMode: "chatgpt" };
+        }
         try {
           await readArtifact(parentImageId, context);
         } catch (error) {
@@ -1150,6 +1188,11 @@ export function createImagegenServer({
         }
 
         try {
+          if (modelSelection?.authMode === "apikey" && annotation?.hasMask && modelHasCapability(context, modelSelection.modelProfileId, "mask")) {
+            const { size: _size, format: _format, aspectRatio: _aspect, resolution: _resolution, ...defaults } = modelSelection.output;
+            const { count: _count, ...maskOutput } = deriveMaskedEditOutput(defaults, annotation.maskPolicy);
+            modelSelection = { ...modelSelection, output: maskOutput };
+          }
           const submission = await editSubmissions.issue({
             artifactRoot: context.artifactRoot,
             bindingKey: context.bindingKey,
@@ -1159,6 +1202,7 @@ export function createImagegenServer({
             maskPolicySha256: annotation?.maskPolicy?.policySha256 ?? null,
             sourcePrompt,
             items,
+            ...(modelSelection ? { modelSelection } : {}),
           });
           return {
             content: [{ type: "text", text: `已准备图片 ${parentImageId} 的待发送修改。` }],
@@ -1344,7 +1388,7 @@ async function readImageTaskResult(artifactIds, context, readArtifact, { recover
     return {
       content: [{
         type: "text",
-        text: `${recovered ? `已恢复 ${artifacts.length} 张既有图片` : `已创建 ${artifacts.length} 张图片`}。在回复用户前调用 render_image_results 显示：${artifactIds.join(", ")}。`,
+        text: `${recovered ? `已恢复 ${artifacts.length} 张既有图片` : `已创建 ${artifacts.length} 张图片`}。收集这些图片，最终回复前按任务目标汇总调用 render_image_results；中途展示过的必要图片仍应纳入：${artifactIds.join(", ")}。`,
       }],
       structuredContent,
       _meta: {
@@ -1384,6 +1428,9 @@ async function withBoundProject(projectContext, projectBindingId, callback) {
 
 function modelHasCapability(context, modelProfileId, capability) {
   const runtimeConfig = context.apiRuntimeConfig ?? JSON.parse(context.effectiveConfigJson);
+  const model = runtimeConfig?.models?.[modelProfileId];
+  const protocol = runtimeConfig?.providers?.[model?.provider]?.protocol;
+  if (capability === "mask" && protocol && protocol !== "openai-compatible") return false;
   return runtimeConfig?.models?.[modelProfileId]?.capabilities?.[capability] === true;
 }
 

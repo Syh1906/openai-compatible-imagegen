@@ -147,6 +147,9 @@ test("cross-suite direct consumers are included in MCP impact plans", () => {
     selectImpactPlan(["mcp/create-server.mjs"], projectManifest).suites,
     ["mcp", "release", "web"],
   );
+  for (const file of ["mcp/create-server.mjs", "mcp/host-observation-store.mjs", "mcp/release-identity.mjs"]) {
+    assert.deepEqual(selectImpactPlan([file], projectManifest).platforms, ["linux", "macos", "windows"], file);
+  }
   assert.deepEqual(
     selectImpactPlan(["web/host-observation.mjs"], projectManifest).suites,
     ["mcp", "web"],
@@ -191,6 +194,15 @@ test("locale-sensitive widget paths select all runners without widening other wi
   assert.deepEqual(selectImpactPlan(["tests/web/test_widget_theme.mjs"], projectManifest).platforms, ["linux"]);
 });
 
+
+test("result document layout changes select all supported runners", () => {
+  for (const file of ["web/index.html", "tests/web/test_widget_styles.mjs"]) {
+    const plan = selectImpactPlan([file], projectManifest);
+    assert.deepEqual(plan.suites, ["web"], file);
+    assert.deepEqual(plan.platforms, ["linux", "macos", "windows"], file);
+  }
+  assert.deepEqual(selectImpactPlan(["web/index.html"], projectManifest).checks, ["build", "plugin"]);
+});
 
 test("platform-specific production rules retain their build gates", () => {
   const cases = [
@@ -286,6 +298,15 @@ test("every tracked repository path has an explicit impact classification", () =
 
 test("the test infrastructure suite includes both test runtimes", () => {
   assert.deepEqual(projectManifest.suites["test-infra"].runtimes, ["node", "python"]);
+});
+
+
+test("plugin identity changes require every supported platform before integration", () => {
+  for (const file of [".codex-plugin/plugin.json", ".mcp.json", "scripts/plugin-file-set.mjs"]) {
+    const plan = selectImpactPlan([file], projectManifest);
+    assert.deepEqual(plan.platforms, ["linux", "macos", "windows"], file);
+    assert.ok(plan.suites.includes("release"), file);
+  }
 });
 
 

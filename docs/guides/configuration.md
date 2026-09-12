@@ -6,6 +6,8 @@ Language: [简体中文](./configuration.zh-CN.md)
 
 Configure only the package you installed. The Standalone Skill and Codex Plugin do not scan, merge, or fall back to each other's configuration.
 
+For multiple providers, native xAI/Gemini protocols, aliases, and per-edit canvas parameters, see [v2 model configuration](./models.md). Existing single-provider and v1 configurations remain compatible; ChatGPT does not require API model configuration.
+
 ## Configure the Standalone Skill
 
 The Standalone Skill reads `auth.json` from its installed directory.
@@ -28,7 +30,7 @@ python3 "/absolute/path/to/openai-compatible-imagegen/scripts/quick-init.py"
 
 | Field | Purpose |
 | --- | --- |
-| `protocol` | `openai-compatible` (default) or `atlas` |
+| `protocol` | Explicit protocol; see [supported protocols](./models.md) |
 | `base_url` | Base URL for the selected image service |
 | `model` | Provider-specific image model ID; any non-empty ID accepted |
 | `api_key_env` | Preferred environment variable containing the credential |
@@ -124,7 +126,31 @@ The project file may override only:
 
 The project file cannot replace the active profile, provider, model, endpoint, proxy, authentication source, credential environment variable, timeout, concurrency, or route permissions. A rejected override stops before a network request.
 
+### Choose how canvas edits enter the conversation
+
+Add `canvas_submission_mode` at the top level of the user configuration to control what happens after submitting an edit from the canvas. It supports v1 and v2 and applies to both API Key and ChatGPT routes. Project configuration cannot override it.
+
+| Value | Behavior |
+| --- | --- |
+| `auto` (default when omitted) | Preserve the existing order: send directly when the host supports image/text messages and structured context; otherwise use deferred submission when full image/text context is supported. |
+| `composer` | Stage image, text, and edit context for your next chat message. The Plugin does not send a message. How the composer displays that content depends on the host. |
+| `message` | Send the image and edit request directly to the conversation. |
+
+For example, add this field to your existing user configuration:
+
+```json
+{
+  "canvas_submission_mode": "composer"
+}
+```
+
+This is a configuration fragment; keep your existing fields. You can also ask Codex to set the canvas submission mode to `composer` so you can add instructions before sending. Rebind the project and reopen the canvas after changing it. An unsupported explicit mode stops with an explanation rather than switching modes. Set `auto` to restore automatic selection.
+
 ### Check and change configuration
+
+For flat Standalone and v1 configurations, the OpenAI-compatible route accepts `auto`, `low`, `medium`, `high`, `xhigh`, and `max` for `defaults.quality` and explicit request quality. The official GPT Image 2.5 [Sunburst](https://developers.openai.com/api/docs/models/gpt-image-2.5-sunburst) and [Flare](https://developers.openai.com/api/docs/models/gpt-image-2.5-flare) references list the last two levels; availability through a third-party service depends on that service. Older models may reject them. v2 profiles can declare other provider-supported quality values. Atlas retains `low`, `medium`, and `high`. Unsupported requests do not automatically change quality or models.
+
+To use an available GPT Image 2.5 model, set the Standalone `model` or the Plugin's `models[active_profile].model` to the exact ID supplied by your provider, such as `gpt-image-2.5-sunburst` or `gpt-image-2.5-flare`. A profile ID is a local configuration key and does not need to match the actual model ID. Rebind the Plugin project after changes. These settings apply to API Key requests; they do not select the model or quality used by ChatGPT host generation.
 
 After initialization, API Key users set the variable named by `api_key_env` in the environment used to launch Codex; ChatGPT needs no API credential. Ask Codex to check the configuration with `inspect_image_config` and bind this project. To change settings, describe the new values; Codex applies them with `update_image_config` and refreshes the project binding. A new task is not required.
 
@@ -252,7 +278,7 @@ Set `ATLASCLOUD_API_KEY` in the environment before generation.
 
 ## Image service requirements
 
-The default `openai-compatible` protocol uses these endpoints. The service and selected model must support the operations you need:
+For `openai-compatible` with a `base_url` ending in `/v1`, the default paths resolve as follows. Other base paths and complete endpoint overrides are described in [model configuration](./models.md). The service and selected model must support the operations you need:
 
 - `POST /v1/images/generations` — generation
 - `POST /v1/images/edits` — editing, when needed
@@ -263,7 +289,9 @@ The Atlas protocol supports text-to-image generation with JPEG or PNG output. It
 
 ## Transparency settings
 
-New OpenAI-compatible API Key templates enable native transparency. Installation and updates preserve existing configuration. To enable it in an older configuration, ask Codex to merge these settings. ChatGPT does not use these provider parameters; Atlas requires a local transparency route.
+The snippet below uses the top-level policy of flat Standalone and v1 configurations. For v2 API requests, put its `transparency` object inside the selected `models[profileId]`; top-level `transparency` remains the Plugin host/local policy. Only OpenAI-compatible supports the native parameter here; Atlas, xAI, and Gemini require an applicable local route after generation.
+
+New Plugin OpenAI-compatible API Key templates enable native transparency. The Standalone example and setup wizard retain their local transparency policy; enable native transparency explicitly when needed. Installation and updates preserve existing configuration. To enable it in an older configuration, ask Codex to merge these settings. ChatGPT does not use these provider parameters; Atlas requires a local transparency route.
 
 ```json
 {
@@ -277,6 +305,8 @@ New OpenAI-compatible API Key templates enable native transparency. Installation
   }
 }
 ```
+
+Ordinary API requests omit `background` by default. You can explicitly request `auto` or `opaque` if your provider supports that option. If the provider rejects it, the request stops; you can then ask Codex to submit a new request without the option. A timeout does not trigger this change. Native transparency uses the separate retry policy below.
 
 Transparency is delivery intent. For `native-alpha`, the runtime sends `background=transparent` and PNG output only when transparency is requested, with a real-alpha prompt contract. The optional `transparency.native.model_ids` list is a capability declaration, not a code whitelist; an explicit native route is sent to the configured model even when the list is empty or does not contain that ID. A transparency-related provider HTTP 400/422 is retried once without the parameter by default, using the same model and endpoint. Set `retry_without_parameter` to `false` to disable this retry. Results explain rejection, retry, final route, and QA. Legacy `transparent_background` configuration is rejected during migration.
 

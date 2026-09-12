@@ -57,13 +57,21 @@ def request_json(
     timeout: int,
     response_limit: int | None = MAX_JSON_RESPONSE_BYTES,
     proxy_url: str | None = None,
+    endpoint: str | None = None,
+    auth_header: str = "Authorization",
 ) -> dict[str, Any]:
     body = json.dumps(drop_none(payload)).encode("utf-8")
+    headers = request_headers(api_key, user_agent, "application/json")
+    if auth_header == "x-goog-api-key":
+        del headers["Authorization"]
+        headers[auth_header] = api_key
+    elif auth_header != "Authorization":
+        raise ValueError("unsupported protocol authentication header")
     request = urllib.request.Request(
-        api_url(base_url, path),
+        endpoint or api_url(base_url, path),
         data=body,
         method="POST",
-        headers=request_headers(api_key, user_agent, "application/json"),
+        headers=headers,
     )
     return _send_request(request, timeout, path, response_limit, proxy_url)
 
@@ -79,11 +87,12 @@ def request_multipart(
     timeout: int,
     response_limit: int | None = MAX_JSON_RESPONSE_BYTES,
     proxy_url: str | None = None,
+    endpoint: str | None = None,
 ) -> dict[str, Any]:
     boundary = f"----codex-imagegen-{int(time.time() * 1000)}"
     body = build_multipart_body(boundary, fields, files)
     request = urllib.request.Request(
-        api_url(base_url, path),
+        endpoint or api_url(base_url, path),
         data=body,
         method="POST",
         headers=request_headers(
@@ -134,14 +143,19 @@ def request_atlas_image(
     max_poll_seconds: float = 600.0,
     response_limit: int | None = MAX_JSON_RESPONSE_BYTES,
     proxy_url: str | None = None,
+    endpoint: str | None = None,
+    parameters: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if max_poll_attempts < 1:
         raise ValueError("max_poll_attempts must be at least 1")
     if max_poll_seconds <= 0:
         raise ValueError("max_poll_seconds must be positive")
     _validate_atlas_payload(payload)
+    if parameters:
+        from image_parameters import extend_payload
+        payload = extend_payload(payload, parameters)
     submit_request = urllib.request.Request(
-        api_url(base_url, ATLAS_SUBMIT_PATH),
+        endpoint or api_url(base_url, ATLAS_SUBMIT_PATH),
         data=json.dumps(drop_none(payload)).encode("utf-8"),
         method="POST",
         headers=request_headers(api_key, user_agent, "application/json"),

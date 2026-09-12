@@ -12,6 +12,8 @@ test("shallow editor viewports keep the canvas and primary controls inside the f
   assert.match(shallowViewport, /\.tool-rail \{[^}]*overflow-y: auto/);
   assert.match(shallowViewport, /\.version-item \{[^}]*grid-template-rows:/);
   assert.doesNotMatch(shallowViewport, /\.stroke-button, \.swatch, \.custom-color \{[^}]*width:/);
+  assert.match(html, /\.workspace \{[^}]*grid-template-rows: minmax\(0, 1fr\)/);
+  assert.match(html, /\.intent-panel \{[^}]*overflow-y: auto/);
 });
 
 test("interactive controls use restrained motion with a reduced-motion override", async () => {
@@ -65,6 +67,22 @@ test("multiple mixed-aspect results stay compact and independently scannable", a
   assert.match(compactViewport, /\.inline-results\.multiple \{[^}]*grid-template-columns: 1fr/);
   assert.match(compactViewport, /\.inline-results\.multiple \.inline-result \{[^}]*grid-template-columns: minmax\(104px, 36%\) minmax\(0, 1fr\);[^}]*grid-template-rows: auto/);
   assert.match(compactViewport, /\.inline-results\.multiple \.inline-preview \{[^}]*height: 180px;[^}]*aspect-ratio: auto/);
+});
+
+test("multi-result preview tracks cannot grow beyond the available preview box", async () => {
+  const html = await readFile(new URL("../../web/index.html", import.meta.url), "utf8");
+  const triggerRules = html.match(/\.inline-results\.multiple \.inline-preview-trigger \{([^}]*)\}/)?.[1] || "";
+
+  assert.match(triggerRules, /grid-template-columns: minmax\(0, 1fr\)/);
+  assert.match(triggerRules, /grid-template-rows: minmax\(0, 1fr\)/);
+});
+
+test("height-capped result documents allow scrolling while the editor remains fixed", async () => {
+  const html = await readFile(new URL("../../web/index.html", import.meta.url), "utf8");
+
+  assert.match(html, /html:has\(body\[data-view="result"\]\) \{[^}]*overflow-y: auto/);
+  assert.match(html, /html:has\(body\[data-preview-open="true"\]\) \{[^}]*overflow: hidden/);
+  assert.match(html, /html, body \{[^}]*overflow: hidden/);
 });
 
 test("compact editors keep toolbar actions and every mask control reachable", async () => {

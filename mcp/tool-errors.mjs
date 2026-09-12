@@ -1,4 +1,5 @@
 const STABLE_TOOL_ERROR_ENTRIES = [
+  ["background_parameter_rejected", "服务拒绝了明确指定的 background 参数，未自动重试。请询问用户是否去掉该参数后发起新请求；透明效果可能改变。"],
   ["local_image_request_invalid", "本地图片传输请求无效，请使用项目相对路径和稳定图片 ID。"],
   ["local_image_source_invalid", "无法导入源图片：请确认它是项目内可安全读取的 PNG、JPEG 或 WebP，且不超过 64 MiB 和 1 亿像素。"],
   ["local_image_import_failed", "无法发布本地图片，请检查 artifact 仓库后再继续。"],
@@ -30,6 +31,11 @@ const STABLE_TOOL_ERROR_ENTRIES = [
   ["host_image_request_invalid", "宿主图片交接参数无效。"],
   ["image_canvas_destroyed", "当前图片的画布已经销毁。"],
   ["image_task_failed", "图片任务执行失败。"],
+  ["image_content_blocked", "供应商拒绝了图片内容请求；未重试或切换路线。"],
+  ["image_response_empty", "供应商没有返回最终图片；未追加生成请求。"],
+  ["image_response_incomplete", "供应商返回的图片任务尚未完成；本次没有发布图片，请勿重复提交。"],
+  ["image_response_invalid_mime", "供应商返回了不支持的图片 MIME 类型；未发布该内容。"],
+  ["image_protocol_error", "图片请求或响应不符合所选协议，请检查参数与服务支持情况。"],
   ["invalid_json", "图片运行时输入不是有效 JSON。"],
   ["invalid_task", "图片任务参数无效。"],
   ["mask_policy_missing", "当前标注缺少可验证的蒙版策略。"],

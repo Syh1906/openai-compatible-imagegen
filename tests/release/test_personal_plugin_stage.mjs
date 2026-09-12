@@ -10,6 +10,7 @@ import { promisify } from "node:util";
 
 
 const execFileAsync = promisify(execFile);
+const pythonCommand = process.env.PYTHON ?? (process.platform === "win32" ? "python" : "python3");
 const projectRoot = fileURLToPath(new URL("../..", import.meta.url));
 const stageScript = fileURLToPath(new URL("../../scripts/stage-personal-plugin.mjs", import.meta.url));
 const prepareScript = fileURLToPath(new URL("../../scripts/prepare-personal-plugin.mjs", import.meta.url));
@@ -96,7 +97,7 @@ test("personal staging replaces a stale marketplace source and proves source con
       relativePath,
     );
   }
-  const { stdout: runtimeHelp } = await execFileAsync("python", [
+  const { stdout: runtimeHelp } = await execFileAsync(pythonCommand, [
     path.join(pluginRoot, "dist", "scripts", "image_runtime.py"),
     "--help",
   ], {

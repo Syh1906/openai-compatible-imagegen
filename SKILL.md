@@ -1,17 +1,19 @@
 ---
 name: openai-compatible-imagegen
-description: Generate, edit, and batch-process images through the bundled script and configured API Key provider (OpenAI-compatible or Atlas Cloud). Use for photos, illustrations, product visuals, posters, covers, diagrams, UI references, game art, transparent subjects, reference-image edits, inpainting, multi-reference compositions, and image batches when this local OpenAI-compatible workflow is the requested backend. Do not force this workflow when the user explicitly selects another image tool or backend.
+description: Generate, edit, and batch-process images through the bundled script and configured API Key provider (OpenAI-compatible, Atlas, xAI, or Gemini). Use for photos, illustrations, product visuals, posters, covers, diagrams, UI references, game art, transparent subjects, reference-image edits, inpainting, multi-reference compositions, and image batches when this local OpenAI-compatible workflow is the requested backend. Do not force this workflow when the user explicitly selects another image tool or backend.
 ---
 
 # OpenAI-Compatible Images Skill
 
-This is the Standalone distribution. Read configuration only from `auth.json` beside this installed skill; do not discover, merge, or fall back to the Codex Plugin configuration under `~/.codex/openai-compatible-imagegen/`. When the Codex Plugin distribution is active, follow its bundled `skills/openai-compatible-imagegen/SKILL.md` instead of this CLI workflow. Standalone uses the configured API Key provider: `openai-compatible` by default, or the optional `atlas` protocol. ChatGPT subscription handoff is a Plugin-only capability. Atlas supports text-to-image generation with PNG or JPEG output; edits and native transparency are unsupported. Never switch protocols to work around a failure.
+This is the Standalone distribution. Read configuration only from `auth.json` beside this installed skill; do not discover, merge, or fall back to the Codex Plugin configuration under `~/.codex/openai-compatible-imagegen/`. When the Codex Plugin distribution is active, follow its bundled `skills/openai-compatible-imagegen/SKILL.md` instead of this CLI workflow. Standalone uses the configured API Key provider: `openai-compatible`, `atlas`, `xai-images`, `gemini-interactions`, or `gemini-generate-content`, as explicitly configured. ChatGPT subscription handoff is a Plugin-only capability. Atlas supports text-to-image generation with PNG or JPEG output; edits and native transparency are unsupported. Never switch protocols to work around a failure.
 
 Use the bundled script for API calls. Resolve `$SkillDir` from the physical directory containing this `SKILL.md`; never substitute another same-named installation. Run `$SkillDir/scripts/imagegen.py info` before an API request and require both `script_path` and `auth_json` to remain under `$SkillDir`. Stop and report the path mismatch instead of using a different copy. When validating this skill through another agent, require it to report the absolute `imagegen.py` path actually executed.
 
 Do not rewrite the API client inline. The script is the authority for request validity: do not reject, rewrite, or ask the user to change a model, size, or transparency request based on remembered provider limitations. Run the command and report its actual result. Only a validation error emitted by the script or an API response can establish that the request failed.
 
 ## Workflow
+
+For a v2 provider/model configuration, run `list-models` before selecting an API model. Resolve the user's choice by exact profile ID, unique alias, or unique actual model ID; clarify multiple matching channels. Use `--profile` explicitly and preserve per-call native JSON through `--parameters`; JSONL rows use `modelProfileId` and `parameters`. Do not change `active_profile` for a one-call preference. Use the configured protocol (`openai-compatible`, `atlas`, `xai-images`, `gemini-interactions`, or `gemini-generate-content`), never infer or switch it from a model name. See [model configuration](references/models.md) for v2 defaults and parameter fields. ChatGPT handoff remains Plugin-only.
 
 1. Run `info` to inspect the local configuration. If `auth.json` is missing, run `scripts/quick-init.py`.
 2. Choose one mode:
@@ -101,7 +103,7 @@ If both are present, the script uses `api_key` unless it is a template placehold
 
 Important configuration fields:
 
-- `protocol`: `openai-compatible` (default) or `atlas`.
+- `protocol`: `openai-compatible` (default), `atlas`, `xai-images`, `gemini-interactions`, or `gemini-generate-content`. For provider/model structures, set it in the provider; see [model configuration](references/models.md).
 - `base_url`: provider base URL; OpenAI-compatible services usually use `/v1`, while Atlas uses its service root.
 - `api_key` or `api_key_env`: local authentication.
 - `model`: default image model.
@@ -122,6 +124,8 @@ Treat `--transparent` as delivery intent. The CLI `--background` accepts only `a
 
 Map an explicit user preference to an explicit per-run switch: use `--postprocess` when the user allows or requests local processing. `--no-postprocess` disables local transparency pixel changes, including native fallback. For non-native routes, an exact prompt-only rule selects `prompt-alpha`; otherwise the runtime keeps the prompt unchanged and inspects returned alpha. The switch does not disable a selected native request. Explicit delivery transforms may still run after transparency passes. Omitting both switches inherits `postprocess.enabled`.
 
+The native request and background controls below apply to OpenAI-compatible. Atlas, xAI, and Gemini have no dedicated native-alpha transport here; use compatible local delivery on saved PNG originals. For v2 API calls, resolve transparency from the selected profile, not the top-level host/local policy.
+
 Choose the request route before sending the request:
 
 1. Honor an explicit `--transparency-route` or batch `transparency_route`; an explicit local route conflicts with `--no-postprocess`.
@@ -129,6 +133,8 @@ Choose the request route before sending the request:
 3. When local processing is disabled, use `prompt-alpha` only if `transparency.prompt_only_allow` exactly matches the model, mode, and pixel size.
 4. For every other size, including 2K and 4K, continue the API request with the user's requested model, size, and prompt unchanged, preserve every returned original, and inspect source alpha without local pixel changes. Never turn model/size folklore into a local refusal.
 5. Report incomplete or contradictory contracts, such as disabled native transparency, `mask-alpha` without a mask, or a local route combined with `--no-postprocess`. An explicit `prompt-alpha` without an exact allow rule becomes source-alpha inspection: keep the prompt unchanged, call the API, and report the returned original. Do not silently change the model, endpoint, size, or retry policy.
+
+Ordinary API requests omit `background` by default. Pass `auto` or `opaque` only when the user explicitly requests that API option. If an explicit background option is rejected, explain the failure and ask before submitting a new request without it; do not infer parameter rejection from a timeout or an ambiguous error. The configured, limited retry for native transparency remains unchanged.
 
 Native transparency has a separate configured retry: a transparency-related HTTP 400/422 allows one same-request retry without the background parameter when `transparency.native.retry_without_parameter=true`. The model, provider, endpoint, prompt, size, and editing inputs remain the same. Set the switch to `false` to stop on rejection. A successful retry uses `transparency.native.fallback_route` only when local processing is allowed; otherwise it inspects the returned alpha without local pixel changes. A successful native request that returns an opaque image is preserved with unmet transparency in Standalone; the Plugin additionally selects its local fallback for that case when processing is allowed. See [the parameter reference](references/parameters.md#visual-deliverables-and-transparency) for policy fields.
 
@@ -348,7 +354,7 @@ Core parameters:
 - `--size`: exact pixel size.
 - `--aspect`: `1:1`, `16:9`, `4:3`, `3:4`, or `9:16`.
 - `--resolution`: `1K`, `2K`, or `4K` when using `--aspect`.
-- `--quality`: `low`, `medium`, `high`, or `auto`.
+- `--quality`: `auto`, `low`, `medium`, `high`, `xhigh`, or `max`. The last two require model/provider support; Atlas retains `low`, `medium`, and `high`. Never downgrade quality automatically.
 - `--n`: number of images returned by one request, from 1 to 16.
 - `--format`: `png`, `jpeg`, or `webp`.
 - `--background`: `auto` or `opaque`; `transparent` was removed.

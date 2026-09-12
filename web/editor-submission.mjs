@@ -39,13 +39,16 @@ export function createSubmissionCoordinator({
       if (authMode === "apikey" && options.apiKeyConfigured === false) {
         throw new SubmissionError("route", new Error("API Key route requires configuration"));
       }
+      const modelSelection = options.modelSelection
+        ? authMode === "chatgpt" ? { authMode } : { ...structuredClone(options.modelSelection), authMode }
+        : undefined;
       let delivery;
       try {
-        delivery = resolveDelivery(app.getHostCapabilities?.());
+        delivery = resolveDelivery(app.getHostCapabilities?.(), options.canvasSubmissionMode);
       } catch (error) {
         throw new SubmissionError("capabilities", error);
       }
-      const submissionKey = JSON.stringify({ authMode, imageId: payload.imageId, items: payload.items, prompt: payload.prompt, delivery });
+      const submissionKey = JSON.stringify({ authMode, modelSelection, imageId: payload.imageId, items: payload.items, prompt: payload.prompt, delivery });
       if (activeSubmission) {
         if (activeSubmission.key === submissionKey) return activeSubmission.promise;
         throw new SubmissionError("busy", new Error("another submission is already in progress"));
@@ -89,6 +92,7 @@ export function createSubmissionCoordinator({
                 parentImageId: payload.imageId,
                 items: payload.items,
                 sourcePrompt: payload.prompt,
+                ...(modelSelection ? { modelSelection } : {}),
               },
             });
             assertActive(isActive);
@@ -99,7 +103,8 @@ export function createSubmissionCoordinator({
               annotationId,
               submissionId: prepared.submission.id,
               revisionSha256: prepared.submission.revisionSha256,
-              snapshot: submissionSnapshot(payload, authMode),
+              snapshot: submissionSnapshot(payload, authMode, options.modelSelection),
+              modelSelection: prepared.submission.modelSelection || modelSelection,
               contextPublished: false,
               contextAcknowledged: false,
               contextRequest: null,
@@ -116,12 +121,16 @@ export function createSubmissionCoordinator({
             annotationCount: text.annotationCount,
             intents: text.intentLines,
             requestText: text.requestText,
+            authMode,
+            ...(submission.modelSelection ? { modelSelection: submission.modelSelection } : {}),
           };
           const conversationText = buildConversationText(text.requestText, {
             submissionId: submission.submissionId,
             imageId: payload.imageId,
             parentImageId: payload.parentImageId,
             annotationId,
+            authMode,
+            modelSelection: submission.modelSelection,
           });
           const conversationContent = [
             { type: "text", text: conversationText },
@@ -222,9 +231,10 @@ function validatePreparedSubmission(result, payload) {
   return prepared;
 }
 
-function submissionSnapshot(payload, authMode = "apikey") {
+function submissionSnapshot(payload, authMode = "apikey", modelSelection) {
   return {
     authMode,
+    ...(modelSelection ? { modelSelection: structuredClone(modelSelection) } : {}),
     imageId: payload.imageId,
     parentImageId: payload.parentImageId || payload.imageId,
     annotations: payload.annotations.map((item) => ({ ...item })),
@@ -234,14 +244,18 @@ function submissionSnapshot(payload, authMode = "apikey") {
   };
 }
 
-function resolveDelivery(capabilities = {}) {
+function resolveDelivery(capabilities = {}, mode = "auto") {
+  if (!["auto", "composer", "message"].includes(mode)) {
+    throw new Error("unknown canvas submission mode");
+  }
   if (
-    supports(capabilities.message, "text", "image")
+    mode !== "composer"
+    && supports(capabilities.message, "text", "image")
     && supports(capabilities.updateModelContext, "structuredContent")
   ) {
     return "message";
   }
-  if (supports(capabilities.updateModelContext, "text", "image", "structuredContent")) {
+  if (mode !== "message" && supports(capabilities.updateModelContext, "text", "image", "structuredContent")) {
     return "composer";
   }
   throw new Error("host does not support atomic text and image submission");
@@ -301,5 +315,11 @@ function buildConversationText(requestText, submission) {
     `图片 ID：${submission.imageId}`,
     `父图片 ID：${submission.parentImageId || submission.imageId}`,
     `标注 ID：${submission.annotationId || "无"}`,
+    `本次路线：${submission.authMode === "chatgpt" ? "ChatGPT（通过插件宿主交接使用内置生图能力）" : "API Key"}`,
+    ...(submission.modelSelection?.authMode === "apikey" ? [
+      `本次模型配置：${submission.modelSelection.modelProfileId}`,
+      ...(submission.modelSelection.parameters ? [`本次模型参数：${JSON.stringify(submission.modelSelection.parameters)}`] : []),
+      "执行此提交时沿用以上模型与参数。",
+    ] : []),
   ].join("\n");
 }

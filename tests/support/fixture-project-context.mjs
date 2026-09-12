@@ -47,6 +47,7 @@ export function createFixtureProjectContext({
     activeProfile: "primary/gpt-image-2",
     apiKeyConfigured: true,
     defaultAuthMode: "apikey",
+    canvasSubmissionMode: "auto",
     chatgptRequirement: "codex_app_imagegen_handoff",
     runtimeDefaults: Object.freeze({ timeout_seconds: 600, concurrency: 3 }),
   });
@@ -78,6 +79,7 @@ function bindingReceipt(status) {
     projectBindingId: FIXTURE_PROJECT_BINDING_ID,
     distribution: "plugin",
     defaultAuthMode: "apikey",
+    canvasSubmissionMode: "auto",
     apiKeyConfigured: true,
     chatgptRequirement: "codex_app_imagegen_handoff",
   };
