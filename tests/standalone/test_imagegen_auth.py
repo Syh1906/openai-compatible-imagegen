@@ -960,6 +960,43 @@ class ParameterResolutionTests(unittest.TestCase):
         self.assertIn("#00FF00", payload["prompt"])
         self.assertEqual(result["transparency"]["mode"], "chroma-matting")
 
+    def test_muapi_generation_omits_unconfigured_optional_fields_and_saves_url_image(self) -> None:
+        image_bytes = rgba_png_bytes(1, 1, [(18, 52, 86, 255)])
+        cfg = self.imagegen.Config(
+            base_url="https://api.muapi.ai/v1",
+            api_key="muapi-test-key",
+            api_key_source="test",
+            model="flux-schnell",
+            defaults={},
+            postprocess={"enabled": False},
+        )
+
+        with tempfile.TemporaryDirectory() as temp:
+            output = Path(temp) / "muapi.png"
+            args = self.make_args(prompt="a blue square", size="1x1", file=str(output))
+            with (
+                mock.patch.object(
+                    self.imagegen,
+                    "request_json",
+                    return_value={"data": [{"url": "https://cdn.muapi.ai/result.png"}]},
+                ) as request_json,
+                mock.patch.object(self.imagegen, "download_image_url", return_value=image_bytes),
+            ):
+                result = self.imagegen.generate(cfg, args)
+
+            payload = self.imagegen.drop_none(request_json.call_args.args[2])
+            self.assertEqual(
+                payload,
+                {
+                    "model": "flux-schnell",
+                    "prompt": "a blue square",
+                    "size": "1x1",
+                    "n": 1,
+                },
+            )
+            self.assertTrue(result["ok"])
+            self.assertEqual(output.read_bytes(), image_bytes)
+
     def test_generate_routes_atlas_protocol_through_async_adapter(self) -> None:
         cfg = self.imagegen.Config(**{**self.cfg.__dict__, "protocol": "atlas"})
         args = self.make_args(

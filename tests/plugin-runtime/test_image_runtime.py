@@ -290,6 +290,46 @@ class ImageRuntimeMachineModeTests(unittest.TestCase):
         self.assertTrue(all(payload["model"] == "gpt-image-2" for payload in payloads))
         self.assertTrue(all(payload["prompt"] == "two candidates" for payload in payloads))
 
+    def test_muapi_generation_omits_unconfigured_optional_fields_and_stores_url_image(self) -> None:
+        image_bytes = make_png(1, 1)
+        cfg = self.imagegen.Config(
+            base_url="https://api.muapi.ai/v1",
+            api_key="muapi-test-key",
+            api_key_source="test",
+            model="flux-schnell",
+            defaults={},
+            capabilities={"generate": True, "edit": False, "mask": False, "multi_reference": False},
+            postprocess={"enabled": False},
+        )
+        task = self.task(output={"size": "1x1", "count": 1})
+
+        with (
+            mock.patch.object(
+                self.imagegen,
+                "request_json",
+                return_value={"data": [{"url": "https://cdn.muapi.ai/result.png"}]},
+            ) as request_json,
+            mock.patch.object(self.imagegen, "download_image_url", return_value=image_bytes),
+        ):
+            result = self.imagegen.run_machine_task(task, self.project_root, self.artifact_root, cfg)
+
+        payload = request_json.call_args.args[2]
+        self.assertEqual(
+            payload,
+            {
+                "model": "flux-schnell",
+                "prompt": "two candidates",
+                "size": "1x1",
+                "n": 1,
+            },
+        )
+        self.assertTrue(result["ok"], result)
+        artifact_id = result["artifacts"][0]["id"]
+        self.assertEqual(
+            (self.artifact_root / "artifacts" / artifact_id / "image.png").read_bytes(),
+            image_bytes,
+        )
+
     def test_generate_uses_configured_custom_model_id(self) -> None:
         cfg = self.imagegen.Config(
             **{

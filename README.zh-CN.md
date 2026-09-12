@@ -14,7 +14,7 @@
 
 OpenAI 兼容图片（OpenAI-Compatible Images）把同一套图片核心发布为两种安装形态。Standalone Skill 适合 Agent 客户端和命令行工作流；Codex Plugin 在此基础上增加结果卡、聚焦画布、标注、不可变产物和版本历史。API Key 路线支持默认的 OpenAI-compatible 协议和可选的 Atlas Cloud 图片生成。
 
-MuAPI 可以通过 OpenAI 兼容的图片生成路线使用。服务详情请参阅 [MuAPI 图片 API](https://muapi.ai/ai-image-api) 和 [API 参考](https://muapi.ai/docs/api-reference)，然后按照下面的 [MuAPI 配置](docs/guides/configuration.zh-CN.md#配置-muapi) 操作。
+MuAPI 可以通过 OpenAI 兼容的图片生成路线使用。服务详情请参阅 [MuAPI 图片 API](https://muapi.ai/ai-image-api) 和 [OpenAI 兼容端点参考](https://muapi.ai/docs/openai-compatible)，然后按照下面的 [MuAPI 配置](docs/guides/configuration.zh-CN.md#配置-muapi) 操作。
 
 ## 选择安装形态
 

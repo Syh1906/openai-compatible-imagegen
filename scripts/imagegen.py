@@ -362,6 +362,17 @@ def get_value(name: str, args: argparse.Namespace, task: dict[str, Any], fallbac
     return getattr(args, name, fallback)
 
 
+def request_field_is_configured(
+    name: str,
+    args: argparse.Namespace,
+    cfg: Config,
+    task: dict[str, Any],
+) -> bool:
+    value = get_value(name, args, task, None)
+    default_name = "output_format" if name == "format" else name
+    return value not in (None, "") or default_name in cfg.defaults
+
+
 def resolve_request_transparency(
     prompt: str,
     mode: str,
@@ -582,13 +593,15 @@ def generate(cfg: Config, args: argparse.Namespace, task: dict[str, Any] | None 
         "model": params["model"],
         "prompt": prompt,
         "size": params["size"],
-        "quality": params["quality"],
         "n": params["n"],
         "background": params["background"],
         "moderation": params["moderation"],
-        "output_format": params["output_format"],
         "output_compression": params["output_compression"],
     }
+    if request_field_is_configured("quality", args, cfg, task):
+        payload["quality"] = params["quality"]
+    if request_field_is_configured("format", args, cfg, task) or transparency_plan.mode == "native-alpha":
+        payload["output_format"] = params["output_format"]
     if cfg.protocol == "atlas":
         if transparency_plan.mode == "native-alpha":
             raise ImagegenError("Atlas protocol does not support native-alpha generation")
@@ -689,12 +702,14 @@ def edit(cfg: Config, args: argparse.Namespace, task: dict[str, Any] | None = No
         "model": params["model"],
         "prompt": prompt,
         "size": params["size"],
-        "quality": params["quality"],
         "n": params["n"],
         "background": params["background"],
-        "output_format": params["output_format"],
         "output_compression": params["output_compression"],
     }
+    if request_field_is_configured("quality", args, cfg, task):
+        fields["quality"] = params["quality"]
+    if request_field_is_configured("format", args, cfg, task) or transparency_plan.mode == "native-alpha":
+        fields["output_format"] = params["output_format"]
     files = [("image[]", path) for path in image_paths]
     if mask_path:
         files.append(("mask", mask_path))

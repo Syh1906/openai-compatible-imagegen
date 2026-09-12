@@ -8,6 +8,10 @@
 
 - Document MuAPI as a generation-only OpenAI-compatible image provider for Standalone and Plugin configuration.
 
+### Fixed
+
+- Omit optional OpenAI-compatible request defaults such as `quality`, `output_format`, and `background` when they were not configured or requested, so providers with a narrower published schema can receive the documented request shape.
+
 ## [1.3.0] - 2026-09-07
 
 ### 新增

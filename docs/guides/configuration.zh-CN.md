@@ -34,6 +34,8 @@ python3 "/absolute/path/to/openai-compatible-imagegen/scripts/quick-init.py"
 | `api_key_env` | 保存凭据的首选环境变量 |
 | `api_key` | 明确选择本地明文存储时使用的可选凭据 |
 
+对于 `openai-compatible` 协议，只有请求明确提供，或配置的默认值中存在的可选请求字段才会发送。应根据 provider 发布的请求 schema 决定要配置哪些可选默认值。
+
 3. 使用相同的平台映射查看脱敏后的有效配置。
 
 Windows PowerShell：
@@ -149,9 +151,7 @@ Standalone `auth.json` 可以配置为：
     "multi_reference": false
   },
   "defaults": {
-    "size": "1024x1024",
-    "quality": "medium",
-    "output_format": "png"
+    "size": "1024x1024"
   }
 }
 ```
@@ -182,14 +182,14 @@ Codex Plugin 在用户基线中配置同一个 endpoint：
       }
     }
   },
-  "defaults": { "size": "1024x1024", "quality": "medium", "output_format": "png" },
+  "defaults": { "size": "1024x1024" },
   "postprocess": { "enabled": true },
   "transparency": { "default_route": "chroma-matting" },
   "storage": { "output_directory": "output/imagegen" }
 }
 ```
 
-生成前在环境变量中设置 `MUAPI_API_KEY`。MuAPI 图片接口会在任务处理完成后返回图片 URL；运行时下载这些 URL 时不会转发 API key。需要透明输出时，请使用本地透明处理路线。当前接口和模型详情请参阅 [MuAPI 图片 API](https://muapi.ai/ai-image-api) 和 [API 参考](https://muapi.ai/docs/api-reference)。
+生成前在环境变量中设置 `MUAPI_API_KEY`。MuAPI 的 OpenAI 兼容契约记录了 `model`、`prompt`、`n` 和 `size`；除非 provider 明确发布支持，否则请不要配置 `quality` 和 `output_format`。图片接口会返回图片 URL；运行时下载这些 URL 时不会转发 API key。需要透明输出时，请使用本地透明处理路线。当前接口和模型详情请参阅 [MuAPI 图片 API](https://muapi.ai/ai-image-api) 和 [OpenAI 兼容端点参考](https://muapi.ai/docs/openai-compatible)。
 
 ## 配置 Atlas Cloud
 

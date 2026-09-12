@@ -34,6 +34,8 @@ python3 "/absolute/path/to/openai-compatible-imagegen/scripts/quick-init.py"
 | `api_key_env` | Preferred environment variable containing the credential |
 | `api_key` | Optional local plaintext credential when explicitly chosen |
 
+For the OpenAI-compatible protocol, optional request fields are sent only when the request explicitly supplies them or the configured defaults contain them. A provider's published request schema should determine which optional defaults you set.
+
 3. Inspect the redacted effective configuration with the same platform mapping.
 
 Windows PowerShell:
@@ -149,9 +151,7 @@ A Standalone `auth.json` can use:
     "multi_reference": false
   },
   "defaults": {
-    "size": "1024x1024",
-    "quality": "medium",
-    "output_format": "png"
+    "size": "1024x1024"
   }
 }
 ```
@@ -182,14 +182,14 @@ For the Codex Plugin, configure the same endpoint in the user baseline:
       }
     }
   },
-  "defaults": { "size": "1024x1024", "quality": "medium", "output_format": "png" },
+  "defaults": { "size": "1024x1024" },
   "postprocess": { "enabled": true },
   "transparency": { "default_route": "chroma-matting" },
   "storage": { "output_directory": "output/imagegen" }
 }
 ```
 
-Set `MUAPI_API_KEY` in the environment before generation. The MuAPI image route returns provider-generated image URLs after task processing; the runtime downloads those URLs without forwarding the API key. Use the local transparency route when transparent output is needed. See the [MuAPI image API](https://muapi.ai/ai-image-api) and [API reference](https://muapi.ai/docs/api-reference) for current endpoint and model details.
+Set `MUAPI_API_KEY` in the environment before generation. The MuAPI OpenAI-compatible contract documents `model`, `prompt`, `n`, and `size`; leave `quality` and `output_format` absent unless the provider publishes support for them. The image route returns provider-generated image URLs; the runtime downloads those URLs without forwarding the API key. Use the local transparency route when transparent output is needed. See the [MuAPI image API](https://muapi.ai/ai-image-api) and [OpenAI-compatible endpoint reference](https://muapi.ai/docs/openai-compatible) for current endpoint and model details.
 
 ## Configure Atlas Cloud
 

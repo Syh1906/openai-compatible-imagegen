@@ -14,7 +14,7 @@ English | [简体中文](README.zh-CN.md)
 
 OpenAI-Compatible Images ships one image core in two installation shapes. Use the portable Standalone Skill with Agent clients and command-line workflows, or install the Codex Plugin for result cards, focused canvas editing, annotations, immutable artifacts, and version history. API Key routes support the default OpenAI-compatible protocol and optional Atlas Cloud image generation.
 
-MuAPI can be used through the OpenAI-compatible image-generation route. See the [MuAPI image API](https://muapi.ai/ai-image-api) and the [API reference](https://muapi.ai/docs/api-reference) for service details, then follow the [MuAPI configuration](docs/guides/configuration.md#configure-muapi) below.
+MuAPI can be used through the OpenAI-compatible image-generation route. See the [MuAPI image API](https://muapi.ai/ai-image-api) and the [OpenAI-compatible endpoint reference](https://muapi.ai/docs/openai-compatible) for service details, then follow the [MuAPI configuration](docs/guides/configuration.md#configure-muapi) below.
 
 ## Choose your package
 
