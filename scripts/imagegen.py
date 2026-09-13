@@ -658,6 +658,10 @@ def generate(cfg: Config, args: argparse.Namespace, task: dict[str, Any] | None 
         "moderation": params["moderation"],
         "output_compression": params["output_compression"],
     }
+    if request_field_is_configured("quality", args, cfg, task):
+        payload["quality"] = params["quality"]
+    if request_field_is_configured("format", args, cfg, task) or transparency_plan.mode == "native-alpha":
+        payload["output_format"] = params["output_format"]
     if cfg.protocol in NATIVE_PROTOCOLS:
         payload.update(aspectRatio=params["aspect"], resolution=params["resolution"])
     if cfg.protocol == "atlas":

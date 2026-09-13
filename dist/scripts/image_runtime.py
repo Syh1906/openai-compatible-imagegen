@@ -809,8 +809,16 @@ def run_machine_task(
                 else 1
             ),
         }
-        if payload["background"] is None:
-            payload.pop("background")
+        if quality_is_configured:
+            payload["quality"] = params["quality"]
+        if background_is_configured:
+            payload["background"] = params["background"]
+        if format_is_configured:
+            payload["output_format"] = params["format"]
+        if params["compression"] is not None:
+            payload["output_compression"] = params["compression"]
+        if payload.get("background") is None:
+            payload.pop("background", None)
         for key in ("aspectRatio", "resolution"):
             if params.get(key) is not None:
                 payload[key] = params[key]
