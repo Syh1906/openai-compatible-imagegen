@@ -36,6 +36,8 @@ python3 "/absolute/path/to/openai-compatible-imagegen/scripts/quick-init.py"
 | `api_key_env` | Preferred environment variable containing the credential |
 | `api_key` | Optional local plaintext credential when explicitly chosen |
 
+For the OpenAI-compatible protocol, optional request fields are sent only when the request explicitly supplies them or the configured defaults contain them. A provider's published request schema should determine which optional defaults you set.
+
 3. Inspect the redacted effective configuration with the same platform mapping.
 
 Windows PowerShell:
@@ -155,6 +157,65 @@ After initialization, API Key users set the variable named by `api_key_env` in t
 Configuration tools never return keys. Writes protect user and project configuration directories with a `.gitignore` containing only `*`, without changing the project root ignore file. Local plaintext credentials can be stored only in user configuration when explicitly chosen.
 
 `storage.output_directory` is a relative directory inside the project. The default is `output/imagegen/`. Project binding creates or verifies a `.gitignore` containing only `*` in the resolved output directory, so images, prompts, annotations, and metadata remain local. An incompatible ignore rule stops binding without being overwritten. Absolute paths, project-root output, outside paths, files, symbolic links, junctions, and other reparse points are rejected.
+
+## Configure MuAPI
+
+MuAPI provides an OpenAI-compatible image-generation endpoint. Configure it with the `openai-compatible` protocol and stop `base_url` at `/v1`; the runtime appends `/images/generations`. The example below uses the `flux-schnell` model and declares the route as generation-only because this integration does not provide image edits, masks, or multi-reference inputs.
+
+A Standalone `auth.json` can use:
+
+```json
+{
+  "protocol": "openai-compatible",
+  "base_url": "https://api.muapi.ai/v1",
+  "api_key_env": "MUAPI_API_KEY",
+  "model": "flux-schnell",
+  "capabilities": {
+    "generate": true,
+    "edit": false,
+    "mask": false,
+    "multi_reference": false
+  },
+  "defaults": {
+    "size": "1024x1024"
+  }
+}
+```
+
+For the Codex Plugin, configure the same endpoint in the user baseline:
+
+```json
+{
+  "config_version": 1,
+  "auth_mode": "apikey",
+  "active_profile": "primary/flux-schnell",
+  "providers": {
+    "primary": {
+      "protocol": "openai-compatible",
+      "base_url": "https://api.muapi.ai/v1",
+      "api_key_env": "MUAPI_API_KEY"
+    }
+  },
+  "models": {
+    "primary/flux-schnell": {
+      "provider": "primary",
+      "model": "flux-schnell",
+      "capabilities": {
+        "generate": true,
+        "edit": false,
+        "mask": false,
+        "multi_reference": false
+      }
+    }
+  },
+  "defaults": { "size": "1024x1024" },
+  "postprocess": { "enabled": true },
+  "transparency": { "default_route": "chroma-matting" },
+  "storage": { "output_directory": "output/imagegen" }
+}
+```
+
+Set `MUAPI_API_KEY` in the environment before generation. The MuAPI OpenAI-compatible contract documents `model`, `prompt`, `n`, and `size`; leave `quality` and `output_format` absent unless the provider publishes support for them. The image route returns provider-generated image URLs; the runtime downloads those URLs without forwarding the API key. Use the local transparency route when transparent output is needed. See the [MuAPI image API](https://muapi.ai/ai-image-api) and [OpenAI-compatible endpoint reference](https://muapi.ai/docs/openai-compatible) for current endpoint and model details.
 
 ## Configure Atlas Cloud
 

@@ -14,6 +14,8 @@ English | [简体中文](README.zh-CN.md)
 
 OpenAI-Compatible Images ships one image core in two installation shapes. Use the portable Standalone Skill with Agent clients and command-line workflows, or install the Codex Plugin for result cards, focused canvas editing, annotations, immutable artifacts, and version history.
 
+MuAPI can be used through the OpenAI-compatible image-generation route. See the [MuAPI image API](https://muapi.ai/ai-image-api) and the [OpenAI-compatible endpoint reference](https://muapi.ai/docs/openai-compatible) for service details, then follow the [MuAPI configuration](docs/guides/configuration.md#configure-muapi) below.
+
 ## Choose your package
 
 API Key profiles support OpenAI-compatible, Atlas, xAI Images, Gemini Interactions, and Gemini generateContent protocols. Configure provider connections, aliases, and native parameter fields independently, then choose a model for one request or canvas edit. See [model configuration](docs/guides/models.md).
