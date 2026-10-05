@@ -186,7 +186,7 @@ class HostImageImportTests(unittest.TestCase):
         self.assertNotIn("editContext", result)
         self.assertEqual(self.manager.repository.get_artifact(PARENT_IMAGE_ID).image_bytes, make_png(2, 2))
 
-    def test_keyed_prepare_replays_across_restart_and_rejects_different_intent(self) -> None:
+    def test_keyed_prepare_replays_across_restart_and_rejects_conflicting_requests(self) -> None:
         from scripts.host_image_import import HostImageImportManager
         request = dict(route="chatgpt", intent="generate", prompt="sample", count=1, submissionKey="lost-receipt")
         first = self.manager.prepare(**request)
