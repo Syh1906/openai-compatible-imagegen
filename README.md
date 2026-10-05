@@ -23,7 +23,7 @@ API Key profiles support OpenAI-compatible, Atlas, xAI Images, Gemini Interactio
 | Package | Best for | Includes |
 | --- | --- | --- |
 | **Standalone Skill** | Codex CLI, Claude Code, OpenCode, and other Agent Skills clients | Generation, editing, JSONL batches, transparency, delivery, and QA |
-| **Codex Plugin** | Codex App users who want result cards and a focused canvas | API Key: full image workflow. ChatGPT: host generation and semantic canvas edits, with artifacts, delivery, and versions |
+| **Codex Plugin** | Codex App users who want result cards and a focused canvas | API Key: full image workflow. ChatGPT: host generation, conversation and canvas edits, with artifacts, delivery, and versions |
 
 Choose one installation shape for each environment. The packages share code and versions but keep separate local configuration and artifact directories. Follow the [migration guide](docs/guides/migration.md) when moving an existing configuration to the Codex Plugin.
 

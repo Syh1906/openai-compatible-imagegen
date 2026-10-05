@@ -168,9 +168,10 @@
     },
     {
       "name": "mcp-host-image-import",
-      "files": ["mcp/host-image-import.mjs", "mcp/host-image-import-tools.mjs", "scripts/host_image_import.py"],
+      "files": ["mcp/host-image-import.mjs", "mcp/host-image-import-tools.mjs", "scripts/host_image_import.py", "tests/mcp/test_host_image_import.mjs", "tests/plugin-runtime/test_host_image_import.py", "tests/mcp/test_edit_submission_settlement.mjs"],
       "suites": ["mcp", "plugin-runtime", "release"],
-      "checks": ["build", "diff", "plugin"]
+      "checks": ["build", "diff", "plugin"],
+      "platforms": ["linux", "macos", "windows"]
     },
     {
       "name": "web-release-contract",

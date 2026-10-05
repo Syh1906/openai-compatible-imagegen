@@ -22,7 +22,10 @@ from scripts.artifact_repository import (
     reject_reparse_points,
 )
 from scripts.image_response import inspect_response_image
-from scripts.repository_fs import DirectoryLease, RepositoryMutation, ensure_directory_tree_safely
+from scripts.repository_fs import (
+    DirectoryLease, RepositoryMutation, SubmissionLock, delete_file_safely,
+    ensure_directory_tree_safely, publish_new_file_safely,
+)
 
 
 HANDOFF_ID_PATTERN = re.compile(r"^handoff_[0-9a-f]{64}$")
@@ -78,6 +81,7 @@ class HostImageImportManager:
         submissionId: str | None = None,
         revisionSha256: str | None = None,
         claimGeneration: int | None = None,
+        submissionKey: str | None = None,
     ) -> dict[str, Any]:
         if route != "chatgpt":
             raise ValueError("host image import route is invalid")
@@ -98,14 +102,20 @@ class HostImageImportManager:
                         or not ANNOTATION_ID_PATTERN.fullmatch(annotationId)
                     )
                 )
-                or not isinstance(submissionId, str) or not SUBMISSION_ID_PATTERN.fullmatch(submissionId)
-                or not isinstance(revisionSha256, str) or not re.fullmatch(r"[0-9a-f]{64}", revisionSha256)
-                or not isinstance(claimGeneration, int) or claimGeneration < 1
             ):
                 raise ValueError("host image edit context is invalid")
+            if submissionId is None:
+                if any(value is not None for value in (annotationId, revisionSha256, claimGeneration)):
+                    raise ValueError("host image conversation edit does not accept canvas context")
+            elif (
+                not isinstance(submissionId, str) or not SUBMISSION_ID_PATTERN.fullmatch(submissionId)
+                or not isinstance(revisionSha256, str) or not re.fullmatch(r"[0-9a-f]{64}", revisionSha256)
+                or type(claimGeneration) is not int or claimGeneration < 1
+            ):
+                raise ValueError("host image canvas edit context is invalid")
         else:
             raise ValueError("host image import intent is invalid")
-        handoff_id = self.handoff_id_factory()
+        handoff_id = self._keyed_id(submissionKey) if submissionKey is not None else self.handoff_id_factory()
         self._require_handoff_id(handoff_id)
         record = {
             "schemaVersion": "host-image-handoff.v1",
@@ -118,6 +128,8 @@ class HostImageImportManager:
             "preparedEpochMs": self.epoch_ms_factory(),
         }
         if intent == "edit":
+            record["parentImageId"] = parentImageId
+        if submissionId is not None:
             record["editContext"] = {
                 "parentImageId": parentImageId,
                 "annotationId": annotationId,
@@ -125,16 +137,59 @@ class HostImageImportManager:
                 "revisionSha256": revisionSha256,
                 "claimGeneration": claimGeneration,
             }
+        request_digest = hashlib.sha256(self._encode({
+            "route": route, "intent": intent, "prompt": prompt, "count": count,
+            "parentImageId": parentImageId, "annotationId": annotationId,
+            "submissionId": submissionId, "revisionSha256": revisionSha256,
+        })).hexdigest()
+        record["requestDigest"] = request_digest
+        if parentImageId is not None:
+            self.repository.get_artifact(parentImageId)
         relative_root = self._relative_root(handoff_id)
         with ensure_directory_tree_safely(self.project_root, self.artifact_root) as lease:
-            with RepositoryMutation(self.artifact_root, directory_lease=lease) as mutation:
-                mutation.create_directory(".handoffs")
-                mutation.create_new_directory(relative_root)
-                mutation.publish_new_file(relative_root / "handoff.json", self._encode(record))
-        return {"handoffId": handoff_id, "status": "prepared"}
+            with self._handoff_lock(handoff_id):
+                with RepositoryMutation(self.artifact_root, directory_lease=lease) as mutation:
+                    mutation.create_directory(".handoffs")
+                    if submissionKey is not None and mutation.directory_exists(relative_root):
+                        if mutation.list_directory(relative_root):
+                            existing = self._read_record(mutation, relative_root)
+                            if existing.get("requestDigest") != request_digest:
+                                raise ValueError("host image handoff key conflict")
+                            return {**self._receipt(existing), "replayed": True}
+                    else:
+                        mutation.create_new_directory(relative_root)
+                with DirectoryLease(self.artifact_root / relative_root) as handoff_lease:
+                    publish_new_file_safely(handoff_lease, "handoff.json", self._encode(record))
+        return {"handoffId": handoff_id, "status": "prepared", **({"replayed": False} if submissionKey is not None else {})}
+
+    def get(self, *, handoff_id: str | None = None, submission_key: str | None = None) -> dict[str, Any]:
+        if (handoff_id is None) == (submission_key is None):
+            raise ValueError("host image query requires exactly one identifier")
+        handoff_id = self._keyed_id(submission_key) if submission_key is not None else handoff_id
+        self._require_handoff_id(handoff_id)
+        with DirectoryLease(self.artifact_root) as lease:
+            return self._receipt(self._read_record(lease, self._relative_root(handoff_id)))
+
+    @staticmethod
+    def _keyed_id(submission_key: str) -> str:
+        if not isinstance(submission_key, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", submission_key):
+            raise ValueError("host image submission key is invalid")
+        return "handoff_" + hashlib.sha256(("host-image-handoff.v1:" + submission_key).encode()).hexdigest()
+
+    def _receipt(self, record: dict[str, Any]) -> dict[str, Any]:
+        result = {"handoffId": record["handoffId"], "status": record["status"]}
+        if record["status"] == "committed":
+            result["artifacts"] = [self.repository.get_artifact(record["artifactId"]).metadata]
+        if record.get("editContext") is not None:
+            result["editContext"] = dict(record["editContext"])
+        return result
 
     def stage(self, handoff_id: str, *, host_output: dict[str, Any]) -> dict[str, Any]:
         self._require_handoff_id(handoff_id)
+        with self._handoff_lock(handoff_id):
+            return self._stage(handoff_id, host_output=host_output)
+
+    def _stage(self, handoff_id: str, *, host_output: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(host_output, dict) or set(host_output) != {"type", "savedPath"}:
             raise ValueError("host image output is invalid")
         if host_output.get("type") != "codex-imagegen-saved-path":
@@ -182,9 +237,14 @@ class HostImageImportManager:
         self._require_handoff_id(handoff_id)
         if action not in {"commit", "abort"}:
             raise ValueError("host image finalize action is invalid")
-        if action == "abort":
-            return self._abort(handoff_id)
-        return self._commit(handoff_id)
+        with self._handoff_lock(handoff_id):
+            if action == "abort":
+                return self._abort(handoff_id)
+            return self._commit(handoff_id)
+
+    def _handoff_lock(self, handoff_id: str) -> SubmissionLock:
+        lock_key = hashlib.sha256(("host-handoff-lock:" + handoff_id).encode()).hexdigest()[:32]
+        return SubmissionLock(self.artifact_root, "sub_" + lock_key, timeout=10.0)
 
     def _commit(self, handoff_id: str) -> dict[str, Any]:
         relative_root = self._relative_root(handoff_id)
@@ -194,6 +254,7 @@ class HostImageImportManager:
                 if record["status"] == "aborted":
                     raise ValueError("host image handoff is aborted")
                 if record["status"] == "committed":
+                    self._cleanup_snapshot(relative_root)
                     artifact = self.repository.get_artifact(record["artifactId"])
                     return self._committed_result(handoff_id, artifact.metadata, record.get("editContext"))
                 if record["status"] != "staged":
@@ -217,23 +278,18 @@ class HostImageImportManager:
             prompt=record["prompt"],
             handoff_id=handoff_id,
             acquisition=ACQUISITION,
-            parent_ids=[edit_context["parentImageId"]] if edit_context else [],
+            parent_ids=[record.get("parentImageId") or edit_context["parentImageId"]] if record.get("parentImageId") or edit_context else [],
             annotation_id=edit_context["annotationId"] if edit_context else None,
             submission_id=edit_context["submissionId"] if edit_context else None,
         )
         terminal = {
-            "schemaVersion": "host-image-handoff.v1",
-            "handoffId": handoff_id,
+            **record,
             "status": "committed",
             "artifactId": artifact.metadata["id"],
         }
         if edit_context is not None:
             terminal["editContext"] = edit_context
-        self._replace_with_terminal_record(
-            relative_root,
-            terminal,
-            {"handoff.json", "staged.json", "image.bin"},
-        )
+        self._replace_with_terminal_record(relative_root, terminal)
         return self._committed_result(handoff_id, artifact.metadata, edit_context)
 
     def _abort(self, handoff_id: str) -> dict[str, Any]:
@@ -243,28 +299,31 @@ class HostImageImportManager:
         if record["status"] == "committed":
             raise ValueError("host image handoff is already committed")
         if record["status"] == "aborted":
-            return {"handoffId": handoff_id, "status": "aborted"}
-        known_files = {"handoff.json"}
-        if record["status"] == "staged":
-            known_files.update({"staged.json", "image.bin"})
+            self._cleanup_snapshot(relative_root)
+            return self._receipt(record)
         terminal = {
-            "schemaVersion": "host-image-handoff.v1",
-            "handoffId": handoff_id,
+            **record,
             "status": "aborted",
         }
-        self._replace_with_terminal_record(relative_root, terminal, known_files)
-        return {"handoffId": handoff_id, "status": "aborted"}
+        self._replace_with_terminal_record(relative_root, terminal)
+        return self._receipt(terminal)
 
     def _replace_with_terminal_record(
         self,
         relative_root: Path,
         record: dict[str, Any],
-        known_files: set[str],
     ) -> None:
-        with RepositoryMutation(self.artifact_root) as mutation:
-            mutation.remove_directory_if_known(relative_root, known_files)
-            mutation.create_new_directory(relative_root)
-            mutation.publish_new_file(relative_root / "handoff.json", self._encode(record))
+        with DirectoryLease(self.artifact_root / relative_root) as lease:
+            publish_new_file_safely(lease, "terminal.json", self._encode(record))
+        self._cleanup_snapshot(relative_root)
+
+    def _cleanup_snapshot(self, relative_root: Path) -> None:
+        with DirectoryLease(self.artifact_root / relative_root) as lease:
+            for name in ("staged.json", "image.bin"):
+                try:
+                    delete_file_safely(lease, name)
+                except FileNotFoundError:
+                    pass
 
     @staticmethod
     def _read_host_image(source: Path, *, minimum_mtime_ms: int) -> tuple[bytes, str, int, int]:
@@ -307,11 +366,24 @@ class HostImageImportManager:
     @staticmethod
     def _read_record(reader: DirectoryLease | RepositoryMutation, relative_root: Path) -> dict[str, Any]:
         try:
+            with reader.open_file(relative_root / "terminal.json") as verified_file:
+                terminal = json.loads(verified_file.read_bytes())
+            if not isinstance(terminal, dict) or terminal.get("schemaVersion") != "host-image-handoff.v1" or terminal.get("status") not in {"committed", "aborted"}:
+                raise ValueError("host image handoff state is invalid")
+            return terminal
+        except FileNotFoundError:
+            pass
+        with reader.open_file(relative_root / "handoff.json") as verified_file:
+            prepared = json.loads(verified_file.read_bytes())
+        if not isinstance(prepared, dict) or prepared.get("schemaVersion") != "host-image-handoff.v1":
+            raise ValueError("host image handoff state is invalid")
+        if prepared.get("status") in {"committed", "aborted"}:
+            return prepared
+        try:
             with reader.open_file(relative_root / "staged.json") as verified_file:
                 record = json.loads(verified_file.read_bytes())
         except FileNotFoundError:
-            with reader.open_file(relative_root / "handoff.json") as verified_file:
-                record = json.loads(verified_file.read_bytes())
+            record = prepared
         if not isinstance(record, dict) or record.get("schemaVersion") != "host-image-handoff.v1":
             raise ValueError("host image handoff state is invalid")
         return record
@@ -324,12 +396,7 @@ class HostImageImportManager:
     ) -> dict[str, Any]:
         result = {"handoffId": handoff_id, "status": "committed", "artifacts": [metadata]}
         if edit_context is not None:
-            result["editContext"] = {
-                "parentImageId": edit_context["parentImageId"],
-                "annotationId": edit_context["annotationId"],
-                "submissionId": edit_context["submissionId"],
-                "claimGeneration": edit_context["claimGeneration"],
-            }
+            result["editContext"] = dict(edit_context)
         return result
 
     @staticmethod
@@ -367,7 +434,10 @@ def execute(request: dict[str, Any]) -> dict[str, Any]:
                 submissionId=request.get("submissionId"),
                 revisionSha256=request.get("revisionSha256"),
                 claimGeneration=request.get("claimGeneration"),
+                submissionKey=request.get("submissionKey"),
             )
+        if operation == "get":
+            return manager.get(handoff_id=request.get("handoffId"), submission_key=request.get("submissionKey"))
         if operation == "stage":
             return manager.stage(request.get("handoffId"), host_output=request.get("hostOutput"))
         if operation == "finalize":
@@ -385,14 +455,18 @@ def _stable_error_code(
     operation: Any,
     error: Exception,
 ) -> str:
+    if operation == "prepare" and "conflict" in str(error):
+        return "host_image_handoff_conflict"
     if operation == "prepare":
-        return "host_image_request_invalid"
+        return "host_image_request_invalid" if isinstance(error, ValueError) else "host_image_import_failed"
+    if operation == "get":
+        return "host_image_handoff_not_found" if isinstance(error, FileNotFoundError) else "host_image_handoff_state_invalid"
     if operation not in {"stage", "finalize"}:
         return "host_image_request_invalid"
     handoff_id = request.get("handoffId")
     if isinstance(handoff_id, str) and HANDOFF_ID_PATTERN.fullmatch(handoff_id):
         handoff_root = manager.artifact_root / ".handoffs" / handoff_id
-        if not (handoff_root / "handoff.json").is_file() and not (handoff_root / "staged.json").is_file():
+        if not (handoff_root / "handoff.json").is_file() and not (handoff_root / "staged.json").is_file() and not (handoff_root / "terminal.json").is_file():
             if manager.repository.get_import_by_handoff_id(handoff_id) is None:
                 return "host_image_handoff_not_found"
     message = str(error).lower()

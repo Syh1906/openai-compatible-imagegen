@@ -111,7 +111,8 @@ export function createEditSubmissionRegistry({ idFactory = createSubmissionId } 
 
 
   function releaseForEdit(input) {
-    const { record } = requireCurrentRecord(input, "in_flight");
+    const { record } = requireCurrentRecord(input, "in_flight", "prepared");
+    if (record.state === "prepared") return record.receipt;
     const pendingKey = bindingParentKey(record.bindingKey, record.parentImageId);
     inFlightByBindingAndParent.delete(pendingKey);
     const preparedIds = preparedByBindingAndParent.get(pendingKey) || new Set();
@@ -123,9 +124,16 @@ export function createEditSubmissionRegistry({ idFactory = createSubmissionId } 
 
 
   function complete(input) {
-    const { record, pendingKey } = requireCurrentRecord(input, "in_flight");
+    const artifactIds = normalizeArtifactIds(input.artifactIds);
+    const { record, pendingKey } = requireCurrentRecord(input, "in_flight", "complete");
+    if (record.state === "complete") {
+      if (JSON.stringify(record.completedArtifactIds) !== JSON.stringify(artifactIds)) {
+        throw registryError("stale_edit_submission", "完成产物与原提交不匹配。");
+      }
+      return record.receipt;
+    }
 
-    record.completedArtifactIds = normalizeArtifactIds(input.artifactIds);
+    record.completedArtifactIds = artifactIds;
     record.state = "complete";
     const preparedIds = preparedByBindingAndParent.get(pendingKey) || new Set();
     for (const candidateId of preparedIds) {
@@ -137,7 +145,7 @@ export function createEditSubmissionRegistry({ idFactory = createSubmissionId } 
   }
 
 
-  function requireCurrentRecord(input, requiredState) {
+  function requireCurrentRecord(input, requiredState, replayState) {
     const request = normalizeLookupInput(input, { requireSubmissionId: true });
     const claimGeneration = normalizeClaimGeneration(input.claimGeneration);
     const record = recordsById.get(request.submissionId);
@@ -147,6 +155,9 @@ export function createEditSubmissionRegistry({ idFactory = createSubmissionId } 
     assertBindingMatches(record, request);
 
     const pendingKey = bindingParentKey(request.bindingKey, request.parentImageId);
+    if (record.state === replayState && record.claimGeneration === claimGeneration) {
+      return { request, record, pendingKey };
+    }
     if (
       record.state !== requiredState
       || inFlightByBindingAndParent.get(pendingKey) !== request.submissionId

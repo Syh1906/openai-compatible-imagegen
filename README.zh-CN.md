@@ -23,7 +23,7 @@ API Key profile 支持 OpenAI-compatible、Atlas、xAI Images、Gemini Interacti
 | 安装形态 | 适合场景 | 包含内容 |
 | --- | --- | --- |
 | **Standalone Skill** | Codex CLI、Claude Code、OpenCode 和其他 Agent Skills 客户端 | 生成、编辑、JSONL 批处理、透明处理、交付和 QA |
-| **Codex Plugin** | 需要结果卡和聚焦画布的 Codex App 用户 | API Key：完整图片工作流；ChatGPT：宿主生成和语义画布编辑，以及产物、交付和版本 |
+| **Codex Plugin** | 需要结果卡和聚焦画布的 Codex App 用户 | API Key：完整图片工作流；ChatGPT：宿主生成、对话与画布编辑，以及产物、交付和版本 |
 
 每个使用环境选择一种安装形态。两者共享代码和版本，但使用各自的本地配置与产物目录。将已有配置迁移到 Codex Plugin 时，请按[迁移指南](docs/guides/migration.zh-CN.md)操作。
 

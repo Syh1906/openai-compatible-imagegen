@@ -11,6 +11,7 @@ const HOST_IMPORT_ERROR_CODES = new Set([
   "host_image_request_invalid",
   "host_image_output_invalid",
   "host_image_handoff_not_found",
+  "host_image_handoff_conflict",
   "host_image_handoff_state_invalid",
   "host_image_import_failed",
 ]);
@@ -18,6 +19,9 @@ const HOST_IMPORT_ERROR_CODES = new Set([
 
 export function createHostImageImporter({ runOperation = runHostImageImportOperation } = {}) {
   return Object.freeze({
+    async get(input, context) {
+      return await stableOperation(runOperation, { operation: "get", ...runtimeContext(context), ...input });
+    },
     async prepare(input, context) {
       return await stableOperation(runOperation, { operation: "prepare", ...runtimeContext(context), ...input });
     },

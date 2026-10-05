@@ -54,6 +54,60 @@ for module_name in (
         self.assertEqual(result.returncode, 0, result.stderr)
 
 
+class PosixCachedDirectoryCleanupTests(unittest.TestCase):
+    def test_cleanup_refreshes_cached_entries_and_preserves_unknown_files(self) -> None:
+        from scripts import posix_repository_fs
+
+        for entry in ("manifest.json", "unowned.json"):
+            with self.subTest(entry=entry):
+                entries = {entry}
+                enumeration_refreshed = False
+                mutation = object.__new__(posix_repository_fs.RepositoryMutation)
+                mutation.repository = Path("repository")
+                mutation._directory_handles = {("transactions", "pending"): 17}
+
+                def rewind(descriptor, offset, whence):
+                    nonlocal enumeration_refreshed
+                    self.assertEqual((descriptor, offset, whence), (17, 0, os.SEEK_SET))
+                    enumeration_refreshed = True
+                    return 0
+
+                def list_entries(descriptor):
+                    self.assertEqual(descriptor, 17)
+                    return list(entries) if enumeration_refreshed else []
+
+                def unlink(name, *, dir_fd):
+                    self.assertEqual(dir_fd, 17)
+                    entries.remove(name)
+
+                def remove_directory(name, *, dir_fd):
+                    self.assertEqual((name, dir_fd), ("pending", 13))
+                    if entries:
+                        raise OSError("directory not empty")
+
+                with (
+                    mock.patch.object(mutation, "_parent_fd", return_value=13),
+                    mock.patch.object(posix_repository_fs.os, "lseek", side_effect=rewind),
+                    mock.patch.object(posix_repository_fs.os, "listdir", side_effect=list_entries),
+                    mock.patch.object(posix_repository_fs.os, "stat", return_value=SimpleNamespace(st_mode=0o100600)),
+                    mock.patch.object(posix_repository_fs.os, "unlink", side_effect=unlink) as unlink_call,
+                    mock.patch.object(posix_repository_fs.os, "fsync"),
+                    mock.patch.object(posix_repository_fs.os, "close") as close_call,
+                    mock.patch.object(posix_repository_fs.os, "rmdir", side_effect=remove_directory) as rmdir_call,
+                ):
+                    if entry == "manifest.json":
+                        mutation.remove_directory_if_known("transactions/pending", {"manifest.json"})
+                        self.assertEqual(entries, set())
+                        rmdir_call.assert_called_once()
+                    else:
+                        with self.assertRaisesRegex(OSError, "unknown entries"):
+                            mutation.remove_directory_if_known("transactions/pending", {"manifest.json"})
+                        self.assertEqual(entries, {"unowned.json"})
+                        unlink_call.assert_not_called()
+                        rmdir_call.assert_not_called()
+                    close_call.assert_called_once_with(17)
+
+
 class RepositoryFsContractTests(unittest.TestCase):
     def test_repository_mutation_publishes_immutable_artifacts_and_replaces_the_index(self) -> None:
         from scripts.repository_fs import DirectoryLease, RepositoryMutation, ensure_directory_tree_safely
@@ -134,6 +188,43 @@ class PosixRepositoryFsTests(unittest.TestCase):
 
 
 class PosixRepositoryLockCoordinationTests(unittest.TestCase):
+    def test_persistent_locks_open_a_file_created_by_another_process(self) -> None:
+        from scripts import posix_repository_fs
+
+        repository = Path("/")
+        lease = SimpleNamespace(path=repository, _handles=[101])
+
+        def racing_open(parent_fd, name, flags, mode=0o600):
+            self.assertEqual(parent_fd, 101)
+            self.assertIn(name, {".repository.lock", ".submission.lock"})
+            if flags & os.O_CREAT:
+                if flags & os.O_EXCL:
+                    raise FileExistsError(name)
+                raise FileNotFoundError(2, "concurrent create-or-open lost the file", name)
+            return 200
+
+        fake_fcntl = SimpleNamespace(LOCK_UN=8, flock=lambda descriptor, operation: None)
+        with (
+            mock.patch.object(posix_repository_fs, "_absolute_path", return_value=repository),
+            mock.patch.object(posix_repository_fs, "_open_regular_file_at", side_effect=racing_open),
+            mock.patch.object(posix_repository_fs, "_acquire_lock", return_value=None),
+            mock.patch.object(posix_repository_fs, "_fcntl_module", return_value=fake_fcntl),
+            mock.patch.object(posix_repository_fs.os, "fstat", return_value=SimpleNamespace(st_dev=1, st_ino=2)),
+            mock.patch.object(posix_repository_fs.os, "close"),
+        ):
+            for kind in ("repository", "submission"):
+                with self.subTest(kind=kind):
+                    if kind == "repository":
+                        with posix_repository_fs.RepositoryLock(repository, directory_lease=lease) as lock:
+                            self.assertEqual(lock._handle, 200)
+                    else:
+                        key = (101, 200)
+                        try:
+                            self.assertEqual(posix_repository_fs._retain_submission_file_handle(lease, key), 200)
+                        finally:
+                            if key in posix_repository_fs._SUBMISSION_FILE_HANDLES:
+                                posix_repository_fs._discard_submission_file_handle(key)
+
     def test_repository_lock_serializes_lock_file_opening_between_threads(self) -> None:
         from scripts import posix_repository_fs
 

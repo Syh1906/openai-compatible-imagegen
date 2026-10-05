@@ -17,7 +17,7 @@ Complete [Plugin configuration](./configuration.md) in the project containing yo
 
 With API Key authentication, the selected model must support image editing. Using several references also requires multi-reference support. The Atlas protocol supports text-to-image generation only and cannot perform this edit.
 
-With the ChatGPT route, Codex first displays a result card for the imported image. Open its canvas, describe the change, and submit. This route requires image generation to be available in Codex App; see [configuration](./configuration.md).
+With the ChatGPT route, Codex imports the image and edits it directly from your conversation request. No canvas submission is required. To mark specific regions, open the image result's canvas, add annotations, and submit. This route requires image generation to be available in Codex App; see [configuration](./configuration.md).
 
 The edited image appears in the conversation as a new version linked to the original. The source file in your project remains unchanged.
 

@@ -33,6 +33,9 @@ For model selection or native protocol issues, check [model configuration](./mod
 | Output directory rejected | Value is a safe project-relative directory | Use a relative child such as `output/imagegen/` |
 | Local ignore protection rejected | The target configuration or output directory has a `.gitignore` containing only `*` | Review the existing rule; the Plugin does not overwrite incompatible local ignore files |
 | Model not listed | The model has a profile in user configuration | Add the model profile and rebind the project; declare only capabilities the service supports |
+| ChatGPT conversation edit reports invalid parameters | Parent image and complete edit request; accidental canvas fields | Ask Codex to correct the request and keep the host route. Conversation edits do not require invented canvas submissions |
+| Host handoff reply lost or outcome unknown | Original submission key or handoff ID | Ask Codex to query `get_host_image_handoff`. `prepared` means no local snapshot is recorded, not that the model was never called; do not regenerate |
+| Host output exists but staging, import, or canvas settlement fails | Current output, original handoff, and submission ownership | Ask Codex to continue the same stage or commit; verify canvas release after aborting. Local errors do not justify switching to API |
 
 ## Runtime problems
 

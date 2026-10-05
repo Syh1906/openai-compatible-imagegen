@@ -4,9 +4,22 @@
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-10-05
+
+### 新增
+
+- 增加 MuAPI 的 OpenAI-compatible 图片生成配置示例；Standalone 与 Plugin 只发送请求或配置明确指定的可选质量、格式参数。
+- ChatGPT 路线支持直接在对话中编辑已生成或导入的图片，无需先提交画布；编辑结果保存为关联原图的新版本。
+- 宿主图片交接支持稳定提交键和 `get_host_image_handoff` 查询，回执丢失后可恢复原交接和已发布图片。
+
 ### 修复
 
 - 修复 Btrfs 上图片已保存，但事务目录清理失败导致任务报错的问题。
+- 修复 macOS 并发图片任务首次创建仓库锁或编辑提交锁时偶发报错的问题。
+- 宿主交接参数、画布提交和本地入库错误返回明确的错误阶段与恢复动作，避免被误判为内置图片模型失败。
+- 画布编辑终止后保留提交释放所需的上下文；重复完成或释放同一领取代次不会重复处理，过期代次仍被拒绝。
+- 宿主交接先原子保存终态，再清理暂存图片；本地清理中断后可继续原交接，不重复生成或发布图片。
+- 修复交接准备在保存记录前中断后无法使用原提交键继续的问题；已有记录和不明文件仍受保护。
 
 ## [1.5.0] - 2026-09-11
 
@@ -305,7 +318,8 @@
 - Publish the initial Agent Skills-compatible image generation workflow.
 - Support OpenAI-compatible image generation, image editing, local authentication, transparent asset intent, and JSONL batches.
 
-[Unreleased]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v1.5.0...HEAD
+[Unreleased]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v1.2.0...v1.3.0

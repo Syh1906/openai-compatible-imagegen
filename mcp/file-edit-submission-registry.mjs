@@ -116,7 +116,8 @@ export function createFileEditSubmissionRegistry({
     const request = normalizeLookupInput(input, { requireSubmissionId: true });
     const claimGeneration = normalizeClaimGeneration(input.claimGeneration);
     return await withParentRecord(input, async (record, save) => {
-      const submission = requireCurrentClaim(record, request, claimGeneration);
+      const submission = requireCurrentClaim(record, request, claimGeneration, "prepared");
+      if (submission.state === "prepared") return receiptFor(record, submission);
       submission.state = "prepared";
       record.inFlightSubmissionId = null;
       record.inFlightAt = null;
@@ -130,7 +131,13 @@ export function createFileEditSubmissionRegistry({
     const claimGeneration = normalizeClaimGeneration(input.claimGeneration);
     const artifactIds = normalizeArtifactIds(input.artifactIds);
     return await withParentRecord(input, async (record, save) => {
-      const submission = requireCurrentClaim(record, request, claimGeneration);
+      const submission = requireCurrentClaim(record, request, claimGeneration, "complete");
+      if (submission.state === "complete") {
+        if (JSON.stringify(submission.completedArtifactIds) !== JSON.stringify(artifactIds)) {
+          throw registryError("stale_edit_submission", "完成产物与原提交不匹配。");
+        }
+        return receiptFor(record, submission);
+      }
       submission.state = "complete";
       submission.completedArtifactIds = artifactIds;
       for (const candidate of record.submissions) {
@@ -302,8 +309,9 @@ function resolveRecord(record, request) {
 }
 
 
-function requireCurrentClaim(record, request, claimGeneration) {
+function requireCurrentClaim(record, request, claimGeneration, replayState) {
   const submission = requireSubmission(record, request.submissionId);
+  if (submission.state === replayState && submission.claimGeneration === claimGeneration) return submission;
   if (
     submission.state !== "in_flight"
     || record.inFlightSubmissionId !== request.submissionId

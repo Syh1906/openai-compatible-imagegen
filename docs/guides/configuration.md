@@ -99,7 +99,9 @@ Set `auth_mode` to choose the default image route:
 }
 ```
 
-Use `"apikey"` for the configured image API provider, or `"chatgpt"` for host generation and semantic canvas edits through the Codex App. ChatGPT projects may omit provider and model fields. Both routes accept canvas mask annotations as edit guidance. API Key editing requires a model that supports edits; Atlas supports generation only. A dedicated mask parameter is used when the selected API model declares that capability; otherwise marked regions remain semantic guidance. The selected image model determines how closely the result follows the guidance. API Key projects can also request batches and multiple candidates. The route is selected explicitly and is not changed automatically when another route is unavailable.
+Use `"apikey"` for the configured image API provider, or `"chatgpt"` for host generation, conversation edits, and semantic canvas edits through the Codex App. ChatGPT projects may omit provider and model fields. Both routes accept canvas mask annotations as edit guidance. API Key editing requires a model that supports edits; Atlas supports generation only. A dedicated mask parameter is used when the selected API model declares that capability; otherwise marked regions remain semantic guidance. The selected image model determines how closely the result follows the guidance. API Key projects can also request batches and multiple candidates. You select the route; it is not changed automatically without your authorization when a route is unavailable.
+
+Conversation edits save a new version linked to the original without requiring a canvas submission ID. Canvas edits still validate the parent, annotation, and submission revision. Parameter errors, submission conflicts, and local import failures do not establish host model failure; existing image output is recovered locally. Changing routes requires your authorization and does not change default configuration. Reconcile unknown request outcomes before proceeding; do not regenerate them.
 
 To route one Plugin provider through a specific proxy, add `proxy` to that provider in the user baseline:
 

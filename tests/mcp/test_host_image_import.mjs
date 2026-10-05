@@ -6,6 +6,7 @@ import test from "node:test";
 
 import { readImageArtifact } from "../../mcp/artifact-repository.mjs";
 import { createHostImageImporter } from "../../mcp/host-image-import.mjs";
+import { createEditSubmissionRegistry } from "../../mcp/edit-submission-registry.mjs";
 import { artifact, assertToolErrorCode, PNG_BASE64, withClient } from "../support/mcp-tool-client.mjs";
 
 
@@ -13,6 +14,144 @@ const CONTEXT = {
   projectRoot: "C:/workspace/project",
   artifactRoot: "C:/workspace/project/output/imagegen",
 };
+
+test("conversation host edits return the parent without inventing a canvas submission", async () => {
+  const parentImageId = "img_01J00000000000000000000000";
+  let preparedInput;
+  await withClient({
+    hostImageImporter: { async prepare(input) {
+      preparedInput = input;
+      return { handoffId: `handoff_${"a".repeat(64)}`, status: "prepared" };
+    } },
+    readArtifact: async () => ({ metadata: artifact(parentImageId), data: PNG_BASE64 }),
+  }, async (client) => {
+    const result = await client.callTool({ name: "prepare_host_image_import", arguments: {
+      route: "chatgpt", intent: "edit", parentImageId, prompt: "调整布局",
+    } });
+    assert.equal(result.isError, undefined, JSON.stringify(result));
+    assert.equal(result.content[1].data, PNG_BASE64);
+    assert.equal(preparedInput.parentImageId, parentImageId);
+    assert.equal(preparedInput.submissionId, undefined);
+    assert.equal(preparedInput.claimGeneration, undefined);
+  });
+});
+
+test("invalid host edit context has an actionable error and never qualifies for fallback", async () => {
+  let calls = 0;
+  await withClient({ hostImageImporter: { async prepare() { calls++; } } }, async (client) => {
+    const result = await client.callTool({ name: "prepare_host_image_import", arguments: {
+      route: "chatgpt", intent: "edit", prompt: "调整布局",
+    } });
+    assert.match(result.content[0].text, /^host_image_request_invalid:/);
+    assert.equal(result.structuredContent.error.phase, "prepare");
+    assert.equal(result.structuredContent.error.fallbackEligible, false);
+    assert.equal(result.structuredContent.error.recoveryAction, "fix_request");
+  });
+  assert.equal(calls, 0);
+});
+
+test("host conversation edits retain pending canvas submission protection", async () => {
+  const parentImageId = "img_01J00000000000000000000000";
+  const registry = createEditSubmissionRegistry();
+  registry.issue({ bindingKey: "0".repeat(64), parentImageId, annotationId: null,
+    sourcePrompt: "pending", items: [], maskSha256: null, maskPolicySha256: null });
+  let calls = 0;
+  await withClient({ editSubmissions: registry,
+    hostImageImporter: { async prepare() { calls++; } },
+  }, async (client) => {
+    const result = await client.callTool({ name: "prepare_host_image_import", arguments: {
+      route: "chatgpt", intent: "edit", parentImageId, prompt: "调整布局",
+    } });
+    assert.match(result.content[0].text, /^missing_edit_submission:/);
+    assert.equal(result.structuredContent.error.fallbackEligible, false);
+  });
+  assert.equal(calls, 0);
+});
+
+test("a lost keyed preparation receipt is recovered before claiming the canvas again", async () => {
+  let claims = 0;
+  const parentImageId = "img_01J00000000000000000000000";
+  const editContext = { parentImageId, annotationId: null, submissionId: `sub_${"1".repeat(32)}`,
+    revisionSha256: "a".repeat(64), claimGeneration: 2 };
+  await withClient({
+    editSubmissions: { async claimForEdit() { claims++; throw new Error("must not claim twice"); } },
+    hostImageImporter: {
+      async get() { return { handoffId: `handoff_${"a".repeat(64)}`, status: "prepared", editContext }; },
+      async prepare(input) {
+        assert.equal(input.claimGeneration, 2);
+        return { handoffId: `handoff_${"a".repeat(64)}`, status: "prepared", replayed: true };
+      },
+    },
+    readArtifact: async () => ({ metadata: artifact(parentImageId), data: PNG_BASE64 }),
+  }, async (client) => {
+    const result = await client.callTool({ name: "prepare_host_image_import", arguments: {
+      route: "chatgpt", intent: "edit", parentImageId, annotationId: null,
+      submissionId: editContext.submissionId, prompt: "调整布局", submissionKey: "edit-replay",
+    } });
+    assert.equal(result.isError, undefined, JSON.stringify(result));
+    assert.equal(result.structuredContent.replayed, true);
+  });
+  assert.equal(claims, 0);
+});
+
+test("an uncertain preparation preserves the canvas claim for handoff recovery", async () => {
+  const parentImageId = "img_01J00000000000000000000000";
+  let releases = 0;
+  await withClient({
+    editSubmissions: {
+      async claimForEdit() { return { receipt: { parentImageId, annotationId: null,
+        id: `sub_${"1".repeat(32)}`, revisionSha256: "a".repeat(64) }, claimGeneration: 1 }; },
+      async releaseForEdit() { releases++; },
+    },
+    hostImageImporter: { async prepare() { throw Object.assign(new Error("unknown"), { code: "host_image_import_failed" }); } },
+    readArtifact: async () => ({ metadata: artifact(parentImageId), data: PNG_BASE64 }),
+  }, async (client) => {
+    const result = await client.callTool({ name: "prepare_host_image_import", arguments: {
+      route: "chatgpt", intent: "edit", parentImageId, annotationId: null,
+      submissionId: `sub_${"1".repeat(32)}`, prompt: "调整布局",
+    } });
+    assert.equal(result.structuredContent.error.recoveryAction, "inspect_handoff");
+    assert.equal(result.structuredContent.error.fallbackEligible, false);
+  });
+  assert.equal(releases, 0);
+});
+
+test("host tools publish and query a conversation child through the actual Python adapter", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "imagegen-conversation-"));
+  const source = path.join(root, "host.png");
+  try {
+    await withClient({ readArtifact: async (id, context) => await readImageArtifact(id, { artifactRoot: context.artifactRoot }) }, async (client) => {
+      async function stageAndCommit(receipt) {
+        await writeFile(source, Buffer.from(PNG_BASE64, "base64"));
+        await client.callTool({ name: "stage_host_image_import", arguments: {
+          handoffId: receipt.handoffId, hostOutput: { type: "codex-imagegen-saved-path", savedPath: source },
+        } });
+        return (await client.callTool({ name: "finalize_host_image_import", arguments: {
+          handoffId: receipt.handoffId, action: "commit",
+        } })).structuredContent;
+      }
+      const first = await client.callTool({ name: "prepare_host_image_import", arguments: {
+        route: "chatgpt", intent: "generate", prompt: "parent", submissionKey: "parent-key",
+      } });
+      const parent = (await stageAndCommit(first.structuredContent)).artifacts[0];
+      const input = { route: "chatgpt", intent: "edit", parentImageId: parent.id, prompt: "warm", submissionKey: "child-key" };
+      const prepared = await client.callTool({ name: "prepare_host_image_import", arguments: input });
+      assert.equal(prepared.isError, undefined, JSON.stringify(prepared));
+      assert.equal(prepared.content[1].data, PNG_BASE64);
+      const committed = await stageAndCommit(prepared.structuredContent);
+      assert.deepEqual(committed.artifacts[0].parentIds, [parent.id]);
+      const queried = await client.callTool({ name: "get_host_image_handoff", arguments: { submissionKey: "child-key" } });
+      assert.deepEqual(queried.structuredContent.artifacts, committed.artifacts);
+      const replay = await client.callTool({ name: "prepare_host_image_import", arguments: input });
+      assert.equal(replay.structuredContent.status, "committed");
+      assert.equal(replay.structuredContent.replayed, true);
+      assert.deepEqual(replay.structuredContent.artifacts, committed.artifacts);
+      const conflict = await client.callTool({ name: "prepare_host_image_import", arguments: { ...input, prompt: "different" } });
+      assert.equal(conflict.structuredContent.error.code, "host_image_handoff_conflict");
+      assert.equal(JSON.stringify(queried).includes(source), false);
+    });
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
 
 
 test("host image importer sends only frozen handoff fields to the local runtime", async () => {
