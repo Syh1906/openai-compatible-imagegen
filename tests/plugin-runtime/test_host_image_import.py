@@ -199,6 +199,39 @@ class HostImageImportTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "conflict"):
             restored.prepare(**{**request, "prompt": "different"})
 
+    def test_keyed_prepare_recovers_an_interruption_before_record_publication(self) -> None:
+        from unittest.mock import patch
+        from scripts.host_image_import import HostImageImportManager
+
+        request = dict(route="chatgpt", intent="generate", prompt="sample", count=1,
+            submissionKey="interrupted-prepare")
+        with patch("scripts.host_image_import.publish_new_file_safely", side_effect=OSError("interrupted")):
+            with self.assertRaisesRegex(OSError, "interrupted"):
+                self.manager.prepare(**request)
+        restored = HostImageImportManager(self.project_root, self.artifact_root)
+        recovered = restored.prepare(**request)
+        self.assertFalse(recovered["replayed"])
+        self.assertEqual(restored.get(submission_key=request["submissionKey"])["status"], "prepared")
+        self.assertTrue(restored.prepare(**request)["replayed"])
+
+    def test_keyed_prepare_preserves_unrecognized_and_invalid_records(self) -> None:
+        from unittest.mock import patch
+
+        for name, contents in (("image.bin", b"unknown output"), ("handoff.json", b"{}")):
+            with self.subTest(name=name):
+                request = dict(route="chatgpt", intent="generate", prompt="sample", count=1,
+                    submissionKey="incomplete-" + name)
+                with patch("scripts.host_image_import.publish_new_file_safely", side_effect=OSError("interrupted")):
+                    with self.assertRaises(OSError):
+                        self.manager.prepare(**request)
+                target = self.artifact_root / ".handoffs" / self.manager._keyed_id(request["submissionKey"]) / name
+                target.write_bytes(contents)
+                with self.assertRaises((FileNotFoundError, ValueError)):
+                    self.manager.prepare(**request)
+                self.assertEqual(target.read_bytes(), contents)
+                if name != "handoff.json":
+                    self.assertFalse((target.parent / "handoff.json").exists())
+
     def test_canvas_abort_retains_context_for_idempotent_submission_release(self) -> None:
         self._store_parent()
         self.manager.prepare(route="chatgpt", intent="edit", prompt="sample", count=1,

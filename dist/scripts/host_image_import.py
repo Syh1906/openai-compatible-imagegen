@@ -151,11 +151,13 @@ class HostImageImportManager:
                 with RepositoryMutation(self.artifact_root, directory_lease=lease) as mutation:
                     mutation.create_directory(".handoffs")
                     if submissionKey is not None and mutation.directory_exists(relative_root):
-                        existing = self._read_record(mutation, relative_root)
-                        if existing.get("requestDigest") != request_digest:
-                            raise ValueError("host image handoff key conflict")
-                        return {**self._receipt(existing), "replayed": True}
-                    mutation.create_new_directory(relative_root)
+                        if mutation.list_directory(relative_root):
+                            existing = self._read_record(mutation, relative_root)
+                            if existing.get("requestDigest") != request_digest:
+                                raise ValueError("host image handoff key conflict")
+                            return {**self._receipt(existing), "replayed": True}
+                    else:
+                        mutation.create_new_directory(relative_root)
                 with DirectoryLease(self.artifact_root / relative_root) as handoff_lease:
                     publish_new_file_safely(handoff_lease, "handoff.json", self._encode(record))
         return {"handoffId": handoff_id, "status": "prepared", **({"replayed": False} if submissionKey is not None else {})}
