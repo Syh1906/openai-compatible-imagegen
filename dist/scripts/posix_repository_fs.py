@@ -721,6 +721,7 @@ class RepositoryMutation(AbstractContextManager["RepositoryMutation"]):
         if directory_fd is None:
             directory_fd = _open_directory_at(parent_fd, relative.parts[-1], self.repository / relative)
         try:
+            os.lseek(directory_fd, 0, os.SEEK_SET)
             entry_names = set(os.listdir(directory_fd))
             if not entry_names.issubset(set(known_files)):
                 raise OSError("repository directory contains unknown entries")
