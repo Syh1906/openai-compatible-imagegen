@@ -51,7 +51,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 var define_RELEASE_IDENTITY_default;
 var init_define_RELEASE_IDENTITY = __esm({
   "<define:__RELEASE_IDENTITY__>"() {
-    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "1.5.0", serverBuildDigest: "53bb51c3c14288829fae1172d0641ce1f690a9befbe702647c9e915d090c2f7d", widgetAssetDigest: "0e66d1b3b8a035000ac3dcb3ab75520cffd890853a4479c845d216494ea50394", fingerprint: "a0cfdf36cd4150fc7940", resourceUris: { result: "ui://openai-compatible-imagegen/result-a0cfdf36cd4150fc7940.html", editor: "ui://openai-compatible-imagegen/editor-a0cfdf36cd4150fc7940.html" } };
+    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "1.6.0", serverBuildDigest: "d63c7f7b27c08400e2e0853b1a63de634651fd8f06bc28d25e5ce196dd0acd1d", widgetAssetDigest: "636e4adf801bfa581c0c9cf9b9854f06e941eeb2ebb6d0ba53111d9976c36998", fingerprint: "98adfaa2ddfa2f07862e", resourceUris: { result: "ui://openai-compatible-imagegen/result-98adfaa2ddfa2f07862e.html", editor: "ui://openai-compatible-imagegen/editor-98adfaa2ddfa2f07862e.html" } };
   }
 });
 
@@ -22226,7 +22226,7 @@ function decodeRuntimeOutput(chunks) {
 }
 function safeRuntimeError(error40, stderr) {
   const value = String(error40 || stderr || "repository operation failed");
-  const hostImportCode = /^(host_image_(?:request_invalid|output_invalid|handoff_not_found|handoff_state_invalid|import_failed))(?::|$)/.exec(value)?.[1];
+  const hostImportCode = /^(host_image_(?:request_invalid|output_invalid|handoff_not_found|handoff_conflict|handoff_state_invalid|import_failed))(?::|$)/.exec(value)?.[1];
   if (hostImportCode) return hostImportCode;
   const localTransferCode = /^(local_image_(?:request_invalid|source_invalid|import_failed|destination_exists|export_failed|transfer_failed))(?::|$)/.exec(value)?.[1];
   if (localTransferCode) return localTransferCode;
@@ -31497,10 +31497,11 @@ var STABLE_TOOL_ERROR_ENTRIES = [
   ["host_observation_state_invalid", "\u5BBF\u4E3B\u89C2\u5BDF\u72B6\u6001\u65E0\u6548\u3002"],
   ["host_observation_unavailable", "\u5BBF\u4E3B\u89C2\u5BDF\u72B6\u6001\u6682\u65F6\u4E0D\u53EF\u7528\u3002"],
   ["host_image_handoff_not_found", "\u672A\u627E\u5230\u5F53\u524D\u5BBF\u4E3B\u56FE\u7247\u4EA4\u63A5\u3002"],
+  ["host_image_handoff_conflict", "\u4EA4\u63A5\u63D0\u4EA4\u952E\u5DF2\u7528\u4E8E\u5176\u4ED6\u56FE\u7247\u610F\u56FE\u3002\u8BF7\u67E5\u8BE2\u539F\u4EA4\u63A5\uFF1B\u65B0\u7684\u4FEE\u6539\u610F\u56FE\u4F7F\u7528\u65B0\u7684\u63D0\u4EA4\u952E\u3002"],
   ["host_image_handoff_state_invalid", "\u5F53\u524D\u5BBF\u4E3B\u56FE\u7247\u4EA4\u63A5\u72B6\u6001\u65E0\u6548\u3002"],
   ["host_image_import_failed", "\u5BFC\u5165\u5BBF\u4E3B\u56FE\u7247\u5931\u8D25\u3002"],
   ["host_image_output_invalid", "\u5BBF\u4E3B\u8FD4\u56DE\u7684\u56FE\u7247\u8F93\u51FA\u65E0\u6548\u3002"],
-  ["host_image_request_invalid", "\u5BBF\u4E3B\u56FE\u7247\u4EA4\u63A5\u53C2\u6570\u65E0\u6548\u3002"],
+  ["host_image_request_invalid", "\u5BBF\u4E3B\u56FE\u7247\u4EA4\u63A5\u53C2\u6570\u65E0\u6548\u3002\u5BF9\u8BDD\u7F16\u8F91\u9700\u8981\u7236\u56FE\u548C\u63D0\u793A\u8BCD\uFF1B\u753B\u5E03\u7F16\u8F91\u8FD8\u9700\u8981\u771F\u5B9E\u63D0\u4EA4\u4E0A\u4E0B\u6587\u3002\u4FEE\u6B63\u53C2\u6570\u540E\u7EE7\u7EED\u539F\u8DEF\u7EBF\uFF0C\u6B64\u9519\u8BEF\u4E0D\u662F\u5BBF\u4E3B\u6A21\u578B\u5931\u8D25\u3002"],
   ["image_canvas_destroyed", "\u5F53\u524D\u56FE\u7247\u7684\u753B\u5E03\u5DF2\u7ECF\u9500\u6BC1\u3002"],
   ["image_task_failed", "\u56FE\u7247\u4EFB\u52A1\u6267\u884C\u5931\u8D25\u3002"],
   ["image_content_blocked", "\u4F9B\u5E94\u5546\u62D2\u7EDD\u4E86\u56FE\u7247\u5185\u5BB9\u8BF7\u6C42\uFF1B\u672A\u91CD\u8BD5\u6216\u5207\u6362\u8DEF\u7EBF\u3002"],
@@ -31811,7 +31812,8 @@ function createEditSubmissionRegistry({ idFactory = createSubmissionId } = {}) {
     return Object.freeze({ ...resolved, claimGeneration: record2.claimGeneration });
   }
   function releaseForEdit(input) {
-    const { record: record2 } = requireCurrentRecord(input, "in_flight");
+    const { record: record2 } = requireCurrentRecord(input, "in_flight", "prepared");
+    if (record2.state === "prepared") return record2.receipt;
     const pendingKey = bindingParentKey(record2.bindingKey, record2.parentImageId);
     inFlightByBindingAndParent.delete(pendingKey);
     const preparedIds = preparedByBindingAndParent.get(pendingKey) || /* @__PURE__ */ new Set();
@@ -31821,8 +31823,15 @@ function createEditSubmissionRegistry({ idFactory = createSubmissionId } = {}) {
     return record2.receipt;
   }
   function complete(input) {
-    const { record: record2, pendingKey } = requireCurrentRecord(input, "in_flight");
-    record2.completedArtifactIds = normalizeArtifactIds(input.artifactIds);
+    const artifactIds = normalizeArtifactIds(input.artifactIds);
+    const { record: record2, pendingKey } = requireCurrentRecord(input, "in_flight", "complete");
+    if (record2.state === "complete") {
+      if (JSON.stringify(record2.completedArtifactIds) !== JSON.stringify(artifactIds)) {
+        throw registryError("stale_edit_submission", "\u5B8C\u6210\u4EA7\u7269\u4E0E\u539F\u63D0\u4EA4\u4E0D\u5339\u914D\u3002");
+      }
+      return record2.receipt;
+    }
+    record2.completedArtifactIds = artifactIds;
     record2.state = "complete";
     const preparedIds = preparedByBindingAndParent.get(pendingKey) || /* @__PURE__ */ new Set();
     for (const candidateId of preparedIds) {
@@ -31832,7 +31841,7 @@ function createEditSubmissionRegistry({ idFactory = createSubmissionId } = {}) {
     preparedByBindingAndParent.delete(pendingKey);
     return record2.receipt;
   }
-  function requireCurrentRecord(input, requiredState) {
+  function requireCurrentRecord(input, requiredState, replayState) {
     const request = normalizeLookupInput(input, { requireSubmissionId: true });
     const claimGeneration = normalizeClaimGeneration(input.claimGeneration);
     const record2 = recordsById.get(request.submissionId);
@@ -31841,6 +31850,9 @@ function createEditSubmissionRegistry({ idFactory = createSubmissionId } = {}) {
     }
     assertBindingMatches(record2, request);
     const pendingKey = bindingParentKey(request.bindingKey, request.parentImageId);
+    if (record2.state === replayState && record2.claimGeneration === claimGeneration) {
+      return { request, record: record2, pendingKey };
+    }
     if (record2.state !== requiredState || inFlightByBindingAndParent.get(pendingKey) !== request.submissionId || record2.claimGeneration !== claimGeneration) {
       throw registryError("stale_edit_submission", "\u753B\u5E03\u63D0\u4EA4\u5DF2\u7ECF\u88AB\u66F4\u65B0\u7248\u672C\u66FF\u4EE3\u3002");
     }
@@ -36206,11 +36218,15 @@ var HOST_IMPORT_ERROR_CODES = /* @__PURE__ */ new Set([
   "host_image_request_invalid",
   "host_image_output_invalid",
   "host_image_handoff_not_found",
+  "host_image_handoff_conflict",
   "host_image_handoff_state_invalid",
   "host_image_import_failed"
 ]);
 function createHostImageImporter({ runOperation = runHostImageImportOperation } = {}) {
   return Object.freeze({
+    async get(input, context) {
+      return await stableOperation(runOperation, { operation: "get", ...runtimeContext(context), ...input });
+    },
     async prepare(input, context) {
       return await stableOperation(runOperation, { operation: "prepare", ...runtimeContext(context), ...input });
     },
@@ -36251,6 +36267,23 @@ var handoffIdSchema = external_exports2.string().regex(/^handoff_[0-9a-f]{64}$/)
 var imageIdSchema2 = external_exports2.string().regex(/^img_[0-9A-HJKMNP-TV-Z]{26}$/);
 var annotationIdSchema = external_exports2.string().regex(/^ann_[0-9A-HJKMNP-TV-Z]{26}$/);
 var submissionIdSchema = external_exports2.string().regex(/^sub_[0-9a-f]{32}$/);
+var handoffErrorSchema = external_exports2.object({
+  code: external_exports2.string(),
+  phase: external_exports2.enum(["prepare", "stage", "finalize", "get"]),
+  fallbackEligible: external_exports2.literal(false),
+  recoveryAction: external_exports2.enum(["fix_request", "retry_stage", "retry_finalize", "inspect_handoff"])
+}).strict();
+var handoffSuccessSchema = external_exports2.object({
+  handoffId: handoffIdSchema,
+  status: external_exports2.enum(["prepared", "staged", "committed", "aborted"]),
+  replayed: external_exports2.boolean().optional(),
+  artifacts: external_exports2.array(imageArtifactOutputSchema).min(1).max(1).optional()
+}).strict();
+var handoffReceiptSchema = handoffSuccessSchema.partial({ handoffId: true }).extend({
+  status: external_exports2.enum(["prepared", "staged", "committed", "aborted", "failed"]),
+  error: handoffErrorSchema.optional()
+});
+var stagedSuccessSchema = external_exports2.object({ handoffId: handoffIdSchema, status: external_exports2.literal("staged"), imageCount: external_exports2.literal(1) }).strict();
 function registerHostImageImportTools(server2, {
   projectContext,
   importer,
@@ -36260,7 +36293,7 @@ function registerHostImageImportTools(server2, {
 }) {
   server2.registerTool("prepare_host_image_import", {
     title: "Prepare host image import",
-    description: "Freeze one ChatGPT image generation or canvas edit intent before invoking the Codex host image generation capability. Edit preparation returns the clean parent image as model-visible content.",
+    description: "Freeze one ChatGPT generation, conversation edit, or canvas edit intent. Preserve submissionKey after a lost reply. A replay is not permission to invoke the host again. Edit preparation returns the clean parent image as model-visible content.",
     inputSchema: {
       projectBindingId: projectBindingIdSchema,
       route: external_exports2.literal("chatgpt"),
@@ -36269,9 +36302,10 @@ function registerHostImageImportTools(server2, {
       count: external_exports2.literal(1).default(1),
       parentImageId: imageIdSchema2.optional(),
       annotationId: annotationIdSchema.nullable().optional(),
-      submissionId: submissionIdSchema.optional()
+      submissionId: submissionIdSchema.optional(),
+      submissionKey: submissionKeySchema.optional()
     },
-    outputSchema: external_exports2.object({ handoffId: handoffIdSchema, status: external_exports2.literal("prepared") }).strict(),
+    outputSchema: handoffReceiptSchema,
     annotations: writeAnnotations(false)
   }, async ({ projectBindingId, ...input }) => await withProject(
     projectContext,
@@ -36282,6 +36316,29 @@ function registerHostImageImportTools(server2, {
       editSubmissions,
       readArtifact
     })
+  ));
+  server2.registerTool("get_host_image_handoff", {
+    title: "Get host image handoff",
+    description: "Read a local host image handoff by handoffId or submissionKey. Prepared state does not prove the host was never invoked. Querying does not regenerate images or settle canvas submissions.",
+    inputSchema: {
+      projectBindingId: projectBindingIdSchema,
+      handoffId: handoffIdSchema.optional(),
+      submissionKey: submissionKeySchema.optional()
+    },
+    outputSchema: handoffReceiptSchema,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
+  }, async ({ projectBindingId, ...input }) => await withProject(
+    projectContext,
+    projectBindingId,
+    toolError2,
+    async (context) => {
+      if (Boolean(input.handoffId) === Boolean(input.submissionKey)) throw requestError();
+      return {
+        content: [{ type: "text", text: "\u4EE5\u4E0B\u662F\u672C\u5730\u4EA4\u63A5\u72B6\u6001\uFF1Bprepared \u4E0D\u8BC1\u660E\u5BBF\u4E3B\u5C1A\u672A\u8C03\u7528\uFF0C\u7ED3\u679C\u672A\u77E5\u65F6\u4E0D\u8981\u91CD\u65B0\u751F\u6210\u3002" }],
+        structuredContent: withoutEditContext(await importer.get(input, context))
+      };
+    },
+    "get"
   ));
   server2.registerTool("stage_host_image_import", {
     title: "Stage host image import",
@@ -36295,9 +36352,10 @@ function registerHostImageImportTools(server2, {
       }).strict()
     },
     outputSchema: external_exports2.object({
-      handoffId: handoffIdSchema,
-      status: external_exports2.literal("staged"),
-      imageCount: external_exports2.literal(1)
+      handoffId: handoffIdSchema.optional(),
+      status: external_exports2.enum(["staged", "failed"]),
+      imageCount: external_exports2.literal(1).optional(),
+      error: handoffErrorSchema.optional()
     }).strict(),
     annotations: writeAnnotations(false)
   }, async ({ projectBindingId, ...input }) => await withProject(
@@ -36306,8 +36364,9 @@ function registerHostImageImportTools(server2, {
     toolError2,
     async (context) => ({
       content: [{ type: "text", text: "\u5DF2\u6682\u5B58\u672C\u6B21\u5BBF\u4E3B\u56FE\u7247\u8F93\u51FA\u3002" }],
-      structuredContent: await importer.stage(input, context)
-    })
+      structuredContent: stagedSuccessSchema.parse(await importer.stage(input, context))
+    }),
+    "stage"
   ));
   server2.registerTool("finalize_host_image_import", {
     title: "Finalize host image import",
@@ -36318,9 +36377,10 @@ function registerHostImageImportTools(server2, {
       action: external_exports2.enum(["commit", "abort"])
     },
     outputSchema: external_exports2.object({
-      handoffId: handoffIdSchema,
-      status: external_exports2.enum(["committed", "aborted"]),
-      artifacts: external_exports2.array(imageArtifactOutputSchema).min(1).max(1).optional()
+      handoffId: handoffIdSchema.optional(),
+      status: external_exports2.enum(["committed", "aborted", "failed"]),
+      artifacts: external_exports2.array(imageArtifactOutputSchema).min(1).max(1).optional(),
+      error: handoffErrorSchema.optional()
     }).strict(),
     annotations: writeAnnotations(true)
   }, async ({ projectBindingId, ...input }) => await withProject(
@@ -36338,53 +36398,61 @@ function registerHostImageImportTools(server2, {
         }],
         structuredContent: publicResult
       };
-    }
+    },
+    "finalize"
   ));
 }
 async function prepareImport(input, context, { importer, editSubmissions, readArtifact }) {
-  if (input.intent === "generate") {
-    assertNoEditFields(input);
-    return {
-      content: [{ type: "text", text: "\u5DF2\u51C6\u5907\u672C\u6B21\u5BBF\u4E3B\u56FE\u7247\u751F\u6210\u4EA4\u63A5\u3002" }],
-      structuredContent: await importer.prepare(input, context)
-    };
+  validateIntent(input);
+  if (input.submissionKey) {
+    let existing;
+    try {
+      existing = await importer.get({ submissionKey: input.submissionKey }, context);
+    } catch (error40) {
+      if (error40.code !== "host_image_handoff_not_found") throw error40;
+    }
+    if (existing) {
+      const edit = existing.editContext;
+      const receipt = await importer.prepare({ ...input, ...edit ? {
+        revisionSha256: edit.revisionSha256,
+        claimGeneration: edit.claimGeneration
+      } : {} }, context);
+      return await preparationResult(receipt, input, context, readArtifact);
+    }
   }
-  if (!input.parentImageId || !input.submissionId || !Object.hasOwn(input, "annotationId")) {
-    throw new Error("ChatGPT canvas edit requires parentImageId, annotationId, and submissionId");
+  if (input.intent === "generate") {
+    return await preparationResult(await importer.prepare(input, context), input, context, readArtifact);
   }
   let claimed;
+  let preparationStarted = false;
   try {
     claimed = await editSubmissions.claimForEdit({
       artifactRoot: context.artifactRoot,
       bindingKey: context.bindingKey,
       parentImageId: input.parentImageId,
-      submissionId: input.submissionId,
-      annotationId: input.annotationId
+      ...input.submissionId ? { submissionId: input.submissionId } : {},
+      ...Object.hasOwn(input, "annotationId") ? { annotationId: input.annotationId } : {}
     });
-    if (!claimed || claimed.completedArtifactIds) {
-      throw new Error("ChatGPT canvas edit submission is not available");
+    if (claimed?.completedArtifactIds) {
+      const error40 = new Error("stale_edit_submission");
+      error40.code = "stale_edit_submission";
+      throw error40;
     }
-    if (claimed.receipt.modelSelection?.authMode === "apikey") throw new Error("canvas submission requires the API Key route");
+    if (claimed?.receipt.modelSelection?.authMode === "apikey") throw requestError();
     const parent = await readArtifact(input.parentImageId, context);
+    preparationStarted = true;
     const structuredContent = await importer.prepare({
       ...input,
-      annotationId: claimed.receipt.annotationId,
-      submissionId: claimed.receipt.id,
-      revisionSha256: claimed.receipt.revisionSha256,
-      claimGeneration: claimed.claimGeneration
+      ...claimed ? {
+        annotationId: claimed.receipt.annotationId,
+        submissionId: claimed.receipt.id,
+        revisionSha256: claimed.receipt.revisionSha256,
+        claimGeneration: claimed.claimGeneration
+      } : {}
     }, context);
-    return {
-      content: [
-        {
-          type: "text",
-          text: "\u5DF2\u51C6\u5907\u672C\u6B21 ChatGPT \u753B\u5E03\u7F16\u8F91\u4EA4\u63A5\u3002\u4EE5\u4E0B\u56FE\u7247\u662F\u65E0\u6807\u6CE8\u7684\u5E72\u51C0\u7236\u56FE\uFF1B\u4F1A\u8BDD\u4E2D\u7684\u753B\u5E03\u9884\u89C8\u53EA\u7528\u4E8E\u5B9A\u4F4D\u4FEE\u6539\u533A\u57DF\u3002"
-        },
-        imageContent(parent)
-      ],
-      structuredContent
-    };
+    return await preparationResult(structuredContent, input, context, readArtifact, parent);
   } catch (error40) {
-    if (claimed && !claimed.completedArtifactIds) {
+    if (claimed && !claimed.completedArtifactIds && (!preparationStarted || ["host_image_request_invalid", "host_image_handoff_conflict"].includes(error40.code))) {
       await editSubmissions.releaseForEdit({
         artifactRoot: context.artifactRoot,
         bindingKey: context.bindingKey,
@@ -36396,10 +36464,30 @@ async function prepareImport(input, context, { importer, editSubmissions, readAr
     throw error40;
   }
 }
-function assertNoEditFields(input) {
-  if (input.parentImageId !== void 0 || input.annotationId !== void 0 || input.submissionId !== void 0) {
-    throw new Error("ChatGPT generation handoff does not accept canvas edit fields");
+function validateIntent(input) {
+  if (input.intent === "generate") {
+    if (input.parentImageId !== void 0 || input.annotationId !== void 0 || input.submissionId !== void 0) throw requestError();
+    return;
   }
+  if (!input.parentImageId || input.submissionId && !Object.hasOwn(input, "annotationId") || !input.submissionId && input.annotationId != null) throw requestError();
+}
+function requestError() {
+  const error40 = new Error("host_image_request_invalid");
+  error40.code = "host_image_request_invalid";
+  return error40;
+}
+async function preparationResult(receipt, input, context, readArtifact, parent) {
+  const replayMessages = {
+    prepared: "\u5DF2\u6062\u590D\u539F\u4EA4\u63A5\u3002\u4E0D\u8981\u518D\u6B21\u8C03\u7528\u5BBF\u4E3B\u751F\u56FE\uFF1B\u5148\u6838\u5BF9\u672C\u6B21\u8C03\u7528\u7ED3\u679C\uFF0C\u518D\u6682\u5B58\u539F\u8F93\u51FA\u3002",
+    staged: "\u539F\u4EA4\u63A5\u5DF2\u6682\u5B58\u56FE\u7247\u3002\u7EE7\u7EED\u63D0\u4EA4\u540C\u4E00\u4EA4\u63A5\uFF0C\u4E0D\u8981\u518D\u6B21\u8C03\u7528\u5BBF\u4E3B\u751F\u56FE\u3002",
+    committed: "\u539F\u4EA4\u63A5\u5DF2\u53D1\u5E03\u56FE\u7247\u3002\u6536\u96C6\u73B0\u6709\u56FE\u7247 ID \u5E76\u5C55\u793A\u7ED3\u679C\uFF0C\u4E0D\u8981\u518D\u6B21\u8C03\u7528\u5BBF\u4E3B\u751F\u56FE\u3002",
+    aborted: "\u539F\u4EA4\u63A5\u5DF2\u7EC8\u6B62\uFF0C\u4E0D\u80FD\u6062\u590D\u751F\u6210\u3002\u65B0\u7684\u56FE\u7247\u610F\u56FE\u9700\u8981\u65B0\u7684\u63D0\u4EA4\u952E\u3002"
+  };
+  const content = [{ type: "text", text: receipt.replayed ? replayMessages[receipt.status] : "\u5DF2\u51C6\u5907\u672C\u6B21 ChatGPT \u56FE\u7247\u4EA4\u63A5\u3002\u7F16\u8F91\u4F7F\u7528\u4EE5\u4E0B\u5E72\u51C0\u7236\u56FE\u4F5C\u4E3A\u53C2\u8003\uFF0C\u4FDD\u6301\u7236\u5B50\u7248\u672C\u5173\u7CFB\u3002" }];
+  if (input.intent === "edit" && receipt.status === "prepared") {
+    content.push(imageContent(parent ?? await readArtifact(input.parentImageId, context)));
+  }
+  return { content, structuredContent: withoutEditContext(receipt) };
 }
 async function settleEditSubmission(result, action, context, editSubmissions) {
   const edit = result?.editContext;
@@ -36422,16 +36510,31 @@ async function settleEditSubmission(result, action, context, editSubmissions) {
 }
 function withoutEditContext(result) {
   const { editContext: _editContext, ...publicResult } = result;
-  return publicResult;
+  return handoffSuccessSchema.parse(publicResult);
 }
 function imageContent(artifact) {
   return { type: "image", data: artifact.data, mimeType: artifact.metadata.mimeType };
 }
-async function withProject(projectContext, projectBindingId, toolError2, operation) {
+async function withProject(projectContext, projectBindingId, toolError2, operation, phase = "prepare") {
+  let context;
   try {
-    return await operation(await projectContext.require(projectBindingId));
+    context = await projectContext.require(projectBindingId);
   } catch (error40) {
     return toolError2(error40);
+  }
+  try {
+    return await operation(context);
+  } catch (error40) {
+    const code = isStableToolErrorCode(error40.code) ? error40.code : "host_image_import_failed";
+    return {
+      ...toolError2(error40, code),
+      structuredContent: { status: "failed", error: {
+        code,
+        phase,
+        fallbackEligible: false,
+        recoveryAction: phase === "prepare" ? code === "host_image_import_failed" || code === "host_image_handoff_conflict" ? "inspect_handoff" : "fix_request" : phase === "stage" ? "retry_stage" : phase === "finalize" ? "retry_finalize" : "inspect_handoff"
+      } }
+    };
   }
 }
 function writeAnnotations(idempotentHint) {
@@ -36644,7 +36747,7 @@ var retainedHostErrorCodes = /* @__PURE__ */ new Set([
 var sensitiveHostFieldKeyPattern = /(api[_-]?key|authorization|credential|password|secret|token|cookie)/i;
 var hostObservationProvenance = "unverified_widget_report";
 var DEFAULT_MODEL_PROFILE_ID2 = "primary/gpt-image-2";
-var SERVER_INSTRUCTIONS = "generate_image, edit_image, and batch_images submit durable asynchronous jobs. Preserve submissionKey and jobId. Poll get_image_job until done and read every result page; a polling timeout does not cancel or resubmit generation. Collect successful image IDs across operations with their purpose, order, and version relationships. Before the final response, including partial delivery or user selection, reconcile the requested delivery set and render it with render_image_results in groups of up to 10. Prefer final edits and delivery-ready derivatives; omit superseded drafts and reference-only images unless requested. An intermediate display does not replace final delivery: reuse previously shown IDs when needed for a complete final set, without regenerating. Do not repeat an already complete final presentation. After deliver_image succeeds with deliveryReady=true, include its derivatives in the delivery selection for render_image_results. Report missing or failed items accurately; tool success does not prove host visibility. Unknown outcomes must not be regenerated automatically. Do not ask the user to request the display step.";
+var SERVER_INSTRUCTIONS = "generate_image, edit_image, and batch_images submit durable asynchronous jobs. Preserve submissionKey and jobId. Poll get_image_job until done and read every result page; a polling timeout does not cancel or resubmit generation. Collect successful image IDs across operations with their purpose, order, and version relationships. Before the final response, including partial delivery or user selection, reconcile the requested delivery set and render it with render_image_results in groups of up to 10. Prefer final edits and delivery-ready derivatives; omit superseded drafts and reference-only images unless requested. An intermediate display does not replace final delivery: reuse previously shown IDs when needed for a complete final set, without regenerating. Do not repeat an already complete final presentation. After deliver_image succeeds with deliveryReady=true, include its derivatives in the delivery selection for render_image_results. Report missing or failed items accurately; tool success does not prove host visibility. Unknown outcomes must not be regenerated automatically. Do not ask the user to request the display step. ChatGPT host handoffs support generation and conversation or canvas edits. Preserve their submissionKey and handoffId; query get_host_image_handoff after a lost reply. Replayed or prepared local state does not authorize another host call. Local handoff errors are not host model failures and never authorize a route change.";
 function createImagegenServer({
   releaseIdentity,
   launchContext,
@@ -37992,7 +38095,8 @@ function createFileEditSubmissionRegistry({
     const request = normalizeLookupInput(input, { requireSubmissionId: true });
     const claimGeneration = normalizeClaimGeneration(input.claimGeneration);
     return await withParentRecord(input, async (record2, save) => {
-      const submission = requireCurrentClaim(record2, request, claimGeneration);
+      const submission = requireCurrentClaim(record2, request, claimGeneration, "prepared");
+      if (submission.state === "prepared") return receiptFor(record2, submission);
       submission.state = "prepared";
       record2.inFlightSubmissionId = null;
       record2.inFlightAt = null;
@@ -38005,7 +38109,13 @@ function createFileEditSubmissionRegistry({
     const claimGeneration = normalizeClaimGeneration(input.claimGeneration);
     const artifactIds = normalizeArtifactIds(input.artifactIds);
     return await withParentRecord(input, async (record2, save) => {
-      const submission = requireCurrentClaim(record2, request, claimGeneration);
+      const submission = requireCurrentClaim(record2, request, claimGeneration, "complete");
+      if (submission.state === "complete") {
+        if (JSON.stringify(submission.completedArtifactIds) !== JSON.stringify(artifactIds)) {
+          throw registryError("stale_edit_submission", "\u5B8C\u6210\u4EA7\u7269\u4E0E\u539F\u63D0\u4EA4\u4E0D\u5339\u914D\u3002");
+        }
+        return receiptFor(record2, submission);
+      }
       submission.state = "complete";
       submission.completedArtifactIds = artifactIds;
       for (const candidate of record2.submissions) {
@@ -38151,8 +38261,9 @@ function resolveRecord(record2, request) {
     maskPolicySha256: submission.maskPolicySha256
   });
 }
-function requireCurrentClaim(record2, request, claimGeneration) {
+function requireCurrentClaim(record2, request, claimGeneration, replayState) {
   const submission = requireSubmission(record2, request.submissionId);
+  if (submission.state === replayState && submission.claimGeneration === claimGeneration) return submission;
   if (submission.state !== "in_flight" || record2.inFlightSubmissionId !== request.submissionId || submission.claimGeneration !== claimGeneration) {
     throw registryError("stale_edit_submission", "\u753B\u5E03\u63D0\u4EA4\u5DF2\u7ECF\u88AB\u66F4\u65B0\u7248\u672C\u66FF\u4EE3\u3002");
   }

@@ -504,6 +504,16 @@ def parse_size(value: str) -> tuple[int, int]:
     return width, height
 
 
+def machine_output_field_is_configured(
+    output: dict[str, Any],
+    cfg: Config,
+    name: str,
+    default_name: str | None = None,
+) -> bool:
+    value = output.get(name)
+    return value not in (None, "") or (default_name or name) in cfg.defaults
+
+
 def run_machine_task(
     task: dict[str, Any],
     project_root: Path,
@@ -707,6 +717,14 @@ def run_machine_task(
             effective_cfg,
             count_limit=16 if is_batch_item else 10,
         )
+        quality_is_configured = machine_output_field_is_configured(output, effective_cfg, "quality")
+        format_is_configured = machine_output_field_is_configured(
+            output,
+            effective_cfg,
+            "format",
+            "output_format",
+        )
+        background_is_configured = machine_output_field_is_configured(output, effective_cfg, "background")
         repository = ArtifactRepository(Path(project_root), Path(artifact_root))
         if submission_id:
             request_fingerprint = edit_submission_fingerprint(task, params)
@@ -785,18 +803,22 @@ def run_machine_task(
             "model": effective_cfg.model,
             "prompt": request_prompt,
             "size": params["size"],
-            "quality": params["quality"],
             "n": (
                 params["count"]
                 if operation != "generate" or is_batch_item
                 else 1
             ),
-            "background": params["background"],
-            "output_format": params["format"],
-            "output_compression": params["compression"],
         }
-        if payload["background"] is None:
-            payload.pop("background")
+        if quality_is_configured:
+            payload["quality"] = params["quality"]
+        if background_is_configured:
+            payload["background"] = params["background"]
+        if format_is_configured:
+            payload["output_format"] = params["format"]
+        if params["compression"] is not None:
+            payload["output_compression"] = params["compression"]
+        if payload.get("background") is None:
+            payload.pop("background", None)
         for key in ("aspectRatio", "resolution"):
             if params.get(key) is not None:
                 payload[key] = params[key]

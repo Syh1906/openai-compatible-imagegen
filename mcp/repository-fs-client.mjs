@@ -260,7 +260,7 @@ function decodeRuntimeOutput(chunks) {
 
 function safeRuntimeError(error, stderr) {
   const value = String(error || stderr || "repository operation failed");
-  const hostImportCode = /^(host_image_(?:request_invalid|output_invalid|handoff_not_found|handoff_state_invalid|import_failed))(?::|$)/.exec(value)?.[1];
+  const hostImportCode = /^(host_image_(?:request_invalid|output_invalid|handoff_not_found|handoff_conflict|handoff_state_invalid|import_failed))(?::|$)/.exec(value)?.[1];
   if (hostImportCode) return hostImportCode;
   const localTransferCode = /^(local_image_(?:request_invalid|source_invalid|import_failed|destination_exists|export_failed|transfer_failed))(?::|$)/.exec(value)?.[1];
   if (localTransferCode) return localTransferCode;

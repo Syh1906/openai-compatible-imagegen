@@ -257,6 +257,14 @@ class PluginSkeletonTests(unittest.TestCase):
         self.assertIn("MASK_GUARD_V2_BY_STRATEGY", text)
         self.assertIn("complete target image", text)
 
+    def test_skill_routes_conversation_edits_and_recovers_host_handoffs(self) -> None:
+        text = SKILL_PATH.read_text(encoding="utf-8")
+        self.assertIn("conversation edits", text)
+        self.assertIn("get_host_image_handoff", text)
+        self.assertIn("submissionKey", text)
+        self.assertIn("fallbackEligible", text)
+        self.assertIn("prepared", text)
+
     def test_skill_routes_local_delivery_and_presents_only_published_derivatives(self) -> None:
         text = SKILL_PATH.read_text(encoding="utf-8")
 
@@ -330,6 +338,7 @@ class PluginSkeletonTests(unittest.TestCase):
                 "finalize_host_image_import",
                 "finalize_image_editor_session",
                 "generate_image",
+                "get_host_image_handoff",
                 "get_image_artifact",
                 "get_image_batch_manifest",
                 "get_image_delivery_receipt",

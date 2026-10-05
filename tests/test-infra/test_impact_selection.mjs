@@ -13,6 +13,16 @@ import {
 const projectRoot = fileURLToPath(new URL("../..", import.meta.url));
 const projectManifest = JSON.parse(readFileSync(new URL("../../scripts/test-impact.json", import.meta.url), "utf8"));
 
+test("host handoff contracts select every supported native platform", () => {
+  for (const file of ["scripts/host_image_import.py", "mcp/host-image-import-tools.mjs",
+    "tests/plugin-runtime/test_host_image_import.py", "tests/mcp/test_host_image_import.mjs",
+    "tests/mcp/test_edit_submission_settlement.mjs"]) {
+    const plan = selectImpactPlan([file], projectManifest);
+    assert.deepEqual(plan.platforms, ["linux", "macos", "windows"], file);
+    for (const suite of ["mcp", "plugin-runtime", "release"]) assert.ok(plan.suites.includes(suite), `${file}: ${suite}`);
+  }
+});
+
 
 const manifest = {
   version: 1,

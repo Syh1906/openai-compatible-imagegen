@@ -54,6 +54,60 @@ for module_name in (
         self.assertEqual(result.returncode, 0, result.stderr)
 
 
+class PosixCachedDirectoryCleanupTests(unittest.TestCase):
+    def test_cleanup_refreshes_cached_entries_and_preserves_unknown_files(self) -> None:
+        from scripts import posix_repository_fs
+
+        for entry in ("manifest.json", "unowned.json"):
+            with self.subTest(entry=entry):
+                entries = {entry}
+                enumeration_refreshed = False
+                mutation = object.__new__(posix_repository_fs.RepositoryMutation)
+                mutation.repository = Path("repository")
+                mutation._directory_handles = {("transactions", "pending"): 17}
+
+                def rewind(descriptor, offset, whence):
+                    nonlocal enumeration_refreshed
+                    self.assertEqual((descriptor, offset, whence), (17, 0, os.SEEK_SET))
+                    enumeration_refreshed = True
+                    return 0
+
+                def list_entries(descriptor):
+                    self.assertEqual(descriptor, 17)
+                    return list(entries) if enumeration_refreshed else []
+
+                def unlink(name, *, dir_fd):
+                    self.assertEqual(dir_fd, 17)
+                    entries.remove(name)
+
+                def remove_directory(name, *, dir_fd):
+                    self.assertEqual((name, dir_fd), ("pending", 13))
+                    if entries:
+                        raise OSError("directory not empty")
+
+                with (
+                    mock.patch.object(mutation, "_parent_fd", return_value=13),
+                    mock.patch.object(posix_repository_fs.os, "lseek", side_effect=rewind),
+                    mock.patch.object(posix_repository_fs.os, "listdir", side_effect=list_entries),
+                    mock.patch.object(posix_repository_fs.os, "stat", return_value=SimpleNamespace(st_mode=0o100600)),
+                    mock.patch.object(posix_repository_fs.os, "unlink", side_effect=unlink) as unlink_call,
+                    mock.patch.object(posix_repository_fs.os, "fsync"),
+                    mock.patch.object(posix_repository_fs.os, "close") as close_call,
+                    mock.patch.object(posix_repository_fs.os, "rmdir", side_effect=remove_directory) as rmdir_call,
+                ):
+                    if entry == "manifest.json":
+                        mutation.remove_directory_if_known("transactions/pending", {"manifest.json"})
+                        self.assertEqual(entries, set())
+                        rmdir_call.assert_called_once()
+                    else:
+                        with self.assertRaisesRegex(OSError, "unknown entries"):
+                            mutation.remove_directory_if_known("transactions/pending", {"manifest.json"})
+                        self.assertEqual(entries, {"unowned.json"})
+                        unlink_call.assert_not_called()
+                        rmdir_call.assert_not_called()
+                    close_call.assert_called_once_with(17)
+
+
 class RepositoryFsContractTests(unittest.TestCase):
     def test_repository_mutation_publishes_immutable_artifacts_and_replaces_the_index(self) -> None:
         from scripts.repository_fs import DirectoryLease, RepositoryMutation, ensure_directory_tree_safely

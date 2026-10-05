@@ -14,6 +14,8 @@ English | [简体中文](README.zh-CN.md)
 
 OpenAI-Compatible Images ships one image core in two installation shapes. Use the portable Standalone Skill with Agent clients and command-line workflows, or install the Codex Plugin for result cards, focused canvas editing, annotations, immutable artifacts, and version history.
 
+MuAPI can be used through the OpenAI-compatible image-generation route. See the [MuAPI image API](https://muapi.ai/ai-image-api) and the [OpenAI-compatible endpoint reference](https://muapi.ai/docs/openai-compatible) for service details, then follow the [MuAPI configuration](docs/guides/configuration.md#configure-muapi) below.
+
 ## Choose your package
 
 API Key profiles support OpenAI-compatible, Atlas, xAI Images, Gemini Interactions, and Gemini generateContent protocols. Configure provider connections, aliases, and native parameter fields independently, then choose a model for one request or canvas edit. See [model configuration](docs/guides/models.md).
@@ -21,7 +23,7 @@ API Key profiles support OpenAI-compatible, Atlas, xAI Images, Gemini Interactio
 | Package | Best for | Includes |
 | --- | --- | --- |
 | **Standalone Skill** | Codex CLI, Claude Code, OpenCode, and other Agent Skills clients | Generation, editing, JSONL batches, transparency, delivery, and QA |
-| **Codex Plugin** | Codex App users who want result cards and a focused canvas | API Key: full image workflow. ChatGPT: host generation and semantic canvas edits, with artifacts, delivery, and versions |
+| **Codex Plugin** | Codex App users who want result cards and a focused canvas | API Key: full image workflow. ChatGPT: host generation, conversation and canvas edits, with artifacts, delivery, and versions |
 
 Choose one installation shape for each environment. The packages share code and versions but keep separate local configuration and artifact directories. Follow the [migration guide](docs/guides/migration.md) when moving an existing configuration to the Codex Plugin.
 

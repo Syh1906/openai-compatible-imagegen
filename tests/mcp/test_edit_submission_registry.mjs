@@ -298,14 +298,14 @@ test("complete consumes only the current matching submission", () => {
     bindingKey: "project-alpha",
     parentImageId: "img_parent",
   }), null);
-  assert.throws(
-    () => registry.complete({
+  assert.deepEqual(
+    registry.complete({
       bindingKey: "project-alpha",
       parentImageId: "img_parent",
       submissionId: latest.id,
       claimGeneration: claim.claimGeneration,
     }),
-    errorWithCode("stale_edit_submission"),
+    latest,
   );
 });
 

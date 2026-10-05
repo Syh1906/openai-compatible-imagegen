@@ -167,6 +167,7 @@ test("tool catalog exposes the model and app-only tool groups", async () => {
       "export_image_artifact",
       "finalize_host_image_import",
       "generate_image",
+      "get_host_image_handoff",
       "get_image_artifact",
       "get_image_batch_manifest",
       "get_image_delivery_receipt",
@@ -193,7 +194,7 @@ test("tool catalog exposes the model and app-only tool groups", async () => {
       "save_image_annotations",
       "save_image_editor_draft",
     ]);
-    assert.equal(tools.length, 32);
+    assert.equal(tools.length, 33);
   });
 });
 

@@ -36,6 +36,8 @@ python3 "/absolute/path/to/openai-compatible-imagegen/scripts/quick-init.py"
 | `api_key_env` | 保存凭据的首选环境变量 |
 | `api_key` | 明确选择本地明文存储时使用的可选凭据 |
 
+对于 `openai-compatible` 协议，只有请求明确提供，或配置的默认值中存在的可选请求字段才会发送。应根据 provider 发布的请求 schema 决定要配置哪些可选默认值。
+
 3. 使用相同的平台映射查看脱敏后的有效配置。
 
 Windows PowerShell：
@@ -97,7 +99,9 @@ API Key 用户基线声明活动 profile、provider、provider 自定义的 mode
 }
 ```
 
-使用 `"apikey"` 走已配置的图片 API provider，使用 `"chatgpt"` 通过 Codex App 宿主生成图片并提交语义画布编辑。ChatGPT 项目可以省略 provider 和 model 字段。两条路线都支持把画布 mask 标注作为编辑提示。API Key 编辑需要所选模型支持编辑；Atlas 只支持生成。模型声明专用 mask 能力时会传递对应参数，其他情况将标记区域作为语义提示发送。结果对提示的遵循程度由所选生图模型决定。API Key 项目还可以使用批处理和多候选。路线由用户明确选择，某条路线不可用时不会自动切换。
+使用 `"apikey"` 走已配置的图片 API provider，使用 `"chatgpt"` 通过 Codex App 宿主生成图片、直接在对话中改图，或提交语义画布编辑。ChatGPT 项目可以省略 provider 和 model 字段。两条路线都支持把画布 mask 标注作为编辑提示。API Key 编辑需要所选模型支持编辑；Atlas 只支持生成。模型声明专用 mask 能力时会传递对应参数，其他情况将标记区域作为语义提示发送。结果对提示的遵循程度由所选生图模型决定。API Key 项目还可以使用批处理和多候选。路线由用户选择；未经授权，某条路线不可用时不会自动切换。
+
+对话改图会保存与原图关联的新版本，不需要画布提交 ID。画布提交仍会校验父图、标注和提交版本。参数错误、提交冲突或本地入库失败不是宿主模型失败；已有图片时，Codex 会继续处理原输出。切换路线需要你的授权，也不会改变默认配置。结果未知时应先核对原请求，不能重复生成。
 
 如需让一个 Plugin provider 使用指定代理，在用户基线的 provider 中加入：
 
@@ -155,6 +159,65 @@ Standalone 扁平配置和 v1 配置中，OpenAI-compatible 路线的 `defaults.
 配置工具不会返回密钥。用户配置和项目配置目录在写入时会受到内容仅为 `*` 的 `.gitignore` 保护，项目根目录的忽略规则保持不变。只有明确选择时，才在用户配置中保存本地明文凭据。
 
 `storage.output_directory` 必须是项目内的相对目录，默认值为 `output/imagegen/`。项目绑定会在解析后的输出目录中创建或验证内容仅为 `*` 的 `.gitignore`，让图片、提示词、标注和 metadata 保持本地。已有规则不兼容时会停止绑定，不会覆盖该规则。绝对路径、项目根目录、项目外路径、文件、符号链接、junction 和其他 reparse point 都会被拒绝。
+
+## 配置 MuAPI
+
+MuAPI 提供 OpenAI 兼容的图片生成接口。请使用 `openai-compatible` 协议，并将 `base_url` 设置到 `/v1` 这一层；运行时会自动追加 `/images/generations`。下面的示例使用 `flux-schnell` 模型，并将路线声明为仅生成，因为这一路线不提供图片编辑、mask 或多参考图输入。
+
+Standalone `auth.json` 可以配置为：
+
+```json
+{
+  "protocol": "openai-compatible",
+  "base_url": "https://api.muapi.ai/v1",
+  "api_key_env": "MUAPI_API_KEY",
+  "model": "flux-schnell",
+  "capabilities": {
+    "generate": true,
+    "edit": false,
+    "mask": false,
+    "multi_reference": false
+  },
+  "defaults": {
+    "size": "1024x1024"
+  }
+}
+```
+
+Codex Plugin 在用户基线中配置同一个 endpoint：
+
+```json
+{
+  "config_version": 1,
+  "auth_mode": "apikey",
+  "active_profile": "primary/flux-schnell",
+  "providers": {
+    "primary": {
+      "protocol": "openai-compatible",
+      "base_url": "https://api.muapi.ai/v1",
+      "api_key_env": "MUAPI_API_KEY"
+    }
+  },
+  "models": {
+    "primary/flux-schnell": {
+      "provider": "primary",
+      "model": "flux-schnell",
+      "capabilities": {
+        "generate": true,
+        "edit": false,
+        "mask": false,
+        "multi_reference": false
+      }
+    }
+  },
+  "defaults": { "size": "1024x1024" },
+  "postprocess": { "enabled": true },
+  "transparency": { "default_route": "chroma-matting" },
+  "storage": { "output_directory": "output/imagegen" }
+}
+```
+
+生成前在环境变量中设置 `MUAPI_API_KEY`。MuAPI 的 OpenAI 兼容契约记录了 `model`、`prompt`、`n` 和 `size`；除非 provider 明确发布支持，否则请不要配置 `quality` 和 `output_format`。图片接口会返回图片 URL；运行时下载这些 URL 时不会转发 API key。需要透明输出时，请使用本地透明处理路线。当前接口和模型详情请参阅 [MuAPI 图片 API](https://muapi.ai/ai-image-api) 和 [OpenAI 兼容端点参考](https://muapi.ai/docs/openai-compatible)。
 
 ## 配置 Atlas Cloud
 

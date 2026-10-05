@@ -14,6 +14,8 @@
 
 OpenAI 兼容图片（OpenAI-Compatible Images）把同一套图片核心发布为两种安装形态。Standalone Skill 适合 Agent 客户端和命令行工作流；Codex Plugin 在此基础上增加结果卡、聚焦画布、标注、不可变产物和版本历史。
 
+MuAPI 可以通过 OpenAI 兼容的图片生成路线使用。服务详情请参阅 [MuAPI 图片 API](https://muapi.ai/ai-image-api) 和 [OpenAI 兼容端点参考](https://muapi.ai/docs/openai-compatible)，然后按照下面的 [MuAPI 配置](docs/guides/configuration.zh-CN.md#配置-muapi) 操作。
+
 ## 选择安装形态
 
 API Key profile 支持 OpenAI-compatible、Atlas、xAI Images、Gemini Interactions 和 Gemini generateContent 协议。供应商连接、模型别名和原生参数字段可独立配置，聊天与画布可以选择仅用于本次请求的模型。参见[多模型配置](docs/guides/models.zh-CN.md)。
@@ -21,7 +23,7 @@ API Key profile 支持 OpenAI-compatible、Atlas、xAI Images、Gemini Interacti
 | 安装形态 | 适合场景 | 包含内容 |
 | --- | --- | --- |
 | **Standalone Skill** | Codex CLI、Claude Code、OpenCode 和其他 Agent Skills 客户端 | 生成、编辑、JSONL 批处理、透明处理、交付和 QA |
-| **Codex Plugin** | 需要结果卡和聚焦画布的 Codex App 用户 | API Key：完整图片工作流；ChatGPT：宿主生成和语义画布编辑，以及产物、交付和版本 |
+| **Codex Plugin** | 需要结果卡和聚焦画布的 Codex App 用户 | API Key：完整图片工作流；ChatGPT：宿主生成、对话与画布编辑，以及产物、交付和版本 |
 
 每个使用环境选择一种安装形态。两者共享代码和版本，但使用各自的本地配置与产物目录。将已有配置迁移到 Codex Plugin 时，请按[迁移指南](docs/guides/migration.zh-CN.md)操作。
 

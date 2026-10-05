@@ -291,6 +291,36 @@ class ImageRuntimeMachineModeTests(unittest.TestCase):
         self.assertTrue(all(payload["model"] == "gpt-image-2" for payload in payloads))
         self.assertTrue(all(payload["prompt"] == "two candidates" for payload in payloads))
 
+    def test_muapi_generation_omits_unconfigured_optional_fields_and_saves_url_image(self) -> None:
+        image_bytes = make_png(1, 1)
+        task = self.task(output={"size": "1x1", "count": 1})
+        response = {"data": [{"url": "https://cdn.muapi.ai/result.png"}]}
+
+        with (
+            mock.patch.object(self.imagegen, "request_json", return_value=response) as request_json,
+            mock.patch.object(self.imagegen, "decode_image_item", return_value=image_bytes),
+        ):
+            result = self.imagegen.run_machine_task(
+                task,
+                self.project_root,
+                self.artifact_root,
+                self.cfg,
+            )
+
+        self.assertTrue(result["ok"], result)
+        payload = request_json.call_args.args[2]
+        self.assertEqual(
+            payload,
+            {
+                "model": "gpt-image-2",
+                "prompt": "two candidates",
+                "size": "1x1",
+                "n": 1,
+            },
+        )
+        artifact_path = self.project_root / "output" / "imagegen" / "artifacts" / result["artifacts"][0]["id"] / "image.png"
+        self.assertEqual(artifact_path.read_bytes(), image_bytes)
+
     def test_native_batch_generation_preserves_dimension_intent_and_actual_image(self):
         cfg = replace(self.cfg, protocol="gemini-generate-content", config_version=2)
         response = {"candidates": [{"content": {"parts": [{"inlineData": {"data": base64.b64encode(make_png(3, 2)).decode()}}]}}]}
