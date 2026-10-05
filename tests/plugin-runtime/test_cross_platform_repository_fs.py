@@ -188,6 +188,43 @@ class PosixRepositoryFsTests(unittest.TestCase):
 
 
 class PosixRepositoryLockCoordinationTests(unittest.TestCase):
+    def test_persistent_locks_open_a_file_created_by_another_process(self) -> None:
+        from scripts import posix_repository_fs
+
+        repository = Path("/")
+        lease = SimpleNamespace(path=repository, _handles=[101])
+
+        def racing_open(parent_fd, name, flags, mode=0o600):
+            self.assertEqual(parent_fd, 101)
+            self.assertIn(name, {".repository.lock", ".submission.lock"})
+            if flags & os.O_CREAT:
+                if flags & os.O_EXCL:
+                    raise FileExistsError(name)
+                raise FileNotFoundError(2, "concurrent create-or-open lost the file", name)
+            return 200
+
+        fake_fcntl = SimpleNamespace(LOCK_UN=8, flock=lambda descriptor, operation: None)
+        with (
+            mock.patch.object(posix_repository_fs, "_absolute_path", return_value=repository),
+            mock.patch.object(posix_repository_fs, "_open_regular_file_at", side_effect=racing_open),
+            mock.patch.object(posix_repository_fs, "_acquire_lock", return_value=None),
+            mock.patch.object(posix_repository_fs, "_fcntl_module", return_value=fake_fcntl),
+            mock.patch.object(posix_repository_fs.os, "fstat", return_value=SimpleNamespace(st_dev=1, st_ino=2)),
+            mock.patch.object(posix_repository_fs.os, "close"),
+        ):
+            for kind in ("repository", "submission"):
+                with self.subTest(kind=kind):
+                    if kind == "repository":
+                        with posix_repository_fs.RepositoryLock(repository, directory_lease=lease) as lock:
+                            self.assertEqual(lock._handle, 200)
+                    else:
+                        key = (101, 200)
+                        try:
+                            self.assertEqual(posix_repository_fs._retain_submission_file_handle(lease, key), 200)
+                        finally:
+                            if key in posix_repository_fs._SUBMISSION_FILE_HANDLES:
+                                posix_repository_fs._discard_submission_file_handle(key)
+
     def test_repository_lock_serializes_lock_file_opening_between_threads(self) -> None:
         from scripts import posix_repository_fs
 

@@ -50,10 +50,9 @@ def _retain_submission_file_handle(lease: "DirectoryLease", key: tuple[int, int]
     with _THREAD_LOCKS_GUARD:
         existing = _SUBMISSION_FILE_HANDLES.get(key)
         if existing is None:
-            descriptor = _open_regular_file_at(
+            descriptor = _open_persistent_lock_file_at(
                 lease._handles[-1],
                 ".submission.lock",
-                os.O_RDWR | os.O_CREAT | getattr(os, "O_CLOEXEC", 0),
             )
             users = 0
         else:
@@ -150,6 +149,14 @@ def _open_regular_file_at(parent_fd: int, name: str, flags: int, mode: int = 0o6
     except BaseException:
         os.close(descriptor)
         raise
+
+
+def _open_persistent_lock_file_at(parent_fd: int, name: str) -> int:
+    flags = os.O_RDWR | getattr(os, "O_CLOEXEC", 0)
+    try:
+        return _open_regular_file_at(parent_fd, name, flags | os.O_CREAT | os.O_EXCL)
+    except FileExistsError:
+        return _open_regular_file_at(parent_fd, name, flags)
 
 
 def _close_all(descriptors: list[int]) -> None:
@@ -406,10 +413,9 @@ class RepositoryLock(AbstractContextManager["RepositoryLock"]):
             raise TimeoutError("repository is locked by another image task")
         descriptor: int | None = None
         try:
-            descriptor = _open_regular_file_at(
+            descriptor = _open_persistent_lock_file_at(
                 lease._handles[-1],
                 ".repository.lock",
-                os.O_RDWR | os.O_CREAT | getattr(os, "O_CLOEXEC", 0),
             )
             _acquire_lock(
                 descriptor,
