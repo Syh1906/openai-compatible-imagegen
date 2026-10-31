@@ -7,6 +7,7 @@ import { pathContainsSymbolicLink } from "./filesystem-path-safety.mjs";
 import { replaceFileAtomically } from "./atomic-file-replace.mjs";
 import { ensureLocalIgnore, LocalIgnoreGuardError } from "./local-ignore-guard.mjs";
 import modelContract from "../scripts/model-profile-contract.json" with { type: "json" };
+import { validModelLimits } from "./image-size-contract.mjs";
 
 
 const CONFIG_DIRECTORY = "openai-compatible-imagegen";
@@ -58,6 +59,7 @@ const CONFIG_TEMPLATE = Object.freeze({
   models: { [ACTIVE_PROFILE]: {
     provider: "primary", model: "gpt-image-2",
     capabilities: { generate: true, edit: true, mask: true, multi_reference: true },
+    limits: { output_size: { multiple_of: 16, max_aspect_ratio: 3 } },
   } },
   defaults: { size: "1536x1024", quality: "auto", output_format: "png" },
   postprocess: { enabled: true },
@@ -493,10 +495,7 @@ function validateApiConfig(config) {
     if (model.parameters !== undefined && (!isRecord(model.parameters)
       || Object.keys(model.parameters).some((key) => modelContract.reservedParameterKeys.includes(key)))) throw invalidImageConfigError();
     validateParameterFields(model.parameter_fields, model.parameters);
-    if (model.limits !== undefined && (!isRecord(model.limits)
-      || unknownKeys(model.limits, new Set(["max_input_images"])).length
-      || (model.limits.max_input_images !== undefined
-        && (!Number.isInteger(model.limits.max_input_images) || model.limits.max_input_images < 1)))) throw invalidImageConfigError();
+    if (model.limits !== undefined && !validModelLimits(model.limits, config.providers[providerId].protocol)) throw invalidImageConfigError();
   }
   validateModelAliases(config.models);
 }

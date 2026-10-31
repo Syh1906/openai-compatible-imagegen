@@ -8,12 +8,23 @@ import { withClient, artifact, PNG_BASE64, assertToolErrorCode } from "../suppor
 import { resolveModelSelection, bindCanvasSelection } from "../../mcp/model-selection.mjs";
 import { parseEditorDraft } from "../../mcp/editor-draft-contract.mjs";
 import { runImageTask } from "../../mcp/image-runtime.mjs";
+import { safeImageSizeError } from "../../mcp/image-size-contract.mjs";
 
 const config = { config_version: 2, active_profile: "a", providers: { p: { protocol: "openai-compatible", base_url: "https://example.test/v1" } }, models: {
   a: { provider: "p", model: "same", aliases: ["first"], capabilities: { edit: true } },
   b: { provider: "p", model: "same", capabilities: { edit: true } },
 } };
 const context = { apiRuntimeConfig: config, activeProfile: "a" };
+
+test("size diagnostics reject untrusted fields and never reuse provider error messages", () => {
+  const valid = { size: "3072x704", constraint: "max_aspect_ratio", limit: 3 };
+  for (const details of [{ ...valid, size: "private value" }, { ...valid, limit: "private value" },
+    { ...valid, secret: "private value" }, { size: "1024x1024", constraint: "allowed_sizes", limit: ["private value"] }]) {
+    assert.equal(safeImageSizeError({ code: "image_size_unsupported", details, message: "private value" }), undefined);
+  }
+  const safe = safeImageSizeError({ code: "image_size_unsupported", details: valid, message: "private value" });
+  assert.equal(JSON.stringify(safe).includes("private value"), false);
+});
 
 test("MCP lists real Python catalogs with empty limits and native output defaults", async () => {
   for (const native of [false, true]) {
@@ -53,6 +64,35 @@ test("durable jobs retain distinct native refusal and empty-output errors withou
       assert.equal(JSON.stringify(result).includes("private provider detail"), false);
     });
   }
+});
+
+test("size limits reach the catalog and durable errors retain only numeric constraint details", async () => {
+  const limits = { output_size: { multiple_of: 16, max_aspect_ratio: 3 } };
+  const details = { size: "3072x704", constraint: "max_aspect_ratio", limit: 3 };
+  const effectiveConfigJson = JSON.stringify({ config_version: 1, active_profile: "primary/gpt-image-2",
+    providers: { primary: { protocol: "openai-compatible", base_url: "https://example.test/v1" } },
+    models: { "primary/gpt-image-2": { provider: "primary", model: "gpt-image-2", limits } } });
+  let calls = 0;
+  await withClient({ runTask: (task, runtimeContext) => {
+    if (task.operation === "list_models") return runImageTask(task, { ...runtimeContext, effectiveConfigJson,
+      effectiveConfigSha256: createHash("sha256").update(effectiveConfigJson).digest("hex") });
+    calls += 1;
+    return { ok: false, error: { code: "image_size_unsupported", message: "private provider detail", details } };
+  } }, async (client) => {
+    const catalog = await client.callTool({ name: "list_image_models", arguments: {} });
+    assert.equal(catalog.isError, undefined, JSON.stringify(catalog.content));
+    assert.deepEqual(catalog.structuredContent.models[0].limits, limits);
+    const generated = await client.callTool({ name: "generate_image", arguments: { prompt: "cube", size: details.size } });
+    assertToolErrorCode(generated, "image_size_unsupported");
+    assert.match(generated.content[0].text, /3072x704.*4\.36.*3/);
+    assert.equal(JSON.stringify(generated).includes("private provider detail"), false);
+    assert.equal(calls, 1);
+    const batch = await client.callTool({ name: "batch_images", arguments: { items: [
+      { requestId: "wide", operation: "generate", prompt: "cube", size: details.size },
+    ] } });
+    assert.deepEqual(batch.structuredContent.results[0].error.details, details);
+    assert.match(batch.structuredContent.results[0].error.message, /4\.36/);
+  });
 });
 
 test("selection resolves exact profiles and aliases without guessing ambiguous model IDs", () => {

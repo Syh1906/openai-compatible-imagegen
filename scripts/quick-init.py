@@ -147,6 +147,8 @@ def collect_values(args: argparse.Namespace, template: dict[str, Any]) -> dict[s
 
 def write_auth_config(values: dict[str, Any], template: dict[str, Any]) -> None:
     data = dict(template)
+    if values["model"] != template.get("model"):
+        data.pop("limits", None)
     data["base_url"] = values["base_url"]
     data["model"] = values["model"]
     data["api_key"] = values["api_key"]

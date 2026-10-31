@@ -37,6 +37,7 @@ class QuickInitTests(unittest.TestCase):
                     "api_key": "replace-with-temporary-local-key",
                     "api_key_env": "OPENAI_API_KEY",
                     "model": "gpt-image-2",
+                    "limits": {"output_size": {"max_aspect_ratio": 3}},
                     "defaults": {
                         "size": "2048x2048",
                         "quality": "auto",
@@ -198,6 +199,7 @@ class QuickInitTests(unittest.TestCase):
         self.assertEqual(data["api_key"], "replace-with-temporary-local-key")
         self.assertEqual(data["api_key_env"], "NEW_KEY")
         self.assertEqual(data["model"], "new-model")
+        self.assertNotIn("limits", data)
         self.assertTrue(data["postprocess"]["enabled"])
 
     def test_interactive_env_auth_accepts_prompted_answers(self) -> None:

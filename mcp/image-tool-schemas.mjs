@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { imageSizeErrorDetailsSchema } from "./image-size-contract.mjs";
 
 
 export const imageIdSchema = z.string().regex(/^img_[0-9A-HJKMNP-TV-Z]{26}$/).describe("Stable image ID in the project artifact repository");
@@ -199,6 +200,7 @@ export const imageBatchResultOutputSchema = z.discriminatedUnion("ok", [
     error: z.object({
       code: z.string().regex(/^[a-z][a-z0-9_]{0,63}$/),
       message: z.string().min(1),
+      details: imageSizeErrorDetailsSchema.optional(),
     }).strict(),
   }).strict(),
 ]);

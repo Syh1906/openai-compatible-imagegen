@@ -1,4 +1,5 @@
 const STABLE_TOOL_ERROR_ENTRIES = [
+  ["image_size_unsupported", "生成尺寸不满足当前模型声明的限制。请查看 list_image_models 返回的 limits.output_size；未发送图片请求。"],
   ["background_parameter_rejected", "服务拒绝了明确指定的 background 参数，未自动重试。请询问用户是否去掉该参数后发起新请求；透明效果可能改变。"],
   ["local_image_request_invalid", "本地图片传输请求无效，请使用项目相对路径和稳定图片 ID。"],
   ["local_image_source_invalid", "无法导入源图片：请确认它是项目内可安全读取的 PNG、JPEG 或 WebP，且不超过 64 MiB 和 1 亿像素。"],

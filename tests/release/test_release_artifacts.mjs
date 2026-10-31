@@ -47,6 +47,7 @@ const sharedCoreFiles = [
   "image_parameters.py",
   "image_provider_requests.py",
   "image_request_options.py",
+  "image_size_limits.py",
   "model-profile-contract.json",
   "model_profiles.py",
   "native_image_protocols.py",

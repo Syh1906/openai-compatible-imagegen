@@ -32,6 +32,8 @@ The generation and edit endpoints above assume `protocol=openai-compatible` and 
 
 ## Size Guidance
 
+Separate API generation dimensions from final local delivery dimensions. Before choosing a custom API size, inspect the selected model's [declared output limits](models.md#output-size-limits). Reference-image dimensions and empty limits do not establish API support. Preserve explicit user intent; the runtime rejects declared violations before transport without resizing or retrying. The presets below express requested dimensions, not a promise that every provider supports them.
+
 The pixel preset table below applies to OpenAI-compatible and Atlas. Native xAI/Gemini protocols use the common fields supported by their adapters; see [model configuration](models.md).
 
 Use `--size` for exact API output pixels. Use `--aspect` plus `--resolution` when the request describes shape and clarity without exact pixels.

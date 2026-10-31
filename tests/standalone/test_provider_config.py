@@ -16,6 +16,32 @@ import provider_config
 
 
 class ProviderConfigAdapterTests(unittest.TestCase):
+    def test_size_limits_are_explicit_and_shared_by_config_adapters(self) -> None:
+        limits = {"output_size": {"multiple_of": 16, "max_aspect_ratio": 3}}
+        for version in (1, 2):
+            raw = plugin_config()
+            raw["config_version"] = version
+            if version == 2:
+                raw["models"][raw["active_profile"]]["defaults"] = raw.pop("defaults")
+            raw["models"][raw["active_profile"]]["limits"] = limits
+            for parse in (provider_config.parse_standalone_config, provider_config.parse_plugin_config):
+                cfg = parse(raw, require_api_key=False, model_profile_id=raw["active_profile"])
+                self.assertEqual(cfg.limits, limits)
+            self.assertEqual(provider_config.list_model_profiles(raw)[0]["limits"], limits)
+        flat = {"base_url": "https://example.test/v1", "model": "custom", "limits": limits}
+        self.assertEqual(provider_config.parse_standalone_config(flat, require_api_key=False).limits, limits)
+
+    def test_invalid_size_limit_declarations_are_rejected(self) -> None:
+        for output_size in (None, [], {"unknown": 1}, {"multiple_of": 0}, {"multiple_of": True},
+                            {"max_aspect_ratio": 0.5}, {"max_aspect_ratio": float("inf")},
+                            {"min_edge": 1024, "max_edge": 512}, {"min_pixels": 20, "max_pixels": 10},
+                            {"allowed_sizes": []}, {"allowed_sizes": ["auto"]},
+                            {"allowed_sizes": ["1537x1024"], "multiple_of": 16}):
+            raw = plugin_config()
+            raw["models"][raw["active_profile"]]["limits"] = {"output_size": output_size}
+            with self.subTest(output_size=output_size), self.assertRaises(provider_config.ProviderConfigError):
+                provider_config.parse_plugin_config(raw, require_api_key=False, model_profile_id=raw["active_profile"])
+
     def test_native_profiles_keep_provider_contracts_and_own_defaults(self) -> None:
         raw = plugin_config()
         raw["config_version"] = 2

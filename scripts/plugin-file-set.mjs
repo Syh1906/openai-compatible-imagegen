@@ -18,6 +18,7 @@ export const sharedCoreFileNames = Object.freeze([
   "image_parameters.py",
   "image_provider_requests.py",
   "image_request_options.py",
+  "image_size_limits.py",
   "native_image_protocols.py",
   "protocol_contract.py",
   "protocol_xai_images.py",

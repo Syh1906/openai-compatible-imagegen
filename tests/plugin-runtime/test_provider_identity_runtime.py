@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+from dataclasses import replace
 from pathlib import Path
 import sys
 import tempfile
@@ -28,6 +29,24 @@ def load_runtime():
 
 
 class ProviderIdentityRuntimeTests(unittest.TestCase):
+    def test_size_rejection_precedes_requests_and_artifact_creation(self) -> None:
+        cfg = replace(self.cfg, capabilities={"generate": True, "edit": True}, limits={"output_size": {"max_aspect_ratio": 3}})
+        for operation in ("generate", "edit"):
+            for batch in (False, True):
+                task = {"operation": operation, "modelProfileId": cfg.profile_id, "prompt": "wide image",
+                        "output": {"size": "3072x704"},
+                        "inputArtifactIds": ["img_01J00000000000000000000000"] if operation == "edit" else []}
+                if batch:
+                    task["executionMode"] = "batch-item"
+                with self.subTest(operation=operation, batch=batch), mock.patch.object(self.runtime, "request_json") as generate, mock.patch.object(self.runtime, "request_multipart") as edit:
+                    result = self.runtime.run_machine_task(task, self.project_root, self.artifact_root, cfg)
+                    self.assertFalse(result["ok"])
+                    self.assertEqual(result["error"]["code"], "image_size_unsupported")
+                    self.assertEqual(result["error"]["details"], {"size": "3072x704", "constraint": "max_aspect_ratio", "limit": 3})
+                    generate.assert_not_called()
+                    edit.assert_not_called()
+                    self.assertFalse(self.artifact_root.exists())
+
     def setUp(self) -> None:
         self.runtime = load_runtime()
         self.temp_dir = tempfile.TemporaryDirectory()

@@ -16,6 +16,42 @@ import {
 import { withClient } from "../support/mcp-tool-client.mjs";
 import { outputSchema, batchItemsSchema } from "../../mcp/image-tool-schemas.mjs";
 
+test("model size limits survive both config versions and cannot be overridden by a project", async () => {
+  await withConfigRoots(async ({ projectRoot, userHome }) => {
+    const limits = { output_size: { multiple_of: 16, max_aspect_ratio: 3 } };
+    for (const config_version of [1, 2]) {
+      const config = userConfig();
+      config.config_version = config_version;
+      if (config_version === 2) {
+        config.models[config.active_profile].defaults = config.defaults;
+        delete config.defaults;
+      }
+      config.models[config.active_profile].limits = limits;
+      await writeJson(userConfigPath(userHome), config);
+      const binding = await resolveImageConfigBinding({ projectRoot, userHome });
+      assert.deepEqual(binding.apiRuntimeConfig.models[config.active_profile].limits, limits);
+      for (const output_size of [null, [], { unknown: 1 }, { multiple_of: 0 }, { multiple_of: true },
+        { max_aspect_ratio: 0.5 }, { min_edge: 1024, max_edge: 512 }, { min_pixels: 20, max_pixels: 10 },
+        { allowed_sizes: [] }, { allowed_sizes: ["auto"] }, { allowed_sizes: ["1537x1024"], multiple_of: 16 }]) {
+        config.models[config.active_profile].limits = { output_size };
+        await writeJson(userConfigPath(userHome), config);
+        await assert.rejects(resolveImageConfigBinding({ projectRoot, userHome }), { code: "image_config_invalid" });
+      }
+    }
+    await writeJson(userConfigPath(userHome), userConfig());
+    await writeJson(projectConfigPath(projectRoot), { ...projectConfig(), limits });
+    await assert.rejects(resolveImageConfigBinding({ projectRoot, userHome }), { code: "project_config_forbidden" });
+  });
+});
+
+test("new API configuration includes declared size limits without changing ChatGPT defaults", async () => {
+  await withConfigRoots(async ({ userHome }) => {
+    const initialized = await initializeImageConfig({ userHome });
+    assert.deepEqual(initialized.config.models[initialized.config.active_profile].limits,
+      { output_size: { multiple_of: 16, max_aspect_ratio: 3 } });
+  });
+});
+
 test("canvas submission mode is a validated user preference with the existing automatic default", async () => {
   await withConfigRoots(async ({ projectRoot, userHome }) => {
     for (const config_version of [1, 2]) {

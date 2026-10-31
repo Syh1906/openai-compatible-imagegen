@@ -15,6 +15,35 @@ from provider_config import EffectiveImageConfig
 
 
 class ProviderRequestTests(unittest.TestCase):
+    def test_legacy_model_override_does_not_inherit_another_models_size_limits(self):
+        cfg = self.config(limits={"output_size": {"max_aspect_ratio": 3}})
+        args = argparse.Namespace(model="another-model", size="3072x704")
+        selected = imagegen.request_config(cfg, args, {})
+        self.assertEqual(selected.model, "another-model")
+        self.assertEqual(selected.limits, {})
+        self.assertEqual(imagegen.resolve_common_params(args, selected)["size"], "3072x704")
+        self.assertEqual(cfg.limits, {"output_size": {"max_aspect_ratio": 3}})
+
+    def test_both_adapters_reject_declared_size_before_transport(self):
+        for version in (1, 2):
+            cfg = self.config(config_version=version, limits={"output_size": {"max_aspect_ratio": 3}})
+            for adapter in (imagegen, image_runtime):
+                with self.subTest(version=version, adapter=adapter.__name__):
+                    with self.assertRaises(Exception) as caught:
+                        if adapter is imagegen:
+                            adapter.resolve_common_params(argparse.Namespace(size="3072x704"), cfg)
+                        else:
+                            adapter.resolve_machine_output({"size": "3072x704"}, cfg)
+                    self.assertIn("3072x704", str(caught.exception))
+                    self.assertIn("3", str(caught.exception))
+                    with mock.patch.object(requests.image_transport, "request_json") as generate, mock.patch.object(requests.image_transport, "request_multipart") as edit:
+                        with self.assertRaises(Exception):
+                            adapter.request_json(cfg, "images/generations", {"size": "3072x704"}, 30)
+                        with self.assertRaises(Exception):
+                            adapter.request_multipart(cfg, "images/edits", {"size": "704x3072"}, [], 30)
+                        generate.assert_not_called()
+                        edit.assert_not_called()
+
     def test_both_adapters_preserve_native_refusal_error_kind(self):
         cfg = self.config(protocol="gemini-generate-content", config_version=2)
         for adapter in (imagegen, image_runtime):

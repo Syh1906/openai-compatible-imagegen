@@ -8,6 +8,9 @@
   "api_key": "replace-with-temporary-local-key",
   "api_key_env": "OPENAI_API_KEY",
   "model": "gpt-image-2",
+  "limits": {
+    "output_size": { "multiple_of": 16, "max_aspect_ratio": 3 }
+  },
   "defaults": {
     "size": "2048x2048",
     "quality": "auto",
