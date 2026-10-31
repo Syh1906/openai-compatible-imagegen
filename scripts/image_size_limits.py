@@ -81,4 +81,4 @@ def validate_request_size(size: Any, limits: dict[str, Any]) -> None:
 
 
 def _positive_integer(value: Any) -> bool:
-    return type(value) is int and 1 <= value <= MAX_SAFE_INTEGER
+    return type(value) in (int, float) and 1 <= value <= MAX_SAFE_INTEGER and int(value) == value
