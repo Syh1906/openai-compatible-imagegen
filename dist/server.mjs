@@ -51,7 +51,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 var define_RELEASE_IDENTITY_default;
 var init_define_RELEASE_IDENTITY = __esm({
   "<define:__RELEASE_IDENTITY__>"() {
-    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "1.6.0", serverBuildDigest: "4f2b5f170cfb9ff2187ea431c1f55171636f9b2dff97dfd5464183c586384fe0", widgetAssetDigest: "865e9ae595d8eae39332cb243fc064ff553a0a4d9e71c56f5cc122fb12798209", fingerprint: "74275a7d5b7daff5497b", resourceUris: { result: "ui://openai-compatible-imagegen/result-74275a7d5b7daff5497b.html", editor: "ui://openai-compatible-imagegen/editor-74275a7d5b7daff5497b.html" } };
+    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "1.6.0", serverBuildDigest: "a3e04f494e702490d37315283b11f9279e5c584539ff97c6ef89112ee19e7041", widgetAssetDigest: "865e9ae595d8eae39332cb243fc064ff553a0a4d9e71c56f5cc122fb12798209", fingerprint: "c52a47fc50bb3e36b41c", resourceUris: { result: "ui://openai-compatible-imagegen/result-c52a47fc50bb3e36b41c.html", editor: "ui://openai-compatible-imagegen/editor-c52a47fc50bb3e36b41c.html" } };
   }
 });
 
@@ -34925,7 +34925,7 @@ async function initializeImageConfig({ userHome = os.homedir(), projectRoot, aut
     gitignoreUpdated: true,
     nextSteps: [
       ...authMode === "apikey" ? ["\u8BBE\u7F6E provider.api_key_env \u5BF9\u5E94\u7684\u73AF\u5883\u53D8\u91CF"] : [],
-      ...authMode === "apikey" ? ["\u6309\u4F9B\u5E94\u5546\u5B9E\u9645\u503C\u4FEE\u6539 active_profile \u548C models.<profile>.model\uFF0C\u6A21\u578B ID \u4E0D\u8981\u6C42\u4F7F\u7528\u6807\u51C6\u540D\u79F0"] : [],
+      ...authMode === "apikey" ? ["\u6309\u4F9B\u5E94\u5546\u5B9E\u9645\u503C\u4FEE\u6539 active_profile \u548C models.<profile>.model\uFF0C\u6A21\u578B ID \u4E0D\u8981\u6C42\u4F7F\u7528\u6807\u51C6\u540D\u79F0\uFF1B\u624B\u52A8\u66F4\u6362\u6A21\u578B\u65F6\uFF0C\u79FB\u9664\u6A21\u677F\u7684 limits \u6216\u66FF\u6362\u4E3A\u8BE5\u6A21\u578B\u5DF2\u6838\u5B9E\u7684\u9650\u5236"] : [],
       "\u65B0\u914D\u7F6E\u9ED8\u8BA4\u542F\u7528 native-alpha\uFF1B\u5982\u679C\u4FDD\u7559\u65E7\u914D\u7F6E\uFF0C\u8BF7\u5728 inspect_image_config \u7684\u63D0\u793A\u4E0B\u663E\u5F0F\u66F4\u65B0\u900F\u660E\u7B56\u7565",
       "\u786E\u8BA4 transparency.native.model_ids \u53EA\u662F\u80FD\u529B\u58F0\u660E\uFF1B\u4E0D\u786E\u5B9A\u65F6\u53EF\u7559\u7A7A\u6570\u7EC4",
       "\u8C03\u7528 inspect_image_config \u68C0\u67E5\u6709\u6548\u914D\u7F6E\uFF0C\u7136\u540E\u91CD\u65B0\u7ED1\u5B9A\u9879\u76EE"
@@ -35163,6 +35163,17 @@ function mergeConfigChanges(current, changes) {
     }
     if (!isRecord2(value)) throw new ImageConfigManagementError("image_config_update_invalid");
     result[key] = mergeRecords(result[key], value);
+    if (key === "models") {
+      for (const [profileId, profileChanges] of Object.entries(value)) {
+        const previous = current.models?.[profileId];
+        if (!isRecord2(previous) || !isRecord2(profileChanges) || !Object.hasOwn(profileChanges, "model") || profileChanges.model === previous.model) continue;
+        if (Object.hasOwn(profileChanges, "limits")) {
+          result[key][profileId].limits = structuredClone(profileChanges.limits);
+        } else {
+          delete result[key][profileId].limits;
+        }
+      }
+    }
   }
   return result;
 }

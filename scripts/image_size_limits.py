@@ -57,7 +57,7 @@ def validate_model_limits(limits: Any, protocol: str) -> None:
 def validate_request_size(size: Any, limits: dict[str, Any]) -> None:
     """Check a resolved pixel size without choosing or changing request intent."""
     rules = limits.get("output_size", {})
-    if not rules or size is None:
+    if not rules or size is None or size == "auto":
         return
     if not isinstance(size, str) or not SIZE_PATTERN.fullmatch(size):
         raise ValueError("declared output_size limits require WIDTHxHEIGHT")

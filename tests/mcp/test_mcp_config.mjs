@@ -52,6 +52,38 @@ test("new API configuration includes declared size limits without changing ChatG
   });
 });
 
+test("model changes replace inherited limits while other profile updates preserve them", async () => {
+  await withConfigRoots(async ({ userHome }) => {
+    const originalLimits = { max_input_images: 2, output_size: { multiple_of: 16, max_aspect_ratio: 3 } };
+    for (const config_version of [1, 2]) {
+      const config = userConfig();
+      config.config_version = config_version;
+      if (config_version === 2) {
+        config.models[config.active_profile].defaults = config.defaults;
+        delete config.defaults;
+      }
+      const profileId = config.active_profile;
+      config.models[profileId].limits = originalLimits;
+      for (const [changes, expected] of [
+        [{ capabilities: { edit: false } }, originalLimits],
+        [{ model: config.models[profileId].model }, originalLimits],
+        [{ model: "another-model" }, undefined],
+        [{ model: "another-model", limits: {} }, {}],
+        [{ model: "another-model", limits: { output_size: { max_edge: 4096 } } }, { output_size: { max_edge: 4096 } }],
+      ]) {
+        await writeJson(userConfigPath(userHome), config);
+        const updated = await updateImageConfig({ userHome, changes: { models: { [profileId]: changes } } });
+        assert.deepEqual(updated.config.models[profileId].limits, expected);
+      }
+      await writeJson(userConfigPath(userHome), config);
+      await assert.rejects(updateImageConfig({ userHome, changes: { models: { [profileId]: {
+        model: "another-model", limits: null,
+      } } } }), { code: "image_config_invalid" });
+      assert.deepEqual(JSON.parse(await readFile(userConfigPath(userHome), "utf8")), config);
+    }
+  });
+});
+
 test("canvas submission mode is a validated user preference with the existing automatic default", async () => {
   await withConfigRoots(async ({ projectRoot, userHome }) => {
     for (const config_version of [1, 2]) {

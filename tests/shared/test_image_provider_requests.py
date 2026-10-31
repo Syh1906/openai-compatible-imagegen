@@ -15,6 +15,19 @@ from provider_config import EffectiveImageConfig
 
 
 class ProviderRequestTests(unittest.TestCase):
+    def test_legacy_auto_size_remains_service_selected_with_pixel_limits(self):
+        for protocol in ("openai-compatible", "atlas"):
+            cfg = self.config(protocol=protocol, limits={"output_size": {"multiple_of": 16, "max_aspect_ratio": 3}})
+            with self.subTest(protocol=protocol):
+                self.assertEqual(imagegen.resolve_common_params(argparse.Namespace(size="auto"), cfg)["size"], "auto")
+        cfg = self.config(limits={"output_size": {"max_aspect_ratio": 3}})
+        with mock.patch.object(requests.image_transport, "request_json", return_value={"data": []}) as send:
+            imagegen.request_json(cfg, "images/generations", {"size": "auto"}, 30)
+            self.assertEqual(send.call_args.kwargs["payload"]["size"], "auto")
+        with mock.patch.object(requests.image_transport, "request_multipart", return_value={"data": []}) as send:
+            imagegen.request_multipart(cfg, "images/edits", {"size": "auto"}, [], 30)
+            self.assertEqual(send.call_args.kwargs["fields"]["size"], "auto")
+
     def test_legacy_model_override_does_not_inherit_another_models_size_limits(self):
         cfg = self.config(limits={"output_size": {"max_aspect_ratio": 3}})
         args = argparse.Namespace(model="another-model", size="3072x704")
