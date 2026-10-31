@@ -1,4 +1,5 @@
 import { isStableToolErrorCode, stableToolErrorMessages } from "./tool-errors.mjs";
+import { safeImageSizeError } from "./image-size-contract.mjs";
 import {
   safeDeliveryQa,
   safeDeliverySummary,
@@ -454,7 +455,7 @@ function batchFailure(item, error, fallbackCode) {
     requestId: item.requestId,
     operation: item.operation,
     ok: false,
-    error: {
+    error: safeImageSizeError(error) ?? {
       code,
       message: stableToolErrorMessages.get(code),
     },

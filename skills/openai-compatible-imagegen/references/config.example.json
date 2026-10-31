@@ -19,6 +19,9 @@
     "primary/gpt-image-2": {
       "provider": "primary",
       "model": "gpt-image-2",
+      "limits": {
+        "output_size": { "multiple_of": 16, "max_aspect_ratio": 3 }
+      },
       "capabilities": {
         "generate": true,
         "edit": true,

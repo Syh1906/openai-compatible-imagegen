@@ -2,6 +2,7 @@ import { RESOURCE_MIME_TYPE, registerAppResource } from "@modelcontextprotocol/e
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { createLocalImageTransfer, registerLocalImageTransferTools } from "./local-image-transfer.mjs";
 import { z } from "zod";
+import { modelLimitsSchema } from "./image-size-contract.mjs";
 import { modelSelectionSchema, resolveModelSelection, bindCanvasSelection, modelDefaultOutput } from "./model-selection.mjs";
 
 import { createEditSubmissionRegistry } from "./edit-submission-registry.mjs";
@@ -80,7 +81,7 @@ const imageModelOutputSchema = z.object({
     size: z.string().optional(), quality: z.string().optional(), output_format: z.string().optional(),
     aspect_ratio: z.string().optional(), resolution: z.string().optional(),
   }).strict().optional(),
-  limits: z.object({ quality: z.array(z.string()).optional(), max_input_images: z.number().int().positive().optional() }).strict().optional(),
+  limits: modelLimitsSchema.extend({ quality: z.array(z.string()).optional() }).optional(),
   availability: z.enum(["configured", "missing_credentials"]).optional(),
   selectionFingerprint: z.string().regex(/^[a-f0-9]{64}$/).optional(),
   parameterFields: z.record(z.unknown()).optional(),

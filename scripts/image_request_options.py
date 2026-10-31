@@ -6,6 +6,7 @@ import re
 from typing import Any
 
 from native_image_protocols import NATIVE_PROTOCOLS, validate_options
+from image_size_limits import validate_request_size
 
 
 DIMENSION_KEYS = frozenset({"size", "aspectRatio", "resolution"})
@@ -54,4 +55,5 @@ def resolve_request_options(cfg: Any, explicit: dict[str, Any]) -> dict[str, Any
             raise ValueError("unsupported image quality")
         if not isinstance(options["quality"], str) or not options["quality"].strip():
             raise ValueError("quality must be a non-empty string")
+    validate_request_size(options["size"], getattr(cfg, "limits", {}))
     return options

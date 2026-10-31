@@ -62,8 +62,9 @@ PROVIDER_KEYS = {
     "url_download",
     "proxy",
 }
-MODEL_KEYS = {"provider", "model", "capabilities"}
+MODEL_KEYS = set(CONTRACT["profileKeys"])
 STANDALONE_KEYS = {
+    "limits",
     "base_url",
     "api_key",
     "api_key_env",
@@ -291,6 +292,8 @@ def migrate_standalone(
         allow_plaintext_api_key=allow_plaintext_api_key,
     )
     user_config = base_user_config(provider, model, capabilities)
+    if "limits" in raw:
+        user_config["models"][PROFILE_ID]["limits"] = deepcopy(raw["limits"])
     copy_optional_sections(user_config, raw, ("defaults", "postprocess", "transparency"))
     return user_config, requires_plaintext
 
@@ -322,6 +325,8 @@ def migrate_development_plugin(
         allow_plaintext_api_key=allow_plaintext_api_key,
     )
     user_config = base_user_config(provider, model, capabilities, provider_id=provider_id)
+    if "limits" in profile:
+        user_config["models"][PROFILE_ID]["limits"] = deepcopy(profile["limits"])
     copy_optional_sections(user_config, raw, ("defaults", "postprocess", "transparency", "storage"))
 
     project_config = None

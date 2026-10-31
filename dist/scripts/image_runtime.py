@@ -25,6 +25,7 @@ import image_transport
 import image_provider_requests
 from native_image_protocols import NATIVE_PROTOCOLS
 from image_request_options import resolve_request_options
+from image_size_limits import ImageSizeError, validate_request_size
 from image_parameters import merge_parameters, validate_parameters, validate_parameter_values
 from model_profiles import model_selection_fingerprint
 from scripts.image_response import (
@@ -151,6 +152,7 @@ def display_path(path: Path) -> str:
 
 
 def request_json(cfg: Config, path: str, payload: dict[str, Any], timeout: int) -> dict[str, Any]:
+    validate_request_size(payload.get("size"), cfg.limits)
     try:
         if cfg.protocol in NATIVE_PROTOCOLS or cfg.config_version == 2 or cfg.endpoints or cfg.parameters:
             return image_provider_requests.request_image(cfg, "generate", payload, timeout)
@@ -173,6 +175,7 @@ def request_json(cfg: Config, path: str, payload: dict[str, Any], timeout: int) 
 
 
 def request_atlas_image(cfg: Config, payload: dict[str, Any], timeout: int) -> dict[str, Any]:
+    validate_request_size(payload.get("size"), cfg.limits)
     try:
         if cfg.config_version == 2 or cfg.endpoints or cfg.parameters:
             return image_provider_requests.request_image(cfg, "generate", payload, timeout)
@@ -200,6 +203,7 @@ def request_multipart(
     files: list[image_transport.MultipartUpload],
     timeout: int,
 ) -> dict[str, Any]:
+    validate_request_size(fields.get("size"), cfg.limits)
     try:
         if cfg.protocol in NATIVE_PROTOCOLS or cfg.config_version == 2 or cfg.endpoints or cfg.parameters:
             return image_provider_requests.request_image(cfg, "edit", fields, timeout, files=files)
@@ -1080,11 +1084,12 @@ def run_machine_task(
             )
         return result
     except Exception as exc:
-        code = exc.code if isinstance(exc, (MachineTaskError, image_provider_requests.ProtocolError)) else "image_task_failed"
+        code = exc.code if isinstance(exc, (MachineTaskError, image_provider_requests.ProtocolError, ImageSizeError)) else "image_task_failed"
         return {
             "ok": False,
             "error": {
                 "code": code,
+                **({"details": exc.details} if isinstance(exc, ImageSizeError) else {}),
                 "message": redact_machine_error(
                     str(exc),
                     effective_cfg,
@@ -1491,6 +1496,8 @@ def resolve_machine_output(
     if cfg.protocol in NATIVE_PROTOCOLS or cfg.config_version == 2:
         try:
             params = resolve_request_options(cfg, output)
+        except ImageSizeError:
+            raise
         except ValueError as exc:
             raise MachineTaskError("invalid_task", str(exc)) from exc
         count = output.get("count", 1)
@@ -1515,6 +1522,7 @@ def resolve_machine_output(
         )
     size = str(output.get("size") or cfg.defaults.get("size") or DEFAULT_SIZE)
     parse_size(size)
+    validate_request_size(size, cfg.limits)
     quality = str(output.get("quality") or cfg.defaults.get("quality") or DEFAULT_QUALITY)
     if quality not in {"auto", "low", "medium", "high", "xhigh", "max"}:
         raise MachineTaskError("invalid_task", f"unsupported quality: {quality}")

@@ -9,7 +9,15 @@ This is the Standalone distribution. Read configuration only from `auth.json` be
 
 Use the bundled script for API calls. Resolve `$SkillDir` from the physical directory containing this `SKILL.md`; never substitute another same-named installation. Run `$SkillDir/scripts/imagegen.py info` before an API request and require both `script_path` and `auth_json` to remain under `$SkillDir`. Stop and report the path mismatch instead of using a different copy. When validating this skill through another agent, require it to report the absolute `imagegen.py` path actually executed.
 
-Do not rewrite the API client inline. The script is the authority for request validity: do not reject, rewrite, or ask the user to change a model, size, or transparency request based on remembered provider limitations. Run the command and report its actual result. Only a validation error emitted by the script or an API response can establish that the request failed.
+Do not rewrite the API client inline. Preserve explicit user API parameters; do not invent restrictions from remembered model behavior. The script checks declared constraints before sending the request, and the provider validates remaining service requirements. Follow the size-selection rules below before choosing dimensions yourself.
+
+## Generation and delivery sizes
+
+Distinguish the model's generation `--size` from the final file's local `--delivery-size`. A reference image's dimensions or a requested final canvas do not establish a supported API size.
+
+Before selecting a custom generation size, inspect the selected profile with `list-models` (or `info` for flat configuration), including `limits.output_size`. Verify all declared fixed-size, ratio, multiple, edge, and pixel constraints. Empty or missing limits mean unknown, not unlimited; configured defaults alone are not proof of support. Prefer a documented or previously successful size. For omitted generation intent, leave `--size` unset when configuration should decide it; if no supported choice is known and exact generation dimensions matter, establish the selected provider's requirements before submitting. Never silently replace a user's explicit generation size or change model/channel after a validation failure.
+
+For a final canvas outside the model's supported shape, use a supported generation canvas and plan local delivery separately. Explicit `--fit contain` preserves proportions with padding; `--fit stretch` distorts mismatched proportions and is the local default. Full-bleed output without distortion needs an agreed crop or composition plan; local delivery does not provide a crop mode. Keep the original immutable. See [declared limits](references/models.md#output-size-limits).
 
 ## Workflow
 

@@ -7,6 +7,7 @@ import { pathContainsSymbolicLink } from "./filesystem-path-safety.mjs";
 import { replaceFileAtomically } from "./atomic-file-replace.mjs";
 import { ensureLocalIgnore, LocalIgnoreGuardError } from "./local-ignore-guard.mjs";
 import modelContract from "../scripts/model-profile-contract.json" with { type: "json" };
+import { validModelLimits } from "./image-size-contract.mjs";
 
 
 const CONFIG_DIRECTORY = "openai-compatible-imagegen";
@@ -58,6 +59,7 @@ const CONFIG_TEMPLATE = Object.freeze({
   models: { [ACTIVE_PROFILE]: {
     provider: "primary", model: "gpt-image-2",
     capabilities: { generate: true, edit: true, mask: true, multi_reference: true },
+    limits: { output_size: { multiple_of: 16, max_aspect_ratio: 3 } },
   } },
   defaults: { size: "1536x1024", quality: "auto", output_format: "png" },
   postprocess: { enabled: true },
@@ -135,7 +137,7 @@ export async function initializeImageConfig({ userHome = os.homedir(), projectRo
     nextSteps: [
       ...(authMode === "apikey" ? ["设置 provider.api_key_env 对应的环境变量"] : []),
       ...(authMode === "apikey"
-        ? ["按供应商实际值修改 active_profile 和 models.<profile>.model，模型 ID 不要求使用标准名称"]
+        ? ["按供应商实际值修改 active_profile 和 models.<profile>.model，模型 ID 不要求使用标准名称；手动更换模型时，移除模板的 limits 或替换为该模型已核实的限制"]
         : []),
       "新配置默认启用 native-alpha；如果保留旧配置，请在 inspect_image_config 的提示下显式更新透明策略",
       "确认 transparency.native.model_ids 只是能力声明；不确定时可留空数组",
@@ -392,6 +394,18 @@ function mergeConfigChanges(current, changes) {
     }
     if (!isRecord(value)) throw new ImageConfigManagementError("image_config_update_invalid");
     result[key] = mergeRecords(result[key], value);
+    if (key === "models") {
+      for (const [profileId, profileChanges] of Object.entries(value)) {
+        const previous = current.models?.[profileId];
+        if (!isRecord(previous) || !isRecord(profileChanges)
+          || !Object.hasOwn(profileChanges, "model") || profileChanges.model === previous.model) continue;
+        if (Object.hasOwn(profileChanges, "limits")) {
+          result[key][profileId].limits = structuredClone(profileChanges.limits);
+        } else {
+          delete result[key][profileId].limits;
+        }
+      }
+    }
   }
   return result;
 }
@@ -493,10 +507,7 @@ function validateApiConfig(config) {
     if (model.parameters !== undefined && (!isRecord(model.parameters)
       || Object.keys(model.parameters).some((key) => modelContract.reservedParameterKeys.includes(key)))) throw invalidImageConfigError();
     validateParameterFields(model.parameter_fields, model.parameters);
-    if (model.limits !== undefined && (!isRecord(model.limits)
-      || unknownKeys(model.limits, new Set(["max_input_images"])).length
-      || (model.limits.max_input_images !== undefined
-        && (!Number.isInteger(model.limits.max_input_images) || model.limits.max_input_images < 1)))) throw invalidImageConfigError();
+    if (model.limits !== undefined && !validModelLimits(model.limits, config.providers[providerId].protocol)) throw invalidImageConfigError();
   }
   validateModelAliases(config.models);
 }

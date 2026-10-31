@@ -99,6 +99,7 @@ class StandaloneCompatibilityTests(unittest.TestCase):
             base_url="https://example.invalid/v1",
             user_agent="compat-test",
             defaults={"quality": "medium"},
+            limits={},
             postprocess={"enabled": False},
             transparency=SimpleNamespace(
                 default_route="prompt-alpha",
@@ -125,6 +126,7 @@ class StandaloneCompatibilityTests(unittest.TestCase):
                 "base_url",
                 "user_agent",
                 "defaults",
+                "limits",
                 "postprocess",
                 "transparency",
                 "url_download",

@@ -11,6 +11,13 @@
   },
   "rules": [
     {
+      "name": "image-size-limits",
+      "files": ["scripts/image_size_limits.py", "mcp/image-size-contract.mjs"],
+      "suites": ["shared", "standalone", "plugin-runtime", "mcp", "release"],
+      "checks": ["build", "diff", "plugin"],
+      "platforms": ["macos", "windows"]
+    },
+    {
       "name": "local-image-transfer",
       "files": ["scripts/local_image_transfer.py", "mcp/local-image-transfer.mjs", "tests/plugin-runtime/test_local_image_transfer.py", "tests/mcp/test_local_image_transfer.mjs"],
       "suites": ["plugin-runtime", "mcp", "release"],

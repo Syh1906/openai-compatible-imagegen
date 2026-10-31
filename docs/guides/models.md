@@ -97,6 +97,40 @@ Supported types are `string`, `integer`, `number`, `boolean`, `object`, and `arr
 
 `capabilities` describes the profile's intended operations; `limits.max_input_images` can bound the total parent and reference images. Implemented protocol capabilities still apply: Atlas cannot edit, and xAI/Gemini have no dedicated mask transport here. Semantic region annotations remain usable without promising strict pixel boundaries.
 
+## Output size limits
+
+Generation `size` is the canvas requested from the API. Local `deliverySize` is the final PNG canvas; it can differ from the generation size. Reference-image dimensions do not establish a supported API size.
+
+For OpenAI-compatible and Atlas profiles, v1 and v2 accept an optional `limits.output_size` declaration. Add it to the selected entry under `models`; flat Standalone configuration uses top-level `limits`. For example:
+
+```json
+{
+  "limits": {
+    "output_size": { "multiple_of": 16, "max_aspect_ratio": 3 }
+  }
+}
+```
+
+The new API configuration template and GPT Image 2 examples include these two constraints, based on the [OpenAI generation](https://developers.openai.com/api/reference/resources/images/methods/generate) and [editing](https://developers.openai.com/api/reference/resources/images/methods/edit) contracts. Confirm the selected provider's requirements before copying them to another model or channel; this declaration does not cover every service restriction.
+
+| Field | Meaning |
+| --- | --- |
+| `allowed_sizes` | Non-empty list of exact `WIDTHxHEIGHT` strings; orientation matters |
+| `multiple_of` | Both dimensions must be multiples of this positive integer |
+| `max_aspect_ratio` | Maximum long-edge/short-edge ratio, a finite number of at least 1; `3` permits 1:3 through 3:1 |
+| `min_edge`, `max_edge` | Inclusive bounds on each edge, in pixels |
+| `min_pixels`, `max_pixels` | Inclusive bounds on width times height |
+
+All declared constraints apply together. Edge, pixel, and multiple values are positive integers; minimum bounds cannot exceed maximum bounds, and allowed sizes must satisfy any accompanying constraints. These declarations apply to pixel `size` requests, not native xAI/Gemini aspect/resolution fields or ChatGPT host generation. Project configuration cannot override model limits.
+
+`list_image_models` and Standalone `list-models` return the configured limits; flat Standalone `info` also shows them. Omitted or empty limits mean unknown, not unlimited. A configured default is not proof that the service supports it. Existing configuration files remain unchanged and readable. To enable checks for an existing model, add verified limits to its user configuration (or Standalone `auth.json`); rebind the Plugin project afterward. Never automatically copy limits between models.
+
+When `update_image_config` changes a profile's `model`, it removes the previous model's limits unless the update supplies replacement `limits`. Supplied limits replace the old declaration in full. When editing the file manually, remove the old limits or replace them with verified limits for the new model. Legacy Standalone `size="auto"` remains service-selected; pixel limits cannot validate dimensions that have not been specified.
+
+After defaults and explicit options are resolved, violations stop before an image request is sent, without changing size, retrying, or switching providers. For example, `3072x704` has a long/short ratio of about 4.36:1 and fails a declared maximum of 3. The Plugin job item reports `image_size_unsupported` with the failing size, constraint, and limit. Unrelated batch items can continue. Passing local validation confirms only the declared constraints; the provider still validates its current requirements.
+
+For final dimensions outside the supported generation shape, choose a supported canvas and plan local delivery separately. Explicit `fit: "contain"` preserves proportions with padding; the default `stretch` changes proportions when shapes differ. Full-bleed output without distortion requires a crop or composition plan; local delivery has no crop mode. Original images remain immutable.
+
 ## Choosing a model
 
 Name a configured model or alias in chat. `list_image_models` returns all configured profiles, provider labels, aliases, effective capabilities, defaults, and field declarations without generation or online probing. Matching uses exact profile ID, unique alias, then unique actual model ID. Multiple channels for the same model require an explicit choice.

@@ -25,6 +25,7 @@ import image_transport
 import image_provider_requests
 from native_image_protocols import NATIVE_PROTOCOLS
 from image_request_options import merge_dimensions, resolve_request_options
+from image_size_limits import validate_request_size
 from scripts.image_download import (
     ImageDownloadError,
     download_image_url as _download_image_url,
@@ -200,6 +201,8 @@ def init_auth(args: argparse.Namespace) -> int:
     if args.base_url:
         data["base_url"] = args.base_url.strip().rstrip("/")
     if args.model:
+        if args.model.strip() != data.get("model"):
+            data.pop("limits", None)
         data["model"] = args.model.strip()
     if args.api_key_env:
         data["api_key_env"] = args.api_key_env.strip()
@@ -330,6 +333,10 @@ def resolve_common_params(args: argparse.Namespace, cfg: Config, task: dict[str,
         raise ImagegenError(f"unsupported quality: {quality}")
     model = get_value("model", args, task, None) or cfg.model
     size, aspect, resolution = resolve_size(args, cfg, task)
+    try:
+        validate_request_size(size, cfg.limits)
+    except ValueError as exc:
+        raise ImagegenError(str(exc)) from exc
     timeout = get_value("timeout", args, task, None) or cfg.defaults.get("timeout_seconds") or DEFAULT_TIMEOUT_SECONDS
     n = get_value("n", args, task, None) or 1
 
@@ -453,6 +460,7 @@ def api_url(cfg: Config, path: str) -> str:
 
 def request_json(cfg: Config, path: str, payload: dict[str, Any], timeout: int) -> dict[str, Any]:
     try:
+        validate_request_size(payload.get("size"), cfg.limits)
         if cfg.protocol in NATIVE_PROTOCOLS or cfg.config_version == 2 or cfg.endpoints or cfg.parameters:
             return image_provider_requests.request_image(cfg, "generate", payload, timeout)
         return image_transport.request_json(
@@ -477,6 +485,7 @@ def request_json(cfg: Config, path: str, payload: dict[str, Any], timeout: int) 
 
 def request_atlas_image(cfg: Config, payload: dict[str, Any], timeout: int) -> dict[str, Any]:
     try:
+        validate_request_size(payload.get("size"), cfg.limits)
         if cfg.config_version == 2 or cfg.endpoints or cfg.parameters:
             return image_provider_requests.request_image(cfg, "generate", payload, timeout)
         return image_transport.request_atlas_image(
@@ -510,6 +519,7 @@ def request_multipart(
     timeout: int,
 ) -> dict[str, Any]:
     try:
+        validate_request_size(fields.get("size"), cfg.limits)
         if cfg.protocol in NATIVE_PROTOCOLS or cfg.config_version == 2 or cfg.endpoints or cfg.parameters:
             return image_provider_requests.request_image(cfg, "edit", fields, timeout, files=files)
         return image_transport.request_multipart(
@@ -1357,6 +1367,7 @@ def info(cfg: Config) -> int:
         "base_url": cfg.base_url,
         "user_agent": cfg.user_agent,
         "defaults": cfg.defaults,
+        "limits": cfg.limits,
         "postprocess": cfg.postprocess,
         "transparency": {
             "default_route": cfg.transparency.default_route,
@@ -1490,6 +1501,10 @@ def request_config(cfg: Config, args: argparse.Namespace, task: dict[str, Any]) 
             raise ImagegenError(str(exc)) from exc
     elif selection and selection != cfg.profile_id:
         cfg = load_config(model_profile_id=selection)
+    if cfg.config_version == 1:
+        model = get_value("model", args, task, None)
+        if model and model != cfg.model:
+            cfg = replace(cfg, model=str(model), limits={})
     if not cfg.api_key:
         raise ImagegenError("selected provider is missing api_key or api_key_env")
     overrides = task.get("parameters", getattr(args, "parameters", None))

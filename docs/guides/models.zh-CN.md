@@ -98,6 +98,40 @@ v2 顶层 `defaults` 只含超时与并发。图片参数放在每个模型的 `
 
 `capabilities` 表达该 profile 的用途，`limits.max_input_images` 可限制父图与参考图的总数。协议实现仍限制真实能力：Atlas 无编辑能力，xAI 与 Gemini 当前没有专用 mask 参数。普通区域标注可以继续用于语义编辑，不能据此承诺严格像素边界。
 
+## 输出尺寸限制
+
+生成参数 `size` 是向 API 请求的画布尺寸，本地交付参数 `deliverySize` 是最终 PNG 的画布尺寸，两者可以不同。参考图的尺寸不能证明 API 支持同样尺寸。
+
+OpenAI-compatible 和 Atlas 的 v1、v2 模型配置可声明可选的 `limits.output_size`。将其加入 `models` 下对应模型的条目；Standalone 旧式平铺配置使用顶层 `limits`。例如：
+
+```json
+{
+  "limits": {
+    "output_size": { "multiple_of": 16, "max_aspect_ratio": 3 }
+  }
+}
+```
+
+新建 API 配置模板及 GPT Image 2 示例包含这两项约束，依据是 OpenAI 的[生成接口](https://developers.openai.com/api/reference/resources/images/methods/generate)和[编辑接口](https://developers.openai.com/api/reference/resources/images/methods/edit)契约。用于其他模型或渠道前须核实对应服务的要求；这项声明不涵盖服务的所有限制。
+
+| 字段 | 含义 |
+| --- | --- |
+| `allowed_sizes` | 非空的 `宽x高` 字符串列表，横竖方向分别匹配 |
+| `multiple_of` | 宽、高均须为该正整数的倍数 |
+| `max_aspect_ratio` | 长边除以短边的最大值，须为不小于 1 的有限数；`3` 允许 1:3 至 3:1 |
+| `min_edge`、`max_edge` | 每条边的像素上下限，包含边界值 |
+| `min_pixels`、`max_pixels` | 宽乘高的像素总量上下限，包含边界值 |
+
+所有已声明条件同时生效。边长、像素量和整除步长须为正整数，下限不能高于上限；允许尺寸列表也须满足同时声明的其他条件。这些限制针对像素 `size`，不用于 xAI/Gemini 原生比例与分辨率字段，也不控制 ChatGPT 宿主生图。项目配置不能覆盖模型限制。
+
+Plugin 的 `list_image_models` 和 Standalone 的 `list-models` 会返回已声明限制；平铺 Standalone 配置可用 `info` 查看。缺少或留空表示未知，不表示无限制；配置默认尺寸也不代表服务已验证支持它。既有配置不会自动改写，仍可读取。若要为已有模型启用检查，请在用户配置或 Standalone 的 `auth.json` 中为该模型补充已核实的限制；Plugin 修改后重新绑定项目。不要自动将一个模型的限制复制给另一个模型。
+
+通过 `update_image_config` 更改 profile 的 `model` 时，工具会移除旧模型的限制；更新中显式提供的 `limits` 会完整替换旧声明。手动编辑配置文件更换模型时，也应移除旧限制或换成新模型已核实的限制。旧式 Standalone 的 `size="auto"` 仍交给服务决定尺寸；未指定具体宽高时，无法在本地检查像素限制。
+
+默认值与显式参数合并后，违规尺寸会在发送图片请求前被拒绝，不会自动改尺寸、重试或切换供应商。例如 `3072x704` 的长短边比约为 4.36:1，会违反已声明的最大值 `3`。Plugin 任务条目返回 `image_size_unsupported`，并说明失败尺寸、约束及限制值；同一批次的其他独立条目可继续。通过本地检查只说明满足已声明条件，服务仍会检查其当前要求。
+
+最终尺寸超出模型支持的形状时，先选择受支持的生成画布，再单独规划本地交付。显式使用 `fit: "contain"` 可等比缩放并留白；默认的 `stretch` 在比例不同时会拉伸。若要求铺满且不变形，需要明确裁剪或构图方案；本地交付没有裁剪模式。原图始终保留不变。
+
 ## 本次选择与草稿
 
 在聊天中说明模型或别名。Plugin 的 `list_image_models` 返回全部已配置 profile、供应商、显示名称、别名、有效能力、默认值及参数字段，不会发送图片请求或探测模型在线状态。匹配顺序是精确 profile ID、唯一别名、唯一实际模型 ID。同名模型有多个渠道时需明确选择。

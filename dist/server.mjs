@@ -51,7 +51,7 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 var define_RELEASE_IDENTITY_default;
 var init_define_RELEASE_IDENTITY = __esm({
   "<define:__RELEASE_IDENTITY__>"() {
-    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "1.6.0", serverBuildDigest: "53c1ddb305683d7f78ae83fa934b3c50ec6dfaa3099c62cb481a0732a1b17e06", widgetAssetDigest: "636e4adf801bfa581c0c9cf9b9854f06e941eeb2ebb6d0ba53111d9976c36998", fingerprint: "06852a5d30e82a26fefc", resourceUris: { result: "ui://openai-compatible-imagegen/result-06852a5d30e82a26fefc.html", editor: "ui://openai-compatible-imagegen/editor-06852a5d30e82a26fefc.html" } };
+    define_RELEASE_IDENTITY_default = { pluginId: "openai-compatible-imagegen", pluginVersion: "1.6.0", serverBuildDigest: "a3e04f494e702490d37315283b11f9279e5c584539ff97c6ef89112ee19e7041", widgetAssetDigest: "865e9ae595d8eae39332cb243fc064ff553a0a4d9e71c56f5cc122fb12798209", fingerprint: "c52a47fc50bb3e36b41c", resourceUris: { result: "ui://openai-compatible-imagegen/result-c52a47fc50bb3e36b41c.html", editor: "ui://openai-compatible-imagegen/editor-c52a47fc50bb3e36b41c.html" } };
   }
 });
 
@@ -31242,6 +31242,59 @@ import { fileURLToPath as fileURLToPath3 } from "node:url";
 
 // mcp/image-tool-schemas.mjs
 init_define_RELEASE_IDENTITY();
+
+// mcp/image-size-contract.mjs
+init_define_RELEASE_IDENTITY();
+var positiveInteger = external_exports2.number().int().positive().max(Number.MAX_SAFE_INTEGER);
+var aspectRatio = external_exports2.number().finite().min(1).max(Number.MAX_SAFE_INTEGER);
+var pixelSize = external_exports2.string().regex(/^[1-9][0-9]*x[1-9][0-9]*$/).refine((value) => value.split("x").every((edge) => Number.isSafeInteger(Number(edge))));
+var sizeLimitFields = {
+  allowed_sizes: external_exports2.array(pixelSize).min(1).optional(),
+  multiple_of: positiveInteger.optional(),
+  min_edge: positiveInteger.optional(),
+  max_edge: positiveInteger.optional(),
+  min_pixels: positiveInteger.optional(),
+  max_pixels: positiveInteger.optional(),
+  max_aspect_ratio: aspectRatio.optional()
+};
+var outputSizeLimitsSchema = external_exports2.object(sizeLimitFields).strict().superRefine((rules, context) => {
+  const invalid = () => context.addIssue({ code: external_exports2.ZodIssueCode.custom, message: "inconsistent output size limits" });
+  for (const unit of ["edge", "pixels"]) {
+    if ((rules[`min_${unit}`] ?? 1) > (rules[`max_${unit}`] ?? Number.MAX_SAFE_INTEGER)) invalid();
+  }
+  for (const size of rules.allowed_sizes ?? []) {
+    const [width, height] = size.split("x").map(Number);
+    const short = Math.min(width, height), long = Math.max(width, height);
+    if (rules.multiple_of && (width % rules.multiple_of || height % rules.multiple_of) || rules.max_aspect_ratio && long > short * rules.max_aspect_ratio || short < (rules.min_edge ?? 1) || long > (rules.max_edge ?? Number.MAX_SAFE_INTEGER) || width * height < (rules.min_pixels ?? 1) || rules.max_pixels && width * height > rules.max_pixels) invalid();
+  }
+});
+var modelLimitsSchema = external_exports2.object({
+  max_input_images: positiveInteger.optional(),
+  output_size: outputSizeLimitsSchema.optional()
+}).strict();
+function validModelLimits(limits, protocol) {
+  return modelLimitsSchema.safeParse(limits).success && (!Object.keys(limits.output_size ?? {}).length || ["openai-compatible", "atlas"].includes(protocol));
+}
+var imageSizeErrorDetailsSchema = external_exports2.discriminatedUnion("constraint", Object.entries(sizeLimitFields).map(([constraint, limit]) => external_exports2.object({ size: pixelSize, constraint: external_exports2.literal(constraint), limit: limit.unwrap() }).strict()));
+function safeImageSizeError(error40) {
+  if (error40?.code !== "image_size_unsupported") return void 0;
+  const parsed = imageSizeErrorDetailsSchema.safeParse(error40.details);
+  if (!parsed.success) return void 0;
+  const { size, constraint, limit } = parsed.data;
+  const [width, height] = size.split("x").map(Number);
+  let message;
+  if (constraint === "allowed_sizes") message = `\u751F\u6210\u5C3A\u5BF8 ${size} \u4E0D\u5728\u5F53\u524D\u6A21\u578B\u5141\u8BB8\u7684\u5C3A\u5BF8\u4E2D\uFF1A${limit.join(", ")}\u3002`;
+  else if (constraint === "multiple_of") message = `\u751F\u6210\u5C3A\u5BF8 ${size} \u7684\u5BBD\u9AD8\u5FC5\u987B\u90FD\u662F ${limit} \u7684\u500D\u6570\u3002`;
+  else if (constraint === "max_aspect_ratio") message = `\u751F\u6210\u5C3A\u5BF8 ${size} \u7684\u957F\u77ED\u8FB9\u6BD4\u4F8B\u4E3A ${(Math.max(width, height) / Math.min(width, height)).toFixed(2)}:1\uFF0C\u5F53\u524D\u6A21\u578B\u5141\u8BB8\u6700\u5927 ${limit}:1\u3002`;
+  else {
+    const edge = constraint.endsWith("edge"), minimum = constraint.startsWith("min_");
+    const actual = edge ? minimum ? Math.min(width, height) : Math.max(width, height) : width * height;
+    message = `\u751F\u6210\u5C3A\u5BF8 ${size} \u7684${edge ? "\u8FB9\u957F" : "\u50CF\u7D20\u603B\u91CF"}\u4E3A ${actual}\uFF0C\u5F53\u524D\u6A21\u578B\u8981\u6C42${minimum ? "\u81F3\u5C11" : "\u6700\u591A"} ${limit}\u3002`;
+  }
+  return { code: error40.code, message, details: parsed.data };
+}
+
+// mcp/image-tool-schemas.mjs
 var imageIdSchema = external_exports2.string().regex(/^img_[0-9A-HJKMNP-TV-Z]{26}$/).describe("Stable image ID in the project artifact repository");
 var projectBindingIdSchema = external_exports2.string().regex(/^pbind_[0-9a-f]{64}$/).describe("Image project binding ID");
 var batchIdSchema = external_exports2.string().regex(/^batch_[0-9A-HJKMNP-TV-Z]{26}$/).describe("Immutable batch manifest ID");
@@ -31436,7 +31489,8 @@ var imageBatchResultOutputSchema = external_exports2.discriminatedUnion("ok", [
     ok: external_exports2.literal(false),
     error: external_exports2.object({
       code: external_exports2.string().regex(/^[a-z][a-z0-9_]{0,63}$/),
-      message: external_exports2.string().min(1)
+      message: external_exports2.string().min(1),
+      details: imageSizeErrorDetailsSchema.optional()
     }).strict()
   }).strict()
 ]);
@@ -31471,6 +31525,7 @@ var imageDeliveryOutputSchema = external_exports2.object({
 // mcp/tool-errors.mjs
 init_define_RELEASE_IDENTITY();
 var STABLE_TOOL_ERROR_ENTRIES = [
+  ["image_size_unsupported", "\u751F\u6210\u5C3A\u5BF8\u4E0D\u6EE1\u8DB3\u5F53\u524D\u6A21\u578B\u58F0\u660E\u7684\u9650\u5236\u3002\u8BF7\u67E5\u770B list_image_models \u8FD4\u56DE\u7684 limits.output_size\uFF1B\u672A\u53D1\u9001\u56FE\u7247\u8BF7\u6C42\u3002"],
   ["background_parameter_rejected", "\u670D\u52A1\u62D2\u7EDD\u4E86\u660E\u786E\u6307\u5B9A\u7684 background \u53C2\u6570\uFF0C\u672A\u81EA\u52A8\u91CD\u8BD5\u3002\u8BF7\u8BE2\u95EE\u7528\u6237\u662F\u5426\u53BB\u6389\u8BE5\u53C2\u6570\u540E\u53D1\u8D77\u65B0\u8BF7\u6C42\uFF1B\u900F\u660E\u6548\u679C\u53EF\u80FD\u6539\u53D8\u3002"],
   ["local_image_request_invalid", "\u672C\u5730\u56FE\u7247\u4F20\u8F93\u8BF7\u6C42\u65E0\u6548\uFF0C\u8BF7\u4F7F\u7528\u9879\u76EE\u76F8\u5BF9\u8DEF\u5F84\u548C\u7A33\u5B9A\u56FE\u7247 ID\u3002"],
   ["local_image_source_invalid", "\u65E0\u6CD5\u5BFC\u5165\u6E90\u56FE\u7247\uFF1A\u8BF7\u786E\u8BA4\u5B83\u662F\u9879\u76EE\u5185\u53EF\u5B89\u5168\u8BFB\u53D6\u7684 PNG\u3001JPEG \u6216 WebP\uFF0C\u4E14\u4E0D\u8D85\u8FC7 64 MiB \u548C 1 \u4EBF\u50CF\u7D20\u3002"],
@@ -31636,9 +31691,9 @@ var model_profile_contract_default = {
   version: 1,
   protocols: ["openai-compatible", "atlas", "xai-images", "gemini-interactions", "gemini-generate-content"],
   providerKeys: ["protocol", "base_url", "api_key", "api_key_env", "user_agent", "url_download", "proxy"],
-  profileKeys: ["provider", "model", "capabilities"],
+  profileKeys: ["provider", "model", "capabilities", "limits"],
   providerMetadataKeys: ["display_name", "endpoints"],
-  profileMetadataKeys: ["display_name", "aliases", "description", "defaults", "transparency", "limits", "parameters", "parameter_fields"],
+  profileMetadataKeys: ["display_name", "aliases", "description", "defaults", "transparency", "parameters", "parameter_fields"],
   parameterFieldKeys: ["title", "description", "type", "path", "default", "enum", "minimum", "maximum"],
   parameterFieldTypes: ["string", "integer", "number", "boolean", "object", "array"],
   reservedParameterKeys: ["model", "prompt", "input", "contents", "image", "images", "mask", "n", "stream", "store", "previous_interaction_id", "api_key", "apiKey", "authorization", "headers", "base_url", "endpoint"],
@@ -34300,7 +34355,7 @@ function batchFailure(item, error40, fallbackCode) {
     requestId: item.requestId,
     operation: item.operation,
     ok: false,
-    error: {
+    error: safeImageSizeError(error40) ?? {
       code,
       message: stableToolErrorMessages.get(code)
     }
@@ -34331,11 +34386,15 @@ function unmanifestableBatchOutcome(item, artifactIds) {
 function createImageJobExecutor({ runTask, readArtifact, validateEdit, executeSingle }) {
   return Object.freeze({ executeItem, finalizeBatch });
   async function executeItem({ jobId, spec, index, context, checkpoint, saved, localAttempt, isCancelled }) {
+    let sizeError;
     const runJobTask = async (task) => {
       let generated = saved;
       if (!generated) {
         const result2 = await runTask({ ...task, ...task.delivery ? { deferDelivery: true } : {} }, context);
-        if (!result2?.ok) return result2;
+        if (!result2?.ok) {
+          sizeError = safeImageSizeError(result2?.error);
+          return result2;
+        }
         const apiDelivery = safeApiDelivery(result2.apiDelivery, result2.artifacts.map(({ id }) => id), task.output?.count ?? 1);
         generated = generatedCheckpointSchema.parse({
           ok: true,
@@ -34382,7 +34441,7 @@ function createImageJobExecutor({ runTask, readArtifact, validateEdit, executeSi
     }
     const code = stableToolErrorCodeFromText(result?.content?.[0]?.text) ?? "image_task_failed";
     return {
-      result: { requestId: "image", operation: spec.kind, ok: false, error: { code, message: stableToolErrorMessages.get(code) } },
+      result: { requestId: "image", operation: spec.kind, ok: false, error: sizeError ?? { code, message: stableToolErrorMessages.get(code) } },
       manifestResult: null,
       publishedArtifactIds: []
     };
@@ -34794,7 +34853,8 @@ var CONFIG_TEMPLATE = Object.freeze({
   models: { [ACTIVE_PROFILE]: {
     provider: "primary",
     model: "gpt-image-2",
-    capabilities: { generate: true, edit: true, mask: true, multi_reference: true }
+    capabilities: { generate: true, edit: true, mask: true, multi_reference: true },
+    limits: { output_size: { multiple_of: 16, max_aspect_ratio: 3 } }
   } },
   defaults: { size: "1536x1024", quality: "auto", output_format: "png" },
   postprocess: { enabled: true },
@@ -34865,7 +34925,7 @@ async function initializeImageConfig({ userHome = os.homedir(), projectRoot, aut
     gitignoreUpdated: true,
     nextSteps: [
       ...authMode === "apikey" ? ["\u8BBE\u7F6E provider.api_key_env \u5BF9\u5E94\u7684\u73AF\u5883\u53D8\u91CF"] : [],
-      ...authMode === "apikey" ? ["\u6309\u4F9B\u5E94\u5546\u5B9E\u9645\u503C\u4FEE\u6539 active_profile \u548C models.<profile>.model\uFF0C\u6A21\u578B ID \u4E0D\u8981\u6C42\u4F7F\u7528\u6807\u51C6\u540D\u79F0"] : [],
+      ...authMode === "apikey" ? ["\u6309\u4F9B\u5E94\u5546\u5B9E\u9645\u503C\u4FEE\u6539 active_profile \u548C models.<profile>.model\uFF0C\u6A21\u578B ID \u4E0D\u8981\u6C42\u4F7F\u7528\u6807\u51C6\u540D\u79F0\uFF1B\u624B\u52A8\u66F4\u6362\u6A21\u578B\u65F6\uFF0C\u79FB\u9664\u6A21\u677F\u7684 limits \u6216\u66FF\u6362\u4E3A\u8BE5\u6A21\u578B\u5DF2\u6838\u5B9E\u7684\u9650\u5236"] : [],
       "\u65B0\u914D\u7F6E\u9ED8\u8BA4\u542F\u7528 native-alpha\uFF1B\u5982\u679C\u4FDD\u7559\u65E7\u914D\u7F6E\uFF0C\u8BF7\u5728 inspect_image_config \u7684\u63D0\u793A\u4E0B\u663E\u5F0F\u66F4\u65B0\u900F\u660E\u7B56\u7565",
       "\u786E\u8BA4 transparency.native.model_ids \u53EA\u662F\u80FD\u529B\u58F0\u660E\uFF1B\u4E0D\u786E\u5B9A\u65F6\u53EF\u7559\u7A7A\u6570\u7EC4",
       "\u8C03\u7528 inspect_image_config \u68C0\u67E5\u6709\u6548\u914D\u7F6E\uFF0C\u7136\u540E\u91CD\u65B0\u7ED1\u5B9A\u9879\u76EE"
@@ -35103,6 +35163,17 @@ function mergeConfigChanges(current, changes) {
     }
     if (!isRecord2(value)) throw new ImageConfigManagementError("image_config_update_invalid");
     result[key] = mergeRecords(result[key], value);
+    if (key === "models") {
+      for (const [profileId, profileChanges] of Object.entries(value)) {
+        const previous = current.models?.[profileId];
+        if (!isRecord2(previous) || !isRecord2(profileChanges) || !Object.hasOwn(profileChanges, "model") || profileChanges.model === previous.model) continue;
+        if (Object.hasOwn(profileChanges, "limits")) {
+          result[key][profileId].limits = structuredClone(profileChanges.limits);
+        } else {
+          delete result[key][profileId].limits;
+        }
+      }
+    }
   }
   return result;
 }
@@ -35192,7 +35263,7 @@ function validateApiConfig(config2) {
     validateTransparency(model.transparency);
     if (model.parameters !== void 0 && (!isRecord2(model.parameters) || Object.keys(model.parameters).some((key) => model_profile_contract_default.reservedParameterKeys.includes(key)))) throw invalidImageConfigError();
     validateParameterFields(model.parameter_fields, model.parameters);
-    if (model.limits !== void 0 && (!isRecord2(model.limits) || unknownKeys(model.limits, /* @__PURE__ */ new Set(["max_input_images"])).length || model.limits.max_input_images !== void 0 && (!Number.isInteger(model.limits.max_input_images) || model.limits.max_input_images < 1))) throw invalidImageConfigError();
+    if (model.limits !== void 0 && !validModelLimits(model.limits, config2.providers[providerId].protocol)) throw invalidImageConfigError();
   }
   validateModelAliases(config2.models);
 }
@@ -36577,7 +36648,7 @@ var imageModelOutputSchema = external_exports2.object({
     aspect_ratio: external_exports2.string().optional(),
     resolution: external_exports2.string().optional()
   }).strict().optional(),
-  limits: external_exports2.object({ quality: external_exports2.array(external_exports2.string()).optional(), max_input_images: external_exports2.number().int().positive().optional() }).strict().optional(),
+  limits: modelLimitsSchema.extend({ quality: external_exports2.array(external_exports2.string()).optional() }).optional(),
   availability: external_exports2.enum(["configured", "missing_credentials"]).optional(),
   selectionFingerprint: external_exports2.string().regex(/^[a-f0-9]{64}$/).optional(),
   parameterFields: external_exports2.record(external_exports2.unknown()).optional(),

@@ -25,6 +25,12 @@ else:
 
 
 class ImageConfigMigrationTests(unittest.TestCase):
+    def test_standalone_migration_preserves_declared_size_limits(self):
+        limits = {"output_size": {"multiple_of": 16, "max_aspect_ratio": 3}}
+        self.write_source({"base_url": "https://example.test/v1", "api_key_env": "TEST_IMAGE_KEY", "model": "custom", "limits": limits})
+        plan = migrate_image_config.plan_migration(source_path=self.source, source_kind="standalone", user_target=self.user_target)
+        self.assertEqual(plan.user_config["models"][plan.user_config["active_profile"]]["limits"], limits)
+
     def test_direct_entry_runs_outside_package_without_pythonpath(self):
         environment = {key: value for key, value in os.environ.items() if key != "PYTHONPATH"}
         result = subprocess.run(
