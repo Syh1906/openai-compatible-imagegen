@@ -111,11 +111,11 @@ For transparent generation or editing, the transparency record contains route-sp
 ## Boundaries
 
 - Original publication accepts a broader PNG subset than local processing. Deep inspection and transforms support non-interlaced 8-bit or 16-bit RGB/RGBA PNG, reducing 16-bit samples to 8-bit for processing. See the [parameter reference](parameters.md#delivery-transform-parameters) for size and validation budgets. Unsupported QA leaves the valid original visible and reports partial or unmet delivery.
-- JPEG and WebP originals receive bounded publication checks; deep local pixel QA reports those formats as unsupported.
+- JPEG, WebP, GIF, and static SVG originals receive bounded publication checks; deep local pixel QA does not support these formats.
 - `--expect-transparent` checks alpha and visible content. It does not prove semantic isolation or remove a non-uniform background.
 - `--transparent` is delivery intent; only the resolved `native-alpha` route sends the API transparency parameter. The native retry policy runs before QA and does not change its checks.
 - If prompt-only alpha or a local route fails, the original API file is returned with a warning instead of being rejected.
-- An HTTP 4xx response is `api_rejected`, not a transparency failure; no image exists to return.
+- A final HTTP 4xx response is `api_rejected` in Standalone, not a transparency QA failure; no image was returned by that request. Plugin jobs retain their recorded state and never automatically resubmit unknown outcomes.
 - Reference-image technical metadata may be `not_evaluated` for semantics. It does not automatically block an edit request.
 - Component metrics do not prove that the subject is correct.
 - Reference-image style, identity, layout, and semantic fidelity require an external visual review.

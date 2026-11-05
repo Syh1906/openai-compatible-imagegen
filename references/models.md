@@ -51,3 +51,121 @@ Declare `allowed_sizes` as a non-empty list of exact `WIDTHxHEIGHT` strings, `mu
 The GPT Image 2 examples use `{"output_size":{"multiple_of":16,"max_aspect_ratio":3}}`, matching the [OpenAI generation](https://developers.openai.com/api/reference/resources/images/methods/generate) and [editing](https://developers.openai.com/api/reference/resources/images/methods/edit) contracts. This is a partial, explicit declaration, not a universal protocol rule. Confirm requirements for the selected provider before copying or changing it. New initialization with a different model omits the template's model-specific limits.
 
 Limits are checked after request options are resolved and before transport, including generation, edits, and batch rows. A rejection explains the failing dimensions and constraint; do not change size, retry, or switch channels automatically. Passing these checks does not establish support for undeclared restrictions. A user's final file size is separate from the API generation size: choose a supported canvas and use explicit `--fit contain` for proportional local delivery with padding. The default `stretch` changes proportions. Full-bleed output without distortion needs an agreed crop/composition plan; local delivery has no crop mode.
+
+## GPT Image 2.6: GIF, SVG and markup
+
+This Standalone configuration example declares both `gpt-image-2.6-sunburst` and `gpt-image-2.6-flare`. Use the exact model IDs your service makes available. Add the required provider and profiles to this installed skill's `auth.json`; preserve unrelated profiles. Standalone uses API Key authentication only.
+
+```json
+{
+  "config_version": 2,
+  "active_profile": "openai/flare",
+  "providers": {
+    "openai": {
+      "protocol": "openai-compatible",
+      "base_url": "https://api.openai.com/v1",
+      "api_key_env": "OPENAI_API_KEY"
+    }
+  },
+  "models": {
+    "openai/sunburst": {
+      "provider": "openai",
+      "model": "gpt-image-2.6-sunburst",
+      "capabilities": {
+        "generate": true,
+        "edit": true,
+        "mask": true,
+        "markup": true,
+        "multi_reference": true
+      },
+      "defaults": {
+        "size": "auto",
+        "quality": "medium",
+        "output_format": "png"
+      },
+      "parameters": {
+        "complexity": "high"
+      },
+      "parameter_fields": {
+        "complexity": {
+          "title": "Complexity",
+          "type": "string",
+          "path": [
+            "complexity"
+          ],
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ]
+        }
+      }
+    },
+    "openai/flare": {
+      "provider": "openai",
+      "model": "gpt-image-2.6-flare",
+      "capabilities": {
+        "generate": true,
+        "edit": true,
+        "mask": true,
+        "markup": true,
+        "multi_reference": true
+      },
+      "defaults": {
+        "size": "auto",
+        "quality": "medium",
+        "output_format": "png"
+      },
+      "parameters": {
+        "complexity": "high"
+      },
+      "parameter_fields": {
+        "complexity": {
+          "title": "Complexity",
+          "type": "string",
+          "path": [
+            "complexity"
+          ],
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ]
+        }
+      }
+    }
+  }
+}
+```
+
+`complexity` controls planning before rendering and is separate from `quality`. The supported values are `low`, `medium`, and `high`. Override it per request through `--parameters`.
+
+- **GIF:** generation only. Request `format: "gif"`, `size: "auto"`, and optionally `parameters: {"frame_count": 9, "frame_duration_ms": 200}`. Local validation accepts 2–64 frames and durations of 20–2000 milliseconds. These client bounds do not establish service support: OpenAI’s guide and endpoint reference currently give different GIF limits, and the endpoint reference requires preview access. Confirm the selected service’s limits before choosing values. Explicit frame dimensions must be positive multiples of 16. The provider also enforces its frame-size and total-pixel limits.
+- **SVG:** generation only, one image per provider request. Request `format: "svg"`; Standalone uses `--n 1`. Static SVG is saved as UTF-8 XML. Vector shapes, text, gradients, basic styles and local references are accepted. Scripts, external resources, embedded raster images, animation and unsupported elements are rejected.
+- **SVG author model:** the official API requires `svg.model` when SVG model selection is enabled for the account; otherwise omit the `svg` object. The top-level image model creates the reference image, while `svg.model` authors the vector content. Confirm the supported author model before passing it in the nested `svg.model` field of `--parameters`. Optional `svg.reasoning.effort` is independent of image `complexity`. Do not guess or automatically select an author model after a missing-parameter error; consult the [API reference](https://developers.openai.com/api/reference/resources/images/methods/generate) and the specific provider error.
+- **Original delivery:** both formats are preserved byte for byte, written to the requested output path with the matching `.gif` or `.svg` extension. Raster editing, resizing, grid splitting and transparency processing are unavailable for these originals. Neither format supports streaming, partial images, output compression or `prompt_rewriter`.
+- **Markup:** with `capabilities.markup: true`, pass a separate transparent PNG through `--markup`. The first input image remains the clean parent; additional images remain references. Use `--mask` for a separate mask edit. A markup layer cannot be sent with a mask or `prompt_rewriter`; it must match the first input dimensions, contain transparent pixels, fit within 50 MB and have at most 16,777,216 pixels.
+
+Standalone examples, after configuring the profile:
+
+Windows PowerShell, from your image project directory outside the installation:
+
+```powershell
+$SkillDir = "C:/path/to/openai-compatible-imagegen"
+python "$SkillDir/scripts/imagegen.py" generate --profile openai/flare --prompt "A lantern gently swaying in a seamless loop" --format gif --size auto --file output/lantern.gif
+python "$SkillDir/scripts/imagegen.py" generate --profile openai/sunburst --prompt "A simple vector leaf logo" --format svg --n 1 --file output/leaf.svg
+python "$SkillDir/scripts/imagegen.py" edit --profile openai/flare --prompt "Recolor the circled vase blue and remove the annotation" --image kitchen.png --markup markup.png --file output/kitchen-blue.png
+```
+
+macOS or Linux shell, from your image project directory outside the installation:
+
+```bash
+SkillDir="/absolute/path/to/openai-compatible-imagegen"
+python3 "$SkillDir/scripts/imagegen.py" generate --profile openai/flare --prompt "A lantern gently swaying in a seamless loop" --format gif --size auto --file output/lantern.gif
+python3 "$SkillDir/scripts/imagegen.py" generate --profile openai/sunburst --prompt "A simple vector leaf logo" --format svg --n 1 --file output/leaf.svg
+python3 "$SkillDir/scripts/imagegen.py" edit --profile openai/flare --prompt "Recolor the circled vase blue and remove the annotation" --image kitchen.png --markup markup.png --file output/kitchen-blue.png
+```
+
+The SVG example assumes the service does not require explicit author selection. Otherwise configure `parameters.svg.model` in the selected profile first. The edit example requires your existing `kitchen.png` and matching transparent `markup.png`.
+
+Use `--parameters` for JSON animation and complexity overrides. `--markup` requires an explicit `capabilities.markup: true` declaration. Model access and format availability depend on the configured service. See the [official Image API guide](https://developers.openai.com/api/docs/guides/image-generation).

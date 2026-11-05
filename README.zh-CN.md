@@ -29,7 +29,7 @@ API Key profile 支持 OpenAI-compatible、Atlas、xAI Images、Gemini Interacti
 
 ## Codex App 工作流
 
-在会话中生成图片，再打开聚焦画布标记区域，并为每处修改添加说明。
+在会话中生成图片。PNG、JPEG 或 WebP 结果可打开聚焦画布标记区域，并为每处修改添加说明。
 
 API Key 生成和编辑支持持久化异步任务：长批次可持续查询进度，等待超时后可找回已确认结果，交付失败可保留原图继续处理。参见[长时间生成与批量任务](docs/guides/image-jobs.zh-CN.md)。
 
@@ -63,6 +63,7 @@ Plugin 已包含所需程序，无需构建仓库。继续完成[配置](docs/gu
 ## 能做什么
 
 - 生成图片，并使用一张或多张参考图编辑。
+- 通过支持相应能力的图片 API 请求 GIF 动画或静态 SVG，并在 Codex App 中预览和导出原文件。两种格式不支持画布编辑或本地位图变换，参见[模型与格式要求](docs/guides/models.zh-CN.md#gpt-image-26gifsvg-与原生标注)。
 - 一次生成多张图片，或批量处理不同需求。
 - 本地交付失败时，保留已保存的 API 原图。
 - 缩放、适配、安全边距、网格拆分和预览板。

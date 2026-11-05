@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import contextlib
+import base64
 from dataclasses import replace
 import io
 import json
@@ -15,6 +16,35 @@ import imagegen
 
 
 class StandaloneModelSelectionTests(unittest.TestCase):
+    def test_gif_and_svg_are_not_silently_converted_by_transparency_intent(self):
+        cfg = imagegen.Config(base_url="https://example.test/v1", api_key="fixture", api_key_source="fixture", model="image", defaults={}, postprocess={}, config_version=2)
+        for fmt in ("gif", "svg"):
+            args = imagegen.build_parser().parse_args(["generate", "--prompt", "loop", "--format", fmt, "--transparent"])
+            with self.assertRaisesRegex(imagegen.ImagegenError, "GIF/SVG"):
+                imagegen.resolve_common_params(args, cfg)
+
+    def test_extended_formats_auto_size_and_markup_use_public_cli(self):
+        from tests.support.python_fixtures import make_png
+        cfg = imagegen.Config(base_url="https://example.test/v1", api_key="fixture", api_key_source="fixture", model="gpt-image-2.6-flare", defaults={}, postprocess={}, config_version=2, capabilities={"generate": True, "edit": True, "markup": True})
+        originals = {"gif":bytes.fromhex("47494638396101000100800000000000ffffff2c00000000010001000002024401003b"), "svg":b'<svg xmlns="http://www.w3.org/2000/svg" width="32" height="16"/>'}
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for fmt, original in originals.items():
+                output = root / f"result.{fmt}"
+                args = imagegen.build_parser().parse_args(["generate", "--prompt", "loop", "--format", fmt, "--size", "auto", "--file", str(output)])
+                with mock.patch.object(imagegen.image_transport, "request_json", return_value={"data":[{"b64_json":base64.b64encode(original).decode()}]}):
+                    result = imagegen.generate(cfg, args)
+                self.assertTrue(result["ok"], result)
+                self.assertEqual(output.read_bytes(), original)
+            parent, markup = root / "parent.png", root / "markup.png"
+            parent.write_bytes(make_png(2, 2))
+            markup.write_bytes(make_png(2, 2, 0))
+            args = imagegen.build_parser().parse_args(["edit", "--prompt", "recolor", "--image", str(parent), "--markup", str(markup), "--file", str(root / "edited.png")])
+            with mock.patch.object(imagegen.image_transport, "request_multipart", return_value={"data":[{"b64_json":base64.b64encode(make_png(2, 2)).decode()}]}) as send:
+                result = imagegen.edit(cfg, args)
+            self.assertTrue(result["ok"], result)
+            self.assertEqual([upload[0] for upload in send.call_args.kwargs["files"]], ["image[]", "markup"])
+
     def test_v2_batch_dimension_priority_preserves_each_input_layer(self):
         cfg = imagegen.Config(base_url="https://example.test/v1", api_key="fixture", api_key_source="fixture", model="image", defaults={}, postprocess={}, config_version=2, protocol="xai-images")
         args = imagegen.build_parser().parse_args(["batch", "--input", "rows.jsonl", "--out", "outputs", "--size", "1024x1024"])

@@ -14,7 +14,7 @@ const DELIVERY_WARNING_CODES = new Set([
 ]);
 const QA_STATUSES = new Set(["fail", "not_evaluated", "partial", "pass"]);
 const CHECK_STATUSES = new Set([...QA_STATUSES, "unsupported", "unmet"]);
-const IMAGE_FORMATS = new Set(["jpeg", "png", "webp"]);
+const IMAGE_FORMATS = new Set(["jpeg", "png", "webp", "gif", "svg"]);
 const QA_ROLES = new Set(["delivery", "source"]);
 const QA_CHECK_NAMES = new Set([
   "decode",

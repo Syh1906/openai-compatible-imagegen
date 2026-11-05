@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Callable
 from typing import Any
 import zlib
+from scripts.image_extended_formats import gif_dimensions, svg_dimensions
 
 from scripts.image_png import MAX_PNG_IDAT_CHUNKS, PNG_SIGNATURE
 from scripts.image_transaction import OutputTransaction
@@ -98,7 +99,7 @@ def publish_response_images(
         if actual_format is None:
             warnings.append(
                 f"api_response_item_unusable: API image item {response_index} did not contain a "
-                "complete PNG, JPEG, or WebP image; no image could be published for that item"
+                "complete PNG, JPEG, WebP, GIF, or static SVG image; no image could be published for that item"
             )
             continue
         item_warnings: list[str] = []
@@ -279,9 +280,9 @@ def read_json_response(stream: Any, limit: int = MAX_JSON_RESPONSE_BYTES) -> dic
     return value
 
 
-def safe_error_body(stream: Any) -> str:
+def safe_error_body(stream: Any, limit: int = 2000) -> str:
     try:
-        return stream.read(2001).decode("utf-8", errors="replace")[:2000]
+        return stream.read(limit + 1).decode("utf-8", errors="replace")[:limit]
     except Exception:
         return str(getattr(stream, "reason", "request failed"))
     finally:
@@ -309,7 +310,7 @@ def inspect_response_image(data: bytes) -> ImageInspection:
     """Deeply validate one provider image and return its actual format and size."""
     image_format, validation_warning = _inspect_image_format(data)
     if image_format is None:
-        raise ValueError("image is not a complete PNG, JPEG, or WebP payload")
+        raise ValueError("image is not a complete PNG, JPEG, WebP, GIF, or static SVG payload")
     width, height = image_dimensions(data, image_format)
     return ImageInspection(
         image_format=image_format,
@@ -321,6 +322,12 @@ def inspect_response_image(data: bytes) -> ImageInspection:
 
 def _inspect_image_format(data: bytes) -> tuple[str | None, str | None]:
     try:
+        if data.startswith((b"GIF87a", b"GIF89a")):
+            gif_dimensions(data)
+            return "gif", None
+        if data.lstrip().startswith((b"<", b"\xef\xbb\xbf")):
+            svg_dimensions(data)
+            return "svg", None
         if data.startswith(PNG_SIGNATURE):
             deep_validated, expected_bytes = _validate_png_response(data)
             warning = None
@@ -607,6 +614,10 @@ def _png_row_lengths(
 
 def image_dimensions(data: bytes, image_format: str) -> tuple[int, int]:
     """Return the pixel dimensions of an already structurally validated image."""
+    if image_format == "gif":
+        return gif_dimensions(data)
+    if image_format == "svg":
+        return svg_dimensions(data)
     if image_format == "png":
         if len(data) < 24 or not data.startswith(PNG_SIGNATURE) or data[12:16] != b"IHDR":
             raise ValueError("PNG dimensions are unavailable")

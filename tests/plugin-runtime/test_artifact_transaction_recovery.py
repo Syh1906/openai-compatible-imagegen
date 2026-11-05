@@ -88,6 +88,31 @@ class ArtifactTransactionRecoveryTests(unittest.TestCase):
         self.assertTrue(artifact_dir.is_dir())
         self.assertFalse(marker_dir.exists())
 
+    def test_extended_format_recovery_cleans_orphans_and_preserves_committed_originals(self) -> None:
+        originals = {
+            "gif": bytes.fromhex("47494638396101000100800000000000ffffff2c00000000010001000002024401003b"),
+            "svg": b'<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"/>',
+        }
+        for fmt, original in originals.items():
+            for committed in (False, True):
+                with self.subTest(format=fmt, committed=committed):
+                    if committed:
+                        artifact = self.repository.store_response_images(images=[original], provider="test", model="image", operation="generate", prompt="", parameters={})[0]
+                        artifact_id = artifact.metadata["id"]
+                        directory = self.artifact_root / "artifacts" / artifact_id
+                    else:
+                        artifact_id = "img_01J00000000000000000000703"
+                        directory = self.artifact_root / "artifacts" / artifact_id
+                        directory.mkdir()
+                        (directory / f"image.{fmt}").write_bytes(original)
+                        (directory / "meta.json").write_text("{}", encoding="utf-8")
+                    marker = self.create_marker(artifact_id, files=[f"image.{fmt}", "meta.json"])
+                    self.store_next()
+                    self.assertFalse(marker.exists())
+                    self.assertEqual(directory.exists(), committed)
+                    if committed:
+                        self.assertEqual(self.repository.get_artifact(artifact_id).image_bytes, original)
+
     def test_recovery_refuses_to_delete_an_orphan_directory_with_unknown_files(self) -> None:
         orphan_id = "img_01J00000000000000000000702"
         orphan_dir = self.artifact_root / "artifacts" / orphan_id

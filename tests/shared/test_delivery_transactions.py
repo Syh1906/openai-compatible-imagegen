@@ -229,7 +229,7 @@ class DeliveryTransactionTests(unittest.TestCase):
         target = self.root / "result.png"
         response = {"data": [{"b64_json": base64.b64encode(PNG_SIGNATURE).decode("ascii")}]}
 
-        with self.assertRaisesRegex(self.imagegen.ImagegenError, "complete PNG, JPEG, or WebP"):
+        with self.assertRaisesRegex(self.imagegen.ImagegenError, "complete PNG, JPEG, WebP, GIF, or static SVG"):
             self.imagegen.write_response_images(response, target, "png")
 
         self.assertFalse(target.exists())

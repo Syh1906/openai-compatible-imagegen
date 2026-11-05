@@ -6,6 +6,16 @@ import { JSDOM } from "jsdom";
 import { createEditorRenderer } from "../../web/editor-renderer.mjs";
 import { createEditorState } from "../../web/editor-state.mjs";
 
+test("GIF and SVG results retain previews without offering a raster canvas", () => {
+  withRenderer(({ document, renderer }) => {
+    for (const mimeType of ["image/gif", "image/svg+xml"]) {
+      renderer.renderInline({ candidates: [{ id: "img_01J00000000000000000000000", imageUrl: `data:${mimeType};base64,AA==`, mimeType }], onOpen() {} });
+      assert.ok(document.querySelector("[data-action=preview-image]"));
+      assert.equal(document.querySelector("[data-action=open-editor]"), null);
+    }
+  });
+});
+
 
 test("editor renderer exposes complete stage 4.5 style and mask controls", () => {
   withRenderer(({ document, renderer }) => {

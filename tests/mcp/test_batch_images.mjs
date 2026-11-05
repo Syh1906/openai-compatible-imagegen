@@ -2,6 +2,17 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { executeImageBatch } from "../../mcp/batch-images.mjs";
+import { safeImageFailure } from "../../mcp/tool-errors.mjs";
+
+test("failure diagnostics reject arbitrary text and invalid HTTP status", () => {
+  for (const diagnostics of [{ stage: "private path" }, { stage: "provider_request", httpStatus: "400 secret" }, { stage: "provider_request", httpStatus: 999 }]) {
+    assert.equal(safeImageFailure({ code: "image_task_failed", diagnostics }), undefined);
+  }
+  assert.equal(safeImageFailure({ code: "invalid_task", diagnostics: { stage: "provider_request" } }), undefined);
+  const result = safeImageFailure({ code: "image_task_failed", diagnostics: { stage: "provider_request", httpStatus: 400,
+    providerError: { code: "https://private.invalid", type: { arbitrary: true }, param: "svg.model", requestId: "req\ninvalid", message: "x".repeat(1001), rawBody: "private" } } });
+  assert.deepEqual(result.diagnostics.providerError, { param: "svg.model" });
+});
 
 
 const PARENT_ID = "img_01J00000000000000000000000";

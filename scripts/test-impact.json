@@ -305,7 +305,7 @@
     {
       "name": "test-support-plugin-runtime",
       "files": ["tests/support/python_fixtures.py"],
-      "suites": ["plugin-runtime"]
+      "suites": ["plugin-runtime", "shared", "standalone"]
     },
     {
       "name": "test-support-web",

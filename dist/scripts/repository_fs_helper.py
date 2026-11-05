@@ -14,6 +14,7 @@ if str(PLUGIN_ROOT) not in sys.path:
     sys.path.insert(0, str(PLUGIN_ROOT))
 
 from scripts.repository_fs import DirectoryLease, RepositoryMutation
+from scripts.image_markup import validate_markup
 
 
 ARTIFACT_ID_PATTERN = re.compile(r"^img_[0-9A-HJKMNP-TV-Z]{26}$")
@@ -22,6 +23,8 @@ IMAGE_FILE_BY_MIME_TYPE = {
     "image/png": "image.png",
     "image/jpeg": "image.jpg",
     "image/webp": "image.webp",
+    "image/gif": "image.gif",
+    "image/svg+xml": "image.svg",
 }
 
 
@@ -98,6 +101,11 @@ def _read_annotation(lease: DirectoryLease | RepositoryMutation, annotation_id: 
     _read_file(lease, root / preview_file)
     if mask_file:
         _read_file(lease, root / mask_file)
+    markup_file = record.get("markupFile")
+    if markup_file not in {None, "markup.png"} or markup_file and mask_file:
+        raise ValueError("annotation markup file is invalid")
+    if markup_file:
+        _read_file(lease, root / markup_file)
     return record
 
 
@@ -113,6 +121,7 @@ def save_annotation_files(
     preview_snapshot: bytes,
     mask_snapshot: bytes | None,
     record: dict[str, Any],
+    markup_snapshot: bytes | None = None,
 ) -> None:
     annotation_id = _require_id(annotation_id, ANNOTATION_ID_PATTERN, "annotation")
     if record.get("id") != annotation_id:
@@ -121,6 +130,14 @@ def save_annotation_files(
     known_files = {"preview.svg", "annotation.json"}
     if mask_snapshot is not None:
         known_files.add("mask.png")
+    if markup_snapshot is not None:
+        if mask_snapshot is not None or record.get("markupFile") != "markup.png":
+            raise ValueError("markup cannot be combined with a mask")
+        parent = read_artifact(repository, record.get("imageId"))
+        validate_markup(markup_snapshot, base64.b64decode(parent["dataBase64"], validate=True))
+        known_files.add("markup.png")
+    elif record.get("markupFile") is not None:
+        raise ValueError("markup bytes are required")
     created = False
     with RepositoryMutation(repository) as mutation:
         try:
@@ -129,6 +146,8 @@ def save_annotation_files(
             mutation.publish_new_file(relative_root / "preview.svg", preview_snapshot)
             if mask_snapshot is not None:
                 mutation.publish_new_file(relative_root / "mask.png", mask_snapshot)
+            if markup_snapshot is not None:
+                mutation.publish_new_file(relative_root / "markup.png", markup_snapshot)
             record_snapshot = (
                 json.dumps(record, ensure_ascii=False, indent=2) + "\n"
             ).encode("utf-8")
@@ -149,6 +168,8 @@ def delete_annotation(repository: Path, annotation_id: str) -> None:
         known_files = {"annotation.json", "preview.svg"}
         if record.get("maskFile") == "mask.png":
             known_files.add("mask.png")
+        if record.get("markupFile") == "markup.png":
+            known_files.add("markup.png")
         mutation.remove_directory_if_known(
             Path("annotations") / annotation_id,
             known_files,
@@ -169,6 +190,8 @@ def execute(request: dict[str, Any]) -> dict[str, Any]:
         preview = base64.b64decode(request.get("previewBase64"), validate=True)
         mask_value = request.get("maskBase64")
         mask = None if mask_value is None else base64.b64decode(mask_value, validate=True)
+        markup_value = request.get("markupBase64")
+        markup = None if markup_value is None else base64.b64decode(markup_value, validate=True)
         record = request.get("record")
         if not isinstance(record, dict):
             raise ValueError("annotation record is required")
@@ -178,6 +201,7 @@ def execute(request: dict[str, Any]) -> dict[str, Any]:
             preview,
             mask,
             record,
+            markup,
         )
         return {"status": "saved"}
     if operation == "delete-annotation":

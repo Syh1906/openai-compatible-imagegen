@@ -29,11 +29,15 @@ HANDOFF_ID_PATTERN = re.compile(r"^handoff_[0-9a-f]{64}$")
 MAX_PENDING_TRANSACTIONS = 64
 CROCKFORD_BASE32 = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
 MIME_EXTENSIONS = {
+    "image/gif": "gif",
+    "image/svg+xml": "svg",
     "image/jpeg": "jpg",
     "image/png": "png",
     "image/webp": "webp",
 }
 FORMAT_MIME_TYPES = {
+    "gif": "image/gif",
+    "svg": "image/svg+xml",
     "jpeg": "image/jpeg",
     "png": "image/png",
     "webp": "image/webp",
@@ -975,11 +979,7 @@ def normalize_transaction_resources(payload: Any) -> list[dict[str, Any]]:
         files = resource["files"]
         if kind == "artifact":
             validate_artifact_id(resource_id)
-            allowed_files = [
-                ["image.jpg", "meta.json"],
-                ["image.png", "meta.json"],
-                ["image.webp", "meta.json"],
-            ]
+            allowed_files = [[f"image.{extension}", "meta.json"] for extension in MIME_EXTENSIONS.values()]
             if files not in allowed_files:
                 raise ValueError("artifact transaction files are invalid")
         elif kind == "batch":
@@ -1147,7 +1147,7 @@ def _normalize_api_delivery(value: Any, artifact_ids: list[str]) -> dict[str, An
         if artifact_id not in artifact_ids:
             raise ValueError("API delivery item references an unrelated artifact")
         actual_format = item["actualFormat"]
-        if actual_format not in {"png", "jpeg", "webp"}:
+        if actual_format not in {"png", "jpeg", "webp", "gif", "svg"}:
             raise ValueError("API delivery item has an invalid format")
         items.append({
             "responseIndex": _bounded_integer(item["responseIndex"], 1, 16, "response index"),

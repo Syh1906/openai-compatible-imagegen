@@ -1,4 +1,4 @@
-import { isStableToolErrorCode, stableToolErrorMessages } from "./tool-errors.mjs";
+import { isStableToolErrorCode, stableToolErrorMessages, safeImageFailure } from "./tool-errors.mjs";
 import { safeImageSizeError } from "./image-size-contract.mjs";
 import {
   safeDeliveryQa,
@@ -20,7 +20,7 @@ const API_DELIVERY_ISSUE_CODES = new Set([
   "size_mismatch",
   "total_bytes_exceeded",
 ]);
-const API_IMAGE_FORMATS = new Set(["jpeg", "png", "webp"]);
+const API_IMAGE_FORMATS = new Set(["jpeg", "png", "webp", "gif", "svg"]);
 
 
 export async function executeImageBatch({
@@ -455,7 +455,7 @@ function batchFailure(item, error, fallbackCode) {
     requestId: item.requestId,
     operation: item.operation,
     ok: false,
-    error: safeImageSizeError(error) ?? {
+    error: safeImageSizeError(error) ?? safeImageFailure(error) ?? {
       code,
       message: stableToolErrorMessages.get(code),
     },

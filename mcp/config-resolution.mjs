@@ -38,7 +38,7 @@ const PROJECT_DEFAULT_KEYS = new Set(["size", "quality", "output_format"]);
 const STORAGE_KEYS = new Set(["output_directory"]);
 const PROVIDER_KEYS = new Set(modelContract.providerKeys);
 const MODEL_KEYS = new Set(modelContract.profileKeys);
-const CAPABILITY_KEYS = new Set(["generate", "edit", "mask", "multi_reference"]);
+const CAPABILITY_KEYS = new Set(["generate", "edit", "mask", "markup", "multi_reference"]);
 const PROVIDER_PROTOCOLS = new Set(modelContract.protocols);
 const DEFAULT_TIMEOUT_SECONDS = 600;
 const DEFAULT_CONCURRENCY = 3;
@@ -681,7 +681,7 @@ function validateDefaults(value, allowedKeys, errorCode) {
     if (value.quality !== undefined && !modelContract.qualityValues.includes(value.quality)) throw configError(errorCode);
     if (value.output_format !== undefined && !modelContract.formatValues.includes(value.output_format)) throw configError(errorCode);
   }
-  if (value.size !== undefined && (typeof value.size !== "string" || !/^\d+x\d+$/.test(value.size))) {
+  if (value.size !== undefined && (typeof value.size !== "string" || !/^(auto|\d+x\d+)$/.test(value.size))) {
     throw configError(errorCode);
   }
   if (value.quality !== undefined && (typeof value.quality !== "string" || !value.quality.trim())) {

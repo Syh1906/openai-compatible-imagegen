@@ -328,7 +328,7 @@ test("the MCP suite declares its external Python runtime dependency", () => {
 test("support fixtures select only their actual consumer suites", () => {
   assert.deepEqual(
     selectImpactPlan(["tests/support/python_fixtures.py"], projectManifest).suites,
-    ["plugin-runtime"],
+    ["plugin-runtime", "shared", "standalone"],
   );
   assert.deepEqual(
     selectImpactPlan(["tests/support/widget-runtime-host.mjs"], projectManifest).suites,

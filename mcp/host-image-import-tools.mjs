@@ -183,6 +183,7 @@ async function prepareImport(input, context, { importer, editSubmissions, readAr
     }
     if (claimed?.receipt.modelSelection?.authMode === "apikey") throw requestError();
     const parent = await readArtifact(input.parentImageId, context);
+    if (["image/gif", "image/svg+xml"].includes(parent.metadata.mimeType)) throw requestError();
     preparationStarted = true;
     const structuredContent = await importer.prepare({
       ...input,

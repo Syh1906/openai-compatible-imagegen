@@ -35,6 +35,8 @@ IMAGE_FILE_BY_MIME_TYPE = {
     "image/png": "image.png",
     "image/jpeg": "image.jpg",
     "image/webp": "image.webp",
+    "image/gif": "image.gif",
+    "image/svg+xml": "image.svg",
 }
 
 

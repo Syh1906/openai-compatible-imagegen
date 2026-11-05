@@ -16,7 +16,7 @@ const MAX_MASK_RASTER_WORK = 32_000_000;
 const MASK_SEGMENT_LEAF_SIZE = 8;
 const MASK_RASTER_TILE_SIZE = 64;
 
-export async function saveImageAnnotations({ imageId, items }, {
+export async function saveImageAnnotations({ imageId, items, markupPngBase64 }, {
   artifactRoot,
   modelProfileId = undefined,
   activeProfile = "primary/gpt-image-2",
@@ -30,6 +30,8 @@ export async function saveImageAnnotations({ imageId, items }, {
   const previewFile = "preview.svg";
   const maskItems = items.filter((item) => item.type === "mask");
   const maskFile = maskItems.length ? "mask.png" : null;
+  if (markupPngBase64 && maskFile) throw new Error("markup cannot be combined with a mask");
+  const markupFile = markupPngBase64 ? "markup.png" : null;
   let maskPolicy = null;
   const preview = buildPreview(artifact, items);
   let mask = null;
@@ -76,6 +78,7 @@ export async function saveImageAnnotations({ imageId, items }, {
       maskFile,
       maskMimeType: maskFile ? "image/png" : null,
       maskPolicy,
+      ...(markupFile ? { markupFile } : {}),
       createdAt: new Date().toISOString(),
   };
   await runRepositoryOperation({
@@ -84,6 +87,7 @@ export async function saveImageAnnotations({ imageId, items }, {
     annotationId,
     previewBase64: Buffer.from(preview, "utf8").toString("base64"),
     maskBase64: mask ? mask.toString("base64") : null,
+    ...(markupFile ? { markupBase64: markupPngBase64 } : {}),
     record,
   });
   return {
@@ -94,6 +98,7 @@ export async function saveImageAnnotations({ imageId, items }, {
       hasMask: Boolean(maskFile),
       maskMimeType: record.maskMimeType,
       maskPolicy,
+      ...(markupFile ? { hasMarkup: true } : {}),
   }
 }
 
@@ -115,7 +120,8 @@ export async function readImageAnnotation(annotationId, {
     const previewPath = path.join(dataRoot, "annotations", annotationId, record.previewFile);
     const maskPath = record.maskFile ? path.join(dataRoot, "annotations", annotationId, record.maskFile) : null;
     validateMaskPolicyHash(record.maskPolicy, annotationId);
-    return { ...record, maskPolicy: record.maskPolicy ?? null, previewPath, maskPath };
+    const markupPath = record.markupFile ? path.join(dataRoot, "annotations", annotationId, record.markupFile) : null;
+    return { ...record, maskPolicy: record.maskPolicy ?? null, previewPath, maskPath, markupPath };
   } catch (error) {
     if (error?.code === "ENOENT" || /repository entry not found/i.test(error?.message || "")) {
       throw new Error(`annotation not found: ${annotationId}`);

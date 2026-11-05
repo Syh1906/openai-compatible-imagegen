@@ -15,6 +15,22 @@ const CONTEXT = {
   artifactRoot: "C:/workspace/project/output/imagegen",
 };
 
+test("GIF and SVG parents stop before preparing a host edit", async () => {
+  const parentImageId = "img_01J00000000000000000000000";
+  for (const mimeType of ["image/gif", "image/svg+xml"]) {
+    let calls = 0;
+    await withClient({
+      hostImageImporter: { async prepare() { calls++; } },
+      readArtifact: async () => ({ metadata: { ...artifact(parentImageId), mimeType }, data: "fixture" }),
+    }, async (client) => {
+      const result = await client.callTool({ name: "prepare_host_image_import", arguments: { route: "chatgpt", intent: "edit", parentImageId, prompt: "edit" } });
+      assert.equal(result.isError, true);
+      assert.equal(result.structuredContent.error.fallbackEligible, false);
+      assert.equal(calls, 0);
+    });
+  }
+});
+
 test("conversation host edits return the parent without inventing a canvas submission", async () => {
   const parentImageId = "img_01J00000000000000000000000";
   let preparedInput;

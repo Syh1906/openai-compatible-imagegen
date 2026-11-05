@@ -27,7 +27,7 @@ For a v2 provider/model configuration, run `list-models` before selecting an API
 2. Choose one mode:
    - `generate`: text-to-image.
    - `edit`: image editing, inpainting, or reference-image work.
-   - `batch`: JSONL generation with limited concurrency.
+   - `batch`: JSONL generation or editing with limited concurrency.
    - `apply-transparency`: run one declared local transparency route on an existing PNG.
    - `info`: redacted configuration summary.
 3. Before constructing the command, interpret the request and decide the purpose, subject, composition, visual style, target size, aspect ratio, quality, format, background, transparency, reference files, and output location. Preserve explicit per-row and shared values; use agent judgment only for omitted intent, and leave a parameter unset when `auth.json` should decide it.
@@ -179,7 +179,7 @@ If every permitted attempt remains unmet, return the original API image and its 
 
 Each local route records an 8-bit `alpha_pipeline`: background or mask profiling, matte method, refinement, optional Remove Matte/Defringe cleanup, and the black/white/gray/checker preview contract. Do not apply hard component cleanup to emissive effects; disconnected particles and soft falloff are intentional. For explicit masks, use `threshold`, `expand`, `feather`, `gamma`, and `min_component_area` only when the requested matte needs those operations. Use `matte=black|white` only when that source matte color is known; this cleanup changes partial-alpha edge colors and preserves pixels that the trusted mask marks fully opaque.
 
-An HTTP error happens before an image exists and is separate from transparency QA. A 4xx response is recorded as `error_kind=api_rejected` with its `status_code`; it is not reported as `transparency.status=unmet`. For edit requests, technical reference metadata may be attached with `status=not_evaluated`; reference semantics are not automatically judged or used to block the API request.
+An HTTP error means the request did not return a usable image response and is separate from transparency QA; it does not prove that no image was generated or billed. A 4xx response is recorded as `error_kind=api_rejected` with its `status_code`; it is not reported as `transparency.status=unmet`. For edit requests, technical reference metadata may be attached with `status=not_evaluated`; reference semantics are not automatically judged or used to block the API request.
 
 ## Commands
 
@@ -363,8 +363,10 @@ Core parameters:
 - `--aspect`: `1:1`, `16:9`, `4:3`, `3:4`, or `9:16`.
 - `--resolution`: `1K`, `2K`, or `4K` when using `--aspect`.
 - `--quality`: `auto`, `low`, `medium`, `high`, `xhigh`, or `max`. The last two require model/provider support; Atlas retains `low`, `medium`, and `high`. Never downgrade quality automatically.
-- `--n`: number of images returned by one request, from 1 to 16.
-- `--format`: `png`, `jpeg`, or `webp`.
+- `--n`: requested image count, locally accepted from 1 to 16; SVG requires 1 and providers may impose lower limits.
+- `--format`: `png`, `jpeg`, `webp`; OpenAI-compatible generation also accepts `gif` and static `svg`. GIF/SVG are preview/original-export outputs, not raster edit or local transform inputs.
+- GIF: local validation accepts `frame_count` (2–64) and `frame_duration_ms` (20–2000) via `--parameters`; confirm the provider’s actual limits before choosing values; use `--size auto` or positive multiples of 16. SVG requires `--n 1`. Neither format supports streaming, compression, partial images, or `prompt_rewriter`. If the service requires SVG model selection, pass a confirmed author model through `--parameters` as `svg.model`; otherwise omit `svg`. See [model profiles](references/models.md).
+- `--markup`: a separate transparent PNG matching the first edit input; requires `capabilities.markup: true`, cannot be combined with `--mask` or `prompt_rewriter`. See [model profiles](references/models.md).
 - `--background`: `auto` or `opaque`; `transparent` was removed.
 - `--transparent`: transparent delivery intent; forces PNG and lets the resolved route decide whether to send the native API parameter.
 - `--asset`: explicit single visual-deliverable intent; prefers PNG and does not imply a particular industry.
@@ -387,7 +389,7 @@ Post-processing parameters:
 - `--transparency-mask`: explicit mask input required by `mask-alpha`.
 - `--transparency-param NAME=VALUE`: repeatable, route-specific parameter override.
 
-An explicit output filename extension must match the resolved format. Transparent and `--asset` requests resolve to PNG, including during batch preflight.
+An explicit output filename extension must match the resolved format. Transparent and `--asset` requests resolve to PNG, including during batch preflight; an explicit GIF/SVG format conflicts with those intents and is rejected before submission.
 
 Read `references/prompting.md` when constructing a prompt or controlled batch. Read `references/parameters.md` for parameter resolution, `references/postprocess.md` for delivery transforms and preview boards, and `references/qa.md` for deterministic QA.
 
@@ -395,11 +397,11 @@ Read `references/prompting.md` when constructing a prompt or controlled batch. R
 
 `batch` input is JSONL, one task per line. See `examples/batch.example.jsonl`.
 
-Common fields include `id`, `mode`, `prompt`, `file`, `size`, `aspect`, `resolution`, `quality`, `n`, `format`, `background`, `transparent`, `asset`, `images`, `mask`, `model`, `timeout`, `postprocess`, `transparency_route`, `transparency_mask`, `transparency_options`, `qa`, `components`, `delivery_size`, `grid`, `expected_count`, `resample`, `fit`, and `safe_margin`.
+Common fields include `id`, `mode`, `prompt`, `file`, `size`, `aspect`, `resolution`, `quality`, `n`, `format`, `background`, `transparent`, `asset`, `images`, `mask`, `markup`, `model`, `timeout`, `postprocess`, `transparency_route`, `transparency_mask`, `transparency_options`, `qa`, `components`, `delivery_size`, `grid`, `expected_count`, `resample`, `fit`, and `safe_margin`.
 
 Batch path contract:
 
-- `--input` is resolved from the caller's working directory, then JSONL input fields `images`, `mask`, and `transparency_mask` are resolved relative to the JSONL file directory.
+- `--input` is resolved from the caller's working directory, then JSONL input fields `images`, `mask`, `markup`, and `transparency_mask` are resolved relative to the JSONL file directory.
 - Task and shared output fields `file`, `out`, and `postprocess_out_dir` are resolved relative to `--out`; absolute paths remain absolute.
 - The same normalized paths are used for preflight and worker execution. `manifest.json` records `output_root` and `path_contract`, including any missing published files.
 

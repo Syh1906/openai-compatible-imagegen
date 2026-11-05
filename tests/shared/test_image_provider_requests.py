@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 import argparse
+import io
+import json
 import sys
 import unittest
 from unittest import mock
@@ -15,6 +17,40 @@ from provider_config import EffectiveImageConfig
 
 
 class ProviderRequestTests(unittest.TestCase):
+    def test_native_protocol_preserves_prompt_for_error_redaction(self):
+        cfg = self.config(protocol="gemini-generate-content", config_version=2)
+        prompt = "private-first-line\nprivate-second-line" + "x" * 1100
+        body = json.dumps({"error": {"message": "Rejected prompt: " + prompt}}).encode()
+        error = requests.image_transport.urllib.error.HTTPError("https://example.invalid", 400, "Bad Request", {}, io.BytesIO(body))
+        with mock.patch.object(requests.image_transport.urllib.request, "urlopen", side_effect=error), mock.patch.object(requests.image_transport, "proxy_mapping", return_value=None):
+            with self.assertRaises(requests.image_transport.TransportError) as caught:
+                requests.request_image(cfg, "generate", {"prompt": prompt}, 30)
+        self.assertEqual(caught.exception.provider_error["message"], "Rejected prompt: [REDACTED]")
+        self.assertNotIn("private-first-line", str(caught.exception))
+
+    def test_both_adapters_recognize_rejection_identified_only_by_param(self):
+        cfg = self.config()
+        body = json.dumps({"error": {"code": "unknown_parameter", "type": "invalid_request_error", "param": "background", "message": "Unknown parameter."}}).encode()
+        for adapter in (imagegen, image_runtime):
+            error = requests.image_transport.urllib.error.HTTPError("https://example.invalid", 400, "Bad Request", {}, io.BytesIO(body))
+            with self.subTest(adapter=adapter.__name__), mock.patch.object(requests.image_transport.urllib.request, "urlopen", side_effect=error), mock.patch.object(requests.image_transport, "proxy_mapping", return_value=None):
+                with self.assertRaises(Exception) as caught:
+                    adapter.request_json(cfg, "images/generations", {"prompt": "test"}, 30)
+                checker = imagegen.is_transparency_parameter_rejection if adapter is imagegen else image_runtime._is_transparency_parameter_rejection
+                self.assertTrue(checker(caught.exception))
+
+    def test_gateway_error_shapes_preserve_transparency_rejection(self):
+        cfg = self.config()
+        for envelope in ({"error": "background unsupported test-only"}, {"message": "background unsupported test-only"}):
+            for adapter in (imagegen, image_runtime):
+                error = requests.image_transport.urllib.error.HTTPError("https://example.invalid", 400, "Bad Request", {}, io.BytesIO(json.dumps(envelope).encode()))
+                with self.subTest(envelope=envelope, adapter=adapter.__name__), mock.patch.object(requests.image_transport.urllib.request, "urlopen", side_effect=error), mock.patch.object(requests.image_transport, "proxy_mapping", return_value=None):
+                    with self.assertRaises(Exception) as caught:
+                        adapter.request_json(cfg, "images/generations", {"prompt": "image"}, 30)
+                    checker = imagegen.is_transparency_parameter_rejection if adapter is imagegen else image_runtime._is_transparency_parameter_rejection
+                    self.assertTrue(checker(caught.exception))
+                    self.assertNotIn("test-only", str(caught.exception))
+
     def test_legacy_auto_size_remains_service_selected_with_pixel_limits(self):
         for protocol in ("openai-compatible", "atlas"):
             cfg = self.config(protocol=protocol, limits={"output_size": {"multiple_of": 16, "max_aspect_ratio": 3}})

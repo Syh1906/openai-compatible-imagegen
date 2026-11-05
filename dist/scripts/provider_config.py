@@ -26,6 +26,7 @@ MODEL_CAPABILITY_KEYS = (
     "generate",
     "edit",
     "mask",
+    "markup",
     "multi_reference",
 )
 PLACEHOLDER_API_KEYS = {
@@ -189,6 +190,8 @@ def list_model_profiles(raw: dict[str, Any]) -> list[dict[str, Any]]:
         effective = {key: capabilities.get(key, False) for key in MODEL_CAPABILITY_KEYS}
         if cfg.protocol == "atlas":
             effective.update(edit=False, mask=False, multi_reference=False)
+        if cfg.protocol != "openai-compatible":
+            effective["markup"] = False
         limits = dict(cfg.limits)
         if cfg.protocol in NATIVE_PROTOCOLS:
             effective["mask"] = False

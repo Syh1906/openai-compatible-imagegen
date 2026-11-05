@@ -1,8 +1,41 @@
+export const IMAGE_FAILURE_STAGES = ["provider_request", "response_decode", "artifact_publication"];
+export const PROVIDER_ERROR_ID_PATTERN = /^[A-Za-z0-9_.\[\]-]{1,128}$/;
+
+function safeProviderError(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const result = {};
+  for (const key of ["code", "type", "param", "requestId"]) {
+    if (typeof value[key] === "string" && PROVIDER_ERROR_ID_PATTERN.test(value[key]) && !value[key].includes("[REDACTED]")) result[key] = value[key];
+  }
+  // Python removes configured secrets before crossing the runtime boundary.
+  // Preserve only this bounded provider explanation, never the raw response.
+  if (typeof value.message === "string" && value.message.trim() && value.message.length <= 1000
+    && !/[\x00-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]/.test(value.message)) result.message = value.message;
+  return Object.keys(result).length ? result : undefined;
+}
+
+export function safeImageFailure(error) {
+  if (error?.code !== "image_task_failed" || !error.diagnostics) return undefined;
+  const { stage, httpStatus } = error.diagnostics;
+  if (!IMAGE_FAILURE_STAGES.includes(stage)
+    || (httpStatus !== undefined && (!Number.isInteger(httpStatus) || httpStatus < 100 || httpStatus > 599))) return undefined;
+  const diagnostics = { stage, ...(httpStatus !== undefined ? { httpStatus } : {}) };
+  const providerError = stage === "provider_request" ? safeProviderError(error.diagnostics.providerError) : undefined;
+  if (providerError) diagnostics.providerError = providerError;
+  const stages = {
+    provider_request: "图片服务请求未取得可用响应",
+    response_decode: "图片响应无法解码",
+    artifact_publication: "返回图片在校验或保存时失败",
+  };
+  return { code: error.code, diagnostics,
+    message: `${stages[stage]}${httpStatus !== undefined ? `（HTTP ${httpStatus}）` : ""}。未自动重新生成。` };
+}
+
 const STABLE_TOOL_ERROR_ENTRIES = [
   ["image_size_unsupported", "生成尺寸不满足当前模型声明的限制。请查看 list_image_models 返回的 limits.output_size；未发送图片请求。"],
   ["background_parameter_rejected", "服务拒绝了明确指定的 background 参数，未自动重试。请询问用户是否去掉该参数后发起新请求；透明效果可能改变。"],
   ["local_image_request_invalid", "本地图片传输请求无效，请使用项目相对路径和稳定图片 ID。"],
-  ["local_image_source_invalid", "无法导入源图片：请确认它是项目内可安全读取的 PNG、JPEG 或 WebP，且不超过 64 MiB 和 1 亿像素。"],
+  ["local_image_source_invalid", "无法导入源图片：请确认它是项目内可安全读取的 PNG、JPEG、WebP、GIF 或静态 SVG，且不超过 64 MiB 和 1 亿像素。"],
   ["local_image_import_failed", "无法发布本地图片，请检查 artifact 仓库后再继续。"],
   ["local_image_destination_exists", "导出目标已存在，未覆盖文件；请指定新的目标文件名。"],
   ["local_image_export_failed", "无法导出图片：请检查图片 ID、项目相对路径、格式扩展名及目录权限；目标不能位于 artifact 仓库内。"],

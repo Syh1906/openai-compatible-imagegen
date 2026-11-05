@@ -105,6 +105,18 @@ class RevealInExplorerTests(unittest.TestCase):
             self.assertEqual(result["status"], "revealed")
             self.assertEqual(shell_api.targets, [str(image_path.resolve(strict=False))])
 
+    @unittest.skipUnless(os.name == "nt", "Windows repository leases are required")
+    def test_reveal_extended_formats_selects_the_original_file(self):
+        for mime_type, image_file in (("image/gif", "image.gif"), ("image/svg+xml", "image.svg")):
+            with self.subTest(mime_type=mime_type), tempfile.TemporaryDirectory() as temporary_directory:
+                repository, image_path = create_artifact_fixture(
+                    Path(temporary_directory), image_file=image_file, mime_type=mime_type,
+                )
+                shell_api = FakeShellApi()
+                result = reveal_artifact(repository, IMAGE_ID, os_name="nt", shell_api=shell_api)
+                self.assertEqual(result["status"], "revealed")
+                self.assertEqual(shell_api.targets, [str(image_path.resolve(strict=False))])
+
     @unittest.skipUnless(os.name == "nt", "Windows handle sharing semantics are required")
     def test_reveal_holds_the_artifact_directory_and_image_until_shell_confirmation(self):
         with tempfile.TemporaryDirectory() as temporary_directory:

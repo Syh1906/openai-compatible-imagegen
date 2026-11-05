@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { access, mkdtemp, rm } from "node:fs/promises";
+import { access, mkdir, mkdtemp, rm } from "node:fs/promises";
 import { createServer, request as requestHttp } from "node:http";
 import os from "node:os";
 import path from "node:path";
@@ -9,6 +9,68 @@ import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
 
 import { runImageTask } from "../../mcp/image-runtime.mjs";
+import { createImageJobExecutor } from "../../mcp/image-job-execution.mjs";
+import { createImageJobManager } from "../../mcp/image-job-manager.mjs";
+
+test("HTTP rejection details survive Python, MCP and durable job queries without credentials", async () => {
+  const projectRoot = await mkdtemp(path.join(os.tmpdir(), "imagegen-error-"));
+  const artifactRoot = path.join(projectRoot, "output");
+  await mkdir(artifactRoot);
+  let calls = 0;
+  const api = createServer((request, response) => {
+    request.resume();
+    request.on("end", () => {
+      calls += 1;
+      response.writeHead(400, { "Content-Type": "application/json", "x-request-id": "req_svg_fixture" });
+      response.end(JSON.stringify({ error: { code: "missing_required_parameter", type: "invalid_request_error", param: "svg.model",
+        message: `Missing required parameter: svg.model. ${request.headers.authorization} private-prompt-fixture ${projectRoot} https://private.invalid/fixture`,
+        debug: "unrelated-private-data" } }));
+    });
+  });
+  await new Promise((resolve) => api.listen(0, "127.0.0.1", resolve));
+  const effectiveConfigJson = JSON.stringify({ config_version: 1, active_profile: "primary/gpt-image-2",
+    providers: { primary: { protocol: "openai-compatible", base_url: `http://127.0.0.1:${api.address().port}/v1`, api_key: "credential-fixture-123" } },
+    models: { "primary/gpt-image-2": { provider: "primary", model: "gpt-image-2", capabilities: { generate: true } } }, defaults: {} });
+  const context = { projectRoot, artifactRoot, effectiveConfigJson,
+    effectiveConfigSha256: createHash("sha256").update(effectiveConfigJson).digest("hex") };
+  let runtimeResult;
+  const executor = createImageJobExecutor({ runTask: async (task) => {
+    runtimeResult = await runImageTask(task, context);
+    return runtimeResult;
+  },
+    validateEdit: async () => {}, readArtifact: async () => {},
+    executeSingle: async ({ runTask, request }) => {
+      await runTask({ operation: "generate", modelProfileId: "primary/gpt-image-2", prompt: request.prompt, output: { format: "svg", size: "auto", count: 1 } });
+      return { isError: true, content: [{ type: "text", text: "image_task_failed: failure" }] };
+    } });
+  const manager = createImageJobManager({ executeItem: executor.executeItem });
+  try {
+    for (const kind of ["generate", "batch"]) {
+      const request = { prompt: "private-prompt-fixture", format: "svg", size: "auto", count: 1 };
+      const spec = kind === "generate" ? { kind, request } : { kind, items: [{ ...request, requestId: "svg", operation: "generate" }] };
+      const receipt = await manager.submit({ context, submissionKey: `http-${kind}`, spec });
+      await manager.drain();
+      const result = await manager.get({ context, jobId: receipt.jobId });
+      assert.equal(result.items[0].state, "unknown");
+      assert.ok(result.items[0].result.error.diagnostics, JSON.stringify(runtimeResult));
+      const detail = result.items[0].result.error.diagnostics.providerError;
+      assert.equal(detail.param, "svg.model");
+      assert.equal(detail.code, "missing_required_parameter");
+      assert.equal(detail.type, "invalid_request_error");
+      assert.equal(detail.requestId, "req_svg_fixture");
+      assert.match(detail.message, /Missing required parameter: svg.model/);
+      for (const secret of ["credential-fixture-123", "private-prompt-fixture", "private.invalid", "unrelated-private-data", projectRoot]) {
+        assert.equal(JSON.stringify(result).includes(secret), false);
+      }
+      await manager.submit({ context, submissionKey: `http-${kind}`, spec });
+    }
+    assert.equal(calls, 2);
+  } finally {
+    await manager.close();
+    await new Promise((resolve) => api.close(resolve));
+    await rm(projectRoot, { recursive: true });
+  }
+});
 
 const PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAEElEQVR4nGNgaPj/H4xhDABS0gn5PEa22gAAAABJRU5ErkJggg==";
 

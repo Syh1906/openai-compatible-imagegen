@@ -49,22 +49,22 @@ export function registerLocalImageTransferTools(server, { projectContext, transf
   }
   server.registerTool("import_local_image", {
     title: "Import local image",
-    description: "Import an existing PNG, JPEG, or WebP from a project-relative sourcePath as an immutable image artifact. Use the returned artifact.id as edit_image.parentImageId or referenceImageIds. Does not call an image service or change the authentication route. Never use host image handoff tools for existing local files.",
+    description: "Import an existing PNG, JPEG, WebP, GIF, or static SVG from a project-relative sourcePath as an immutable image artifact. PNG, JPEG and WebP can be edit inputs; GIF/SVG are for preview and original export. Does not call an image service or change the authentication route. Never use host image handoff tools for existing local files.",
     inputSchema: { projectBindingId: projectBindingIdSchema, sourcePath: relativePathSchema },
     outputSchema: z.object({ artifact: imageArtifactOutputSchema }).strict(),
     annotations: localWriteAnnotations,
   }, async ({ projectBindingId, sourcePath }) => await withProject(projectBindingId, async (context) => {
     const result = await transfer.importImage({ sourcePath }, context);
-    return { content: [{ type: "text", text: `已导入图片 ${result.artifact.id}，可使用此 ID 继续编辑。` }], structuredContent: result };
+    return { content: [{ type: "text", text: `已导入图片 ${result.artifact.id}，可使用此 ID 查看或导出图片。` }], structuredContent: result };
   }));
   server.registerTool("export_image_artifact", {
     title: "Export image artifact",
-    description: "Copy an image artifact's exact original bytes to a new project-relative destinationPath for downstream tools. Creates missing directories, never overwrites an existing file, and requires a matching PNG, JPEG, or WebP extension. Returns the relative destination, byte count, and SHA-256; the artifact remains immutable.",
+    description: "Copy an image artifact's exact original bytes to a new project-relative destinationPath for downstream tools. Creates missing directories, never overwrites an existing file, and requires a matching PNG, JPEG, WebP, GIF, or static SVG extension. Returns the relative destination, byte count, and SHA-256; the artifact remains immutable.",
     inputSchema: { projectBindingId: projectBindingIdSchema, imageId: imageIdSchema, destinationPath: relativePathSchema },
     outputSchema: z.object({
       imageId: imageIdSchema,
       destinationPath: relativePathSchema,
-      mimeType: z.enum(["image/png", "image/jpeg", "image/webp"]),
+      mimeType: z.enum(["image/png", "image/jpeg", "image/webp", "image/gif", "image/svg+xml"]),
       byteLength: z.number().int().positive(),
       sha256: z.string().regex(/^[0-9a-f]{64}$/),
     }).strict(),

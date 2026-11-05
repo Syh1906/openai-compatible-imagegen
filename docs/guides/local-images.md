@@ -21,7 +21,9 @@ With the ChatGPT route, Codex imports the image and edits it directly from your 
 
 The edited image appears in the conversation as a new version linked to the original. The source file in your project remains unchanged.
 
-You can import PNG, JPEG, and WebP images up to 64 MiB and 100 million pixels each. Import saves a copy; importing the same file again creates a separate image. Import and export run locally. Editing sends a request to the selected image service.
+You can import PNG, JPEG, WebP, GIF, and static SVG images up to 64 MiB and 100 million pixels each. Import saves a copy; importing the same file again creates a separate image. Import and export run locally. Editing sends a request to the selected image service.
+
+GIF and SVG are available for preview and original export only; they cannot be edit parents or references. Static SVG also has a 16 MiB limit. See [Image 2.6 formats](./models.md#gpt-image-26-gif-svg-and-markup) for format restrictions.
 
 ## Send a result to a local tool
 
@@ -37,6 +39,6 @@ Export preserves the image's original format and contents. It does not convert f
 
 On Windows, macOS, and Linux, use paths relative to the project root, such as `references/character.png`, with forward slashes `/`. Copy images from outside the project into it before importing them. Absolute paths, paths containing `..`, symbolic links, and Windows junctions are not supported.
 
-Keep import and export locations separate from the Plugin-managed image directory. Its default location is `output/imagegen/` and can be changed in [configuration](./configuration.md). Images already shown in result cards can be edited directly; you do not need to import them from that directory.
+Keep import and export locations separate from the Plugin-managed image directory. Its default location is `output/imagegen/` and can be changed in [configuration](./configuration.md). PNG, JPEG, and WebP images already shown in result cards can be edited directly; you do not need to import them from that directory.
 
 For a blank canvas, configuration errors, or other problems, see [troubleshooting](./troubleshooting.md).

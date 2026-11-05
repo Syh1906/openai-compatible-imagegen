@@ -31,7 +31,7 @@ Choose one installation shape for each environment. The packages share code and 
 
 API Key generation and edits use durable asynchronous jobs. Track long batches, recover confirmed results after a wait times out, and resume local processing with saved originals. See [long-running generation and batches](docs/guides/image-jobs.md).
 
-Generate an image in the conversation, then open its focused canvas to mark regions and add instructions for each change.
+Generate an image in the conversation. For PNG, JPEG, or WebP results, open the focused canvas to mark regions and add instructions for each change.
 
 **Conversation result**
 
@@ -63,6 +63,7 @@ Requires Python 3.12 or newer and an image-service credential. The [installation
 ## What it does
 
 - Generate images and edit one or more references.
+- Request animated GIFs or static SVGs from supporting image APIs, then preview and export the originals in Codex App. These formats do not support canvas editing or local raster transforms; see [model and format requirements](docs/guides/models.md#gpt-image-26-gif-svg-and-markup).
 - Generate multiple images or batch different image requests.
 - Preserve published API originals when local delivery fails.
 - Resize, fit, add safe margins, split grids, and build preview boards.

@@ -220,7 +220,7 @@ test("all product tools declare precise structured output schemas", async () => 
       assert.deepEqual(schemas.get("list_image_models").required, ["activeProfile", "models"]);
       assert.deepEqual(schemas.get("list_image_models").properties.models.items.required.sort(), ["capabilities", "id", "model", "provider"]);
       assert.equal(schemas.get("list_image_models").properties.models.items.additionalProperties, false);
-      assert.deepEqual(Object.keys(schemas.get("list_image_models").properties.models.items.properties.capabilities.properties).sort(), ["edit", "generate", "mask", "multi_reference"]);
+      assert.deepEqual(Object.keys(schemas.get("list_image_models").properties.models.items.properties.capabilities.properties).sort(), ["edit", "generate", "markup", "mask", "multi_reference"]);
 
       for (const name of ["generate_image", "edit_image"]) {
         assert.ok(schemas.get(name).required.includes("jobId"));

@@ -65,6 +65,7 @@ def add_generate_args(
     if edit:
         parser.add_argument("-i", "--image", action="append", default=None)
         parser.add_argument("-m", "--mask", default=None)
+        parser.add_argument("--markup", default=None, help="Transparent PNG annotation layer matching the first input image")
     add_postprocess_args(parser)
 
 
@@ -79,7 +80,7 @@ def add_common_args(
     parser.add_argument("--resolution", default=None, choices=sorted(supported_resolutions))
     parser.add_argument("--quality", default=None, choices=["auto", "low", "medium", "high", "xhigh", "max"])
     parser.add_argument("--n", type=int, default=None)
-    parser.add_argument("--format", default=None, choices=["png", "jpeg", "jpg", "webp"])
+    parser.add_argument("--format", default=None, choices=["png", "jpeg", "jpg", "webp", "gif", "svg"], help="Output format; GIF/SVG require generation through a supporting OpenAI-compatible service")
     parser.add_argument("--background", default=None, choices=["auto", "opaque"])
     parser.add_argument("--transparent", action="store_true")
     parser.add_argument("--asset", action="store_true")

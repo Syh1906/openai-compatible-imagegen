@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from pathlib import Path
+import io
+import json
 import tempfile
 import unittest
 from unittest import mock
@@ -12,6 +14,77 @@ from scripts import image_transport
 
 
 class ImageTransportTests(unittest.TestCase):
+    def test_http_error_retains_safe_provider_fields_and_request_id(self) -> None:
+        raw = {"error": {"code": "missing_required_parameter", "type": "invalid_request_error", "param": "svg.model",
+                         "message": "Missing required parameter: svg.model. credential-fixture-123 https://private.invalid/key", "raw": "discard"}}
+        error = urllib.error.HTTPError("https://example.invalid/v1/images/generations", 400, "Bad Request", {"x-request-id": "req_svg_123"}, io.BytesIO(json.dumps(raw).encode()))
+        with mock.patch.object(image_transport.urllib.request, "urlopen", side_effect=error) as send, mock.patch.object(image_transport, "proxy_mapping", return_value=None):
+            with self.assertRaises(image_transport.TransportError) as caught:
+                image_transport.request_json(base_url="https://example.invalid/v1", api_key="credential-fixture-123", user_agent="test", path="images/generations", payload={}, timeout=10)
+        detail = caught.exception.provider_error
+        self.assertEqual(detail["code"], "missing_required_parameter")
+        self.assertEqual(detail["param"], "svg.model")
+        self.assertEqual(detail["type"], "invalid_request_error")
+        self.assertEqual(detail["requestId"], "req_svg_123")
+        self.assertIn("Missing required parameter: svg.model", detail["message"])
+        self.assertNotIn("credential-fixture-123", str(caught.exception) + json.dumps(detail))
+        self.assertNotIn("private.invalid", json.dumps(detail))
+        self.assertNotIn("raw", detail)
+        self.assertEqual(send.call_count, 1)
+
+    def test_non_json_provider_error_does_not_publish_raw_body(self) -> None:
+        error = urllib.error.HTTPError("https://example.invalid", 400, "Bad Request", {"x-request-id": "req_only_header"}, io.BytesIO(b"<html>private failure</html>"))
+        with mock.patch.object(image_transport.urllib.request, "urlopen", side_effect=error), mock.patch.object(image_transport, "proxy_mapping", return_value=None):
+            with self.assertRaises(image_transport.TransportError) as caught:
+                image_transport.request_json(base_url="https://example.invalid/v1", api_key="", user_agent="test", path="images/generations", payload={}, timeout=10)
+        self.assertEqual(caught.exception.provider_error, {"requestId": "req_only_header"})
+
+    def test_provider_error_fields_are_bounded_and_secret_identifiers_removed(self) -> None:
+        detail = json.dumps({"error": {"code": "credential-fixture-123", "type": None, "param": "svg.model", "message": "Missing svg.model. " + "detail " * 500}})
+        error = urllib.error.HTTPError("https://example.invalid", 400, "Bad Request", {"x-request-id": "credential-fixture-123"}, io.BytesIO(detail.encode()))
+        with mock.patch.object(image_transport.urllib.request, "urlopen", side_effect=error), mock.patch.object(image_transport, "proxy_mapping", return_value=None):
+            with self.assertRaises(image_transport.TransportError) as caught:
+                image_transport.request_json(base_url="https://example.invalid/v1", api_key="credential-fixture-123", user_agent="test", path="images/generations", payload={}, timeout=10)
+        self.assertEqual(set(caught.exception.provider_error), {"param", "message"})
+        self.assertEqual(len(caught.exception.provider_error["message"]), 1000)
+        self.assertIn("Missing svg.model", caught.exception.provider_error["message"])
+
+    def test_echoed_prompt_is_redacted_before_message_truncation(self) -> None:
+        prompt = "private-prompt-fixture-" + "x" * 1100
+        body = json.dumps({"error": {"message": "Rejected prompt: " + prompt, "param": "prompt"}}).encode()
+        for multipart in (False, True):
+            error = urllib.error.HTTPError("https://example.invalid", 400, "Bad Request", {}, io.BytesIO(body))
+            with self.subTest(multipart=multipart), mock.patch.object(image_transport.urllib.request, "urlopen", side_effect=error), mock.patch.object(image_transport, "proxy_mapping", return_value=None):
+                with self.assertRaises(image_transport.TransportError) as caught:
+                    common = dict(base_url="https://example.invalid/v1", api_key="", user_agent="test", timeout=10)
+                    if multipart:
+                        image_transport.request_multipart(**common, path="images/edits", fields={"prompt": prompt}, files=[])
+                    else:
+                        image_transport.request_json(**common, path="images/generations", payload={"prompt": prompt})
+            self.assertNotIn("private-prompt-fixture", str(caught.exception) + json.dumps(caught.exception.provider_error))
+            self.assertEqual(caught.exception.provider_error["message"], "Rejected prompt: [REDACTED]")
+
+    def test_multiline_prompt_and_json_escaped_credential_are_redacted(self) -> None:
+        prompt = "private-first-line\nprivate-second-line"
+        credential = 'credential-quoted"fixture'
+        body = json.dumps({"error": {"message": f"Rejected {prompt} {credential}"}}).encode()
+        error = urllib.error.HTTPError("https://example.invalid", 400, "Bad Request", {}, io.BytesIO(body))
+        with mock.patch.object(image_transport.urllib.request, "urlopen", side_effect=error), mock.patch.object(image_transport, "proxy_mapping", return_value=None):
+            with self.assertRaises(image_transport.TransportError) as caught:
+                image_transport.request_json(base_url="https://example.invalid/v1", api_key=credential, user_agent="test", path="images/generations", payload={"prompt": prompt}, timeout=10)
+        result = str(caught.exception) + json.dumps(caught.exception.provider_error)
+        self.assertNotIn("private-first-line", result)
+        self.assertNotIn("credential-quoted", result)
+        self.assertIn("Rejected", result)
+
+    def test_malformed_json_response_preserves_decode_stage_without_retry(self) -> None:
+        for raw in (b"not json", b"[]"):
+            with self.subTest(raw=raw), mock.patch.object(image_transport.urllib.request, "urlopen", return_value=io.BytesIO(raw)) as send, mock.patch.object(image_transport, "proxy_mapping", return_value=None):
+                with self.assertRaises(image_transport.TransportError) as caught:
+                    image_transport.request_json(base_url="https://example.invalid/v1", api_key="", user_agent="test", path="images/generations", payload={}, timeout=10)
+                self.assertEqual(caught.exception.stage, "response_decode")
+                self.assertEqual(send.call_count, 1)
+
     def test_atlas_generation_submits_once_and_polls_until_completed(self) -> None:
         responses = [
             {"code": 200, "data": {"id": "req_123"}},
@@ -198,7 +271,7 @@ class ImageTransportTests(unittest.TestCase):
 
         seen_timeouts: list[float] = []
 
-        def record(request, timeout, operation, limit, proxy):  # noqa: ANN001
+        def record(request, timeout, operation, limit, proxy, *, sensitive_values=()):  # noqa: ANN001
             seen_timeouts.append(timeout)
             if operation == "atlas generation submit":
                 return {"code": 200, "data": {"id": "req_clamp"}}

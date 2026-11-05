@@ -71,6 +71,8 @@ const EXPECTED_RUNTIME_FILES = [
   "image_qa.py",
   "image_resize.py",
   "image_response.py",
+  "image_extended_formats.py",
+  "image_markup.py",
   "image_transaction.py",
   "image_transparency.py",
   "image_transparency_contract.py",
