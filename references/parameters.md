@@ -4,7 +4,7 @@ This reference describes the Standalone CLI surface. The Codex Plugin uses the s
 
 ## Parameter Priority
 
-For v2 providers, model profiles, native protocols, and canvas fields, see [model configuration](models.md). `list-models` lists configured profiles without a provider request. `--profile` selects an exact profile or unique alias; JSONL rows can set `modelProfileId`. `--parameters` accepts a native JSON object, with row-level `parameters` taking precedence. V2 image defaults belong to each profile; shared defaults contain execution settings. These controls do not apply to ChatGPT host generation.
+For v2 providers, model profiles and native protocol parameters, see [model configuration](models.md). `list-models` lists configured profiles without a provider request. `--profile` selects an exact profile or unique alias; JSONL rows can set `modelProfileId`. `--parameters` accepts a native JSON object, with row-level `parameters` taking precedence. V2 image defaults belong to each profile; shared defaults contain execution settings. These controls do not apply to ChatGPT host generation.
 
 ```text
 per-row batch fields > shared command flags > auth.json defaults > built-in defaults
@@ -173,7 +173,7 @@ Real alpha pixels depend on the returned image. Use `inspect-image --expect-tran
 
 For chroma matting, `outer_tolerance` must be greater than `inner_tolerance`. The default `background_scope=edge-connected` protects matching colors enclosed by the subject. Select `global` only when enclosed key-color background areas must also become transparent. Extraction values never change the independent residual-contamination threshold. For emissive alpha, `white_point` must be greater than `black_point`. For masks, `matte=black|white` enables source-matte removal and defringing only when that matte color is known. Mask matte cleanup modifies partial-alpha edge colors and preserves foreground pixels whose trusted mask value remains fully opaque. Batch rows can provide the same values in a `transparency_options` object.
 
-One request accepts `n=1..16`. JSON responses are limited to 96 MiB, each decoded or downloaded image to 64 MiB, the cumulative decoded response to 256 MiB, and processing to 64 response items. Items publish sequentially, so later resource failures preserve earlier originals. Original-response publication accepts standard PNG color types, valid bit depths, and Adam7 interlacing after structural, chunk-order, CRC, dimension, encoding, compressed-stream, and 4096-`IDAT`-chunk-limit checks. Full scanline, filter, and Adam7 pass validation runs through 96 MiB of expected decompressed scanlines. A bounded exact-length pass covers 96-512 MiB; larger inputs return `api_response_item_resource_limited`. Corrupt, incomplete, or excessively fragmented IDAT data is rejected. Local deep inspection and transforms support non-interlaced 8-bit or 16-bit RGB/RGBA PNG files up to 25 million pixels and a 256 MiB PNG file limit. API generation can also return JPEG or WebP; complete VP8L entropy streams are validated, while deep local QA still reports JPEG and WebP as unsupported.
+One request accepts `n=1..16`, except SVG generation which requires `n=1`. JSON responses are limited to 96 MiB, each decoded or downloaded image to 64 MiB, the cumulative decoded response to 256 MiB, and processing to 64 response items. Items publish sequentially, so later resource failures preserve earlier originals. Original-response publication accepts standard PNG color types, valid bit depths, and Adam7 interlacing after structural, chunk-order, CRC, dimension, encoding, compressed-stream, and 4096-`IDAT`-chunk-limit checks. Full scanline, filter, and Adam7 pass validation runs through 96 MiB of expected decompressed scanlines. A bounded exact-length pass covers 96-512 MiB; larger inputs return `api_response_item_resource_limited`. Corrupt, incomplete, or excessively fragmented IDAT data is rejected. Local deep inspection and transforms support non-interlaced 8-bit or 16-bit RGB/RGBA PNG files up to 25 million pixels and a 256 MiB PNG file limit. OpenAI-compatible generation also accepts GIF and static SVG with the [format-specific restrictions](models.md#gpt-image-26-gif-svg-and-markup). API generation can also return JPEG or WebP; complete VP8L entropy streams are validated, while deep local QA still reports JPEG and WebP as unsupported.
 
 ## Batch Concurrency
 
@@ -194,7 +194,7 @@ High concurrency can trigger rate limits, failures, or unexpected cost.
 | `size`, `aspect`, `resolution` | API output dimensions |
 | `quality`, `n`, `format`, `background` | API request options; background is `auto` or `opaque` |
 | `transparent`, `asset` | Explicit output intentions |
-| `images`, `mask` | Edit inputs |
+| `images`, `mask`, `markup` | Edit inputs; `markup` is a separate transparent PNG and cannot be combined with `mask` |
 | `model`, `timeout` | Per-task request overrides |
 | `qa`, `components` | Optional deterministic QA |
 | `delivery_size`, `grid`, `expected_count` | Optional derived outputs |
@@ -210,7 +210,7 @@ Relative paths have separate, deterministic bases:
 
 | Field | Relative to |
 | --- | --- |
-| `images`, `mask`, `transparency_mask` in a JSONL task | JSONL file directory |
+| `images`, `mask`, `markup`, `transparency_mask` in a JSONL task | JSONL file directory |
 | `file`, `out`, `postprocess_out_dir` in a task or shared command value | batch `--out` directory |
 
 Absolute paths are preserved. Validation, API requests, post-processing, and the manifest use the same normalized values. The batch manifest records `output_root` and `path_contract`, checks every declared file path, and reports a failed file-existence check instead of claiming a complete delivery. API multi-image originals publish independently; global QA requirements apply to the complete derivative set.

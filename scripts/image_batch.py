@@ -71,7 +71,7 @@ def normalize_batch_shared(
     for name in ("file", "out", "postprocess_out_dir"):
         if normalized.get(name) not in (None, ""):
             normalized[name] = _resolve_path(normalized[name], output_root)
-    for name in ("images", "mask", "transparency_mask"):
+    for name in ("images", "mask", "markup", "transparency_mask"):
         if normalized.get(name) not in (None, ""):
             normalized[name] = _resolve_input_value(normalized[name], input_root)
     return normalized
@@ -91,6 +91,7 @@ def normalize_batch_args(args: Any, input_path: Path, output_root: Path) -> Any:
                 "postprocess_out_dir",
                 "images",
                 "mask",
+                "markup",
                 "transparency_mask",
             )
         },
@@ -167,7 +168,7 @@ def normalize_batch_task(
     for name in ("file", "postprocess_out_dir"):
         if task.get(name) not in (None, ""):
             normalized[name] = _resolve_path(task[name], output_root)
-    for name in ("images", "mask", "transparency_mask"):
+    for name in ("images", "mask", "markup", "transparency_mask"):
         if task.get(name) not in (None, ""):
             normalized[name] = _resolve_input_value(task[name], input_root)
     return normalized
@@ -301,7 +302,7 @@ def _possible_api_targets(path: Path) -> list[Path]:
     suffix = path.suffix.lower()
     normalized = "jpeg" if suffix == ".jpg" else suffix.lstrip(".")
     targets = [path]
-    for image_format in ("png", "jpeg", "webp"):
+    for image_format in ("png", "jpeg", "webp", "gif", "svg"):
         candidate = path if image_format == normalized else path.with_suffix(f".{image_format}")
         if candidate not in targets:
             targets.append(candidate)

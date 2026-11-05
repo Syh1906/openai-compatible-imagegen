@@ -34,6 +34,7 @@ class BatchPathTests(unittest.TestCase):
                     "postprocess_out_dir": "derived",
                     "images": "references/source.png",
                     "mask": "masks/mask.png",
+                    "markup": "annotations/markup.png",
                     "transparency_mask": "masks/alpha.png",
                 }
             ]
@@ -56,6 +57,7 @@ class BatchPathTests(unittest.TestCase):
                 normalized[0]["mask"],
                 str((input_root / "masks/mask.png").resolve()),
             )
+            self.assertEqual(normalized[0]["markup"], str((input_root / "annotations/markup.png").resolve()))
             self.assertEqual(
                 normalized[0]["transparency_mask"],
                 str((input_root / "masks/alpha.png").resolve()),
@@ -108,6 +110,7 @@ class BatchPathTests(unittest.TestCase):
                     "postprocess_out_dir": "derived",
                     "images": ["references/a.png", "references/b.png"],
                     "mask": "masks/mask.png",
+                    "markup": "annotations/shared.png",
                     "transparency_mask": "masks/alpha.png",
                 },
                 root / "requests",
@@ -116,6 +119,7 @@ class BatchPathTests(unittest.TestCase):
 
             self.assertEqual(shared["file"], str((root / "deliveries/shared/result.png").resolve()))
             self.assertEqual(shared["out"], str((root / "deliveries").resolve()))
+            self.assertEqual(shared["markup"], str((root / "requests/annotations/shared.png").resolve()))
             self.assertEqual(shared["postprocess_out_dir"], str((root / "deliveries/derived").resolve()))
             self.assertEqual(
                 shared["images"],

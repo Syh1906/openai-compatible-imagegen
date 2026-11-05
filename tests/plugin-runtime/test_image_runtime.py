@@ -291,6 +291,73 @@ class ImageRuntimeMachineModeTests(unittest.TestCase):
         self.assertTrue(all(payload["model"] == "gpt-image-2" for payload in payloads))
         self.assertTrue(all(payload["prompt"] == "two candidates" for payload in payloads))
 
+    def test_extended_formats_with_auto_size_keep_original_bytes(self) -> None:
+        originals = {
+            "gif": bytes.fromhex("47494638396101000100800000000000ffffff2c00000000010001000002024401003b"),
+            "svg": b'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 16"><path d="M0 0L10 10"/></svg>',
+        }
+        for fmt, original in originals.items():
+            with self.subTest(format=fmt), mock.patch.object(self.imagegen, "request_json", return_value={"data": [{"b64_json": base64.b64encode(original).decode()}]}):
+                result = self.imagegen.run_machine_task(self.task(output={"size": "auto", "format": fmt, "count": 1}), self.project_root, self.artifact_root, self.cfg)
+                self.assertTrue(result["ok"], result)
+                repository = self.imagegen.ArtifactRepository(self.project_root, self.artifact_root)
+                self.assertEqual(repository.get_artifact(result["artifacts"][0]["id"]).image_bytes, original)
+
+    def test_extended_format_preflight_is_invalid_task_without_provider_call(self) -> None:
+        cases = [({"format": "gif", "size": "512x512", "count": 1, "parameters": {"frame_count": 65}}, {}),
+                 ({"format": "svg", "size": "auto", "count": 2}, {"executionMode": "batch-item"})]
+        for output, updates in cases:
+            with self.subTest(output=output), mock.patch.object(self.imagegen.image_transport, "request_json") as send:
+                result = self.imagegen.run_machine_task(self.task(output=output, **updates), self.project_root, self.artifact_root, self.cfg)
+                self.assertFalse(result["ok"])
+                self.assertEqual(result["error"]["code"], "invalid_task")
+                send.assert_not_called()
+
+    def test_svg_failure_retains_bounded_diagnostics_without_retry(self) -> None:
+        task = self.task(executionMode="batch-item", output={"format": "svg", "size": "auto", "count": 1})
+        failure = self.imagegen.image_transport.TransportError("private provider response", status_code=400)
+        with mock.patch.object(self.imagegen.image_transport, "request_json", side_effect=failure) as send:
+            result = self.imagegen.run_machine_task(task, self.project_root, self.artifact_root, self.cfg)
+        self.assertEqual(result["error"]["code"], "image_task_failed")
+        self.assertEqual(result["error"]["diagnostics"], {"stage": "provider_request", "httpStatus": 400})
+        self.assertEqual(send.call_count, 1)
+        for mode in ("batch-item", None):
+            mode_task = {**task, "executionMode": mode}
+            if mode is None:
+                mode_task.pop("executionMode")
+            for response, stage in [({"data": []}, "response_decode"), ({"data": [{"b64_json": "invalid"}]}, "response_decode"), ({"data": [{"b64_json": base64.b64encode(b"<svg><script/></svg>").decode()}]}, "artifact_publication")]:
+                with self.subTest(stage=stage, mode=mode), mock.patch.object(self.imagegen, "request_json", return_value=response) as send:
+                    result = self.imagegen.run_machine_task(mode_task, self.project_root, self.artifact_root, self.cfg)
+                    self.assertEqual(result["error"].get("diagnostics"), {"stage": stage}, result)
+                    self.assertEqual(send.call_count, 1)
+        with mock.patch.object(self.imagegen.image_transport, "request_json", side_effect=self.imagegen.image_transport.TransportError("private network failure")):
+            result = self.imagegen.run_machine_task(task, self.project_root, self.artifact_root, self.cfg)
+        self.assertEqual(result["error"]["diagnostics"], {"stage": "provider_request"})
+        with mock.patch.object(self.imagegen, "request_json", return_value={"data": [{"b64_json": base64.b64encode(make_png(2, 2)).decode()}]}), mock.patch.object(self.imagegen.ArtifactRepository, "store_response_images", side_effect=OSError("private path")):
+            result = self.imagegen.run_machine_task(task, self.project_root, self.artifact_root, self.cfg)
+        self.assertEqual(result["error"]["diagnostics"], {"stage": "artifact_publication"})
+
+    def test_markup_annotation_reaches_edit_as_separate_upload(self) -> None:
+        from scripts.repository_fs_helper import save_annotation_files
+        repository = self.imagegen.ArtifactRepository(self.project_root, self.artifact_root)
+        parent = repository.store_local_image(make_png(2, 2), "image/png").metadata["id"]
+        annotation_id = "ann_01J00000000000000000000000"
+        markup = make_png(2, 2, 0)
+        record = {"id": annotation_id, "imageId": parent, "items": [{}], "previewFile": "preview.svg", "maskFile": None, "markupFile": "markup.png"}
+        save_annotation_files(self.artifact_root, annotation_id, b"<svg/>", None, record, markup)
+        task = self.task(operation="edit", inputArtifactIds=[parent], annotationId=annotation_id, markup=True, output={"size":"2x2", "format":"png", "count":1})
+        cfg = replace(self.cfg, capabilities={**self.cfg.capabilities, "markup": True})
+        with mock.patch.object(self.imagegen, "request_multipart", return_value={"data":[{"b64_json":base64.b64encode(make_png(2, 2)).decode()}]}) as request:
+            result = self.imagegen.run_machine_task(task, self.project_root, self.artifact_root, cfg)
+        self.assertTrue(result["ok"], result)
+        uploads = request.call_args.args[3]
+        self.assertEqual([upload[0] for upload in uploads], ["image[]", "markup"])
+        self.assertEqual(uploads[1][2], markup)
+        with mock.patch.object(self.imagegen, "request_multipart") as request:
+            result = self.imagegen.run_machine_task(task, self.project_root, self.artifact_root, self.cfg)
+        self.assertFalse(result["ok"])
+        request.assert_not_called()
+
     def test_muapi_generation_omits_unconfigured_optional_fields_and_saves_url_image(self) -> None:
         image_bytes = make_png(1, 1)
         task = self.task(output={"size": "1x1", "count": 1})

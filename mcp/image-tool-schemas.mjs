@@ -1,5 +1,18 @@
 import { z } from "zod";
 import { imageSizeErrorDetailsSchema } from "./image-size-contract.mjs";
+import { IMAGE_FAILURE_STAGES, PROVIDER_ERROR_ID_PATTERN } from "./tool-errors.mjs";
+
+const imageFailureDiagnosticsSchema = z.object({
+  stage: z.enum(IMAGE_FAILURE_STAGES),
+  httpStatus: z.number().int().min(100).max(599).optional(),
+  providerError: z.object({
+    code: z.string().regex(PROVIDER_ERROR_ID_PATTERN).optional(),
+    type: z.string().regex(PROVIDER_ERROR_ID_PATTERN).optional(),
+    param: z.string().regex(PROVIDER_ERROR_ID_PATTERN).optional(),
+    requestId: z.string().regex(PROVIDER_ERROR_ID_PATTERN).optional(),
+    message: z.string().min(1).max(1000).optional(),
+  }).strict().optional(),
+}).strict();
 
 
 export const imageIdSchema = z.string().regex(/^img_[0-9A-HJKMNP-TV-Z]{26}$/).describe("Stable image ID in the project artifact repository");
@@ -12,7 +25,7 @@ export const outputSchema = {
   aspectRatio: z.string().min(1).optional(),
   resolution: z.string().min(1).optional(),
   parameters: z.record(z.unknown()).optional(),
-  format: z.enum(["png", "jpeg", "webp"]).optional(),
+  format: z.enum(["png", "jpeg", "webp", "gif", "svg"]).optional(),
   count: z.number().int().min(1).max(10).optional(),
   background: z.enum(["auto", "opaque"]).optional(),
 };
@@ -96,7 +109,7 @@ export const imageArtifactOutputSchema = z.object({
   id: imageIdSchema,
   parentIds: z.array(imageIdSchema),
   childIds: z.array(imageIdSchema),
-  mimeType: z.enum(["image/png", "image/jpeg", "image/webp"]),
+  mimeType: z.enum(["image/png", "image/jpeg", "image/webp", "image/gif", "image/svg+xml"]),
   width: z.number().int().positive(),
   height: z.number().int().positive(),
   provider: z.string().min(1),
@@ -139,7 +152,7 @@ export const apiDeliverySchema = z.object({
   items: z.array(z.object({
     responseIndex: z.number().int().min(1).max(16),
     artifactId: imageIdSchema,
-    actualFormat: z.enum(["png", "jpeg", "webp"]),
+    actualFormat: z.enum(["png", "jpeg", "webp", "gif", "svg"]),
     width: z.number().int().positive(),
     height: z.number().int().positive(),
   }).strict()).max(16),
@@ -201,6 +214,7 @@ export const imageBatchResultOutputSchema = z.discriminatedUnion("ok", [
       code: z.string().regex(/^[a-z][a-z0-9_]{0,63}$/),
       message: z.string().min(1),
       details: imageSizeErrorDetailsSchema.optional(),
+      diagnostics: imageFailureDiagnosticsSchema.optional(),
     }).strict(),
   }).strict(),
 ]);

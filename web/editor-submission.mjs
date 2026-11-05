@@ -1,4 +1,4 @@
-import { serializeSubmission } from "./editor-state.mjs";
+import { serializeSubmission, buildAnnotationPreview } from "./editor-state.mjs";
 import { isUserFacingAnnotation, labelFor, summaryFor } from "./editor-annotation-view.mjs";
 import { rasterizeSvgPreview } from "./preview-rasterizer.mjs";
 
@@ -86,12 +86,19 @@ export function createSubmissionCoordinator({
           stage = "prepare";
           onProgress(stage);
           if (!submission) {
+            const useMarkup = authMode === "apikey" && options.nativeMarkup === true
+              && payload.items.length > 0 && !payload.items.some((item) => item.type === "mask");
+            const markup = useMarkup ? await rasterizePreview(buildAnnotationPreview(editor, { transparent: true }), {
+              width: editor.image.width, height: editor.image.height,
+            }) : null;
+            assertActive(isActive);
             const result = await app.callServerTool({
               name: "prepare_image_edit_submission",
               arguments: {
                 parentImageId: payload.imageId,
                 items: payload.items,
                 sourcePrompt: payload.prompt,
+                ...(markup ? { markupPngBase64: markup.data } : {}),
                 ...(modelSelection ? { modelSelection } : {}),
               },
             });

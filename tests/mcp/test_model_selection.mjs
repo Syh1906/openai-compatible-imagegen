@@ -16,6 +16,38 @@ const config = { config_version: 2, active_profile: "a", providers: { p: { proto
 } };
 const context = { apiRuntimeConfig: config, activeProfile: "a" };
 
+test("canvas markup stays bound to the selected capable model and edit task", async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "markup-binding-"));
+  const nativeConfig = structuredClone(config);
+  nativeConfig.models.a.capabilities.markup = true;
+  const parent = artifact("img_01J00000000000000000000000");
+  const child = artifact("img_01J00000000000000000000001", [parent.id]);
+  const annotationId = "ann_01J00000000000000000000000";
+  const receipt = { status: "bound", projectBindingId: `pbind_${"0".repeat(64)}`, distribution: "plugin", defaultAuthMode: "apikey", canvasSubmissionMode: "auto", apiKeyConfigured: true, chatgptRequirement: "codex_app_imagegen_handoff" };
+  let saved, task;
+  try {
+    await withClient({
+      projectContext: { bind: async () => receipt, require: async () => ({ apiRuntimeConfig: nativeConfig, activeProfile: "a", projectRoot: root, artifactRoot: root, bindingKey: "0".repeat(64), effectiveConfigSha256: "0".repeat(64), effectiveConfigJson: JSON.stringify(nativeConfig) }) },
+      runTask: async (value) => { task = value; return { ok: true, artifacts: [child] }; },
+      readArtifact: async (id) => ({ metadata: id === parent.id ? parent : child, data: PNG_BASE64 }),
+      saveAnnotations: async (value) => { saved = value; return { id: annotationId, imageId: parent.id, itemCount: 1, previewMimeType: "image/svg+xml", hasMask: false, hasMarkup: true, maskMimeType: null, maskPolicy: null }; },
+      readAnnotation: async () => ({ id: annotationId, imageId: parent.id, markupPath: path.join(root, "markup.png") }),
+    }, async (client) => {
+      const arguments_ = { parentImageId: parent.id, items: [{ id: "rect", type: "rectangle", x: 0.1, y: 0.1, width: 0.2, height: 0.2 }], sourcePrompt: "blue", modelSelection: { authMode: "apikey", modelProfileId: "a" }, markupPngBase64: "cG5n" };
+      const prepared = await client.callTool({ name: "prepare_image_edit_submission", arguments: arguments_ });
+      assert.equal(prepared.isError, undefined, JSON.stringify(prepared));
+      assert.equal(saved.markupPngBase64, "cG5n");
+      const edited = await client.callTool({ name: "edit_image", arguments: { parentImageId: parent.id, submissionId: prepared.structuredContent.submission.id, annotationId, prompt: "blue" } });
+      assert.equal(edited.isError, undefined, JSON.stringify(edited));
+      assert.equal(task.markup, true);
+      assert.equal(task.annotationId, annotationId);
+      assert.equal(task.mask, undefined);
+      const rejected = await client.callTool({ name: "prepare_image_edit_submission", arguments: { ...arguments_, modelSelection: { authMode: "apikey", modelProfileId: "b" } } });
+      assertToolErrorCode(rejected, "unsupported_capability");
+    });
+  } finally { await rm(root, { recursive: true, force: true }); }
+});
+
 test("size diagnostics reject untrusted fields and never reuse provider error messages", () => {
   const valid = { size: "3072x704", constraint: "max_aspect_ratio", limit: 3 };
   for (const details of [{ ...valid, size: "private value" }, { ...valid, limit: "private value" },

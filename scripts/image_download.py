@@ -111,7 +111,7 @@ def read_downloaded_image(response: Any, response_limit: int | None = None) -> b
     if isinstance(content_length, str) and content_length.isdigit() and len(data) != int(content_length):
         raise ImageDownloadError("image URL download was incomplete")
     if not is_complete_image_data(data):
-        raise ImageDownloadError("image URL download did not contain a complete PNG, JPEG, or WebP image")
+        raise ImageDownloadError("image URL download did not contain a complete PNG, JPEG, WebP, GIF, or static SVG image")
     return data
 
 

@@ -16,6 +16,22 @@ import {
 import { withClient } from "../support/mcp-tool-client.mjs";
 import { outputSchema, batchItemsSchema } from "../../mcp/image-tool-schemas.mjs";
 
+test("Image 2.6 profiles retain auto size, markup and animation parameters", async () => {
+  await withConfigRoots(async ({ projectRoot, userHome }) => {
+    const config = userConfig();
+    config.config_version = 2;
+    delete config.defaults;
+    const profile = config.models[config.active_profile];
+    profile.model = "gpt-image-2.6-flare";
+    profile.defaults = { size: "auto", output_format: "gif" };
+    profile.capabilities = { generate: true, edit: true, markup: true };
+    profile.parameters = { frame_count: 9, frame_duration_ms: 200, complexity: "medium" };
+    await writeJson(userConfigPath(userHome), config);
+    const binding = await resolveImageConfigBinding({ projectRoot, userHome });
+    assert.deepEqual(binding.apiRuntimeConfig.models[config.active_profile], profile);
+  });
+});
+
 test("model size limits survive both config versions and cannot be overridden by a project", async () => {
   await withConfigRoots(async ({ projectRoot, userHome }) => {
     const limits = { output_size: { multiple_of: 16, max_aspect_ratio: 3 } };

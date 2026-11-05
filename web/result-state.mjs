@@ -51,7 +51,7 @@ export async function hydrateResultArtifacts(app, artifacts, { observeToolCall =
     if (
       publicArtifact?.id !== artifact.id
       || privatePayload?.id !== artifact.id
-      || !["image/png", "image/jpeg", "image/webp"].includes(publicMimeType)
+      || !["image/png", "image/jpeg", "image/webp", "image/gif", "image/svg+xml"].includes(publicMimeType)
       || privatePayload?.mimeType !== publicMimeType
       || !["available", "destroyed"].includes(publicPayload?.canvasStatus)
       || typeof privatePayload?.dataBase64 !== "string"

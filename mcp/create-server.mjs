@@ -63,6 +63,7 @@ const imageModelCapabilitiesOutputSchema = z.object({
   generate: z.boolean().optional(),
   edit: z.boolean().optional(),
   mask: z.boolean().optional(),
+  markup: z.boolean().optional(),
   multi_reference: z.boolean().optional(),
 }).strict();
 const imageModelOutputSchema = z.object({
@@ -146,6 +147,7 @@ const annotationOutputSchema = z.object({
   itemCount: z.number().int().min(1).max(100),
   previewMimeType: z.literal("image/svg+xml"),
   hasMask: z.boolean(),
+  hasMarkup: z.boolean().optional(),
   maskMimeType: z.literal("image/png").nullable(),
   maskPolicy: maskPolicyOutputSchema.nullable(),
 }).strict();
@@ -273,7 +275,7 @@ export function createImagegenServer({
     name: "image-result",
     uri: resultWidgetUri,
     title: "Image results",
-    description: "Keep images visible in the conversation result and provide an entry point to the focused canvas in the same host instance.",
+    description: "Keep images visible in the conversation result; editable formats provide an entry point to the focused canvas in the same host instance.",
     releaseIdentity,
     readWidgetHtml,
   });
@@ -289,7 +291,7 @@ export function createImagegenServer({
     name: "image-result-legacy-stable",
     uri: `ui://${releaseIdentity.pluginId}/result.html`,
     title: "Image results",
-    description: "Keep images visible in the conversation result and provide an entry point to the focused canvas in the same host instance.",
+    description: "Keep images visible in the conversation result; editable formats provide an entry point to the focused canvas in the same host instance.",
     releaseIdentity,
     readWidgetHtml,
   });
@@ -306,7 +308,7 @@ export function createImagegenServer({
       name: `image-result-legacy-${fingerprint}`,
       uri: `ui://${releaseIdentity.pluginId}/result-${fingerprint}.html`,
       title: "Image results",
-      description: "Keep images visible in the conversation result and provide an entry point to the focused canvas in the same host instance.",
+      description: "Keep images visible in the conversation result; editable formats provide an entry point to the focused canvas in the same host instance.",
       releaseIdentity,
       readWidgetHtml,
     });
@@ -642,6 +644,9 @@ export function createImagegenServer({
           }
         }
         let taskOutput = output;
+        if (annotation?.markupPath && !modelHasCapability(context, modelProfileId, "markup")) {
+          return toolError(new Error("当前模型未声明原生标注编辑能力"), "unsupported_capability");
+        }
         const useDedicatedMask = Boolean(
           annotation?.maskPath
           && modelHasCapability(context, modelProfileId, "mask"),
@@ -694,6 +699,7 @@ export function createImagegenServer({
             annotationId,
             ...(claimedSubmission ? { submissionId: claimedSubmission.receipt.id } : {}),
             ...(useDedicatedMask ? { mask: annotation.maskPath, maskPolicy: annotation.maskPolicy } : {}),
+            ...(annotation?.markupPath && modelHasCapability(context, modelProfileId, "markup") ? { markup: true } : {}),
             ...(transparency ? { transparency } : {}),
             output: taskOutput,
           },
@@ -891,7 +897,7 @@ export function createImagegenServer({
     "read_image_artifact_data",
     {
       title: "Read image artifact data",
-      description: "Read image pixel data by stable image ID for the image workspace. This tool is visible only to the app/widget.",
+      description: "Read image bytes by stable image ID for the image workspace. This tool is visible only to the app/widget.",
       inputSchema: { ...projectBindingInputSchema, imageId: imageIdSchema },
       outputSchema: z.object({
         artifact: imageArtifactOutputSchema,
@@ -975,7 +981,7 @@ export function createImagegenServer({
     "render_image_results",
     {
       title: "Render image results",
-      description: "Display an explicitly selected set of up to 10 images in order, with independent canvas entries. Collect results across operations for final delivery; intermediate previews may be included again in the final set using the same IDs. Do not omit a required image because it was shown earlier, or repeat an already complete final set. This tool does not infer task completeness or select versions for you.",
+      description: "Display an explicitly selected set of up to 10 images in order. PNG/JPEG/WebP have independent canvas entries; GIF/SVG support preview and original export only. Collect results across operations for final delivery; intermediate previews may be included again in the final set using the same IDs. Do not omit a required image because it was shown earlier, or repeat an already complete final set. This tool does not infer task completeness or select versions for you.",
       inputSchema: { ...projectBindingInputSchema, imageIds: z.array(imageIdSchema).min(1).max(10) },
       outputSchema: z.object({
         imageIds: z.array(imageIdSchema).min(1).max(10),
@@ -1064,6 +1070,9 @@ export function createImagegenServer({
         return toolError(error, "artifact_not_found");
       }
       try {
+        if (["image/gif", "image/svg+xml"].includes(artifact.metadata.mimeType)) {
+          return toolError(new Error("GIF/SVG 支持预览和原样导出，不支持画布编辑"), "unsupported_capability");
+        }
         const editorSession = await editorState.open({
           artifactRoot: context.artifactRoot,
           bindingKey: context.bindingKey,
@@ -1133,6 +1142,7 @@ export function createImagegenServer({
         parentImageId: imageIdSchema,
         items: z.array(annotationItemSchema).max(100),
         sourcePrompt: z.string().max(600),
+        markupPngBase64: z.string().min(1).max(70_000_000).optional(),
         modelSelection: modelSelectionSchema.optional(),
       },
       outputSchema: z.object({
@@ -1142,7 +1152,7 @@ export function createImagegenServer({
       annotations: writeAnnotations(),
       _meta: { ui: { visibility: ["app"] } },
     },
-    async ({ projectBindingId, parentImageId, items, sourcePrompt, modelSelection }) => await withBoundProject(
+    async ({ projectBindingId, parentImageId, items, sourcePrompt, modelSelection, markupPngBase64 }) => await withBoundProject(
       projectContext,
       projectBindingId,
       async (context) => {
@@ -1160,10 +1170,13 @@ export function createImagegenServer({
           return toolError(error, "artifact_not_found");
         }
 
+        if (markupPngBase64 && (modelSelection?.authMode !== "apikey" || !modelHasCapability(context, modelSelection.modelProfileId, "markup") || !items.length || items.some((item) => item.type === "mask"))) {
+          return toolError(new Error("当前模型或标注不支持原生 markup"), "unsupported_capability");
+        }
         let annotation = null;
         if (items.length) {
           try {
-            annotation = await saveAnnotations({ imageId: parentImageId, items }, context);
+            annotation = await saveAnnotations({ imageId: parentImageId, items, ...(markupPngBase64 ? { markupPngBase64 } : {}) }, context);
           } catch (error) {
             return toolError(error, "annotation_save_failed");
           }
@@ -1431,7 +1444,7 @@ function modelHasCapability(context, modelProfileId, capability) {
   const runtimeConfig = context.apiRuntimeConfig ?? JSON.parse(context.effectiveConfigJson);
   const model = runtimeConfig?.models?.[modelProfileId];
   const protocol = runtimeConfig?.providers?.[model?.provider]?.protocol;
-  if (capability === "mask" && protocol && protocol !== "openai-compatible") return false;
+  if (["mask", "markup"].includes(capability) && protocol && protocol !== "openai-compatible") return false;
   return runtimeConfig?.models?.[modelProfileId]?.capabilities?.[capability] === true;
 }
 
@@ -1510,6 +1523,9 @@ async function optionalProjectContext(projectContext, projectBindingId) {
   return await projectContext.require(projectBindingId);
 }
 function imageContent(artifact) {
+  if (["image/gif", "image/svg+xml"].includes(artifact.metadata.mimeType)) {
+    return { type: "text", text: `${artifact.metadata.id}（${artifact.metadata.mimeType}）：请通过结果卡预览或导出原文件。` };
+  }
   return { type: "image", data: artifact.data, mimeType: artifact.metadata.mimeType };
 }
 function imageArtifactMetadata(metadata) {

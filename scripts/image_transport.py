@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import mimetypes
+import re
 from pathlib import Path
 import socket
 import ssl
@@ -40,11 +41,43 @@ class TransportError(Exception):
         status_code: int | None = None,
         operation: str | None = None,
         transient: bool = False,
+        stage: str = "provider_request",
+        provider_error: dict[str, str] | None = None,
     ) -> None:
         super().__init__(message)
         self.status_code = status_code
         self.operation = operation
         self.transient = transient
+        self.stage = stage
+        self.provider_error = provider_error or {}
+
+
+def redact_provider_text(value: str, sensitive_values=()) -> str:
+    """Keep bounded diagnostic prose, excluding credentials and private locations."""
+    for secret in sorted({item for item in sensitive_values if isinstance(item, str) and item}, key=len, reverse=True):
+        for encoded in (secret, urllib.parse.quote(secret, safe=""), json.dumps(secret)[1:-1], json.dumps(secret, ensure_ascii=False)[1:-1]):
+            value = value.replace(encoded, "[REDACTED]")
+    value = re.sub(r"(?i)\bBearer\s+\S+|\bsk-[A-Za-z0-9_-]+", "[REDACTED]", value)
+    value = re.sub(r'''(?ix)\b(?:api[_-]?key|access[_-]?token|authorization|password|secret)\s*[=:]\s*(?:"[^"]*"|'[^']*'|[^\s,;]+)''', "[REDACTED]", value)
+    value = re.sub(r"(?i)https?://[^\s<>]+|[A-Z]:[/\\][^\s<>]+|/[\w.-]+/[^\s<>]+|[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}", "[REDACTED]", value)
+    value = re.sub(r"[\x00-\x1f\x7f-\x9f\u202a-\u202e\u2066-\u2069]", " ", value)
+    return value[:1000]
+
+
+def provider_error_details(detail: str, request_id: Any, sensitive_values=()) -> dict[str, str]:
+    try:
+        parsed = json.loads(detail)
+    except (ValueError, TypeError):
+        parsed = None
+    error = parsed.get("error") if isinstance(parsed, dict) else None
+    error = error if isinstance(error, dict) else {}
+    result = {}
+    for key, value in (("code", error.get("code")), ("type", error.get("type")), ("param", error.get("param")), ("requestId", request_id)):
+        if isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9_.\[\]-]{1,128}", value) and redact_provider_text(value, sensitive_values) == value:
+            result[key] = value
+    if isinstance(error.get("message"), str) and error["message"].strip():
+        result["message"] = redact_provider_text(error["message"], sensitive_values)
+    return result
 
 
 def request_json(
@@ -59,6 +92,7 @@ def request_json(
     proxy_url: str | None = None,
     endpoint: str | None = None,
     auth_header: str = "Authorization",
+    sensitive_values: tuple[str, ...] = (),
 ) -> dict[str, Any]:
     body = json.dumps(drop_none(payload)).encode("utf-8")
     headers = request_headers(api_key, user_agent, "application/json")
@@ -73,7 +107,7 @@ def request_json(
         method="POST",
         headers=headers,
     )
-    return _send_request(request, timeout, path, response_limit, proxy_url)
+    return _send_request(request, timeout, path, response_limit, proxy_url, sensitive_values=(*sensitive_values, payload.get("prompt")))
 
 
 def request_multipart(
@@ -101,7 +135,7 @@ def request_multipart(
             f"multipart/form-data; boundary={boundary}",
         ),
     )
-    return _send_request(request, timeout, path, response_limit, proxy_url)
+    return _send_request(request, timeout, path, response_limit, proxy_url, sensitive_values=(fields.get("prompt"),))
 
 
 def _sleep_within(deadline: float, interval: float) -> None:
@@ -166,6 +200,7 @@ def request_atlas_image(
         "atlas generation submit",
         response_limit,
         proxy_url,
+        sensitive_values=(payload.get("prompt"),),
     )
     submitted_data = _atlas_payload(submitted)
     request_id = str(
@@ -200,6 +235,7 @@ def request_atlas_image(
                 "atlas generation result",
                 response_limit,
                 proxy_url,
+                sensitive_values=(payload.get("prompt"),),
             )
         except TransportError as exc:
             if not _is_retryable_atlas_result_error(exc) or attempt + 1 >= max_poll_attempts:
@@ -352,6 +388,8 @@ def _send_request(
     operation: str,
     response_limit: int | None,
     proxy_url: str | None,
+    *,
+    sensitive_values: tuple = (),
 ) -> dict[str, Any]:
     mapping = proxy_mapping(proxy_url)
     opener = (
@@ -366,18 +404,30 @@ def _send_request(
             else urllib.request.urlopen(request, timeout=timeout)
         )
         with response_context as response:
-            if response_limit is None:
-                value = json.loads(response.read().decode("utf-8"))
-                if not isinstance(value, dict):
-                    raise ValueError("API JSON response must be an object")
-                return value
-            return read_json_response(response, response_limit)
+            try:
+                if response_limit is None:
+                    value = json.loads(response.read().decode("utf-8"))
+                    if not isinstance(value, dict):
+                        raise ValueError("API JSON response must be an object")
+                    return value
+                return read_json_response(response, response_limit)
+            except ValueError as exc:
+                raise TransportError(str(exc), operation=operation, stage="response_decode") from exc
     except urllib.error.HTTPError as exc:
-        detail = safe_error_body(exc)
+        request_id = exc.headers.get("x-request-id") if exc.headers else None
+        detail = safe_error_body(exc, 16 * 1024)
+        sensitive_values = [value for value in sensitive_values if isinstance(value, str)] + [proxy_url or ""]
+        for name, value in request.header_items():
+            if name.lower() in {"authorization", "x-goog-api-key", "x-api-key"}:
+                sensitive_values.extend([value, value.removeprefix("Bearer ")])
+        provider_error = provider_error_details(detail, request_id, sensitive_values)
+        diagnostic_fields = "; ".join(f"{key}={provider_error[key]}" for key in ("code", "type", "param") if key in provider_error)
+        explanation = provider_error.get("message", "provider did not return a usable structured error")
         raise TransportError(
-            f"API HTTP {exc.code}: {detail}",
+            f"API HTTP {exc.code}: {explanation}" + (f" ({diagnostic_fields})" if diagnostic_fields else ""),
             status_code=exc.code,
             operation=operation,
+            provider_error=provider_error,
         ) from exc
     except urllib.error.URLError as exc:
         reason = str(exc.reason)

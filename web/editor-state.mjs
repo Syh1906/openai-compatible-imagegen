@@ -293,9 +293,9 @@ function annotationBoundsPoints(item, viewport) {
   return points;
 }
 
-export function buildAnnotationPreview(state) {
+export function buildAnnotationPreview(state, { transparent = false } = {}) {
   const imageHref = state.image.data ? `data:${state.image.mimeType || "image/png"};base64,${state.image.data}` : "";
-  const imageNode = imageHref ? `<image href="${escapeXml(imageHref)}" width="100%" height="100%" preserveAspectRatio="none"/>` : "";
+  const imageNode = imageHref && !transparent ? `<image href="${escapeXml(imageHref)}" width="100%" height="100%" preserveAspectRatio="none"/>` : "";
   const viewBox = annotationViewBox(state.image);
   const annotations = annotationLayerMarkup(state.annotations, null, state.image);
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${viewBox.width} ${viewBox.height}" preserveAspectRatio="none" role="img">${imageNode}${annotations}</svg>`;

@@ -2,20 +2,20 @@ import { createHash } from "node:crypto";
 
 import { executeBatchItem, finalizeImageBatch, safeApiDelivery } from "./batch-images.mjs";
 import { generatedCheckpointSchema } from "./image-job-contract.mjs";
-import { stableToolErrorCodeFromText, stableToolErrorMessages } from "./tool-errors.mjs";
+import { stableToolErrorCodeFromText, stableToolErrorMessages, safeImageFailure } from "./tool-errors.mjs";
 import { safeImageSizeError } from "./image-size-contract.mjs";
 
 export function createImageJobExecutor({ runTask, readArtifact, validateEdit, executeSingle }) {
   return Object.freeze({ executeItem, finalizeBatch });
 
   async function executeItem({ jobId, spec, index, context, checkpoint, saved, localAttempt, isCancelled }) {
-    let sizeError;
+    let runtimeError;
     const runJobTask = async (task) => {
       let generated = saved;
       if (!generated) {
         const result = await runTask({ ...task, ...(task.delivery ? { deferDelivery: true } : {}) }, context);
         if (!result?.ok) {
-          sizeError = safeImageSizeError(result?.error);
+          runtimeError = safeImageSizeError(result?.error) ?? safeImageFailure(result?.error);
           return result;
         }
         const apiDelivery = safeApiDelivery(result.apiDelivery, result.artifacts.map(({ id }) => id), task.output?.count ?? 1);
@@ -60,7 +60,7 @@ export function createImageJobExecutor({ runTask, readArtifact, validateEdit, ex
     }
     const code = stableToolErrorCodeFromText(result?.content?.[0]?.text) ?? "image_task_failed";
     return {
-      result: { requestId: "image", operation: spec.kind, ok: false, error: sizeError ?? { code, message: stableToolErrorMessages.get(code) } },
+      result: { requestId: "image", operation: spec.kind, ok: false, error: runtimeError ?? { code, message: stableToolErrorMessages.get(code) } },
       manifestResult: null, publishedArtifactIds: [],
     };
   }

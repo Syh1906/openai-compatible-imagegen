@@ -26,7 +26,7 @@ def validate_image_defaults(value: Any, *, execution: bool = False) -> None:
     allowed = CONTRACT["executionDefaultKeys"] if execution else CONTRACT["imageDefaultKeys"]
     if not isinstance(value, dict) or set(value) - set(allowed):
         raise ValueError("unsupported model defaults")
-    if "size" in value and (not isinstance(value["size"], str) or not re.fullmatch(r"[0-9]+x[0-9]+", value["size"])):
+    if "size" in value and (not isinstance(value["size"], str) or not re.fullmatch(r"auto|[0-9]+x[0-9]+", value["size"])):
         raise ValueError("invalid default size")
     for key in ("quality", "output_format"):
         if key in value and (not isinstance(value[key], str) or not value[key].strip()):
@@ -106,7 +106,7 @@ def validate_model_profiles(raw: dict[str, Any]) -> None:
         capabilities = profile.get("capabilities", {})
         if not isinstance(capabilities, dict):
             raise ValueError("invalid model capabilities")
-        unknown = sorted(set(capabilities) - {"generate", "edit", "mask", "multi_reference"})
+        unknown = sorted(set(capabilities) - {"generate", "edit", "mask", "markup", "multi_reference"})
         if unknown:
             raise ValueError(f"unsupported model capability: {unknown[0]}")
         if any(type(value) is not bool for value in capabilities.values()):

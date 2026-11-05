@@ -73,7 +73,9 @@ from scripts.provider_config import (
     parse_plugin_local_config,
     list_model_profiles,
 )
-from scripts.repository_fs import SubmissionLock
+from scripts.repository_fs import SubmissionLock, DirectoryLease
+from scripts.repository_fs_helper import read_annotation
+from scripts.image_markup import validate_markup
 
 
 DeliveryError = image_delivery.DeliveryError
@@ -92,6 +94,8 @@ MIME_FORMATS = {
     "image/jpeg": "jpeg",
     "image/png": "png",
     "image/webp": "webp",
+    "image/gif": "gif",
+    "image/svg+xml": "svg",
 }
 
 
@@ -100,9 +104,10 @@ class ImagegenError(Exception):
 
 
 class MachineTaskError(ImagegenError):
-    def __init__(self, code: str, message: str) -> None:
+    def __init__(self, code: str, message: str, *, diagnostics: dict[str, Any] | None = None) -> None:
         super().__init__(message)
         self.code = code
+        self.diagnostics = diagnostics
 
 
 def load_config(
@@ -156,6 +161,8 @@ def request_json(cfg: Config, path: str, payload: dict[str, Any], timeout: int) 
     try:
         if cfg.protocol in NATIVE_PROTOCOLS or cfg.config_version == 2 or cfg.endpoints or cfg.parameters:
             return image_provider_requests.request_image(cfg, "generate", payload, timeout)
+        if cfg.protocol == "openai-compatible":
+            image_provider_requests.validate_request("generate", payload, None)
         return image_transport.request_json(
             base_url=cfg.base_url,
             api_key=cfg.api_key,
@@ -207,6 +214,8 @@ def request_multipart(
     try:
         if cfg.protocol in NATIVE_PROTOCOLS or cfg.config_version == 2 or cfg.endpoints or cfg.parameters:
             return image_provider_requests.request_image(cfg, "edit", fields, timeout, files=files)
+        if cfg.protocol == "openai-compatible":
+            image_provider_requests.validate_request("edit", fields, files)
         return image_transport.request_multipart(
             base_url=cfg.base_url,
             api_key=cfg.api_key,
@@ -230,6 +239,11 @@ def _provider_image_error(exc: image_transport.TransportError) -> ImagegenError:
     error = ImagegenError(str(exc))
     error.status_code = exc.status_code
     error.operation = exc.operation
+    error.diagnostics = {"stage": exc.stage}
+    if type(exc.status_code) is int and 100 <= exc.status_code <= 599:
+        error.diagnostics["httpStatus"] = exc.status_code
+    if exc.provider_error:
+        error.diagnostics["providerError"] = exc.provider_error
     return error
 
 
@@ -309,35 +323,38 @@ def decode_response_images(
     max_items: int = MAX_IMAGE_RESPONSE_ITEMS,
     total_limit: int = MAX_TOTAL_IMAGE_RESPONSE_BYTES,
 ) -> list[bytes]:
-    data = response.get("data")
-    if not isinstance(data, list) or not data:
-        raise ImagegenError("API response did not include data images")
+    try:
+        data = response.get("data")
+        if not isinstance(data, list) or not data:
+            raise ImagegenError("API response did not include data images")
 
-    if max_items < 1:
-        raise ImagegenError("image response item limit must be positive")
-    if len(data) > max_items:
-        raise ImagegenError(
-            f"API response contains too many image items: {len(data)} exceeds the {max_items}-item limit"
-        )
-    if total_limit < 1:
-        raise ImagegenError("total image response limit must be positive")
-
-    images: list[bytes] = []
-    total_bytes = 0
-    for item in data:
-        if not isinstance(item, dict):
-            continue
-        raw = decode_image_item(item, user_agent, direct_url_download, proxy_url)
-        total_bytes += len(raw)
-        if total_bytes > total_limit:
+        if max_items < 1:
+            raise ImagegenError("image response item limit must be positive")
+        if len(data) > max_items:
             raise ImagegenError(
-                "total image response exceeds the "
-                f"{total_limit}-byte cumulative limit"
+                f"API response contains too many image items: {len(data)} exceeds the {max_items}-item limit"
             )
-        images.append(raw)
-    if not images:
-        raise ImagegenError("API response did not include b64_json or url images")
-    return images
+        if total_limit < 1:
+            raise ImagegenError("total image response limit must be positive")
+
+        images: list[bytes] = []
+        total_bytes = 0
+        for item in data:
+            if not isinstance(item, dict):
+                continue
+            raw = decode_image_item(item, user_agent, direct_url_download, proxy_url)
+            total_bytes += len(raw)
+            if total_bytes > total_limit:
+                raise ImagegenError(
+                    "total image response exceeds the "
+                    f"{total_limit}-byte cumulative limit"
+                )
+            images.append(raw)
+        if not images:
+            raise ImagegenError("API response did not include b64_json or url images")
+        return images
+    except (ImagegenError, ValueError) as exc:
+        raise MachineTaskError("image_task_failed", str(exc), diagnostics={"stage": "response_decode"}) from exc
 
 
 def decode_image_item(
@@ -385,7 +402,7 @@ def publish_partial_response_images(
 ) -> tuple[list[Any], dict[str, Any]]:
     data = response.get("data")
     if not isinstance(data, list) or not data:
-        raise MachineTaskError("image_task_failed", "provider response did not contain image items")
+        raise MachineTaskError("image_task_failed", "provider response did not contain image items", diagnostics={"stage": "response_decode"})
 
     expected_count = int(params["count"])
     issues: list[dict[str, Any]] = []
@@ -393,13 +410,15 @@ def publish_partial_response_images(
         issues.append({"code": "count_mismatch"})
 
     records: list[Any] = []
+    failure_stage = "response_decode"
     item_summaries: list[dict[str, Any]] = []
     total_bytes = 0
     direct_download = cfg.url_download.get("proxy_mode") == "direct"
-    expected_size = parse_size(params["size"]) if params["size"] else None
+    expected_size = parse_size(params["size"]) if params["size"] and params["size"] != "auto" else None
     requested_mime_type = machine_mime_type(params["format"]) if params["format"] else None
 
     for response_index, item in enumerate(data[:expected_count], start=1):
+        failure_stage = "response_decode"
         if not isinstance(item, dict):
             issues.append({"code": "item_unusable", "responseIndex": response_index})
             continue
@@ -433,9 +452,11 @@ def publish_partial_response_images(
                 annotation_id=annotation_id,
             )
         except ValueError:
+            failure_stage = "artifact_publication"
             issues.append({"code": "item_unusable", "responseIndex": response_index})
             continue
         except (KeyError, OSError):
+            failure_stage = "artifact_publication"
             issues.append({"code": "item_publish_failed", "responseIndex": response_index})
             continue
 
@@ -459,6 +480,7 @@ def publish_partial_response_images(
         raise MachineTaskError(
             "image_task_failed",
             "provider response did not contain a publishable image",
+            diagnostics={"stage": failure_stage},
         )
 
     published_count = len(records)
@@ -704,6 +726,10 @@ def run_machine_task(
             if operation != "edit" or not isinstance(submission_id, str) or not SUBMISSION_ID_PATTERN.fullmatch(submission_id):
                 raise MachineTaskError("invalid_task", "submissionId must be a valid edit submission ID")
         has_mask_contract = task.get("mask") is not None or task.get("maskPolicy") is not None
+        if task.get("markup") and (operation != "edit" or has_mask_contract
+                or effective_cfg.protocol != "openai-compatible"
+                or not has_strict_capability(effective_cfg.capabilities, "markup")):
+            raise MachineTaskError("unsupported_capability", "markup requires a supported unmasked image edit")
         if has_mask_contract:
             if operation != "edit":
                 raise MachineTaskError("invalid_task", "mask is only valid for edit tasks")
@@ -762,6 +788,10 @@ def run_machine_task(
                 return replay_result
         parent_uploads = [repository.get_image_snapshot(artifact_id) for artifact_id in input_ids]
         parent_paths = [path for path, _ in parent_uploads]
+        if params["format"] in {"gif", "svg"} and (task.get("delivery") or task.get("transparency")):
+            raise MachineTaskError("unsupported_capability", "GIF/SVG originals support preview and export, not raster delivery or transparency processing")
+        if any(path.suffix.lower() in {".gif", ".svg"} for path in parent_paths):
+            raise MachineTaskError("unsupported_capability", "GIF/SVG originals cannot be used as edit inputs")
         transparency = resolve_machine_transparency(
             task,
             prompt=prompt,
@@ -945,6 +975,20 @@ def run_machine_task(
                     files.append(("image[]", parent_path, parent_snapshot))
             if masked_context:
                 files.append(("mask", masked_context.mask_path, masked_context.mask_snapshot))
+            if task.get("markup"):
+                annotation_id = task.get("annotationId")
+                annotation = read_annotation(Path(artifact_root), annotation_id)
+                if annotation.get("imageId") != input_ids[0] or annotation.get("markupFile") != "markup.png":
+                    raise MachineTaskError("invalid_task", "markup annotation does not match the parent image")
+                relative = Path("annotations") / annotation_id / "markup.png"
+                with DirectoryLease(Path(artifact_root)) as lease:
+                    with lease.open_file(relative) as verified_markup:
+                        markup_bytes = verified_markup.read_bytes(max_bytes=50 * 1024 * 1024)
+                try:
+                    validate_markup(markup_bytes, parent_uploads[0][1])
+                except ValueError as exc:
+                    raise MachineTaskError("invalid_task", str(exc)) from exc
+                files.append(("markup", Path(artifact_root) / relative, markup_bytes))
             response, transparency, transparency_attempts = request_with_transparency_retry(
                 lambda request_payload: request_multipart(
                     effective_cfg,
@@ -1055,16 +1099,19 @@ def run_machine_task(
                 masked_context=masked_context,
             )
         else:
-            records = repository.store_response_images(
-                images=images,
-                provider=effective_cfg.provider_id,
-                model=effective_cfg.model,
-                operation=operation,
-                prompt=prompt,
-                parameters=stored_parameters,
-                parent_ids=parent_ids,
-                annotation_id=task.get("annotationId"),
-            )
+            try:
+                records = repository.store_response_images(
+                    images=images,
+                    provider=effective_cfg.provider_id,
+                    model=effective_cfg.model,
+                    operation=operation,
+                    prompt=prompt,
+                    parameters=stored_parameters,
+                    parent_ids=parent_ids,
+                    annotation_id=task.get("annotationId"),
+                )
+            except (ValueError, KeyError, OSError) as exc:
+                raise MachineTaskError("image_task_failed", str(exc), diagnostics={"stage": "artifact_publication"}) from exc
         result: dict[str, Any] = {
             "ok": True,
             "artifacts": [record.metadata for record in records],
@@ -1085,11 +1132,20 @@ def run_machine_task(
         return result
     except Exception as exc:
         code = exc.code if isinstance(exc, (MachineTaskError, image_provider_requests.ProtocolError, ImageSizeError)) else "image_task_failed"
+        diagnostics = dict(getattr(exc, "diagnostics", None) or {})
+        if diagnostics.get("providerError"):
+            sensitive_values = [task.get("prompt", "")] if isinstance(task, dict) else []
+            diagnostics["providerError"] = {
+                key: image_transport.redact_provider_text(
+                    redact_machine_error(value, effective_cfg, Path(project_root)), sensitive_values,
+                ) for key, value in diagnostics["providerError"].items()
+            }
         return {
             "ok": False,
             "error": {
                 "code": code,
                 **({"details": exc.details} if isinstance(exc, ImageSizeError) else {}),
+                **({"diagnostics": diagnostics} if diagnostics else {}),
                 "message": redact_machine_error(
                     str(exc),
                     effective_cfg,
@@ -1128,6 +1184,8 @@ def run_delivery_task(
     except (KeyError, ValueError, FileNotFoundError) as exc:
         raise MachineTaskError("artifact_not_found", f"source artifact is unavailable: {source_id}") from exc
     delivery_value = task.get("delivery")
+    if source.metadata.get("mimeType") in {"image/gif", "image/svg+xml"}:
+        raise MachineTaskError("unsupported_capability", "GIF/SVG support original export, not raster delivery")
     if not isinstance(delivery_value, dict):
         raise MachineTaskError("invalid_task", "delivery must be an object")
     delivery_request = dict(delivery_value)
@@ -1507,8 +1565,10 @@ def resolve_machine_output(
     output_format = str(output.get("format") or cfg.defaults.get("output_format") or DEFAULT_FORMAT).lower()
     if output_format == "jpg":
         output_format = "jpeg"
-    if output_format not in {"png", "jpeg", "webp"}:
+    if output_format not in {"png", "jpeg", "webp", "gif", "svg"}:
         raise MachineTaskError("invalid_task", f"unsupported output format: {output_format}")
+    if output_format in {"gif", "svg"} and cfg.protocol != "openai-compatible":
+        raise MachineTaskError("unsupported_capability", "GIF/SVG output requires the OpenAI-compatible protocol")
     try:
         count_value = output.get("count")
         count = int(1 if count_value is None else count_value)
@@ -1521,7 +1581,8 @@ def resolve_machine_output(
             f"count must be between 1 and {count_limit}",
         )
     size = str(output.get("size") or cfg.defaults.get("size") or DEFAULT_SIZE)
-    parse_size(size)
+    if size != "auto":
+        parse_size(size)
     validate_request_size(size, cfg.limits)
     quality = str(output.get("quality") or cfg.defaults.get("quality") or DEFAULT_QUALITY)
     if quality not in {"auto", "low", "medium", "high", "xhigh", "max"}:
@@ -1551,7 +1612,7 @@ def resolve_machine_output(
 
 
 def machine_mime_type(output_format: str) -> str:
-    return "image/jpeg" if output_format == "jpeg" else f"image/{output_format}"
+    return {"jpeg": "image/jpeg", "svg": "image/svg+xml"}.get(output_format, f"image/{output_format}")
 
 
 def redact_machine_error(

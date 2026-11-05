@@ -40,6 +40,18 @@ class LocalImageTransferTests(unittest.TestCase):
         self.assertEqual((self.project / receipt["destinationPath"]).read_bytes(), self.image)
         self.assertEqual(self.transfer.repository.index_path.read_bytes(), before)
 
+    def test_gif_and_svg_round_trip_without_conversion(self) -> None:
+        originals = {
+            "gif": bytes.fromhex("47494638396101000100800000000000ffffff2c00000000010001000002024401003b"),
+            "svg": b'<svg xmlns="http://www.w3.org/2000/svg" width="32" height="16"><path d="M0 0L10 10"/></svg>',
+        }
+        for extension, original in originals.items():
+            with self.subTest(extension=extension):
+                (self.project / f"source.{extension}").write_bytes(original)
+                artifact = self.transfer.import_image(f"source.{extension}")
+                receipt = self.transfer.export_image(artifact["id"], f"export.{extension}")
+                self.assertEqual((self.project / receipt["destinationPath"]).read_bytes(), original)
+
     def test_import_is_a_snapshot_and_repeated_imports_are_independent(self) -> None:
         first = self.transfer.import_image("reference.png")
         second = self.transfer.import_image("reference.png")

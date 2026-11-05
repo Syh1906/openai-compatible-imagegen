@@ -46,6 +46,29 @@ function preparedResponse({ annotationId = "ann_01", submissionId = "sub_01" } =
   };
 }
 
+test("native markup sends a separate transparent layer only for unmasked API edits", async () => {
+  for (const masked of [false, true]) {
+    const editor = editorState();
+    if (masked) editor.annotations.push({ id: "mask", type: "mask", mode: "edit", brushRadius: 0.1, points: [{ x: 0.2, y: 0.2 }] });
+    const rendered = [];
+    let prepared;
+    const coordinator = createSubmissionCoordinator({
+      app: {
+        getHostCapabilities: () => ({ message: { text: {}, image: {} }, updateModelContext: { structuredContent: {} } }),
+        callServerTool: async (request) => { prepared = request.arguments; return preparedResponse(); },
+        updateModelContext: async () => ({}), sendMessage: async () => ({}),
+      },
+      rasterizePreview: async (svg) => { rendered.push(svg); return { mimeType: "image/png", data: `png-${rendered.length}` }; },
+    });
+    await coordinator.submit(editor, undefined, { authMode: "apikey", nativeMarkup: true });
+    assert.equal(prepared.markupPngBase64, masked ? undefined : "png-2");
+    if (!masked) {
+      assert.doesNotMatch(rendered[1], /<image\b/);
+      assert.match(rendered[1], /<line\b/);
+    }
+  }
+});
+
 for (const mode of [undefined, "auto", "composer", "message"]) {
   test(`submission mode ${mode ?? "omitted"} selects the intended route when both are supported`, async () => {
     const calls = [];

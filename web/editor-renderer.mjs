@@ -80,6 +80,7 @@ export function createEditorRenderer(root, { i18n = createWidgetI18n("zh-CN") } 
         const hasImage = Boolean(candidate.id && candidate.imageUrl);
         const opening = openingImageId === candidate.id;
         const canvasDestroyed = candidate.canvasStatus === "destroyed";
+        const previewOnly = ["image/gif", "image/svg+xml"].includes(candidate.mimeType);
         const draftKind = candidate.draftState?.kind || "empty";
         const draftLabel = { editing: "未提交", writing: "写入中", pending: "待发送", updated: "有更新" }[draftKind] || "";
         return `
@@ -89,7 +90,7 @@ export function createEditorRenderer(root, { i18n = createWidgetI18n("zh-CN") } 
             </div>
             <div class="inline-details">
               <div class="inline-copy"><span class="eyebrow">${items.length > 1 ? `候选 ${index + 1}` : i18n.t("result.imageResult")}</span><strong>${hasImage ? (candidate.name || `图片 ${candidate.id.slice(-6)}`) : candidate.loadError ? "无法显示图片" : "准备画布"}</strong><span data-image-id>${candidate.id || "尚未绑定图片"}</span></div>${draftLabel ? `<span class="inline-draft-state" data-draft-state="${draftKind}">${draftLabel}</span>` : ""}
-              ${canvasDestroyed
+              ${previewOnly ? '<span role="status">可预览、导出原文件</span>' : canvasDestroyed
                 ? '<span class="canvas-destroyed-status" role="status">画布已销毁</span>'
                 : `<button class="open-editor-button" data-action="open-editor" data-image-id="${escapeHtml(candidate.id || "")}" ${hasImage && !openingImageId ? "" : "disabled"}>${opening ? "正在打开..." : draftLabel ? "继续编辑" : i18n.t("result.openCanvas")}</button>`}
               <p class="inline-status" data-inline-status data-status-tone="${candidate.loadError ? "error" : inlineStatusTone}" role="status" aria-live="polite">${candidate.loadError ? escapeHtml(candidate.loadError) : opening || candidate.id === inlineStatusImageId || items.length === 1 ? inlineStatus : ""}</p>

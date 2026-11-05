@@ -46,9 +46,10 @@ def resolve_request_options(cfg: Any, explicit: dict[str, Any]) -> dict[str, Any
         options["size"] = options["size"] or "1024x1024"
         options["format"] = options["format"] or "png"
         options["quality"] = options["quality"] or "medium"
-        if not isinstance(options["size"], str) or not re.fullmatch(r"[1-9][0-9]*x[1-9][0-9]*", options["size"]):
+        if not isinstance(options["size"], str) or not (re.fullmatch(r"[1-9][0-9]*x[1-9][0-9]*", options["size"]) or options["size"] == "auto" and cfg.protocol == "openai-compatible"):
             raise ValueError("invalid image size")
-        if options["format"] not in {"png", "jpeg", "webp"}:
+        formats = {"png", "jpeg", "webp", "gif", "svg"} if cfg.protocol == "openai-compatible" else {"png", "jpeg", "webp"}
+        if options["format"] not in formats:
             raise ValueError("unsupported image format")
         qualities = {"low", "medium", "high"} if cfg.protocol == "atlas" else {"auto", "low", "medium", "high", "xhigh", "max"}
         if (cfg.protocol == "atlas" or not strict) and options["quality"] not in qualities:

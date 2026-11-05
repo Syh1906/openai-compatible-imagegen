@@ -6,6 +6,7 @@ import test from "node:test";
 
 import { createImageJobManager } from "../../mcp/image-job-manager.mjs";
 import { createImageJobStore } from "../../mcp/image-job-store.mjs";
+import { createImageJobExecutor } from "../../mcp/image-job-execution.mjs";
 
 const IMAGE_ID = `img_${"0".repeat(26)}`;
 const outcome = (index) => ({
@@ -17,6 +18,40 @@ const outcome = (index) => ({
 const spec = (count = 40, concurrency = 8) => ({
   kind: "batch", concurrency,
   items: Array.from({ length: count }, (_, i) => ({ requestId: `item-${i}`, operation: "generate", prompt: `Image ${i}` })),
+});
+
+test("single and batch jobs persist safe diagnostics without retrying unknown requests", async () => {
+  await fixture(async (context) => {
+    let calls = 0;
+    const providerError = { code: "missing_required_parameter", type: "invalid_request_error", param: "svg.model", message: "Missing required parameter: svg.model.", requestId: "req_svg_123" };
+    const executor = createImageJobExecutor({
+      runTask: async () => { calls += 1; return { ok: false, error: {
+        code: "image_task_failed", message: "private provider response",
+        diagnostics: { stage: "provider_request", httpStatus: 400, rawBody: "private", providerError: { ...providerError, rawBody: "private" } },
+      } }; },
+      executeSingle: async ({ runTask }) => {
+        await runTask({ operation: "generate", output: {} });
+        return { isError: true, content: [{ type: "text", text: "image_task_failed: hidden" }] };
+      },
+      readArtifact: async () => {}, validateEdit: async () => {},
+    });
+    const manager = createImageJobManager({ executeItem: executor.executeItem });
+    try {
+      for (const kind of ["generate", "batch"]) {
+        const request = kind === "batch" ? spec(1) : { kind, request: { prompt: "SVG" } };
+        const receipt = await manager.submit({ context, submissionKey: `diagnostics-${kind}`, spec: request });
+        await manager.drain();
+        const result = await manager.get({ context, jobId: receipt.jobId });
+        assert.equal(result.items[0].state, "unknown");
+        assert.deepEqual(result.items[0].result.error.diagnostics, { stage: "provider_request", httpStatus: 400, providerError });
+        assert.equal(JSON.stringify(result).includes("private"), false);
+        const stored = await createImageJobStore().read({ context, jobId: receipt.jobId });
+        assert.deepEqual(stored.items[0].outcome.result.error.diagnostics, { stage: "provider_request", httpStatus: 400, providerError });
+        await manager.submit({ context, submissionKey: `diagnostics-${kind}`, spec: request });
+      }
+      assert.equal(calls, 2);
+    } finally { await manager.close(); }
+  });
 });
 
 test("submission returns a durable ID before a 40-item pool completes, and repeated submissions do not regenerate", async () => {

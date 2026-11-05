@@ -241,8 +241,10 @@ def slugify(value: str, limit: int = 40) -> str:
 def normalize_format(value: str | None, cfg: Config) -> str:
     selected = value or str(cfg.defaults.get("output_format") or DEFAULT_FORMAT)
     selected = selected.lower().strip().lstrip(".")
-    if selected not in {"png", "jpeg", "jpg", "webp"}:
+    if selected not in {"png", "jpeg", "jpg", "webp", "gif", "svg"}:
         raise ImagegenError(f"unsupported format: {selected}")
+    if selected in {"gif", "svg"} and cfg.protocol != "openai-compatible":
+        raise ImagegenError("GIF/SVG output requires the OpenAI-compatible protocol")
     return "jpeg" if selected == "jpg" else selected
 
 
@@ -297,6 +299,9 @@ def infer_resolution_from_size(size: str) -> str | None:
 
 def resolve_common_params(args: argparse.Namespace, cfg: Config, task: dict[str, Any] | None = None) -> dict[str, Any]:
     task = task or {}
+    requested_format = get_value("format", args, task, None) or cfg.defaults.get("output_format")
+    if requested_format in {"gif", "svg"} and (get_value("asset", args, task, False) or transparent_intent(args, task)):
+        raise ImagegenError("GIF/SVG cannot be combined with raster transparency or asset intent")
     if cfg.protocol in NATIVE_PROTOCOLS or cfg.config_version == 2:
         try:
             keys = ("size", "aspectRatio", "resolution", "quality", "format", "background", "compression", "moderation")
@@ -463,6 +468,8 @@ def request_json(cfg: Config, path: str, payload: dict[str, Any], timeout: int) 
         validate_request_size(payload.get("size"), cfg.limits)
         if cfg.protocol in NATIVE_PROTOCOLS or cfg.config_version == 2 or cfg.endpoints or cfg.parameters:
             return image_provider_requests.request_image(cfg, "generate", payload, timeout)
+        if cfg.protocol == "openai-compatible":
+            image_provider_requests.validate_request("generate", payload, None)
         return image_transport.request_json(
             base_url=cfg.base_url,
             api_key=cfg.api_key,
@@ -522,6 +529,8 @@ def request_multipart(
         validate_request_size(fields.get("size"), cfg.limits)
         if cfg.protocol in NATIVE_PROTOCOLS or cfg.config_version == 2 or cfg.endpoints or cfg.parameters:
             return image_provider_requests.request_image(cfg, "edit", fields, timeout, files=files)
+        if cfg.protocol == "openai-compatible":
+            image_provider_requests.validate_request("edit", fields, files)
         return image_transport.request_multipart(
             base_url=cfg.base_url,
             api_key=cfg.api_key,
@@ -652,6 +661,10 @@ def generate(cfg: Config, args: argparse.Namespace, task: dict[str, Any] | None 
     if not prompt:
         raise ImagegenError("prompt is required")
     params = resolve_common_params(args, cfg, task)
+    if params["output_format"] in {"gif", "svg"} and any(
+        get_value(key, args, task, None) for key in ("delivery_size", "grid", "qa", "components", "transparency_route", "transparent", "asset")
+    ):
+        raise ImagegenError("GIF/SVG support original output, not raster delivery or transparency processing")
     transparency_plan = resolve_request_transparency(prompt, "generate", params, args, cfg, task)
     if transparency_plan.mode == "native-alpha":
         params = dict(params)
@@ -732,7 +745,7 @@ def generate(cfg: Config, args: argparse.Namespace, task: dict[str, Any] | None 
         params["direct_url_download"],
         cfg.proxy.get("url"),
         expected_count=params["n"],
-        expected_size=parse_size(params["size"]) if params["size"] else None,
+        expected_size=parse_size(params["size"]) if params["size"] and params["size"] != "auto" else None,
         planned_extra_dir=_planned_extra_dir(task),
     )
     return success_record(task, prompt, "generate", delivery, params, transparency_plan)
@@ -751,6 +764,8 @@ def edit(cfg: Config, args: argparse.Namespace, task: dict[str, Any] | None = No
     image_paths = normalize_paths(images_value)
     if not image_paths:
         raise ImagegenError("edit requires at least one --image")
+    if any(path.suffix.lower() in {".gif", ".svg"} for path in image_paths):
+        raise ImagegenError("GIF/SVG originals cannot be used as edit inputs")
     maximum_inputs = cfg.limits.get("max_input_images")
     if maximum_inputs is not None and len(image_paths) > maximum_inputs:
         raise ImagegenError("reference image count exceeds the configured model limit")
@@ -793,6 +808,11 @@ def edit(cfg: Config, args: argparse.Namespace, task: dict[str, Any] | None = No
         fields.update(aspectRatio=params["aspect"], resolution=params["resolution"])
     if mask_path:
         files.append(("mask", mask_path))
+    markup_value = task.get("markup") if "markup" in task else getattr(args, "markup", None)
+    if markup_value:
+        if cfg.protocol != "openai-compatible" or cfg.capabilities.get("markup") is not True:
+            raise ImagegenError("configured model profile does not support markup editing")
+        files.append(("markup", Path(markup_value).expanduser().resolve()))
     try:
         response, transparency_plan = request_with_transparency_retry(
             lambda request_fields: request_multipart(cfg, "images/edits", request_fields, files, params["timeout"]),
@@ -822,7 +842,7 @@ def edit(cfg: Config, args: argparse.Namespace, task: dict[str, Any] | None = No
         params["direct_url_download"],
         cfg.proxy.get("url"),
         expected_count=params["n"],
-        expected_size=parse_size(params["size"]) if params["size"] else None,
+        expected_size=parse_size(params["size"]) if params["size"] and params["size"] != "auto" else None,
         planned_extra_dir=_planned_extra_dir(task),
     )
     return success_record(

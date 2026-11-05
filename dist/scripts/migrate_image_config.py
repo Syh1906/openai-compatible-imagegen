@@ -39,7 +39,7 @@ from repository_fs import (
 PROFILE_ID = "primary/gpt-image-2"
 CONFIG_DIRECTORY = "openai-compatible-imagegen"
 PROJECT_DEFAULT_KEYS = ("size", "quality", "output_format")
-CAPABILITY_KEYS = {"generate", "edit", "mask", "multi_reference"}
+CAPABILITY_KEYS = {"generate", "edit", "mask", "markup", "multi_reference"}
 USER_TOP_LEVEL_KEYS = {
     "config_version",
     "active_profile",

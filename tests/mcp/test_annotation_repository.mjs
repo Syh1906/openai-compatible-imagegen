@@ -12,6 +12,19 @@ import { deleteImageAnnotation, readImageAnnotation, saveImageAnnotations } from
 const IMAGE_ID = "img_01J00000000000000000000000";
 const PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFgAI/ScL1WQAAAABJRU5ErkJggg==";
 
+test("transparent markup is saved immutably, read and deleted with its annotation", async () => {
+  const markupPngBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgaPjPAAADgwGAJwGhsAAAAABJRU5ErkJggg==";
+  await withArtifact(async (artifactRoot) => {
+    await writeFile(path.join(artifactRoot, "artifacts", IMAGE_ID, "image.png"), Buffer.from(markupPngBase64, "base64"));
+    const result = await saveImageAnnotations({ imageId: IMAGE_ID, items: [{ id: "rect", type: "rectangle", x: 0.1, y: 0.1, width: 0.4, height: 0.4 }], markupPngBase64 }, { artifactRoot });
+    const annotation = await readImageAnnotation(result.id, { artifactRoot });
+    assert.equal(result.hasMarkup, true);
+    assert.equal((await readFile(annotation.markupPath)).toString("base64"), markupPngBase64);
+    await deleteImageAnnotation(result.id, { artifactRoot });
+    await assert.rejects(readImageAnnotation(result.id, { artifactRoot }), /annotation not found/);
+  });
+});
+
 test("annotation CRUD requires an explicit absolute artifact root", async () => {
   const request = {
     imageId: IMAGE_ID,

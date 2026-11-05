@@ -1348,6 +1348,7 @@ async function submitChanges() {
       apiKeyConfigured: authRoute?.apiKeyConfigured,
       canvasSubmissionMode: authRoute?.canvasSubmissionMode,
       modelSelection: editor.modelSelection,
+      nativeMarkup: modelCapabilities?.markup === true,
     });
     submissionInFlight = false;
     if (!resourceActive) return;

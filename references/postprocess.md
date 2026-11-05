@@ -78,7 +78,7 @@ The same preservation rule applies to non-transparent transforms. A resize, grid
 
 An HTTP 4xx response that remains after any configured native-parameter retry is an API rejection (`error_kind=api_rejected`), not a transparency QA result. That failed request has no original image to return.
 
-Batch relative output paths are based at `--out`; JSONL `images`, `mask`, and `transparency_mask` inputs are based at the JSONL file directory. The manifest records the resolved `output_root` and file-existence `path_contract`.
+Batch relative output paths are based at `--out`; JSONL `images`, `mask`, `markup`, and `transparency_mask` inputs are based at the JSONL file directory. The manifest records the resolved `output_root` and file-existence `path_contract`.
 
 ## Apply Transparency to an Existing PNG
 
@@ -301,7 +301,7 @@ python3 "$SkillDir/scripts/imagegen.py" generate \
 ## Current Limits
 
 - Deep inspection and local transforms support non-interlaced 8-bit or 16-bit RGB/RGBA PNG input up to 25 million pixels, 256 MiB, and 4096 `IDAT` chunks, with PNG output. The local codec reduces 16-bit channel samples to 8-bit RGBA. Other complete standard PNG encodings are still published as API originals when they meet the bounded response checks; unavailable local processing is reported without hiding the source.
-- JPEG and WebP generation remain supported, but deep local QA reports those formats as unsupported.
+- JPEG, WebP, GIF, and static SVG originals remain available, but deep local pixel QA and transforms do not support these formats.
 - `split-grid` requires an explicit grid.
 - Preview boards do not include text labels; use `preview-manifest.json` for cell metadata.
 - Automatic semantic segmentation, OCR, brand validation, and aesthetic scoring are not included. Local transparency supports native alpha, edge-connected key-color matting, emissive luminance alpha, and explicit masks.

@@ -4,12 +4,28 @@
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-11-05
+
+### 新增
+
+- 支持向提供相应能力的 OpenAI-compatible 服务请求 GIF 动画和静态 SVG，保留完整原文件；Codex Plugin 提供结果卡预览与原样导出。两种格式不进入位图编辑、缩放、切图和透明处理。
+- 提供 GPT Image 2.6 Sunburst、Flare 配置示例，支持 `size=auto`、`complexity` 和 GIF 帧数、帧时长参数；不自动修改已有模型或认证配置。
+- 模型显式声明 `capabilities.markup: true` 后，无蒙版的 API 画布标注使用独立透明 PNG 上传；Standalone 支持 `--markup`。标注层须与首张输入图等大，并与 `mask` 互斥。
+
 ### 修复
 
+- 图片任务查询保留失败阶段、HTTP 状态及服务提供的错误码、参数名、请求 ID 和经过脱敏的错误说明，便于定位被拒绝的请求；不保存原始错误正文，也不自动重发未知请求。
+- Windows 的“在文件夹中显示”支持定位 GIF 和 SVG 原文件。
+- 本地格式参数错误明确报告为无效请求，不误报服务结果未知。
 - 生成和编辑支持按模型声明输出尺寸限制，在发送 API 请求前检查固定尺寸、宽高整除步长、长短边比例、边长和像素总量；任务查询会说明尺寸与具体限制，不自动改尺寸或重试。
 - 模型目录返回已声明的尺寸限制；新增 API 配置模板包含 GPT Image 2 的 16 像素步长和 3:1 比例限制。既有配置保持不变，未声明的限制仍表示未知。
 - 更换模型时清除旧模型的限制，显式提供的新限制完整替换旧声明；旧式 Standalone 的 `size="auto"` 保持由服务选择尺寸。
 - 两套 Skill 区分模型生成尺寸与最终交付尺寸，明确参考图尺寸不能直接作为 API 支持依据，以及等比留白和拉伸交付的差异。
+
+### 使用限制
+
+- GIF、SVG 与原生 `markup` 是否可用取决于所选服务和账号。官方 SVG 接口在启用模型选择时要求额外提供 `svg.model`；该模型负责编写矢量内容，与生成参考图的图像模型分开配置。
+- GIF/SVG 只保留原始格式；本地缩放、透明处理与像素 QA 使用受支持的 PNG 输入。标注表达修改意图，不保证模型只改变标注区域或保持其他像素不变。
 
 ## [1.6.0] - 2026-10-05
 
@@ -325,7 +341,8 @@
 - Publish the initial Agent Skills-compatible image generation workflow.
 - Support OpenAI-compatible image generation, image editing, local authentication, transparent asset intent, and JSONL batches.
 
-[Unreleased]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v1.6.0...HEAD
+[Unreleased]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v1.7.0...HEAD
+[1.7.0]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v1.4.0...v1.5.0
 [1.4.0]: https://github.com/Syh1906/openai-compatible-imagegen/compare/v1.3.0...v1.4.0
