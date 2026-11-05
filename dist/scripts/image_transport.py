@@ -70,7 +70,10 @@ def provider_error_details(detail: str, request_id: Any, sensitive_values=()) ->
     except (ValueError, TypeError):
         parsed = None
     error = parsed.get("error") if isinstance(parsed, dict) else None
-    error = error if isinstance(error, dict) else {}
+    if isinstance(error, str):
+        error = {"message": error}
+    elif not isinstance(error, dict):
+        error = {"message": parsed.get("message")} if isinstance(parsed, dict) else {}
     result = {}
     for key, value in (("code", error.get("code")), ("type", error.get("type")), ("param", error.get("param")), ("requestId", request_id)):
         if isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9_.\[\]-]{1,128}", value) and redact_provider_text(value, sensitive_values) == value:

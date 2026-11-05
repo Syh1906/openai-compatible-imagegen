@@ -4,9 +4,19 @@ import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'scripts'))
 from image_response import inspect_response_image
+from image_extended_formats import svg_dimensions
 
 
 class ExtendedFormatTests(unittest.TestCase):
+    def test_svg_stops_at_element_budget_before_parsing_remaining_xml(self):
+        image = b'<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16">' + b'<g/>' * 100_000 + b'<broken'
+        with self.assertRaisesRegex(ValueError, 'SVG element budget exceeded'):
+            svg_dimensions(image)
+
+    def test_svg_accepts_the_element_budget_boundary(self):
+        image = b'<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16">' + b'<g/>' * 99_999 + b'</svg>'
+        self.assertEqual(svg_dimensions(image), (16, 16))
+
     def test_gif_original_is_recognized_and_truncation_rejected(self):
         image = bytes.fromhex('47494638396101000100800000000000ffffff2c00000000010001000002024401003b')
         result = inspect_response_image(image)

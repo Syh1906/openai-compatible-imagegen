@@ -39,6 +39,18 @@ class ProviderRequestTests(unittest.TestCase):
                 checker = imagegen.is_transparency_parameter_rejection if adapter is imagegen else image_runtime._is_transparency_parameter_rejection
                 self.assertTrue(checker(caught.exception))
 
+    def test_gateway_error_shapes_preserve_transparency_rejection(self):
+        cfg = self.config()
+        for envelope in ({"error": "background unsupported test-only"}, {"message": "background unsupported test-only"}):
+            for adapter in (imagegen, image_runtime):
+                error = requests.image_transport.urllib.error.HTTPError("https://example.invalid", 400, "Bad Request", {}, io.BytesIO(json.dumps(envelope).encode()))
+                with self.subTest(envelope=envelope, adapter=adapter.__name__), mock.patch.object(requests.image_transport.urllib.request, "urlopen", side_effect=error), mock.patch.object(requests.image_transport, "proxy_mapping", return_value=None):
+                    with self.assertRaises(Exception) as caught:
+                        adapter.request_json(cfg, "images/generations", {"prompt": "image"}, 30)
+                    checker = imagegen.is_transparency_parameter_rejection if adapter is imagegen else image_runtime._is_transparency_parameter_rejection
+                    self.assertTrue(checker(caught.exception))
+                    self.assertNotIn("test-only", str(caught.exception))
+
     def test_legacy_auto_size_remains_service_selected_with_pixel_limits(self):
         for protocol in ("openai-compatible", "atlas"):
             cfg = self.config(protocol=protocol, limits={"output_size": {"multiple_of": 16, "max_aspect_ratio": 3}})

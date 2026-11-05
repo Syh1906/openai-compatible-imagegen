@@ -114,6 +114,18 @@ def _validate_svg_value(value):
         raise ValueError('external SVG resources are unsupported')
 
 
+class _BoundedSVGTreeBuilder(ET.TreeBuilder):
+    def __init__(self):
+        super().__init__()
+        self.element_count = 0
+
+    def start(self, tag, attrs):
+        self.element_count += 1
+        if self.element_count > 100_000:
+            raise ValueError('SVG element budget exceeded')
+        return super().start(tag, attrs)
+
+
 def svg_dimensions(data):
     if len(data) > 16 * 1024 * 1024:
         raise ValueError('SVG byte budget exceeded')
@@ -121,13 +133,13 @@ def svg_dimensions(data):
     if re.search(r'<!DOCTYPE|<!ENTITY|<\?(?!xml\s)', text, re.I):
         raise ValueError('SVG declarations are unsupported')
     try:
-        root = ET.fromstring(text)
+        root = ET.fromstring(text, parser=ET.XMLParser(target=_BoundedSVGTreeBuilder()))
     except ET.ParseError as error:
         raise ValueError('invalid SVG XML') from error
     if root.tag != '{http://www.w3.org/2000/svg}svg':
         raise ValueError('SVG namespace is required')
-    for index, node in enumerate(root.iter()):
-        if index >= 100_000 or node.tag.removeprefix('{http://www.w3.org/2000/svg}') not in SVG_TAGS:
+    for node in root.iter():
+        if node.tag.removeprefix('{http://www.w3.org/2000/svg}') not in SVG_TAGS:
             raise ValueError('unsupported SVG element')
         if node.tag == '{http://www.w3.org/2000/svg}style':
             _validate_svg_value(''.join(node.itertext()))
